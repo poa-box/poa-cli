@@ -197,7 +197,8 @@ export function applyRuleAAdjustment(
 export function detectSecondarySurface(
   spaceId: string,
   uniqueVoters: number,
-  avgVotesPerProposal: number
+  avgVotesPerProposal: number,
+  options: { hasProtocolProfile?: boolean; ruleATriggered?: boolean } = {}
 ): { isSecondary: boolean; reason?: string } {
   const SECONDARY_SPACES = new Set([
     'nouns.eth',      // primary is on-chain Nouns DAO Governor
@@ -208,9 +209,16 @@ export function detectSecondarySurface(
   if (SECONDARY_SPACES.has(spaceId.toLowerCase())) {
     return { isSecondary: true, reason: 'known secondary/signaling surface (primary governance on-chain elsewhere)' };
   }
-  // Heuristic: small voter count + low participation = signaling-only space
-  if (uniqueVoters < 30 && avgVotesPerProposal < 10) {
-    return { isSecondary: true, reason: 'low-activity heuristic (uniqueVoters<30 + avgVotes<10)' };
+  // v1.2.1 (HB#774 fix): don't flag as secondary if DAO has a protocol profile
+  // (implies primary governance) OR Rule-A fires (captured primary).
+  if (options.hasProtocolProfile || options.ruleATriggered) {
+    return { isSecondary: false };
+  }
+  // Heuristic: small voter count + very low participation = signaling-only space.
+  // Tightened (HB#774) from (<30 voters + <10 avg) to (<15 voters + <5 avg) to
+  // avoid false positives on small primary DAOs like Balancer (24 voters, 99% pass).
+  if (uniqueVoters < 15 && avgVotesPerProposal < 5) {
+    return { isSecondary: true, reason: 'low-activity heuristic (uniqueVoters<15 + avgVotes<5)' };
   }
   return { isSecondary: false };
 }
@@ -419,10 +427,13 @@ export const auditSnapshotHandler = {
         const lowConfidence = prediction.classifiedFraction < 0.5;
         const topShares = topVoters.map((v: any) => parseFloat(v.share) / 100);
         const top5Cum = topShares.slice(0, 5).reduce((a: number, b: number) => a + b, 0);
-        const secondarySurface = detectSecondarySurface(spaceId, uniqueVoters, avgVotesPerProposal);
         const ruleA = argv.noRuleAAdjustment
           ? { adjusted: prediction.predictedPassRate, triggered: false, mode: 'disabled' as const }
           : applyRuleAAdjustment(prediction.predictedPassRate, topShares, { top5CumulativeShare: top5Cum, uniqueVoters });
+        const secondarySurface = detectSecondarySurface(spaceId, uniqueVoters, avgVotesPerProposal, {
+          hasProtocolProfile: !!profile,
+          ruleATriggered: ruleA.triggered,
+        });
         const finalPrediction = ruleA.adjusted;
         const noiseFraction = closed.length > 0 ? noiseFiltered.length / closed.length : 0;
         const noiseHeavy = noiseFraction >= 0.3;

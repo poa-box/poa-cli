@@ -317,10 +317,22 @@ describe('v0.8.x detectSecondarySurface (vigil HB#446 patch #3)', () => {
     expect(detectSecondarySurface('comp-vote.eth', 95, 15).isSecondary).toBe(true);
   });
 
-  it('flags low-activity spaces via heuristic', () => {
-    const result = detectSecondarySurface('unknown-dao.eth', 20, 5);
+  it('flags low-activity spaces via tightened heuristic', () => {
+    const result = detectSecondarySurface('unknown-dao.eth', 10, 3);
     expect(result.isSecondary).toBe(true);
     expect(result.reason).toContain('low-activity');
+  });
+
+  it('v1.2.1 (HB#774): does NOT flag small primary DAO with Rule-A (Balancer)', () => {
+    // Balancer: 24 voters, low avg votes, but Rule-A fires = captured primary
+    const result = detectSecondarySurface('balancer.eth', 24, 8, { ruleATriggered: true });
+    expect(result.isSecondary).toBe(false);
+  });
+
+  it('v1.2.1: does NOT flag DAO with protocol profile', () => {
+    // Having a profile = primary governance, regardless of cohort size
+    const result = detectSecondarySurface('gearbox.eth', 20, 5, { hasProtocolProfile: true });
+    expect(result.isSecondary).toBe(false);
   });
 
   it('does not flag primary governance spaces', () => {
