@@ -10,6 +10,7 @@ interface AuditSnapshotArgs {
   chain?: number;
   rpc?: string;
   classifyProposals?: boolean;
+  protocolProfile?: string;
 }
 
 export type DecisionType = 'ratification' | 'allocation' | 'policy' | 'tokenomics' | 'deployment' | 'signaling' | 'unclassified';
@@ -55,6 +56,44 @@ const DECISION_KEYWORDS: Record<Exclude<DecisionType, 'unclassified'>, string[]>
   ],
 };
 
+// v0.7 (Task #475): protocol-specific keyword profiles. Keys are Snapshot space IDs
+// (or their lowercased form). Values augment DECISION_KEYWORDS at classification time.
+// Catches protocol-specific title conventions that the generic keyword list misses.
+export const PROTOCOL_PROFILES: Record<string, Partial<Record<Exclude<DecisionType, 'unclassified'>, string[]>>> = {
+  'opcollective.eth': {
+    allocation: ['mission request', 'season budget', 'citizens house ballot', 'grants council', 'retro funding', 'growth experiments', 'builders'],
+    policy: ['intent', 'special voting cycle', 'badgeholder nomination', 'token house'],
+    deployment: ['upgrade x', 'op stack'],
+  },
+  'arbitrumfoundation.eth': {
+    ratification: ['aip', 'arbitrum improvement proposal'],
+    allocation: ['stip', 'ltipp', 'short-term incentive', 'long-term incentive', 'grant program'],
+    policy: ['council election', 'security council'],
+  },
+  'gearbox.eth': {
+    ratification: ['credit manager', 'credit account', 'pool parameter', 'leverage ratio', 'risk tier', 'collateral type'],
+    tokenomics: ['gear emission', 'vote-locked gear'],
+  },
+  'morpho.eth': {
+    ratification: ['mip ', 'morpho market', 'metamorpho vault', 'curator', 'adapter', 'market registry', 'list '],
+    allocation: ['contributor grant'],
+    policy: ['deprecation', 'external grants'],
+  },
+  'uniswapgovernance.eth': {
+    ratification: ['ugp', 'temperature check', 'consensus check', 'governance proposal'],
+    deployment: ['deploy uniswap', 'v4 deployment'],
+  },
+  'vote.makerdao.com': {
+    ratification: ['executive proposal', 'risk parameter update', 'dai savings rate', 'collateral onboarding'],
+    allocation: ['subdao', 'spark grant'],
+  },
+};
+
+export function getProtocolProfile(spaceId: string, override?: string): Partial<Record<Exclude<DecisionType, 'unclassified'>, string[]>> | null {
+  const key = (override || spaceId).toLowerCase();
+  return PROTOCOL_PROFILES[key] || null;
+}
+
 function matchKeyword(text: string, keyword: string): boolean {
   // Multi-word or keyword already containing a space: substring match is fine.
   if (keyword.includes(' ')) return text.includes(keyword);
@@ -63,11 +102,17 @@ function matchKeyword(text: string, keyword: string): boolean {
   return pattern.test(text);
 }
 
-export function classifyProposal(title: string, body?: string): DecisionType {
+export function classifyProposal(
+  title: string,
+  body?: string,
+  profile?: Partial<Record<Exclude<DecisionType, 'unclassified'>, string[]>> | null
+): DecisionType {
   const text = `${title} ${body || ''}`.toLowerCase();
   const scores: Partial<Record<DecisionType, number>> = {};
   for (const [category, keywords] of Object.entries(DECISION_KEYWORDS)) {
-    scores[category as DecisionType] = keywords.reduce(
+    const profileKeywords = profile?.[category as Exclude<DecisionType, 'unclassified'>] || [];
+    const allKeywords = [...keywords, ...profileKeywords];
+    scores[category as DecisionType] = allKeywords.reduce(
       (acc, kw) => acc + (matchKeyword(text, kw) ? 1 : 0),
       0
     );
@@ -121,7 +166,8 @@ export const auditSnapshotHandler = {
   builder: (yargs: Argv) => yargs
     .option('space', { type: 'string', demandOption: true, describe: 'Snapshot space ID (e.g. ens.eth)' })
     .option('pin', { type: 'boolean', default: false, describe: 'Pin report to IPFS' })
-    .option('classify-proposals', { type: 'boolean', default: false, describe: 'Apply Pattern θ v0.4 decision-type classification + weighted-mix pass-rate prediction' }),
+    .option('classify-proposals', { type: 'boolean', default: false, describe: 'Apply Pattern θ v0.4 decision-type classification + weighted-mix pass-rate prediction' })
+    .option('protocol-profile', { type: 'string', describe: 'Override auto-detected protocol keyword profile (e.g. opcollective.eth, arbitrumfoundation.eth, morpho.eth)' }),
 
   handler: async (argv: ArgumentsCamelCase<AuditSnapshotArgs>) => {
     const spin = output.spinner(`Auditing Snapshot space: ${argv.space}...`);
@@ -245,9 +291,10 @@ export const auditSnapshotHandler = {
           ratification: 0, allocation: 0, policy: 0,
           tokenomics: 0, deployment: 0, signaling: 0, unclassified: 0,
         };
+        const profile = getProtocolProfile(spaceId, argv.protocolProfile);
         const classified: Array<{ id: string; title: string; category: DecisionType }> = [];
         for (const p of closed) {
-          const category = classifyProposal(p.title || '');
+          const category = classifyProposal(p.title || '', undefined, profile);
           counts[category]++;
           classified.push({ id: p.id, title: p.title, category });
         }
@@ -255,7 +302,8 @@ export const auditSnapshotHandler = {
         const actualPR = closed.length > 0 ? passedCount / closed.length : 0;
         const lowConfidence = prediction.classifiedFraction < 0.5;
         report.patternTheta = {
-          version: 'v0.6',
+          version: 'v0.7',
+          protocolProfile: profile ? (argv.protocolProfile || spaceId).toLowerCase() : null,
           decisionTypeCounts: counts,
           classifiedFraction: prediction.classifiedFraction,
           lowConfidence,

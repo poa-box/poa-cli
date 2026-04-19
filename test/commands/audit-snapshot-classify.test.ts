@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyProposal, weightedMixPrediction, type DecisionType } from '../../src/commands/org/audit-snapshot';
+import { classifyProposal, weightedMixPrediction, getProtocolProfile, PROTOCOL_PROFILES, type DecisionType } from '../../src/commands/org/audit-snapshot';
 
 describe('classifyProposal — Pattern θ v0.4 decision-type heuristic', () => {
   it('classifies Aave ARFC titles as ratification', () => {
@@ -150,5 +150,56 @@ describe('classifyProposal + weightedMixPrediction integration', () => {
     for (const c of classified) {
       expect(['ratification', 'tokenomics']).toContain(c);
     }
+  });
+});
+
+describe('v0.7 protocol-profiles (Task #475)', () => {
+  it('auto-detects opcollective.eth profile', () => {
+    const profile = getProtocolProfile('opcollective.eth');
+    expect(profile).not.toBeNull();
+    expect(profile?.allocation).toContain('mission request');
+  });
+
+  it('returns null for unknown space', () => {
+    const profile = getProtocolProfile('randomspace.eth');
+    expect(profile).toBeNull();
+  });
+
+  it('override argument supersedes auto-detect', () => {
+    const profile = getProtocolProfile('randomspace.eth', 'opcollective.eth');
+    expect(profile).not.toBeNull();
+    expect(profile?.allocation).toContain('mission request');
+  });
+
+  it('OP Mission Request titles classify as allocation WITH profile', () => {
+    const profile = getProtocolProfile('opcollective.eth');
+    expect(classifyProposal('Special Voting Cycle #9b: Grants Council Elections - Builders', undefined, profile)).toBe('allocation');
+    expect(classifyProposal('Mission Request: Onboarding Growth Experiments', undefined, profile)).toBe('allocation');
+  });
+
+  it('OP Intent WITHOUT profile remains unclassified (v0.6 baseline)', () => {
+    // "intent" / "special voting cycle" / "badgeholder" are OP-specific vocabulary
+    // and do not match generic keywords
+    expect(classifyProposal('Special Voting Cycle #12a')).toBe('unclassified');
+  });
+
+  it('Arbitrum AIP titles classify as ratification WITH profile', () => {
+    const profile = getProtocolProfile('arbitrumfoundation.eth');
+    expect(classifyProposal('AIP-52: Adjust Council Election Thresholds', undefined, profile)).toBe('ratification');
+    expect(classifyProposal('STIP: Short-Term Incentive Program', undefined, profile)).toBe('allocation');
+  });
+
+  it('Gearbox credit-manager titles classify as ratification WITH profile', () => {
+    const profile = getProtocolProfile('gearbox.eth');
+    expect(classifyProposal('Update Credit Manager parameters for WETH pool', undefined, profile)).toBe('ratification');
+    expect(classifyProposal('Adjust leverage ratio for v3 pool', undefined, profile)).toBe('ratification');
+  });
+
+  it('PROTOCOL_PROFILES has entries for known DAO gaps', () => {
+    expect(Object.keys(PROTOCOL_PROFILES)).toContain('opcollective.eth');
+    expect(Object.keys(PROTOCOL_PROFILES)).toContain('arbitrumfoundation.eth');
+    expect(Object.keys(PROTOCOL_PROFILES)).toContain('gearbox.eth');
+    expect(Object.keys(PROTOCOL_PROFILES)).toContain('morpho.eth');
+    expect(Object.keys(PROTOCOL_PROFILES)).toContain('uniswapgovernance.eth');
   });
 });
