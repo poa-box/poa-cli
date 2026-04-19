@@ -9,6 +9,84 @@ interface AuditSnapshotArgs {
   pin?: boolean;
   chain?: number;
   rpc?: string;
+  classifyProposals?: boolean;
+}
+
+export type DecisionType = 'ratification' | 'allocation' | 'policy' | 'tokenomics' | 'deployment' | 'unclassified';
+
+const DECISION_KEYWORDS: Record<Exclude<DecisionType, 'unclassified'>, string[]> = {
+  ratification: [
+    'arfc', 'risk param', 'ltv', 'lltv', ' cap ', 'cap adjustment',
+    'oracle', 'gauntlet', 'llama', 'chaos labs', 'aave chan',
+    'parameter', 'interest rate', 'liquidation', 'collateral factor',
+    'kink', 'reserve factor', 'utilization', 'curator', 'list ',
+    'add market', 'add collateral', 'onboard', 'temp check',
+    'adapter', 'registry', 'v3 core', 'credit manager', 'pool param',
+    'morpho', 'metamorpho', 'vault configuration',
+  ],
+  allocation: [
+    'budget', 'grant', 'funding request', 'mission', 'workstream',
+    'treasury allocation', 'retropgf', 'retro pgf', 'bounty',
+    'incentive', 'reward allocation', 'distribute to',
+    'slc budget', 'stream', 'payment', 'contributor grant',
+    'development funding',
+  ],
+  policy: [
+    'disclosure', 'conflict of interest', 'code of conduct',
+    'governance policy', 'quorum', 'voting process', 'constitution',
+    'bylaws', 'rules of engagement', 'charter', 'mandate',
+    'deprecation', 'review of',
+  ],
+  tokenomics: [
+    'token alignment', 'emission', 'reward schedule',
+    'distribution phase', 'vesting', 'buyback', 'inflation',
+    'tokenomic', 'supply change', 'mint cap', 'burn', 'airdrop',
+    'staking reward',
+  ],
+  deployment: [
+    'deploy to', 'deploy v', 'strategic partnership', 'megaeth',
+    'new chain', 'add chain', 'cross-chain launch', 'bridge to',
+    'new instance', 'expand to', 'mainnet launch',
+  ],
+};
+
+function matchKeyword(text: string, keyword: string): boolean {
+  // Multi-word or keyword already containing a space: substring match is fine.
+  if (keyword.includes(' ')) return text.includes(keyword);
+  // Single-word keyword: require word boundary to avoid "mission" matching "emission".
+  const pattern = new RegExp(`\\b${keyword.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`);
+  return pattern.test(text);
+}
+
+export function classifyProposal(title: string, body?: string): DecisionType {
+  const text = `${title} ${body || ''}`.toLowerCase();
+  const scores: Partial<Record<DecisionType, number>> = {};
+  for (const [category, keywords] of Object.entries(DECISION_KEYWORDS)) {
+    scores[category as DecisionType] = keywords.reduce(
+      (acc, kw) => acc + (matchKeyword(text, kw) ? 1 : 0),
+      0
+    );
+  }
+  const best = (Object.entries(scores) as [DecisionType, number][])
+    .sort((a, b) => b[1] - a[1])[0];
+  return best && best[1] > 0 ? best[0] : 'unclassified';
+}
+
+export function weightedMixPrediction(
+  counts: Record<DecisionType, number>
+): { predictedPassRate: number; pRatification: number; pNonRatification: number } {
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  if (total === 0) return { predictedPassRate: 0, pRatification: 0, pNonRatification: 0 };
+  const pRatif = counts.ratification / total;
+  const pNonRatif =
+    (counts.allocation + counts.policy + counts.tokenomics + counts.deployment) / total;
+  // P_RATIF_PASS = 0.99, P_NON_PASS = 0.70 (HB#729 weighted-mix formula).
+  const predicted = pRatif * 0.99 + pNonRatif * 0.70;
+  return {
+    predictedPassRate: parseFloat(predicted.toFixed(3)),
+    pRatification: parseFloat(pRatif.toFixed(3)),
+    pNonRatification: parseFloat(pNonRatif.toFixed(3)),
+  };
 }
 
 async function querySnapshot(query: string, variables: any = {}): Promise<any> {
@@ -25,7 +103,8 @@ async function querySnapshot(query: string, variables: any = {}): Promise<any> {
 export const auditSnapshotHandler = {
   builder: (yargs: Argv) => yargs
     .option('space', { type: 'string', demandOption: true, describe: 'Snapshot space ID (e.g. ens.eth)' })
-    .option('pin', { type: 'boolean', default: false, describe: 'Pin report to IPFS' }),
+    .option('pin', { type: 'boolean', default: false, describe: 'Pin report to IPFS' })
+    .option('classify-proposals', { type: 'boolean', default: false, describe: 'Apply Pattern θ v0.4 decision-type classification + weighted-mix pass-rate prediction' }),
 
   handler: async (argv: ArgumentsCamelCase<AuditSnapshotArgs>) => {
     const spin = output.spinner(`Auditing Snapshot space: ${argv.space}...`);
@@ -143,6 +222,33 @@ export const auditSnapshotHandler = {
         risks,
         recommendations,
       };
+
+      if (argv.classifyProposals) {
+        const counts: Record<DecisionType, number> = {
+          ratification: 0, allocation: 0, policy: 0,
+          tokenomics: 0, deployment: 0, unclassified: 0,
+        };
+        const classified: Array<{ id: string; title: string; category: DecisionType }> = [];
+        for (const p of closed) {
+          const category = classifyProposal(p.title || '');
+          counts[category]++;
+          classified.push({ id: p.id, title: p.title, category });
+        }
+        const prediction = weightedMixPrediction(counts);
+        const actualPR = closed.length > 0 ? passedCount / closed.length : 0;
+        report.patternTheta = {
+          version: 'v0.4',
+          decisionTypeCounts: counts,
+          pRatification: prediction.pRatification,
+          pNonRatification: prediction.pNonRatification,
+          predictedPassRate: prediction.predictedPassRate,
+          actualPassRate: parseFloat(actualPR.toFixed(3)),
+          deltaPpPoints: parseFloat(
+            ((prediction.predictedPassRate - actualPR) * 100).toFixed(1)
+          ),
+          sampleClassified: classified.slice(0, 10),
+        };
+      }
 
       if (argv.pin) {
         const { pinJson } = require('../../lib/ipfs');
