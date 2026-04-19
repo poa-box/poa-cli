@@ -32,9 +32,10 @@ describe('classifyProposal — Pattern θ v0.4 decision-type heuristic', () => {
     expect(classifyProposal('MIP 126 - List MorphoMarketV1AdapterV2 in Morpho Registry')).toBe('ratification');
   });
 
-  it('returns unclassified for ambiguous titles', () => {
-    expect(classifyProposal('General discussion')).toBe('unclassified');
+  it('returns unclassified for ambiguous titles with no keyword match', () => {
     expect(classifyProposal('Community update')).toBe('unclassified');
+    expect(classifyProposal('Test proposal')).toBe('unclassified');
+    // Note: "discussion" is a signaling keyword in v0.6, so "general discussion" now classifies as signaling.
   });
 
   it('is case-insensitive', () => {
@@ -46,7 +47,7 @@ describe('classifyProposal — Pattern θ v0.4 decision-type heuristic', () => {
 describe('weightedMixPrediction — Pattern θ v0.4 formula', () => {
   const emptyCounts: Record<DecisionType, number> = {
     ratification: 0, allocation: 0, policy: 0,
-    tokenomics: 0, deployment: 0, unclassified: 0,
+    tokenomics: 0, deployment: 0, signaling: 0, unclassified: 0,
   };
 
   it('returns zero when no proposals classified', () => {
@@ -102,6 +103,19 @@ describe('weightedMixPrediction — Pattern θ v0.4 formula', () => {
     const counts = { ...emptyCounts, ratification: 20, allocation: 10, unclassified: 70 };
     const pred = weightedMixPrediction(counts);
     expect(pred.classifiedFraction).toBe(0.3);
+  });
+
+  it('v0.6: signaling-heavy DAO predicts ~40% (Nouns secondary anchor)', () => {
+    const counts = { ...emptyCounts, signaling: 100 };
+    const pred = weightedMixPrediction(counts);
+    expect(pred.predictedPassRate).toBeCloseTo(0.40, 2);
+    expect(pred.pSignaling).toBe(1);
+  });
+
+  it('v0.6: signaling classifier catches polls/sentiment/temp-checks', () => {
+    expect(classifyProposal('Nouns DAO Split (a version of ragequit) Urgency Signaling')).toBe('signaling');
+    expect(classifyProposal('Will sentiment polls improve discussions?')).toBe('signaling');
+    expect(classifyProposal('Straw poll on new mascot')).toBe('signaling');
   });
 
   it('mixed decision-type DAO produces intermediate prediction', () => {

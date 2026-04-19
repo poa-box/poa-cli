@@ -12,7 +12,7 @@ interface AuditSnapshotArgs {
   classifyProposals?: boolean;
 }
 
-export type DecisionType = 'ratification' | 'allocation' | 'policy' | 'tokenomics' | 'deployment' | 'unclassified';
+export type DecisionType = 'ratification' | 'allocation' | 'policy' | 'tokenomics' | 'deployment' | 'signaling' | 'unclassified';
 
 const DECISION_KEYWORDS: Record<Exclude<DecisionType, 'unclassified'>, string[]> = {
   ratification: [
@@ -48,6 +48,11 @@ const DECISION_KEYWORDS: Record<Exclude<DecisionType, 'unclassified'>, string[]>
     'new chain', 'add chain', 'cross-chain launch', 'bridge to',
     'new instance', 'expand to', 'mainnet launch',
   ],
+  signaling: [
+    'signaling', 'sentiment', 'poll', 'survey', 'opinion',
+    'straw poll', 'discussion', 'urgency signaling',
+    'preference', 'feedback on', 'gauge interest',
+  ],
 };
 
 function matchKeyword(text: string, keyword: string): boolean {
@@ -74,27 +79,29 @@ export function classifyProposal(title: string, body?: string): DecisionType {
 
 export function weightedMixPrediction(
   counts: Record<DecisionType, number>
-): { predictedPassRate: number; pRatification: number; pNonRatification: number; classifiedFraction: number } {
+): { predictedPassRate: number; pRatification: number; pNonRatification: number; pSignaling: number; classifiedFraction: number } {
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   if (total === 0) {
-    return { predictedPassRate: 0, pRatification: 0, pNonRatification: 0, classifiedFraction: 0 };
+    return { predictedPassRate: 0, pRatification: 0, pNonRatification: 0, pSignaling: 0, classifiedFraction: 0 };
   }
   const classified = total - counts.unclassified;
   if (classified === 0) {
-    return { predictedPassRate: 0, pRatification: 0, pNonRatification: 0, classifiedFraction: 0 };
+    return { predictedPassRate: 0, pRatification: 0, pNonRatification: 0, pSignaling: 0, classifiedFraction: 0 };
   }
-  // v0.5 (vigil HB#438 fix): compute over classified subset only. Unclassified proposals
-  // are out-of-distribution for the current keyword heuristic (test proposals, non-English,
-  // signaling polls) and would distort the formula if treated as non-ratification.
+  // v0.5 (vigil HB#438 fix): compute over classified subset only.
+  // v0.6 (vigil HB#438 rec #2): signaling as distinct category, pass rate ~0.40
+  // (empirical anchor: Nouns secondary Snapshot 29%, signaling-heavy space).
   const pRatif = counts.ratification / classified;
   const pNonRatif =
     (counts.allocation + counts.policy + counts.tokenomics + counts.deployment) / classified;
-  // P_RATIF_PASS = 0.99, P_NON_PASS = 0.70 (HB#729 weighted-mix formula).
-  const predicted = pRatif * 0.99 + pNonRatif * 0.70;
+  const pSignal = counts.signaling / classified;
+  // P_RATIF_PASS = 0.99, P_NON_PASS = 0.70, P_SIGNAL_PASS = 0.40 (HB#748 anchor from Nouns).
+  const predicted = pRatif * 0.99 + pNonRatif * 0.70 + pSignal * 0.40;
   return {
     predictedPassRate: parseFloat(predicted.toFixed(3)),
     pRatification: parseFloat(pRatif.toFixed(3)),
     pNonRatification: parseFloat(pNonRatif.toFixed(3)),
+    pSignaling: parseFloat(pSignal.toFixed(3)),
     classifiedFraction: parseFloat((classified / total).toFixed(3)),
   };
 }
@@ -236,7 +243,7 @@ export const auditSnapshotHandler = {
       if (argv.classifyProposals) {
         const counts: Record<DecisionType, number> = {
           ratification: 0, allocation: 0, policy: 0,
-          tokenomics: 0, deployment: 0, unclassified: 0,
+          tokenomics: 0, deployment: 0, signaling: 0, unclassified: 0,
         };
         const classified: Array<{ id: string; title: string; category: DecisionType }> = [];
         for (const p of closed) {
@@ -248,12 +255,13 @@ export const auditSnapshotHandler = {
         const actualPR = closed.length > 0 ? passedCount / closed.length : 0;
         const lowConfidence = prediction.classifiedFraction < 0.5;
         report.patternTheta = {
-          version: 'v0.5',
+          version: 'v0.6',
           decisionTypeCounts: counts,
           classifiedFraction: prediction.classifiedFraction,
           lowConfidence,
           pRatification: prediction.pRatification,
           pNonRatification: prediction.pNonRatification,
+          pSignaling: prediction.pSignaling,
           predictedPassRate: prediction.predictedPassRate,
           actualPassRate: parseFloat(actualPR.toFixed(3)),
           deltaPpPoints: parseFloat(
