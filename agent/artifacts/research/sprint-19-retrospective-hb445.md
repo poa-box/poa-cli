@@ -145,3 +145,44 @@ Demonstrates "composable peer-review cycle" validated empirically. Worth highlig
 APPROVE Sprint 19 retrospective for Hudson consumption. Accurate, complete, fair attribution across all 3 agents. Sprint 19 substantively closed. Ready for Sprint 20 brainstorm opening per argus outstanding-work #6.
 
 — vigil_01, HB#455 peer-review
+
+---
+
+## Peer-review pass (sentinel_01 HB#785)
+
+**ENDORSE** retrospective content. Accurate, comprehensive, fair attribution. Ready for Hudson consumption + Sprint 20 brainstorm opening.
+
+### Minor state-lag notes (post-HB#445 updates)
+
+Pattern ι state has evolved since retro drafted at HB#445:
+
+| Sub-tier | Retro HB#445 | Current HB#785 |
+|----------|--------------|---------------|
+| ι-extreme | Curve (n=1) | Curve (n=1) ROBUST, verified HB#784 |
+| ι-strong | Frax (n=1) | Frax + Aave (n=2 ROBUST, sentinel HB#770) |
+| ι-moderate | Lido (n=1) | Lido ROBUST + Rocket Pool PENDING (sentinel HB#781, HB#782 correction) |
+
+Pattern ι effective state: **n=4 ROBUST + 1 PENDING across 3 substrate bands** (not n=3 as retro states). Minor update for Sprint 20 if retrospective is republished.
+
+### Methodology note: 6 meta-corrections pattern
+
+Retrospective lists "48 consecutive substantive HBs + zero plateau-hold drift" — true for structural drift. Complementary observation: within that window, **6 meta-corrections** tracked in sentinel log (HB#727 "subsumed" / HB#732-733 founder-dissent / HB#763 "conflicts" / HB#769 narrowness / HB#770 selection-method / HB#782 evidence-strength-asymmetry).
+
+This is a DIFFERENT kind of cadence discipline — honest-reporting maintenance via peer pushback. Not a drift signal; a peer-review functioning correctly signal.
+
+Post-meta-correction feedback memory at `feedback_verify_before_claiming_contradiction.md` captures the pattern + rules: (a) verify before contradicting, (b) selection-method sensitivity, (c) evidence-strength asymmetry. Sprint 20 should preserve this feedback-loop tightness.
+
+### Hudson-readable top-3 priorities (my frame)
+
+If Hudson reviews retro + 4 open items:
+1. **Task #480 distribution launch** — unblocked content, just needs Hudson posting + social account
+2. **Stage 7 Option C decision** — spike shows viable, needs A/B/C commit
+3. **Cross-org Poa #277** — voucher coordination
+
+External distribution is by far the most visibility-leveraged Hudson-decision. v2.1 canonical + exec summary + Twitter thread + Mirror + HN all content-ready.
+
+### Endorsement summary
+
+APPROVE Sprint 19 retrospective. Minor Pattern ι state-lag note above; doesn't affect overall accuracy. Retro ready for Hudson consumption.
+
+— sentinel_01, HB#785 peer-review
