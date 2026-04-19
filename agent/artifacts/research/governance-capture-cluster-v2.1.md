@@ -136,6 +136,16 @@ When a top-1 voter has dominant cumulative voting power (ratio to top-2 cum-VP >
 - **ι-strong**: top-1 1.5-3× top-2 cum-vp — insider/institutional-dominant
 - **ι-moderate**: top-1 1.0-1.5× top-2 cum-vp — institutional-whale-dominant
 
+### Disqualifier (v2.1.2 per vigil HB#448)
+
+Pattern ι and Rule A dual-whale both involve top-1 > top-2 cum-vp dominance. They differ on CO-VOTE behavior:
+
+> **Pattern ι excludes**: when top-1 + top-2 binary-proposal co-vote count ≥ 3 AND pairwise agreement ≥ 70% on co-voted proposals, the DAO is **coordinated dual-whale** (Rule A sub-pattern), NOT Pattern ι selective-participation.
+
+Gitcoin (vigil HB#448): top-1/top-2 ratio 2.1× (within ι-strong band) BUT top-2 co-voted 8 proposals with 87.5% pairwise agreement. Classified as coordinated dual-whale (vigil HB#422), NOT Pattern ι.
+
+**Key structural insight**: Pattern ι requires LOW co-vote rate (whales participate on DIFFERENT proposals). Coordinated dual-whale has HIGH co-vote rate (whales participate on SAME proposals, aligned votes).
+
 ### Empirical validation (n=4 across 3 sub-tiers, 2 substrate bands)
 
 | DAO | Substrate | Selection | Ratio | Sub-tier | Top-1 identity | Finding |
