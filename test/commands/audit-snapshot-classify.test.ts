@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyProposal, weightedMixPrediction, getProtocolProfile, applyRuleAAdjustment, detectNoise, PROTOCOL_PROFILES, type DecisionType } from '../../src/commands/org/audit-snapshot';
+import { classifyProposal, weightedMixPrediction, getProtocolProfile, applyRuleAAdjustment, detectNoise, detectSecondarySurface, PROTOCOL_PROFILES, type DecisionType } from '../../src/commands/org/audit-snapshot';
 
 describe('classifyProposal — Pattern θ v0.4 decision-type heuristic', () => {
   it('classifies Aave ARFC titles as ratification', () => {
@@ -286,6 +286,50 @@ describe('v0.9 Rule-A capture-adjustment (Task #477)', () => {
     expect(result.triggered).toBe(false);
     expect(result.mode).toBe('none');
     expect(result.adjusted).toBe(0.8);
+  });
+
+  it('v0.9.1 (vigil HB#446): extreme-rubber-stamp tier — single-whale + top-5≥90% + N<30', () => {
+    // Balancer-like: top-1 73.7%, top-5 cum ~95%, 24 voters
+    const result = applyRuleAAdjustment(0.50, [0.737, 0.10, 0.06, 0.05, 0.04], {
+      top5CumulativeShare: 0.937,
+      uniqueVoters: 24,
+    });
+    expect(result.triggered).toBe(true);
+    expect(result.mode).toBe('single-whale-extreme');
+    expect(result.adjusted).toBe(0.95); // extreme floor
+  });
+
+  it('v0.9.1: single-whale without extreme criteria uses 0.85 floor', () => {
+    // Gitcoin-like: top-1 50.1%, larger cohort, top-5 ≈80%
+    const result = applyRuleAAdjustment(0.50, [0.501, 0.299, 0.05], {
+      top5CumulativeShare: 0.85,
+      uniqueVoters: 100,
+    });
+    expect(result.triggered).toBe(true);
+    expect(result.mode).toBe('single-whale');
+    expect(result.adjusted).toBe(0.85);
+  });
+});
+
+describe('v0.8.x detectSecondarySurface (vigil HB#446 patch #3)', () => {
+  it('flags known secondary spaces (nouns.eth, comp-vote.eth)', () => {
+    expect(detectSecondarySurface('nouns.eth', 45, 3).isSecondary).toBe(true);
+    expect(detectSecondarySurface('comp-vote.eth', 95, 15).isSecondary).toBe(true);
+  });
+
+  it('flags low-activity spaces via heuristic', () => {
+    const result = detectSecondarySurface('unknown-dao.eth', 20, 5);
+    expect(result.isSecondary).toBe(true);
+    expect(result.reason).toContain('low-activity');
+  });
+
+  it('does not flag primary governance spaces', () => {
+    expect(detectSecondarySurface('aavedao.eth', 184, 148).isSecondary).toBe(false);
+    expect(detectSecondarySurface('morpho.eth', 29, 26).isSecondary).toBe(false);
+  });
+
+  it('is case-insensitive for known spaces', () => {
+    expect(detectSecondarySurface('NOUNS.ETH', 45, 3).isSecondary).toBe(true);
   });
 });
 

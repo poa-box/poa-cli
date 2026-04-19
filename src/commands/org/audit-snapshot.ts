@@ -161,25 +161,58 @@ const RULE_A_CAPTURE_FLOOR = 0.85;
 const RULE_A_TOP1_THRESHOLD = 0.50;
 const RULE_A_DUAL_THRESHOLD = 0.50;
 
+// v0.9.1 (vigil HB#446 patch #2): extreme-rubber-stamp tier. Balancer-style DAOs
+// (single-whale Rule-A + top-5 ≥90% + small cohort N<30) consistently pass ≥99%,
+// exceeding the 0.85 floor. Lift floor to 0.95 for this sub-pattern.
+const RULE_A_EXTREME_FLOOR = 0.95;
+
 export function applyRuleAAdjustment(
   basePrediction: number,
-  topVoterShares: number[]
-): { adjusted: number; triggered: boolean; mode: 'single-whale' | 'dual-whale-candidate' | 'none' } {
+  topVoterShares: number[],
+  options: { top5CumulativeShare?: number; uniqueVoters?: number } = {}
+): { adjusted: number; triggered: boolean; mode: 'single-whale' | 'single-whale-extreme' | 'dual-whale-candidate' | 'none' } {
   const top1 = topVoterShares[0] || 0;
   const top2 = topVoterShares[1] || 0;
+  const top5Cum = options.top5CumulativeShare ?? topVoterShares.slice(0, 5).reduce((a, b) => a + b, 0);
+  const voters = options.uniqueVoters ?? Infinity;
   if (top1 >= RULE_A_TOP1_THRESHOLD) {
+    // Extreme-rubber-stamp: single-whale Rule-A + top-5 ≥90% + small cohort.
+    const isExtreme = top5Cum >= 0.90 && voters < 30;
+    const floor = isExtreme ? RULE_A_EXTREME_FLOOR : RULE_A_CAPTURE_FLOOR;
     return {
-      adjusted: Math.max(basePrediction, RULE_A_CAPTURE_FLOOR),
+      adjusted: Math.max(basePrediction, floor),
       triggered: true,
-      mode: 'single-whale',
+      mode: isExtreme ? 'single-whale-extreme' : 'single-whale',
     };
   }
   if (top1 + top2 >= RULE_A_DUAL_THRESHOLD) {
-    // Dual-whale candidate: coordination must be verified externally (lockstep-analyzer).
-    // Do not apply floor automatically; surface as candidate for user to verify.
     return { adjusted: basePrediction, triggered: false, mode: 'dual-whale-candidate' };
   }
   return { adjusted: basePrediction, triggered: false, mode: 'none' };
+}
+
+// v0.8.x (vigil HB#446 patch #3): out-of-scope detection for secondary Snapshots.
+// Heuristic: low avg-votes-per-proposal + low unique-voter count + secondary-tier
+// naming (e.g., comp-vote.eth, nouns.eth vs primary on-chain Governor Bravo).
+export function detectSecondarySurface(
+  spaceId: string,
+  uniqueVoters: number,
+  avgVotesPerProposal: number
+): { isSecondary: boolean; reason?: string } {
+  const SECONDARY_SPACES = new Set([
+    'nouns.eth',      // primary is on-chain Nouns DAO Governor
+    'comp-vote.eth',  // primary is Compound Governor Bravo
+    'compound.eth',   // legacy/deprecated
+    'yearn',          // v1 legacy archive
+  ]);
+  if (SECONDARY_SPACES.has(spaceId.toLowerCase())) {
+    return { isSecondary: true, reason: 'known secondary/signaling surface (primary governance on-chain elsewhere)' };
+  }
+  // Heuristic: small voter count + low participation = signaling-only space
+  if (uniqueVoters < 30 && avgVotesPerProposal < 10) {
+    return { isSecondary: true, reason: 'low-activity heuristic (uniqueVoters<30 + avgVotes<10)' };
+  }
+  return { isSecondary: false };
 }
 
 export function weightedMixPrediction(
@@ -385,15 +418,21 @@ export const auditSnapshotHandler = {
         const actualPR = closed.length > 0 ? passedCount / closed.length : 0;
         const lowConfidence = prediction.classifiedFraction < 0.5;
         const topShares = topVoters.map((v: any) => parseFloat(v.share) / 100);
+        const top5Cum = topShares.slice(0, 5).reduce((a: number, b: number) => a + b, 0);
+        const secondarySurface = detectSecondarySurface(spaceId, uniqueVoters, avgVotesPerProposal);
         const ruleA = argv.noRuleAAdjustment
           ? { adjusted: prediction.predictedPassRate, triggered: false, mode: 'disabled' as const }
-          : applyRuleAAdjustment(prediction.predictedPassRate, topShares);
+          : applyRuleAAdjustment(prediction.predictedPassRate, topShares, { top5CumulativeShare: top5Cum, uniqueVoters });
         const finalPrediction = ruleA.adjusted;
         const noiseFraction = closed.length > 0 ? noiseFiltered.length / closed.length : 0;
         const noiseHeavy = noiseFraction >= 0.3;
         report.patternTheta = {
-          version: 'v1.1',
+          version: 'v1.2',
           protocolProfile: profile ? (argv.protocolProfile || spaceId).toLowerCase() : null,
+          outOfScope: secondarySurface.isSecondary,
+          ...(secondarySurface.isSecondary && {
+            outOfScopeReason: secondarySurface.reason,
+          }),
           decisionTypeCounts: counts,
           noiseFilter: {
             applied: applyNoiseFilter,
