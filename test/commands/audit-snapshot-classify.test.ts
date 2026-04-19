@@ -112,6 +112,34 @@ describe('weightedMixPrediction — Pattern θ v0.4 formula', () => {
     expect(pred.pSignaling).toBe(1);
   });
 
+  it('v1.1 (Task #479): quorum-failure modifier multiplies final prediction', () => {
+    // Uniswap-like: high ratif but 17% quorum-fail
+    const counts = { ...emptyCounts, ratification: 100 };
+    const pred = weightedMixPrediction(counts, 0.17);
+    // base = 0.99 * 1.0 = 0.99
+    // adjusted = 0.99 * (1 - 0.17) = 0.8217
+    expect(pred.basePassRate).toBeCloseTo(0.99, 2);
+    expect(pred.predictedPassRate).toBeCloseTo(0.822, 2);
+    expect(pred.quorumFailRate).toBe(0.17);
+  });
+
+  it('v1.1: zero quorum-fail rate = no modifier change', () => {
+    const counts = { ...emptyCounts, ratification: 100 };
+    const pred = weightedMixPrediction(counts);
+    expect(pred.basePassRate).toBeCloseTo(0.99, 2);
+    expect(pred.predictedPassRate).toBeCloseTo(0.99, 2);
+    expect(pred.quorumFailRate).toBe(0);
+  });
+
+  it('v1.1: quorumFailRate clamped to [0, 1]', () => {
+    const counts = { ...emptyCounts, ratification: 100 };
+    const p1 = weightedMixPrediction(counts, -0.5);
+    const p2 = weightedMixPrediction(counts, 1.5);
+    expect(p1.quorumFailRate).toBe(0);
+    expect(p2.quorumFailRate).toBe(1);
+    expect(p2.predictedPassRate).toBe(0);
+  });
+
   it('v0.6: signaling classifier catches polls/sentiment/temp-checks', () => {
     expect(classifyProposal('Nouns DAO Split (a version of ragequit) Urgency Signaling')).toBe('signaling');
     expect(classifyProposal('Will sentiment polls improve discussions?')).toBe('signaling');

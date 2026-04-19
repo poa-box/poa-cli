@@ -183,31 +183,35 @@ export function applyRuleAAdjustment(
 }
 
 export function weightedMixPrediction(
-  counts: Record<DecisionType, number>
-): { predictedPassRate: number; pRatification: number; pNonRatification: number; pSignaling: number; classifiedFraction: number } {
+  counts: Record<DecisionType, number>,
+  quorumFailRate: number = 0
+): { predictedPassRate: number; basePassRate: number; pRatification: number; pNonRatification: number; pSignaling: number; classifiedFraction: number; quorumFailRate: number } {
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   if (total === 0) {
-    return { predictedPassRate: 0, pRatification: 0, pNonRatification: 0, pSignaling: 0, classifiedFraction: 0 };
+    return { predictedPassRate: 0, basePassRate: 0, pRatification: 0, pNonRatification: 0, pSignaling: 0, classifiedFraction: 0, quorumFailRate: 0 };
   }
   const classified = total - counts.unclassified;
   if (classified === 0) {
-    return { predictedPassRate: 0, pRatification: 0, pNonRatification: 0, pSignaling: 0, classifiedFraction: 0 };
+    return { predictedPassRate: 0, basePassRate: 0, pRatification: 0, pNonRatification: 0, pSignaling: 0, classifiedFraction: 0, quorumFailRate: 0 };
   }
-  // v0.5 (vigil HB#438 fix): compute over classified subset only.
-  // v0.6 (vigil HB#438 rec #2): signaling as distinct category, pass rate ~0.40
-  // (empirical anchor: Nouns secondary Snapshot 29%, signaling-heavy space).
   const pRatif = counts.ratification / classified;
   const pNonRatif =
     (counts.allocation + counts.policy + counts.tokenomics + counts.deployment) / classified;
   const pSignal = counts.signaling / classified;
-  // P_RATIF_PASS = 0.99, P_NON_PASS = 0.70, P_SIGNAL_PASS = 0.40 (HB#748 anchor from Nouns).
-  const predicted = pRatif * 0.99 + pNonRatif * 0.70 + pSignal * 0.40;
+  const basePredicted = pRatif * 0.99 + pNonRatif * 0.70 + pSignal * 0.40;
+  // v1.1 (Task #479): quorum-failure modifier per sentinel HB#731.
+  // Multi-tier governance (Uniswap TC → CC) creates quorum-fail proposals that
+  // classifier misses; apply (1 - P(quorum-fail)) multiplier to correct.
+  const qFail = Math.max(0, Math.min(1, quorumFailRate));
+  const predictedWithQFail = basePredicted * (1 - qFail);
   return {
-    predictedPassRate: parseFloat(predicted.toFixed(3)),
+    predictedPassRate: parseFloat(predictedWithQFail.toFixed(3)),
+    basePassRate: parseFloat(basePredicted.toFixed(3)),
     pRatification: parseFloat(pRatif.toFixed(3)),
     pNonRatification: parseFloat(pNonRatif.toFixed(3)),
     pSignaling: parseFloat(pSignal.toFixed(3)),
     classifiedFraction: parseFloat((classified / total).toFixed(3)),
+    quorumFailRate: parseFloat(qFail.toFixed(3)),
   };
 }
 
@@ -243,7 +247,7 @@ export const auditSnapshotHandler = {
       const proposalData = await querySnapshot(`
         query($space: String!) {
           proposals(where: {space: $space}, first: 100, orderBy: "created", orderDirection: desc) {
-            id title state votes scores_total scores choices created end author
+            id title state votes scores_total scores choices created end author quorum
           }
         }
       `, { space: spaceId });
@@ -370,7 +374,14 @@ export const auditSnapshotHandler = {
           counts[category]++;
           classified.push({ id: p.id, title, category });
         }
-        const prediction = weightedMixPrediction(counts);
+        // v1.1 (Task #479): compute quorum-failure rate from closed proposals
+        const quorumFailedCount = closed.filter((p: any) => {
+          const q = p.quorum || 0;
+          const total = p.scores_total || 0;
+          return q > 0 && total < q;
+        }).length;
+        const quorumFailRate = closed.length > 0 ? quorumFailedCount / closed.length : 0;
+        const prediction = weightedMixPrediction(counts, quorumFailRate);
         const actualPR = closed.length > 0 ? passedCount / closed.length : 0;
         const lowConfidence = prediction.classifiedFraction < 0.5;
         const topShares = topVoters.map((v: any) => parseFloat(v.share) / 100);
@@ -381,7 +392,7 @@ export const auditSnapshotHandler = {
         const noiseFraction = closed.length > 0 ? noiseFiltered.length / closed.length : 0;
         const noiseHeavy = noiseFraction >= 0.3;
         report.patternTheta = {
-          version: 'v1.0',
+          version: 'v1.1',
           protocolProfile: profile ? (argv.protocolProfile || spaceId).toLowerCase() : null,
           decisionTypeCounts: counts,
           noiseFilter: {
@@ -396,7 +407,10 @@ export const auditSnapshotHandler = {
           pRatification: prediction.pRatification,
           pNonRatification: prediction.pNonRatification,
           pSignaling: prediction.pSignaling,
-          basePassRate: prediction.predictedPassRate,
+          quorumFailRate: prediction.quorumFailRate,
+          quorumFailedCount,
+          basePassRate: prediction.basePassRate,
+          basePassRatePreQuorum: prediction.predictedPassRate,
           ruleAAdjustment: {
             applied: ruleA.triggered,
             mode: ruleA.mode,
