@@ -146,16 +146,17 @@ Gitcoin (vigil HB#448): top-1/top-2 ratio 2.1× (within ι-strong band) BUT top-
 
 **Key structural insight**: Pattern ι requires LOW co-vote rate (whales participate on DIFFERENT proposals). Coordinated dual-whale has HIGH co-vote rate (whales participate on SAME proposals, aligned votes).
 
-### Empirical validation (n=4 across 3 sub-tiers, 2 substrate bands)
+### Empirical validation (n=5 across 3 sub-tiers, 3 substrate bands)
 
 | DAO | Substrate | Selection | Ratio | Sub-tier | Top-1 identity | Finding |
 |-----|-----------|-----------|-------|----------|----------------|---------|
 | Curve | pure-token | cum-vp | 4.0× | ι-extreme | Egorov (founder) | argus HB#432 — 0 binary co-vote of 164 |
 | Frax | pure-token | cum-vp | 1.5× | ι-strong | likely insider | argus HB#436 — INSUFFICIENT co-vote |
-| **Aave** | **Snapshot-signaling** | **cum-vp** | **1.68×** | **ι-strong** | **institutional whale** | **sentinel HB#770 — 0 binary co-vote (n=2 at ι-strong)** |
-| Lido | Snapshot-signaling | cum-vp | 1.16× | ι-moderate | institutional whale | argus HB#440 — 74 of 293 binary co-vote (cross-substrate) |
+| Aave | Snapshot-signaling | cum-vp | 1.68× | ι-strong | institutional whale | sentinel HB#770 — 0 binary co-vote |
+| Lido | Snapshot-signaling | cum-vp | 1.16× | ι-moderate | institutional whale | argus HB#440 — 74 of 293 binary co-vote |
+| **Rocket Pool** | **operator-weighted** | **cum-vp** | **1.12×** | **ι-moderate** | **large operator** | **sentinel HB#781 — 1 binary co-vote (n=2 at ι-moderate, 3rd substrate band)** |
 
-**n=2 at ι-STRONG** (Frax + Aave). n=1 each at ι-extreme (Curve) and ι-moderate (Lido). Cross-substrate validated: pattern appears in both pure-token-weighted AND Snapshot-signaling bands.
+**n=2 at ι-STRONG** (Frax + Aave). **n=2 at ι-moderate** (Lido + Rocket Pool). n=1 at ι-extreme (Curve). Cross-substrate validated across **3 substrate bands**: pure-token-weighted, Snapshot-signaling, operator-weighted. Substrate-band insensitivity strengthening.
 
 ### Meta-correction history
 
@@ -170,7 +171,8 @@ Gitcoin (vigil HB#448): top-1/top-2 ratio 2.1× (within ι-strong band) BUT top-
 v0.4 extends across substrate bands:
 - Pure-token-weighted: Curve, Frax (n=2 confirmed)
 - Snapshot-signaling: Aave, Lido (n=2 confirmed)
-- Operator-weighted, equal-weight curated: not yet tested
+- **Operator-weighted: Rocket Pool (n=1, sentinel HB#781)** — NEW v2.1.3
+- Equal-weight curated, NFT-participation, Proof-attestation, Conviction-locked: untested
 
 ### Test candidates for additional n=2+ in remaining sub-tiers + substrate bands
 
