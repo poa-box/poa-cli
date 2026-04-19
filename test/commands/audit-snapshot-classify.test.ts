@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyProposal, weightedMixPrediction, getProtocolProfile, applyRuleAAdjustment, PROTOCOL_PROFILES, type DecisionType } from '../../src/commands/org/audit-snapshot';
+import { classifyProposal, weightedMixPrediction, getProtocolProfile, applyRuleAAdjustment, detectNoise, PROTOCOL_PROFILES, type DecisionType } from '../../src/commands/org/audit-snapshot';
 
 describe('classifyProposal — Pattern θ v0.4 decision-type heuristic', () => {
   it('classifies Aave ARFC titles as ratification', () => {
@@ -258,5 +258,48 @@ describe('v0.9 Rule-A capture-adjustment (Task #477)', () => {
     expect(result.triggered).toBe(false);
     expect(result.mode).toBe('none');
     expect(result.adjusted).toBe(0.8);
+  });
+});
+
+describe('v0.8 noise-filter / detectNoise (Task #476)', () => {
+  it('flags test proposals', () => {
+    expect(detectNoise('Test proposal').isNoise).toBe(true);
+    expect(detectNoise('Test can I make a snapshot proposal?').isNoise).toBe(true);
+    expect(detectNoise('testing 123').isNoise).toBe(true);
+  });
+
+  it('flags price speculation', () => {
+    expect(detectNoise('price prediction for bitcoin at the end of 2022').isNoise).toBe(true);
+    expect(detectNoise('Will our project token rise to 100usdt in the future?').isNoise).toBe(true);
+  });
+
+  it('flags Stakewise airdrop phishing pattern', () => {
+    expect(detectNoise('Fantastic news for all Stakewise users!').isNoise).toBe(true);
+    expect(detectNoise('Absolutely thrilling news for all users').isNoise).toBe(true);
+    expect(detectNoise('Claim your DYDX airdrop now!').isNoise).toBe(true);
+  });
+
+  it('flags non-English heavy titles', () => {
+    expect(detectNoise('这个是官方承认的dao组织吗？').isNoise).toBe(true);
+    expect(detectNoise('русский текст proposal').isNoise).toBe(true);
+  });
+
+  it('flags empty / too-short titles', () => {
+    expect(detectNoise('').isNoise).toBe(true);
+    expect(detectNoise(' ').isNoise).toBe(true);
+    expect(detectNoise('??').isNoise).toBe(true);
+  });
+
+  it('passes legitimate governance titles', () => {
+    expect(detectNoise('[ARFC] Onboard PT-USDG to Aave V3').isNoise).toBe(false);
+    expect(detectNoise('MIP 126 - List MorphoMarketV1AdapterV2').isNoise).toBe(false);
+    expect(detectNoise('Brooklyn Banks Skatepark Temp Check').isNoise).toBe(false);
+    expect(detectNoise('[ARFC ADDENDUM] Mandatory Disclosures').isNoise).toBe(false);
+  });
+
+  it('returns reason for each detected noise type', () => {
+    expect(detectNoise('Test proposal').reason).toContain('test');
+    expect(detectNoise('price prediction for btc').reason).toContain('price');
+    expect(detectNoise('Fantastic news users!').reason).toContain('airdrop phishing');
   });
 });

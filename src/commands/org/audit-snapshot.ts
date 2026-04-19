@@ -12,6 +12,7 @@ interface AuditSnapshotArgs {
   classifyProposals?: boolean;
   protocolProfile?: string;
   noRuleAAdjustment?: boolean;
+  noNoiseFilter?: boolean;
 }
 
 export type DecisionType = 'ratification' | 'allocation' | 'policy' | 'tokenomics' | 'deployment' | 'signaling' | 'unclassified';
@@ -93,6 +94,35 @@ export const PROTOCOL_PROFILES: Record<string, Partial<Record<Exclude<DecisionTy
 export function getProtocolProfile(spaceId: string, override?: string): Partial<Record<Exclude<DecisionType, 'unclassified'>, string[]>> | null {
   const key = (override || spaceId).toLowerCase();
   return PROTOCOL_PROFILES[key] || null;
+}
+
+// v0.8 (Task #476): governance-authenticity pre-filter. Detects noise/spam proposals
+// that shouldn't be counted in governance pass-rate statistics. Addresses vigil HB#439
+// Nouns secondary finding (17/21 proposals = test posts, price speculation, non-English).
+const NOISE_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
+  { pattern: /^test\b|\btest proposal\b|^testing\b/i, reason: 'test proposal' },
+  { pattern: /\bcan i\b.*\?/i, reason: 'test/question proposal' },
+  { pattern: /\bprice prediction\b|\bprice of\b.*\?|\bwill.*token.*rise\b|\bwill.*reach\b.*usdt\b/i, reason: 'price speculation' },
+  { pattern: /^[\W\d]*$/, reason: 'empty/non-text title' },
+  { pattern: /\bfantastic news\b|\bthrilling news\b|\bamazing news\b/i, reason: 'airdrop phishing (HB#731 Stakewise pattern)' },
+  { pattern: /\bclaim your\b.*\b(airdrop|reward|bonus)\b/i, reason: 'airdrop phishing' },
+];
+
+export function detectNoise(title: string): { isNoise: boolean; reason?: string } {
+  if (!title || title.trim().length < 3) {
+    return { isNoise: true, reason: 'title too short' };
+  }
+  // Non-ASCII heavy titles (>50% non-ASCII chars): likely non-English or garbage
+  const nonAsciiChars = (title.match(/[^\x00-\x7F]/g) || []).length;
+  if (nonAsciiChars > 0 && nonAsciiChars / title.length > 0.5) {
+    return { isNoise: true, reason: 'non-English or non-ASCII heavy title' };
+  }
+  for (const { pattern, reason } of NOISE_PATTERNS) {
+    if (pattern.test(title)) {
+      return { isNoise: true, reason };
+    }
+  }
+  return { isNoise: false };
 }
 
 function matchKeyword(text: string, keyword: string): boolean {
@@ -198,7 +228,8 @@ export const auditSnapshotHandler = {
     .option('pin', { type: 'boolean', default: false, describe: 'Pin report to IPFS' })
     .option('classify-proposals', { type: 'boolean', default: false, describe: 'Apply Pattern θ v0.4 decision-type classification + weighted-mix pass-rate prediction' })
     .option('protocol-profile', { type: 'string', describe: 'Override auto-detected protocol keyword profile (e.g. opcollective.eth, arbitrumfoundation.eth, morpho.eth)' })
-    .option('no-rule-a-adjustment', { type: 'boolean', default: false, describe: 'Disable Pattern θ v0.9 Rule-A capture-adjustment (top-1 ≥50% override)' }),
+    .option('no-rule-a-adjustment', { type: 'boolean', default: false, describe: 'Disable Pattern θ v0.9 Rule-A capture-adjustment (top-1 ≥50% override)' })
+    .option('no-noise-filter', { type: 'boolean', default: false, describe: 'Disable Pattern θ v0.8 governance-authenticity pre-filter (keep test/spam proposals in classifier counts)' }),
 
   handler: async (argv: ArgumentsCamelCase<AuditSnapshotArgs>) => {
     const spin = output.spinner(`Auditing Snapshot space: ${argv.space}...`);
@@ -324,10 +355,20 @@ export const auditSnapshotHandler = {
         };
         const profile = getProtocolProfile(spaceId, argv.protocolProfile);
         const classified: Array<{ id: string; title: string; category: DecisionType }> = [];
+        const noiseFiltered: Array<{ id: string; title: string; reason: string }> = [];
+        const applyNoiseFilter = !argv.noNoiseFilter;
         for (const p of closed) {
-          const category = classifyProposal(p.title || '', undefined, profile);
+          const title = p.title || '';
+          if (applyNoiseFilter) {
+            const noise = detectNoise(title);
+            if (noise.isNoise) {
+              noiseFiltered.push({ id: p.id, title, reason: noise.reason! });
+              continue; // skip noise — don't count toward classification
+            }
+          }
+          const category = classifyProposal(title, undefined, profile);
           counts[category]++;
-          classified.push({ id: p.id, title: p.title, category });
+          classified.push({ id: p.id, title, category });
         }
         const prediction = weightedMixPrediction(counts);
         const actualPR = closed.length > 0 ? passedCount / closed.length : 0;
@@ -337,10 +378,19 @@ export const auditSnapshotHandler = {
           ? { adjusted: prediction.predictedPassRate, triggered: false, mode: 'disabled' as const }
           : applyRuleAAdjustment(prediction.predictedPassRate, topShares);
         const finalPrediction = ruleA.adjusted;
+        const noiseFraction = closed.length > 0 ? noiseFiltered.length / closed.length : 0;
+        const noiseHeavy = noiseFraction >= 0.3;
         report.patternTheta = {
-          version: 'v0.9',
+          version: 'v1.0',
           protocolProfile: profile ? (argv.protocolProfile || spaceId).toLowerCase() : null,
           decisionTypeCounts: counts,
+          noiseFilter: {
+            applied: applyNoiseFilter,
+            filteredCount: noiseFiltered.length,
+            filteredFraction: parseFloat(noiseFraction.toFixed(3)),
+            noiseHeavy,
+            sampleFiltered: noiseFiltered.slice(0, 5),
+          },
           classifiedFraction: prediction.classifiedFraction,
           lowConfidence,
           pRatification: prediction.pRatification,
@@ -363,6 +413,9 @@ export const auditSnapshotHandler = {
           }),
           ...(ruleA.mode === 'dual-whale-candidate' && {
             dualWhaleNotice: `top-1 + top-2 cumulative ≥50% (dual-whale candidate). Rule-A capture-adjustment NOT applied — coordination must be verified via lockstep-analyzer.js before treating as captured governance.`,
+          }),
+          ...(noiseHeavy && {
+            noiseWarning: `${Math.round(noiseFraction * 100)}% of proposals filtered as noise/spam — space may be a secondary/signaling Snapshot rather than primary governance (vigil HB#439 pattern). Pattern θ classifier was tuned for primary governance.`,
           }),
         };
       }
