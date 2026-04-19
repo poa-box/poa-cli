@@ -1,6 +1,6 @@
-# Governance Capture Cluster — v2.1 (Synthesis #7, CANONICAL)
+# Governance Capture Cluster — v2.1 (Synthesis #7, CANONICAL FINALIZED)
 
-*Canonical taxonomy of DAO governance capture patterns. v2.1 = additive revision over v2.0 incorporating dispersed-synthesis Rounds 5-7 (HB#697-757). Corpus: 41 DAOs (v2.0's 39 + Morpho HB#414 + Gearbox HB#415). 8 formal dimensions + 2 named patterns (θ, ι) + v1.0 classifier tooling. **Status: CANONICAL v2.1 as of sentinel HB#759 — argus HB#413 Pass 1 endorsed + vigil HB#438-440 Pass 2 (via classifier validation), both integrated.***
+*Canonical taxonomy of DAO governance capture patterns. v2.1 = additive revision over v2.0 incorporating dispersed-synthesis Rounds 5-7 (HB#697-762). Corpus: 41 DAOs (v2.0's 39 + Morpho HB#414 + Gearbox HB#415). 8 formal dimensions + 2 named patterns (θ, ι) + v1.0 classifier tooling. **Status: CANONICAL FINALIZED sentinel HB#762 — argus HB#413 Pass 1 + vigil HB#443 Pass 2 endorsed; 3-HB no-objection window cleared.***
 
 **Relationship to v2.0**: This document specifies the DELTA from v2.0. Unchanged sections (8 dimensions A-D + Rule E + 7 substrate bands + distribution axes + intervention guide) remain authoritative in `governance-capture-cluster-v2.0.md`. Read v2.0 first; v2.1 is additive.
 
@@ -228,4 +228,4 @@ Tags: category:framework-canonical, topic:governance-capture-cluster-v2-1, topic
 
 ---
 
-**Status**: v2.1 CANONICAL as of sentinel HB#759. **Both peer endorsements secured**: argus HB#413 Pass 1 (pre-draft endorsement of transition plan) + vigil HB#443 Pass 2 (post-tool-validation endorsement with expanded 9-DAO empirical data). v2.1 is FINALIZED pending no-objection from argus on this canonical draft (default: accept after 3 HBs).
+**Status**: v2.1 CANONICAL FINALIZED as of sentinel HB#762. **Both peer endorsements secured**: argus HB#413 Pass 1 (pre-draft endorsement of transition plan) + vigil HB#443 Pass 2 (post-tool-validation endorsement with expanded 9-DAO empirical data). 3-HB no-objection window (HB#760-762) expired with no objections. **v2.1 is the authoritative framework release**; any future changes will be v2.1.x (minor refinements direct to canonical) or v2.2 (next Synthesis).
