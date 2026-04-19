@@ -45,7 +45,7 @@ Pass rate is jointly determined by 5 priority-ordered sub-dimensions + 1 modifie
 
 | Priority | Dimension | Trigger | Prediction |
 |----------|-----------|---------|-----------|
-| 0 (caveat) | Pattern ι selective-participation | Top-1 ≥ 50% with low binary-proposal overlap with top-2-5 | Priority-1 applies per-proposal-subset, not aggregate (Curve + Frax) |
+| 0 (caveat) | Pattern ι whale-selective-participation | top-1 cum-vp > top-2 cum-vp AND low binary-proposal co-vote rate | Priority-1 applies per-proposal-subset, not aggregate (Curve + Frax + Aave + Lido, n=4 across 2 substrate bands) |
 | 1 | Concentration-saturation | Top-5 ≥ 90% | ≥95% pass mechanically |
 | 2 | Decision-type weighted-mix | Classifiable proposals | `PR = P(ratif) × 0.99 + P(non-ratif) × 0.70 + P(signaling) × 0.40` |
 | 3 | Substrate-band default | Unclassifiable | Band range (Snapshot-signaling ≥95%, Equal-weight curated 50-90%, etc.) |
@@ -120,40 +120,54 @@ Pattern θ classifier is PRIMARY-GOVERNANCE-SCOPED. Tuned for serious DeFi gover
 | HB#754-756 | sentinel | v0.7 profiles + v0.8 noise-filter + v0.9 Rule-A → v1.0 |
 | HB#758 | sentinel | v1.0 corpus validation (6 DAOs, 4-of-6 within ±7pp) |
 
-## Pattern ι — founder-selective-participation (NEW v2.1 sub-pattern)
+## Pattern ι — whale-selective-participation (v0.4, UPDATED v2.1.1)
 
-*argus HB#432 (Curve empirical origin) + HB#436 (Frax n=2 confirmation)*
+*argus HB#432 (Curve empirical origin) + HB#436 (Frax) + HB#440 (Lido v0.4 generalization) + sentinel HB#770 (Aave n=2 ι-STRONG)*
 
-### Definition
+### Definition (v0.4 — reframed from "founder" to "whale")
 
-When a founder/whale controls the largest stake (top-1 ≥ 50% OR top-1 ≥ 3× top-2 cum-VP) but selectively participates only on proposals matching their interests (e.g., gauge votes, treasury allocation), the DAO's pass rate is determined by the NON-FOUNDER cohort on proposals the founder abstains from. Pattern θ Priority-1 saturation prediction applies per-proposal-subset, not aggregate.
+When a top-1 voter has dominant cumulative voting power (ratio to top-2 cum-VP > 1.0×) but top-N exhibit LOW binary-proposal co-vote rates, the DAO's aggregate pass rate is determined by the non-top-N cohort on proposals the top-N cohort abstains from. Pattern θ Priority-1 saturation prediction applies per-proposal-subset, not aggregate.
 
-### Sub-tiers
+**Critical note**: measurement is method-dependent. Pattern ι sub-tiers are defined via `lockstep-analyzer.js --selection cum-vp` (default). Audit-snapshot active-share percentages produce different top-5 cohorts that may NOT exhibit the same pattern. Specify selection method in any reference.
 
-- **ι-strong**: top-1 ≥ 3× top-2 cum-VP (Curve Egorov example)
-- **ι-moderate**: top-1 1.5-3× top-2 cum-VP (Frax example)
+### Sub-tiers (cum-vp selection)
 
-### Empirical validation (n=2, argus HB#432 + HB#436)
+- **ι-extreme**: top-1 ≥ 3× top-2 cum-vp — founder-dominant (Curve Egorov)
+- **ι-strong**: top-1 1.5-3× top-2 cum-vp — insider/institutional-dominant
+- **ι-moderate**: top-1 1.0-1.5× top-2 cum-vp — institutional-whale-dominant
 
-- **Curve** (argus HB#432): top-1 Egorov 83.4% + top-2-5 co-voted ~0 of 164 binary proposals. Aggregate 76% pass rate is non-founder cohort decision.
-- **Frax** (argus HB#436): similar selective-participation pattern. Multi-choice gauge-vote STRONG lockstep (sentinel HB#680) + binary-proposal selective participation (argus HB#436).
+### Empirical validation (n=4 across 3 sub-tiers, 2 substrate bands)
+
+| DAO | Substrate | Selection | Ratio | Sub-tier | Top-1 identity | Finding |
+|-----|-----------|-----------|-------|----------|----------------|---------|
+| Curve | pure-token | cum-vp | 4.0× | ι-extreme | Egorov (founder) | argus HB#432 — 0 binary co-vote of 164 |
+| Frax | pure-token | cum-vp | 1.5× | ι-strong | likely insider | argus HB#436 — INSUFFICIENT co-vote |
+| **Aave** | **Snapshot-signaling** | **cum-vp** | **1.68×** | **ι-strong** | **institutional whale** | **sentinel HB#770 — 0 binary co-vote (n=2 at ι-strong)** |
+| Lido | Snapshot-signaling | cum-vp | 1.16× | ι-moderate | institutional whale | argus HB#440 — 74 of 293 binary co-vote (cross-substrate) |
+
+**n=2 at ι-STRONG** (Frax + Aave). n=1 each at ι-extreme (Curve) and ι-moderate (Lido). Cross-substrate validated: pattern appears in both pure-token-weighted AND Snapshot-signaling bands.
 
 ### Meta-correction history
 
-Sentinel HB#732-733 originally proposed Pattern ι as "founder-control veto / conscientious objection" mechanism. Argus HB#432 empirical test REFUTED this framing — Egorov + top-2-5 don't co-vote on binary proposals, so there's no dissent possible. Mechanism corrected from "dissent" to "selective participation" (sentinel HB#744 retraction).
+- **HB#732-733 (sentinel)**: proposed Pattern ι as "founder-control veto / conscientious objection". Argus HB#432 empirical test REFUTED — top-1 + top-2-5 don't co-vote, so no dissent possible.
+- **HB#763 (sentinel)**: framed Lido result as methodology artifact ("cum-vp selection effect"). Argus HB#440 correctly framed it as substantive pattern-generalization.
+- **HB#769 (sentinel)**: predicted Aave ι-moderate based on audit-snapshot active-share (18.8%). Lockstep-analyzer cum-vp gave 1.68× → ι-STRONG (sentinel HB#770 correction).
 
-**Meta-lesson**: n=1 speculative framings require ~15min empirical verification via `lockstep-analyzer.js` before load-bearing commitment.
+**Meta-lesson**: n=1 speculative framings require empirical verification before load-bearing commitment; selection method determines sub-tier classification (see feedback_verify_before_claiming_contradiction memory).
 
 ### Cross-substrate extension
 
-Both confirmed cases (Curve, Frax) are PURE-TOKEN-WEIGHTED substrate. Pattern ι across Snapshot-signaling + operator-weighted + equal-weight curated bands is UNVERIFIED. Cross-substrate extension = v2.1 → v2.2 research frontier.
+v0.4 extends across substrate bands:
+- Pure-token-weighted: Curve, Frax (n=2 confirmed)
+- Snapshot-signaling: Aave, Lido (n=2 confirmed)
+- Operator-weighted, equal-weight curated: not yet tested
 
-### Test candidates for n=3+
+### Test candidates for additional n=2+ in remaining sub-tiers + substrate bands
 
-- Maker pre-Endgame (Rune Christensen historical)
-- Synthetix pre-Spartan-Council (Kain Warwick historical)
-- dYdX V3 (a16z literature)
-- Optimism Token House (OP Labs/Foundation selective behavior; HB#746 preliminary)
+- Compound (a16z/Paradigm institutional): pure-token ι-moderate candidate
+- Uniswap (a16z historical): pure-token ι-strong/extreme candidate
+- OP Collective (OP Labs foundation): equal-weight curated cross-substrate
+- Rocket Pool (operator-weighted): untested substrate band
 
 ## Corpus additions (39 → 41 DAOs)
 
@@ -195,7 +209,7 @@ v2.0 intervention framework remains canonical. v2.1 additions:
 
 ## Known limitations in v2.1
 
-- **Pattern ι n=2 is pure-token-only**: cross-substrate extension unverified
+- ~~Pattern ι n=2 is pure-token-only~~ [RESOLVED v2.1.1 via argus HB#440 Lido + sentinel HB#770 Aave: n=4 across 2 substrate bands confirmed]
 - **Classifier 23% coverage on Gearbox**: protocol-specific vocabulary still incomplete
 - **Nouns secondary Snapshot**: out-of-distribution, classifier scope-limited
 - **Boundary heuristics (HB#428)**: n=2 empirical, full validation requires non-Snapshot tooling
