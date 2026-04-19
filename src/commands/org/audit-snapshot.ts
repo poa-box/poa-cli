@@ -74,18 +74,28 @@ export function classifyProposal(title: string, body?: string): DecisionType {
 
 export function weightedMixPrediction(
   counts: Record<DecisionType, number>
-): { predictedPassRate: number; pRatification: number; pNonRatification: number } {
+): { predictedPassRate: number; pRatification: number; pNonRatification: number; classifiedFraction: number } {
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  if (total === 0) return { predictedPassRate: 0, pRatification: 0, pNonRatification: 0 };
-  const pRatif = counts.ratification / total;
+  if (total === 0) {
+    return { predictedPassRate: 0, pRatification: 0, pNonRatification: 0, classifiedFraction: 0 };
+  }
+  const classified = total - counts.unclassified;
+  if (classified === 0) {
+    return { predictedPassRate: 0, pRatification: 0, pNonRatification: 0, classifiedFraction: 0 };
+  }
+  // v0.5 (vigil HB#438 fix): compute over classified subset only. Unclassified proposals
+  // are out-of-distribution for the current keyword heuristic (test proposals, non-English,
+  // signaling polls) and would distort the formula if treated as non-ratification.
+  const pRatif = counts.ratification / classified;
   const pNonRatif =
-    (counts.allocation + counts.policy + counts.tokenomics + counts.deployment) / total;
+    (counts.allocation + counts.policy + counts.tokenomics + counts.deployment) / classified;
   // P_RATIF_PASS = 0.99, P_NON_PASS = 0.70 (HB#729 weighted-mix formula).
   const predicted = pRatif * 0.99 + pNonRatif * 0.70;
   return {
     predictedPassRate: parseFloat(predicted.toFixed(3)),
     pRatification: parseFloat(pRatif.toFixed(3)),
     pNonRatification: parseFloat(pNonRatif.toFixed(3)),
+    classifiedFraction: parseFloat((classified / total).toFixed(3)),
   };
 }
 
@@ -236,9 +246,12 @@ export const auditSnapshotHandler = {
         }
         const prediction = weightedMixPrediction(counts);
         const actualPR = closed.length > 0 ? passedCount / closed.length : 0;
+        const lowConfidence = prediction.classifiedFraction < 0.5;
         report.patternTheta = {
-          version: 'v0.4',
+          version: 'v0.5',
           decisionTypeCounts: counts,
+          classifiedFraction: prediction.classifiedFraction,
+          lowConfidence,
           pRatification: prediction.pRatification,
           pNonRatification: prediction.pNonRatification,
           predictedPassRate: prediction.predictedPassRate,
@@ -247,6 +260,9 @@ export const auditSnapshotHandler = {
             ((prediction.predictedPassRate - actualPR) * 100).toFixed(1)
           ),
           sampleClassified: classified.slice(0, 10),
+          ...(lowConfidence && {
+            warning: `Only ${Math.round(prediction.classifiedFraction * 100)}% of proposals classified — prediction may be unreliable for this space (out-of-distribution governance surface per vigil HB#438)`,
+          }),
         };
       }
 

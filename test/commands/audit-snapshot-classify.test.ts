@@ -79,14 +79,29 @@ describe('weightedMixPrediction — Pattern θ v0.4 formula', () => {
     expect(pred.predictedPassRate).toBeCloseTo(0.978, 2);
   });
 
-  it('unclassified proposals are excluded from numerator (treated as neither)', () => {
+  it('v0.5 (vigil HB#438): unclassified proposals excluded from denominator', () => {
     const counts = { ...emptyCounts, ratification: 50, unclassified: 50 };
     const pred = weightedMixPrediction(counts);
-    // P(ratif) = 50/100 = 0.5; P(non) = 0/100 = 0
-    // predicted = 0.5 × 0.99 + 0 × 0.70 = 0.495
-    expect(pred.pRatification).toBe(0.5);
+    // v0.5: classified=50, unclassified=50 → P(ratif) = 50/50 = 1.0
+    // predicted = 1.0 × 0.99 + 0 × 0.70 = 0.99
+    expect(pred.pRatification).toBe(1.0);
     expect(pred.pNonRatification).toBe(0);
-    expect(pred.predictedPassRate).toBeCloseTo(0.495, 2);
+    expect(pred.predictedPassRate).toBeCloseTo(0.99, 2);
+    expect(pred.classifiedFraction).toBe(0.5);
+  });
+
+  it('v0.5: returns zeroes when all proposals unclassified', () => {
+    const counts = { ...emptyCounts, unclassified: 100 };
+    const pred = weightedMixPrediction(counts);
+    expect(pred.predictedPassRate).toBe(0);
+    expect(pred.pRatification).toBe(0);
+    expect(pred.classifiedFraction).toBe(0);
+  });
+
+  it('v0.5: classifiedFraction reflects heuristic coverage', () => {
+    const counts = { ...emptyCounts, ratification: 20, allocation: 10, unclassified: 70 };
+    const pred = weightedMixPrediction(counts);
+    expect(pred.classifiedFraction).toBe(0.3);
   });
 
   it('mixed decision-type DAO produces intermediate prediction', () => {
