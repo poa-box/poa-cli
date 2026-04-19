@@ -154,9 +154,9 @@ Gitcoin (vigil HB#448): top-1/top-2 ratio 2.1× (within ι-strong band) BUT top-
 | Frax | pure-token | cum-vp | 1.5× | ι-strong | likely insider | argus HB#436 — INSUFFICIENT co-vote |
 | Aave | Snapshot-signaling | cum-vp | 1.68× | ι-strong | institutional whale | sentinel HB#770 — 0 binary co-vote |
 | Lido | Snapshot-signaling | cum-vp | 1.16× | ι-moderate | institutional whale | argus HB#440 — 74 of 293 binary co-vote |
-| **Rocket Pool** | **operator-weighted** | **cum-vp** | **1.12×** | **ι-moderate** | **large operator** | **sentinel HB#781 — 1 binary co-vote (n=2 at ι-moderate, 3rd substrate band)** |
+| Rocket Pool | operator-weighted | cum-vp | 1.12× | ι-moderate (pending) | large operator | sentinel HB#781 — 1 of 63 binary co-vote (THIN sample per vigil HB#452) |
 
-**n=2 at ι-STRONG** (Frax + Aave). **n=2 at ι-moderate** (Lido + Rocket Pool). n=1 at ι-extreme (Curve). Cross-substrate validated across **3 substrate bands**: pure-token-weighted, Snapshot-signaling, operator-weighted. Substrate-band insensitivity strengthening.
+**n=2 at ι-STRONG** (Frax + Aave, both ROBUST samples). **n=2 at ι-moderate with mixed evidence**: Lido ROBUST (0/293), Rocket Pool THIN (1/63). n=1 at ι-extreme (Curve 0/164 ROBUST). Cross-substrate extends to **3 substrate bands** (pure-token + Snapshot-signaling + operator-weighted) with the operator-weighted case flagged as pending larger sample. Substrate-band insensitivity hypothesis strengthening but not fully established for operator-weighted band.
 
 ### Meta-correction history
 
