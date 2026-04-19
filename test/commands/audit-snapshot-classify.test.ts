@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyProposal, weightedMixPrediction, getProtocolProfile, PROTOCOL_PROFILES, type DecisionType } from '../../src/commands/org/audit-snapshot';
+import { classifyProposal, weightedMixPrediction, getProtocolProfile, applyRuleAAdjustment, PROTOCOL_PROFILES, type DecisionType } from '../../src/commands/org/audit-snapshot';
 
 describe('classifyProposal — Pattern θ v0.4 decision-type heuristic', () => {
   it('classifies Aave ARFC titles as ratification', () => {
@@ -201,5 +201,62 @@ describe('v0.7 protocol-profiles (Task #475)', () => {
     expect(Object.keys(PROTOCOL_PROFILES)).toContain('gearbox.eth');
     expect(Object.keys(PROTOCOL_PROFILES)).toContain('morpho.eth');
     expect(Object.keys(PROTOCOL_PROFILES)).toContain('uniswapgovernance.eth');
+  });
+});
+
+describe('v0.9 Rule-A capture-adjustment (Task #477)', () => {
+  it('triggers when top-1 ≥50% (single-whale Rule A)', () => {
+    // Gitcoin: top-1 50.1% → Rule A single-whale
+    const base = 0.60; // base weighted-mix prediction (e.g. low ratif-fraction)
+    const result = applyRuleAAdjustment(base, [0.501, 0.299, 0.05]);
+    expect(result.triggered).toBe(true);
+    expect(result.mode).toBe('single-whale');
+    expect(result.adjusted).toBe(0.85); // floor applied
+  });
+
+  it('preserves higher base prediction (floor is MAX, not override)', () => {
+    // Morpho-like: high ratif base already above floor
+    const base = 0.95;
+    const result = applyRuleAAdjustment(base, [0.555]);
+    expect(result.triggered).toBe(true);
+    expect(result.mode).toBe('single-whale');
+    expect(result.adjusted).toBe(0.95); // base preserved, not lowered
+  });
+
+  it('flags dual-whale candidate but does NOT adjust (lockstep verification required)', () => {
+    // ApeCoin-like: top-1 25% + top-2 24% = 49% — still below threshold
+    // But top-1 35% + top-2 25% = 60% → candidate
+    const base = 0.70;
+    const result = applyRuleAAdjustment(base, [0.35, 0.25, 0.10]);
+    expect(result.triggered).toBe(false);
+    expect(result.mode).toBe('dual-whale-candidate');
+    expect(result.adjusted).toBe(0.70); // unchanged
+  });
+
+  it('returns "none" when no Rule A trigger', () => {
+    // Aave-like: top-1 18.8%, top-2 17.2%, cumulative <50%
+    const base = 0.95;
+    const result = applyRuleAAdjustment(base, [0.188, 0.172, 0.139]);
+    expect(result.triggered).toBe(false);
+    expect(result.mode).toBe('none');
+    expect(result.adjusted).toBe(0.95);
+  });
+
+  it('Gitcoin scenario: Rule A floor lifts prediction from ~70% to 85%', () => {
+    // Realistic Gitcoin: grant allocation heavy + 50% top-1 rubber-stamp
+    // Base P(ratif) ~0.1, P(non) ~0.9, P(signal) 0 → base 0.729
+    const baseFromFormula = 0.1 * 0.99 + 0.9 * 0.70;
+    const result = applyRuleAAdjustment(baseFromFormula, [0.501, 0.299]);
+    expect(result.triggered).toBe(true);
+    expect(result.adjusted).toBe(0.85);
+    // Would have been 72.9% without Rule-A adjustment; now 85%
+    // Actual Gitcoin ~96%, so still under-predicts ~11pp but closer than v0.8's -25pp
+  });
+
+  it('empty topShares safely returns "none"', () => {
+    const result = applyRuleAAdjustment(0.8, []);
+    expect(result.triggered).toBe(false);
+    expect(result.mode).toBe('none');
+    expect(result.adjusted).toBe(0.8);
   });
 });

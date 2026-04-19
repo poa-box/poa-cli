@@ -11,6 +11,7 @@ interface AuditSnapshotArgs {
   rpc?: string;
   classifyProposals?: boolean;
   protocolProfile?: string;
+  noRuleAAdjustment?: boolean;
 }
 
 export type DecisionType = 'ratification' | 'allocation' | 'policy' | 'tokenomics' | 'deployment' | 'signaling' | 'unclassified';
@@ -122,6 +123,35 @@ export function classifyProposal(
   return best && best[1] > 0 ? best[0] : 'unclassified';
 }
 
+// v0.9 (Task #477): Rule-A capture-adjustment. When top-1 controls ≥50% of voting power,
+// Rule A rubber-stamp dynamics dominate regardless of decision-type mix. Empirical anchor:
+// Gitcoin 96% at top-1 50.1%, Balancer 94% at top-1 ~50%. Override predicted pass rate to
+// floor of 0.85 in this regime.
+const RULE_A_CAPTURE_FLOOR = 0.85;
+const RULE_A_TOP1_THRESHOLD = 0.50;
+const RULE_A_DUAL_THRESHOLD = 0.50;
+
+export function applyRuleAAdjustment(
+  basePrediction: number,
+  topVoterShares: number[]
+): { adjusted: number; triggered: boolean; mode: 'single-whale' | 'dual-whale-candidate' | 'none' } {
+  const top1 = topVoterShares[0] || 0;
+  const top2 = topVoterShares[1] || 0;
+  if (top1 >= RULE_A_TOP1_THRESHOLD) {
+    return {
+      adjusted: Math.max(basePrediction, RULE_A_CAPTURE_FLOOR),
+      triggered: true,
+      mode: 'single-whale',
+    };
+  }
+  if (top1 + top2 >= RULE_A_DUAL_THRESHOLD) {
+    // Dual-whale candidate: coordination must be verified externally (lockstep-analyzer).
+    // Do not apply floor automatically; surface as candidate for user to verify.
+    return { adjusted: basePrediction, triggered: false, mode: 'dual-whale-candidate' };
+  }
+  return { adjusted: basePrediction, triggered: false, mode: 'none' };
+}
+
 export function weightedMixPrediction(
   counts: Record<DecisionType, number>
 ): { predictedPassRate: number; pRatification: number; pNonRatification: number; pSignaling: number; classifiedFraction: number } {
@@ -167,7 +197,8 @@ export const auditSnapshotHandler = {
     .option('space', { type: 'string', demandOption: true, describe: 'Snapshot space ID (e.g. ens.eth)' })
     .option('pin', { type: 'boolean', default: false, describe: 'Pin report to IPFS' })
     .option('classify-proposals', { type: 'boolean', default: false, describe: 'Apply Pattern θ v0.4 decision-type classification + weighted-mix pass-rate prediction' })
-    .option('protocol-profile', { type: 'string', describe: 'Override auto-detected protocol keyword profile (e.g. opcollective.eth, arbitrumfoundation.eth, morpho.eth)' }),
+    .option('protocol-profile', { type: 'string', describe: 'Override auto-detected protocol keyword profile (e.g. opcollective.eth, arbitrumfoundation.eth, morpho.eth)' })
+    .option('no-rule-a-adjustment', { type: 'boolean', default: false, describe: 'Disable Pattern θ v0.9 Rule-A capture-adjustment (top-1 ≥50% override)' }),
 
   handler: async (argv: ArgumentsCamelCase<AuditSnapshotArgs>) => {
     const spin = output.spinner(`Auditing Snapshot space: ${argv.space}...`);
@@ -301,8 +332,13 @@ export const auditSnapshotHandler = {
         const prediction = weightedMixPrediction(counts);
         const actualPR = closed.length > 0 ? passedCount / closed.length : 0;
         const lowConfidence = prediction.classifiedFraction < 0.5;
+        const topShares = topVoters.map((v: any) => parseFloat(v.share) / 100);
+        const ruleA = argv.noRuleAAdjustment
+          ? { adjusted: prediction.predictedPassRate, triggered: false, mode: 'disabled' as const }
+          : applyRuleAAdjustment(prediction.predictedPassRate, topShares);
+        const finalPrediction = ruleA.adjusted;
         report.patternTheta = {
-          version: 'v0.7',
+          version: 'v0.9',
           protocolProfile: profile ? (argv.protocolProfile || spaceId).toLowerCase() : null,
           decisionTypeCounts: counts,
           classifiedFraction: prediction.classifiedFraction,
@@ -310,14 +346,23 @@ export const auditSnapshotHandler = {
           pRatification: prediction.pRatification,
           pNonRatification: prediction.pNonRatification,
           pSignaling: prediction.pSignaling,
-          predictedPassRate: prediction.predictedPassRate,
+          basePassRate: prediction.predictedPassRate,
+          ruleAAdjustment: {
+            applied: ruleA.triggered,
+            mode: ruleA.mode,
+            floor: RULE_A_CAPTURE_FLOOR,
+          },
+          predictedPassRate: parseFloat(finalPrediction.toFixed(3)),
           actualPassRate: parseFloat(actualPR.toFixed(3)),
           deltaPpPoints: parseFloat(
-            ((prediction.predictedPassRate - actualPR) * 100).toFixed(1)
+            ((finalPrediction - actualPR) * 100).toFixed(1)
           ),
           sampleClassified: classified.slice(0, 10),
           ...(lowConfidence && {
             warning: `Only ${Math.round(prediction.classifiedFraction * 100)}% of proposals classified — prediction may be unreliable for this space (out-of-distribution governance surface per vigil HB#438)`,
+          }),
+          ...(ruleA.mode === 'dual-whale-candidate' && {
+            dualWhaleNotice: `top-1 + top-2 cumulative ≥50% (dual-whale candidate). Rule-A capture-adjustment NOT applied — coordination must be verified via lockstep-analyzer.js before treating as captured governance.`,
           }),
         };
       }
