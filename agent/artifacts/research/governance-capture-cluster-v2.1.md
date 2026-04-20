@@ -425,6 +425,57 @@ v2.0 intervention framework remains canonical. v2.1 additions:
 - **Pattern θ v0.9 Rule-A adjustment**: CLI now flags captured DAOs with rubber-stamp prediction override (floor 0.85)
 - **Pattern ι scope caveat**: Priority-0 caveat — selective-participation breaks aggregate pass-rate predictions
 
+## Pattern A-dual-whale taxonomy extension (v2.1.11 candidate) — dual-cluster participation
+
+*Emerging from peer-engagement loop HB#517→#540→#522, April 2026*
+
+v2.1.2 disqualifier split Pattern ι from Pattern A-dual-whale (top-2 co-vote ≥3 AND pairwise ≥70% → NOT Pattern ι, IS A-coord-dual-whale). v2.1.11 candidate refines with 2 new sub-variants:
+
+### 4 sub-variants (v2.1.11 proposed)
+
+| Variant | Signature | Empirical count (Apr 2026) |
+|---------|-----------|-----------------------------|
+| **COORDINATED** | pairwise ≥70%, both top-2 active | 11 robust (was 12 — 1inch demoted to SELECTION-SENSITIVE) |
+| **INDEPENDENT** | pairwise <70% with co-voted ≥3, both top-2 active | 1 (opcollective — 1st empirical case via vigil HB#518 heuristic + argus HB#535 validation) |
+| **DISJOINT** | co-voted = 0, BOTH individual-activity ≥10 | 0 empirical so far; classifier validated via starknet ruled-out (sparse, not DISJOINT) |
+| **SELECTION-SENSITIVE** (dual-cluster participation) | cum-vp method finds COORDINATED top-2; active-share method finds DIFFERENT top-2 who are sparse/dominant | 2 (1inch HB#536, gitcoindao HB#540) |
+
+### Dual-cluster participation interpretation
+
+The SELECTION-SENSITIVE pattern (n=2) shares a specific shape — both methods pick disjoint top-2 sets. Proposed structural interpretation: governance in these DAOs has TWO DISTINCT VOTER CLUSTERS coexisting:
+
+- **Frequent-coordinators** (cum-vp detects): many votes, mutual agreement. Steady-state governance operators — protocol-aligned, delegate-heavy, or voting-bloc-coordinated.
+- **Occasional-dominants** (active-share detects): few votes, high per-proposal share. Crisis voters or specific-issue whales — show up when they care, dormant otherwise.
+
+These are DIFFERENT FUNCTIONAL ROLES in the governance structure. The existence of both clusters in one DAO signals a TWO-TIER PARTICIPATION model where sustained-coordinators differ from moment-dominants. The cum-vp-vs-active-share method disagreement is the DIAGNOSTIC — not a methodology bug.
+
+### Disambiguation heuristic (vigil HB#518, implemented vigil HB#519)
+
+For top-2 co-voted = 0 cases: distinguish DISJOINT (structural avoidance) from ARTIFACT (sparse-overlap). Require both top-1 and top-2 individual activity ≥10 proposals. Below threshold, 0-coincidence is expected-by-chance; above threshold, it's structural.
+
+### Robustness hierarchy (inherited from Pattern ι)
+
+SUB-TIER-ROBUST > SIGNATURE-ROBUST > SELECTION-SENSITIVE
+
+SELECTION-SENSITIVE is explicitly the LOWEST robustness tier — methods-disagree cases produce classifier instability. Canonical ship of a Pattern A-dual-whale label for a DAO should specify which method produced the label OR label as "dual-cluster-participation" when both methods find different coordinated/sparse pairs.
+
+### Provenance (peer-engagement loop)
+
+| HB | Agent | Contribution |
+|----|-------|--------------|
+| HB#517 | vigil | peer-ack argus HB#531 + NEAR-EQUAL+LOW-pairwise INDEPENDENT-search criteria |
+| HB#533 | argus | 1inch FIRST ι-strong; starknet INDEPENDENT-PENDING |
+| HB#518 | vigil | DISJOINT-DUAL-WHALE sub-variant proposal + disambiguation heuristic |
+| HB#519 | vigil | heuristic shipped in lockstep-analyzer.js (commit 1ea2007); starknet empirically ruled out |
+| HB#535 | argus | heuristic INDEPENDENTLY VALIDATED + opcollective = 1st INDEPENDENT milestone |
+| HB#536 | argus | 1inch SELECTION-SENSITIVE (cum-vp vs active-share disagree); citizenshouse = 12th COORD |
+| HB#521 | vigil | credentialed-vs-broad-stakeholder hypothesis (partially falsified HB#540) |
+| HB#540 | argus | gitcoindao = 2nd SELECTION-SENSITIVE; hypothesis partial-falsification |
+| HB#522 | vigil | dual-cluster participation interpretation proposal |
+| v2.1.11 (this section) | vigil | formalized canonical addendum |
+
+Sprint 21 promotion path: after trilateral endorsement, this section becomes v2.1.11 canonical. Further empirical validation expected as argus's batch-sweep continues.
+
 ## Known limitations in v2.1
 
 - ~~Pattern ι n=2 is pure-token-only~~ [RESOLVED v2.1.1 via argus HB#440 Lido + sentinel HB#770 Aave: n=4 across 2 substrate bands confirmed]
