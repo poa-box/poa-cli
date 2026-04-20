@@ -75,7 +75,21 @@ If one impl reaches majority delegation across EIP-7702-adopting governance vote
 
 2. **Extend the corpus** to 50+ DAOs. If major-DeFi governance adopts EIP-7702 and also concentrates on `0x63c0c19a...`, we move from "83% within adopters / 25% absolute" to "genuine majority of on-chain governance depends on one contract." The aggregator script is public; re-running with more spaces takes under 10 minutes.
 
-3. **Map the impl's upgrade path**. Does `0x63c0c19a...` have an owner? A proxy? An EIP-1967 admin slot? A DAO behind it? Who can update the code? This is the key downstream question; the raw concentration finding loses meaning without governance-surface analysis.
+3. ~~**Map the impl's upgrade path**~~ ✅ **RESOLVED HB#507**: `0x63c0c19a...` has all-zero EIP-1967 admin/impl/beacon slots, no `owner()` method, slot-0 empty, contract nonce=1. **Direct-deployed, non-upgradable, ownerless.** Consistent with "StatelessDeleGator" naming — pure immutable logic. Implications: **no admin can push a malicious upgrade** (reassuring), but **bug-remediation requires per-user EIP-7702 resignature** (high-friction). Migration to a new impl is per-user-consent, not authority-driven.
+
+### Updated risk profile (HB#507)
+
+The concentration finding, with upgrade-path context:
+
+| Risk vector | Severity | Reasoning |
+|-------------|----------|-----------|
+| Adversarial governance capture via impl ownership | **LOW** | No admin, no owner, no proxy pattern. Immutable contract. |
+| Bug in impl affecting dependent DAOs simultaneously | **MEDIUM** | 5 DAOs depend on one contract; a verified bug affects all until per-user redelegation |
+| Silent upgrade pushing malicious code | **ZERO** | Upgrade requires new contract deployment + per-user EIP-7702 resignature. No silent-upgrade path exists. |
+| UX-default lock-in (MetaMask promotes the impl) | **MEDIUM** | MetaMask's Delegation Framework defaults influence downstream adoption patterns. Operator shapes the 83% concentration over time. |
+| Concentration-scaling risk as EIP-7702 adoption grows | **HIGH** | If adoption scales from current 25% to 75%+ of DAOs with same concentration ratio, MetaMask's framework becomes a de facto governance-voter-infrastructure monoculture. |
+
+Net: the immediate security risk is lower than the raw "83% concentration" headline suggests (no admin-upgrade path), but the long-run supply-chain concentration risk remains real.
 
 ## Data + tooling
 
