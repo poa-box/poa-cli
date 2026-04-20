@@ -297,17 +297,27 @@ async function main() {
   let patternSummary = 'n/a';
   const metric0 = selection === 'active-share' ? topVoters[0].avgShare : topVoters[0].cumulativeVP;
   const metric1 = topVoters.length >= 2 ? (selection === 'active-share' ? topVoters[1].avgShare : topVoters[1].cumulativeVP) : null;
+  // HB#523 active-share saturation detection (per HB#499/521 methodology insight):
+  // when top-1+top-2 both have avgShare > 0.95, active-share metric mechanically
+  // produces ratio ~1.00× regardless of true cum-vp dominance. Sub-tier band
+  // assignment under active-share is then a methodology artifact, not population truth.
+  // Detected cases empirically: stakewise (HB#496), gnosis (HB#499), ApeCoin (HB#502),
+  // fei.eth (HB#521) — all ι-strong cum-vp → ι-moderate active-share via this artifact.
+  const isActiveShareSaturated = selection === 'active-share' && metric0 > 0.95 && metric1 > 0.95;
   if (metric0 && metric1) {
     const ratio = metric0 / metric1;
     const subTier = ratio >= 3 ? 'ι-extreme' : ratio >= 1.5 ? 'ι-strong' : ratio >= 1.0 ? 'ι-moderate' : 'no-dominance';
+    const saturationCaveat = isActiveShareSaturated
+      ? ` ⚠ ACTIVE-SHARE SATURATION (top-1+top-2 both avgShare>0.95): sub-tier band ${subTier} is methodology artifact; cum-vp re-test recommended for true sub-tier`
+      : '';
     if (subTier === 'no-dominance') {
-      patternSummary = `ratio ${ratio.toFixed(2)}× — top-1 NOT dominant; neither Pattern ι nor dual-whale`;
+      patternSummary = `ratio ${ratio.toFixed(2)}× — top-1 NOT dominant; neither Pattern ι nor dual-whale${saturationCaveat}`;
     } else if (top2.coVoted < 3) {
-      patternSummary = `ratio ${ratio.toFixed(2)}× (${subTier} band) + top-2 co-vote INSUFFICIENT (${top2.coVoted}) → Pattern ι candidate (PENDING larger sample per v2.1.3 caveat)`;
+      patternSummary = `ratio ${ratio.toFixed(2)}× (${subTier} band) + top-2 co-vote INSUFFICIENT (${top2.coVoted}) → Pattern ι candidate (PENDING larger sample per v2.1.3 caveat)${saturationCaveat}`;
     } else if (top2PairwiseRate >= 0.70) {
-      patternSummary = `ratio ${ratio.toFixed(2)}× (${subTier} band) + top-2 pairwise ${(top2PairwiseRate * 100).toFixed(0)}% ≥ 70% → COORDINATED DUAL-WHALE (per v2.1.2 disqualifier — NOT Pattern ι)`;
+      patternSummary = `ratio ${ratio.toFixed(2)}× (${subTier} band) + top-2 pairwise ${(top2PairwiseRate * 100).toFixed(0)}% ≥ 70% → COORDINATED DUAL-WHALE (per v2.1.2 disqualifier — NOT Pattern ι)${saturationCaveat}`;
     } else {
-      patternSummary = `ratio ${ratio.toFixed(2)}× (${subTier} band) + top-2 pairwise ${(top2PairwiseRate * 100).toFixed(0)}% < 70% → Pattern ι ${subTier} (co-vote LOW)`;
+      patternSummary = `ratio ${ratio.toFixed(2)}× (${subTier} band) + top-2 pairwise ${(top2PairwiseRate * 100).toFixed(0)}% < 70% → Pattern ι ${subTier} (co-vote LOW)${saturationCaveat}`;
     }
   }
   console.log(`\n=== Pattern ι vs dual-whale (v1.3-prototype per vigil HB#459) ===`);
