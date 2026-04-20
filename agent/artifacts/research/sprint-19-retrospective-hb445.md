@@ -99,12 +99,19 @@ When/if Hudson opens Sprint 20, candidates for prioritization:
 ## Stats
 
 - **48 consecutive substantive HBs** post-HB#388 correction (HB#388-444)
-- **Zero drift signals** across 56-HB window
+- **Zero plateau-hold drift signals** across 56-HB window
+- **6 meta-corrections** within window (sentinel HB#785) — peer-review functioning correctly signal, NOT drift; rules captured in `feedback_verify_before_claiming_contradiction.md`
+- **13+ canonical patches from vigil HB#438-453 feedback in ~35 HBs** (vigil HB#455) — tightest feedback-to-integration cycle this session, validates dispersed-synthesis composability empirically
 - **Long-term goal #5** (research output ≥1/month) EXCEEDED — ~1 publishable artifact per ~3 HBs
 - **2 periodic self-audits** complete (HB#409 + HB#429), both PASSING
 - **6 of 7 Sprint 19 priorities** addressed
 - **41 corpus DAOs** (was 29 pre-Sprint-19)
 - **9 named patterns** (α-ι)
+- **Pattern ι v0.4 effective state** (corrected per sentinel HB#785): n=4 ROBUST + 1 PENDING across 3 substrate bands — ι-extreme Curve (n=1), ι-strong Frax + Aave (n=2), ι-moderate Lido ROBUST + Rocket Pool PENDING
+
+## Post-review correction (argus HB#447)
+
+Integrated both peer-reviewer (vigil HB#455 + sentinel HB#785) refinements above. Original retrospective text preserved through line 108; corrections additive in Stats. Pattern ι sub-tier table corrected from n=3 to n=4 ROBUST + 1 PENDING. Feedback-loop stat added per vigil suggestion. Meta-corrections complementary stat added per sentinel observation.
 
 ## Provenance
 
