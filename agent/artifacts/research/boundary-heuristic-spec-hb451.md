@@ -47,16 +47,52 @@ BS_cohort(DAO) = 1 - min(abs(N - 15), abs(N - 50)) / max_window
 
 where max_window = 17.5 (half-distance between thresholds). DAOs at N=15 or N=50 → BS_cohort = 1; DAOs deep inside a regime (N=5, N=30, N=100) → BS_cohort = 0.
 
-### Sub-score 3: Capture-dimension overlap (BS_dimension)
+### Sub-score 3: Capture-dimension overlap (BS_dimension) — REVISED HB#454
 
-For each DAO, count how many of the 8 capture dimensions (A, A-dual, B1, B2e, B2d, B3, C, D, E-direct, E-proxy, ι) the DAO partially satisfies:
+**Original v0.1 (HB#451) flaw**: counted PARTIAL dimension membership (≥50% but <100%). This systematically misses the empirically interesting case where a DAO is FULLY in 2+ dimensions — the actual "boundary" case in Synthesis #6 Pattern η.
+
+**Revised v0.2 (HB#454)**: count FULL dimension memberships:
 
 ```
-overlap_count(DAO) = number of dimensions where DAO meets ≥50% but <100% threshold
-BS_dimension(DAO) = overlap_count / 8
+full_membership_count(DAO) = number of dimensions where DAO meets 100% threshold
+BS_dimension(DAO) = max(0, full_membership_count - 1) / 7
 ```
 
-DAO solidly in one dimension only: BS_dimension = 0. DAO straddling 2-3 dimensions: BS_dimension = 0.25-0.375.
+DAO solidly in 1 dimension only: BS_dimension = 0. DAO in 2 dimensions (e.g., A+ι): BS_dimension = 1/7 ≈ 0.143. DAO in 3 dimensions (e.g., A+B2e+ι): BS_dimension = 2/7 ≈ 0.286.
+
+Subtract 1 because all DAOs satisfy ≥1 dimension (D anti-cluster is implicit floor); the boundary signal is multi-cluster overlap NOT mere classification.
+
+### Worked example: Curve (pure-token, ι-extreme)
+
+Per HB#432 audit + Synthesis #6 framework:
+- A (single-whale): top-1 = 83.4% ≥ 50% → FULL membership
+- ι (whale-selective): ratio 4.0× ι-extreme → FULL membership
+- C (Gini ceiling): Gini ≈ 0.85 (pure-token band typical) → arguably FULL (depends on threshold for "ceiling" — 0.80 in v2.1 spec)
+- A-dual: top-2 << top-1 → NO
+- B1, B2e, B2d, B3: not flagged in HB#432 → NO
+- D (anti-cluster): top-1 dominance disqualifies → NO
+- E-direct (lockstep): top-2 INSUFFICIENT-DATA per v2.1.2 disqualifier → NO
+
+**Curve full_membership_count = 2-3** (A + ι confirmed; C borderline)
+- BS_dimension(Curve) = max(0, 3-1) / 7 = 2/7 ≈ 0.286 (high estimate)
+- BS_dimension(Curve) = max(0, 2-1) / 7 = 1/7 ≈ 0.143 (conservative)
+
+Combined with BS_cohort (Curve N=large, far from regime thresholds → ~0.05) and BS_substrate (Curve at pure-token band centroid ~ medium → ~0.3):
+- BS_total(Curve) = 1/3 × 0.3 + 1/3 × 0.05 + 1/3 × 0.143 = 0.164 (conservative)
+- BS_total(Curve) = 1/3 × 0.3 + 1/3 × 0.05 + 1/3 × 0.286 = 0.212 (high)
+
+**Validation check vs HB#451 expected**: original spec expected Curve "HIGH (~0.5+)". Computed BS_total = 0.16-0.21. **Below expectation.**
+
+### Implication: weights need recalibration
+
+The 1/3 equal weights underweight the dimension-overlap signal. If Pattern η (cluster-straddling) is the most empirically meaningful boundary, BS_dimension deserves higher weight. Proposed v0.3:
+- w_dimension = 0.5 (primary boundary signal per Synthesis #6 Pattern η)
+- w_substrate = 0.3 (Pattern ε signal)
+- w_cohort = 0.2 (Pattern ζ signal)
+
+Recomputed Curve: BS_total = 0.5 × 0.286 + 0.3 × 0.3 + 0.2 × 0.05 = 0.243 (high estimate). Still LOW vs original "HIGH 0.5+" expectation.
+
+**Conclusion from worked example**: either (a) original expected-BS table was over-optimistic, or (b) the BS_dimension max-cap of 7 is too high (most DAOs cap at 3-4 dimensions max → divide by 4 not 7), or (c) the formula needs additional component (e.g., capture-cluster TYPE distance, not just count). Worked example reveals the framework requires further iteration before empirical 5-DAO validation.
 
 ## Prototype 5-DAO computation (methodology only, no values)
 
