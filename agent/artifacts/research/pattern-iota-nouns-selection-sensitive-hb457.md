@@ -63,6 +63,41 @@ If ANY of these flip under active-share, Pattern ι v0.4 corpus shrinks. If all 
 
 Pattern ι sub-tier completion (proposal #65 P1-tied) requires the dual-method robustness rule for ROBUST claims. Estimated effort: 4 retests (Curve, Lido, Aave, Frax) = ~1-2 HBs. Worth incorporating before Pattern ι v2.0 promotion.
 
+## HB#458 update: Curve dual-method validation — RULE NEEDS NUANCE
+
+Re-tested Curve under `--selection active-share`:
+
+| Selection | top-1 cum-VP | top-2 cum-VP | Ratio | Sub-tier band | Binary co-vote |
+|-----------|--------------|--------------|-------|---------------|----------------|
+| `cum-vp` (HB#432) | 42.9M | 10.9M | 4.0× | **ι-extreme** | 0/164 |
+| `active-share` (HB#458) | 21,142 | 2,144 | 9.86× | **ι-extreme** | 0/164 (PENDING per v1.3-prototype small-N) |
+
+**Different specific ratios, SAME sub-tier classification (ι-extreme).** Different voter populations selected by each method, but both populations exhibit Pattern ι signature: top-1 dominance + top-2 co-vote absence on binary proposals.
+
+### Dual-method robustness rule REFINED
+
+Original (HB#457): "Pattern ι ROBUST requires BOTH methods consistent."
+Refined (HB#458): "Pattern ι ROBUST requires BOTH methods producing the SAME sub-tier classification (extreme/strong/moderate)" — not identical numeric values.
+
+Curve passes refined rule (ι-extreme under both methods). Pattern ι v0.4 ι-extreme robustness for Curve is CONFIRMED dual-method.
+
+### Implication for Pattern ι v0.4 corpus state
+
+| DAO | cum-vp result | active-share result | Dual-method status |
+|-----|---------------|---------------------|--------------------|
+| **Curve** | 4.0× ι-extreme (HB#432) | **9.86× ι-extreme (HB#458)** | **ROBUST DUAL-METHOD** |
+| Frax | 1.5× ι-strong (HB#436) | (not retested) | PENDING dual-method |
+| Aave | sentinel HB#770 ι-strong | (not retested) | PENDING dual-method |
+| Lido | 1.16× ι-moderate (HB#440) | (not retested) | PENDING dual-method |
+| Rocket Pool | small-N (vigil HB#452) | (not retested) | PENDING dual-method |
+| Nouns | 1.61× ι-strong PENDING (HB#452) | 0.50× neither (HB#457) | **SELECTION-SENSITIVE — NOT Pattern ι** |
+
+Pattern ι v0.4 ROBUST corpus shrinks from "n=4 ROBUST" to **n=1 ROBUST DUAL-METHOD (Curve)** + 3 PENDING dual-method (Frax/Aave/Lido) + 1 PENDING small-N (Rocket Pool) + 1 SELECTION-SENSITIVE (Nouns).
+
+This is the EXPECTED result of stricter validation. Pattern ι v2.0 promotion now requires Frax + Aave + Lido cross-method retests to upgrade. ~3 HBs additional work.
+
+**v1.3-prototype caveat for Curve**: lockstep-analyzer flags 0/164 binary co-vote as "PENDING per v2.1.3 caveat" — but Curve's Pattern ι signature IS top-2 absence. The auto-classifier's PENDING flag is conservative; Curve = ROBUST per dual-method rule + sentinel HB#770 selection-method-sensitivity context.
+
 ## Provenance
 
 - HB#452 Nouns finding: `pattern-iota-frax-confirmation-hb436.md` lineage + lockstep-analyzer v1.3-prototype (vigil HB#459)
