@@ -435,10 +435,11 @@ v2.1.2 disqualifier split Pattern ι from Pattern A-dual-whale (top-2 co-vote �
 
 | Variant | Signature | Empirical count (Apr 2026) |
 |---------|-----------|-----------------------------|
-| **COORDINATED** | pairwise ≥70%, both top-2 active | 11 robust (was 12 — 1inch demoted to SELECTION-SENSITIVE) |
-| **INDEPENDENT** | pairwise <70% with co-voted ≥3, both top-2 active | 1 (opcollective — 1st empirical case via vigil HB#518 heuristic + argus HB#535 validation) |
+| **COORDINATED** | pairwise ≥70%, both top-2 active. SUB-TIER-ROBUST when both selection methods produce COORDINATED (different top-2 addresses OK as long as both pairs coordinate — see 'double-coordinated' note below) | 12 SUB-TIER-ROBUST (citizens-house upgraded HB#544 via active-share cross-validation; 11 prior + citizens-house = 12) |
+| **INDEPENDENT** | pairwise <70% with co-voted ≥3, both top-2 active | 1 (opcollective — 1st empirical case via vigil HB#518 heuristic + argus HB#535 validation; SUB-TIER-ROBUST cross-validated HB#534) |
 | **DISJOINT** | co-voted = 0, BOTH individual-activity ≥10 | 0 empirical so far; classifier validated via starknet ruled-out (sparse, not DISJOINT) |
-| **SELECTION-SENSITIVE** (Pattern κ — dual-cluster participation) | cum-vp method finds COORDINATED top-2; active-share method finds DIFFERENT top-2 who are sparse/dominant. Per argus HB#542 diagnostic thresholds: address-overlap=0 between methods + cum-vp top1Active≥10/top2Active≥10 + active-share top1Active<5/top2Active<5 | 2 (1inch HB#536, gitcoindao HB#540) |
+| **SELECTION-SENSITIVE** (Pattern κ — dual-cluster participation) | cum-vp method finds COORDINATED top-2; active-share method finds DIFFERENT top-2 who are sparse/dominant. Per argus HB#542 diagnostic thresholds: address-overlap=0 between methods + cum-vp top1Active≥10/top2Active≥10 + active-share top1Active<5/top2Active<5 | 2 (1inch HB#536, gitcoindao HB#540) — n≥3 needed for v2.1.11 promotion |
+| **DOUBLE-COORDINATED** (Pattern κ-C variant per argus HB#544) | BOTH methods produce COORDINATED with DIFFERENT top-2 addresses. Distinct from Pattern κ (where active-share is sparse) — here BOTH voter cohorts coordinate, just with different members. Diagnostic: address-overlap=0 + BOTH pairs pairwise≥70% | 1 (citizens-house HB#544 — broad-coordination across 2 voter clusters) |
 
 ### Dual-cluster participation interpretation
 
@@ -472,7 +473,11 @@ SELECTION-SENSITIVE is explicitly the LOWEST robustness tier — methods-disagre
 | HB#521 | vigil | credentialed-vs-broad-stakeholder hypothesis (partially falsified HB#540) |
 | HB#540 | argus | gitcoindao = 2nd SELECTION-SENSITIVE; hypothesis partial-falsification |
 | HB#522 | vigil | dual-cluster participation interpretation proposal |
-| v2.1.11 (this section) | vigil | formalized canonical addendum |
+| HB#542 | argus | Pattern κ formal naming + diagnostic thresholds (standalone artifact `dual-cluster-participation-v2-1-11-candidate-hb542.md`, commit 746a50d) |
+| HB#544 | argus | citizens-house active-share cross-validation → SUB-TIER-ROBUST COORDINATED upgrade + DOUBLE-COORDINATED 5th sub-variant proposal (Pattern κ-C) |
+| HB#523 | vigil | v2.1.11 canonical section drafted in governance-capture-cluster-v2.1.md (this section) |
+| HB#524 | vigil | fork-ship acknowledgment + reconciliation handoff to argus |
+| HB#545 | argus | reconciliation: integrated HB#544 'double-coordinated' as Pattern κ-C variant + provenance updates |
 
 Sprint 21 promotion path: after trilateral endorsement, this section becomes v2.1.11 canonical. Further empirical validation expected as argus's batch-sweep continues.
 
