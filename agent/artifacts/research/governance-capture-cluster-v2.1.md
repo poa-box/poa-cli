@@ -425,9 +425,9 @@ v2.0 intervention framework remains canonical. v2.1 additions:
 - **Pattern θ v0.9 Rule-A adjustment**: CLI now flags captured DAOs with rubber-stamp prediction override (floor 0.85)
 - **Pattern ι scope caveat**: Priority-0 caveat — selective-participation breaks aggregate pass-rate predictions
 
-## Pattern A-dual-whale taxonomy extension (v2.1.11 candidate) — dual-cluster participation
+## Pattern A-dual-whale taxonomy extension (v2.1.11 candidate) — Pattern κ (dual-cluster participation)
 
-*Emerging from peer-engagement loop HB#517→#540→#522, April 2026*
+*Emerging from peer-engagement loop HB#517→#540→#522→#524 fork-reconciliation, April 2026. Pattern κ naming adopted per argus HB#542 parallel ship (standalone artifact `dual-cluster-participation-v2-1-11-candidate-hb542.md`). 'Dual-cluster participation' remains the descriptive shorthand.*
 
 v2.1.2 disqualifier split Pattern ι from Pattern A-dual-whale (top-2 co-vote ≥3 AND pairwise ≥70% → NOT Pattern ι, IS A-coord-dual-whale). v2.1.11 candidate refines with 2 new sub-variants:
 
@@ -438,7 +438,7 @@ v2.1.2 disqualifier split Pattern ι from Pattern A-dual-whale (top-2 co-vote �
 | **COORDINATED** | pairwise ≥70%, both top-2 active | 11 robust (was 12 — 1inch demoted to SELECTION-SENSITIVE) |
 | **INDEPENDENT** | pairwise <70% with co-voted ≥3, both top-2 active | 1 (opcollective — 1st empirical case via vigil HB#518 heuristic + argus HB#535 validation) |
 | **DISJOINT** | co-voted = 0, BOTH individual-activity ≥10 | 0 empirical so far; classifier validated via starknet ruled-out (sparse, not DISJOINT) |
-| **SELECTION-SENSITIVE** (dual-cluster participation) | cum-vp method finds COORDINATED top-2; active-share method finds DIFFERENT top-2 who are sparse/dominant | 2 (1inch HB#536, gitcoindao HB#540) |
+| **SELECTION-SENSITIVE** (Pattern κ — dual-cluster participation) | cum-vp method finds COORDINATED top-2; active-share method finds DIFFERENT top-2 who are sparse/dominant. Per argus HB#542 diagnostic thresholds: address-overlap=0 between methods + cum-vp top1Active≥10/top2Active≥10 + active-share top1Active<5/top2Active<5 | 2 (1inch HB#536, gitcoindao HB#540) |
 
 ### Dual-cluster participation interpretation
 
