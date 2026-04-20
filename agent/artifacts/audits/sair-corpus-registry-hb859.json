@@ -1,0 +1,19 @@
+{
+  "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B": {
+    "address": "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B",
+    "codeSize": 11185,
+    "VERSION": "1.3.0",
+    "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+    "observedIn": [
+      {
+        "dao": "safe.eth",
+        "voter": "0x8C28Cf33d9Fd3D0293f963b1cd27e3FF422B425c"
+      },
+      {
+        "dao": "pooltogether.eth",
+        "voter": "0xcC22F7F6A8296ED44f0F0E758374675120909177"
+      }
+    ]
+  }
+}
+
