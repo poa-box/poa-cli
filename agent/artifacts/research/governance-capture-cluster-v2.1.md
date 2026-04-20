@@ -432,6 +432,7 @@ v2.0 intervention framework remains canonical. v2.1 additions:
 - **Nouns secondary Snapshot**: out-of-distribution, classifier scope-limited
 - **Boundary heuristics (HB#428)**: n=2 empirical, full validation requires non-Snapshot tooling
 - **Dual-whale lockstep verification**: CLI flags candidates but requires external `lockstep-analyzer.js` run to confirm
+- **Corpus provenance — voter-set drift** (vigil HB#490 brain lesson `snapshot-top-n-voters-are-time-windowed-not-stable`): audit-proxy-factory top-N voter discovery uses a rolling 100-proposal window, so re-runs on high-frequency-governance spaces (safe.eth, pooltogether.eth) can produce different voter-sets than the original measurement. **Corpus entries should record the specific Snapshot proposal IDs used**, reproducible via `--proposals id1,id2,id3` (vigil HB#492 CLI flag). Historical HB#837 entries predate this flag; re-runs against the same absolute proposal set now possible.
 
 ## Rotation provenance (v2.0 → v2.1)
 
