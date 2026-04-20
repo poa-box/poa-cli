@@ -65,6 +65,7 @@ interface AuditProxyFactoryArgs {
   governanceToken?: string;
   governanceTokenChain?: number;
   governanceTokenRpc?: string;
+  proposals?: string;
 }
 
 /**
@@ -204,18 +205,34 @@ async function snapshotGraphQL(
  * Fetch top-N voters from a Snapshot space via GraphQL.
  * Returns voter addresses sorted by voting-power participation.
  *
- * Uses last 100 proposals as voter discovery window.
+ * Default discovery window: last 100 closed proposals.
+ * HB#492: `explicitProposals` arg pins the voter-set to a specific proposal list
+ * for reproducible re-runs (addresses HB#490 brain-lesson on time-windowed drift).
  */
-async function fetchSnapshotTopVoters(space: string, topN: number, verbose = false): Promise<string[]> {
-  const query = `
-    query($space: String!) {
-      proposals(where: {space: $space, state: "closed"}, first: 100, orderBy: "created", orderDirection: desc) {
-        id
-      }
+async function fetchSnapshotTopVoters(
+  space: string,
+  topN: number,
+  verbose = false,
+  explicitProposals?: string[],
+): Promise<string[]> {
+  let proposalIds: string[];
+  if (explicitProposals && explicitProposals.length > 0) {
+    proposalIds = explicitProposals;
+    if (verbose) {
+      // eslint-disable-next-line no-console
+      console.warn(`  [snapshot] using ${proposalIds.length} explicit proposal IDs (bypasses last-100 discovery)`);
     }
-  `;
-  const propJson = await snapshotGraphQL(query, { space }, verbose);
-  const proposalIds = (propJson.data?.proposals || []).map((p: any) => p.id);
+  } else {
+    const query = `
+      query($space: String!) {
+        proposals(where: {space: $space, state: "closed"}, first: 100, orderBy: "created", orderDirection: desc) {
+          id
+        }
+      }
+    `;
+    const propJson = await snapshotGraphQL(query, { space }, verbose);
+    proposalIds = (propJson.data?.proposals || []).map((p: any) => p.id);
+  }
   if (proposalIds.length === 0) return [];
 
   const votesQuery = `
@@ -420,6 +437,10 @@ export const auditProxyFactoryHandler = {
         type: 'string',
         describe: 'RPC URL override for --governance-token-chain (optional, falls back to resolved config).',
       })
+      .option('proposals', {
+        type: 'string',
+        describe: 'Optional comma-separated Snapshot proposal IDs to pin voter discovery. Bypasses the default last-100-closed window. Addresses HB#490 time-windowed-voter-drift (see brain lesson snapshot-top-n-voters-are-time-windowed).',
+      })
       .check((argv) => {
         if (!argv.address && !argv.space && !argv.voters) {
           throw new Error('Must provide --address, --space, or --voters');
@@ -457,19 +478,30 @@ export const auditProxyFactoryHandler = {
         voterAddresses = argv.voters.split(',').map((a) => a.trim()).filter(Boolean);
         discoverySource = 'explicit';
       } else if (argv.space) {
-        spin.text = `Fetching top-5 voters for Snapshot space ${argv.space}...`;
-        voterAddresses = await fetchSnapshotTopVoters(argv.space, 5, argv.verbose === true);
-        discoverySource = `snapshot:${argv.space}`;
-        if (voterAddresses.length === 0) {
+        // HB#492: --proposals pins voter discovery to an explicit proposal set
+        // (addresses HB#490 brain-lesson on time-windowed voter drift).
+        const explicitProposals = argv.proposals
+          ? (argv.proposals as string).split(',').map((p) => p.trim()).filter(Boolean)
+          : undefined;
+        spin.text = explicitProposals
+          ? `Fetching top-5 voters for ${argv.space} across ${explicitProposals.length} explicit proposals...`
+          : `Fetching top-5 voters for Snapshot space ${argv.space}...`;
+        voterAddresses = await fetchSnapshotTopVoters(argv.space, 5, argv.verbose === true, explicitProposals);
+        discoverySource = explicitProposals
+          ? `snapshot:${argv.space}@proposals(${explicitProposals.length})`
+          : `snapshot:${argv.space}`;
+        if (voterAddresses.length === 0 && !explicitProposals) {
           // retro-839 change-5: empty result can be a cache-miss race on re-runs.
           // Wait 2s and retry once before declaring the space voter-less.
+          // (Skipped when --proposals is set: the set is deterministic, no retry helps.)
           spin.text = `No voters returned; retrying in 2s (cache-miss fallback)...`;
           await new Promise((r) => setTimeout(r, 2000));
           voterAddresses = await fetchSnapshotTopVoters(argv.space, 5, argv.verbose === true);
         }
         if (voterAddresses.length === 0) {
           spin.stop();
-          output.error(`No voters found for Snapshot space "${argv.space}" (after retry)`);
+          const suffix = explicitProposals ? ` (proposals=${explicitProposals.length})` : ' (after retry)';
+          output.error(`No voters found for Snapshot space "${argv.space}"${suffix}`);
           process.exit(1);
         }
       } else {
