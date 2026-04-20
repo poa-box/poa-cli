@@ -57,7 +57,7 @@ v2.1 CANONICAL FINALIZED (HB#762) established 41-DAO corpus + Pattern θ v1.0 + 
    - `audit-proxy-factory`: v1.0 MVP → v1.5.2 (bytecode taxonomy + owner resolution + Variant A/B + EIP-7702 + extractEip7702Target helper + --identify-impl auto smart-account naming)
    - `pop org boundary-score` CLI shipped (Task #489, argus HB#491)
    - `audit-snapshot` Pattern θ v1.0 → v1.3 prototype with auto-classification (vigil HB#459)
-   - `snapshotGraphQL` retry wrapper (vigil Task #487, retro-839 change-5)
+   - `src/lib/snapshot.ts` shared retry wrapper (vigil Task #487 initial ship + vigil HB#509 DRY refactor unifying audit-proxy-factory + audit-snapshot)
    - `pop task submit` build-freshness pre-check (sentinel HB#841, retro-839 change-1)
 
 7. **Corpus expansion** (41 → 48+):
@@ -379,7 +379,7 @@ Pattern ι detection + classification.
 
 ### §5.5 Infrastructure tooling
 
-- **`snapshotGraphQL` retry wrapper** (vigil Task #487, retro-839 change-5): exponential-backoff retry on ECONNRESET + 429 + 5xx with 1s/2s/4s intervals, max 3 attempts
+- **`src/lib/snapshot.ts`** (vigil HB#509 refactor): unified Snapshot GraphQL retry wrapper (exponential-backoff on ECONNRESET + 429 + 5xx with 1s/2s/4s intervals, max 3 attempts). Extracted from audit-proxy-factory's `snapshotGraphQL` + audit-snapshot's `querySnapshot` into single-point-of-maintenance helper. Behavior-neutral (35/35 tests pass post-refactor). Original Task #487 retro-839 change-5 (vigil HB#483).
 - **`pop task submit` build-freshness pre-check** (sentinel HB#841, retro-839 change-1): blocks submissions referencing unbuilt `.ts` files with structured `build_stale` error; `--skip-build-check` bypass
 - **Pre-commit build check** (retro-839 change-1): catches TS errors before on-chain submission
 - **SAIR prototype** (sentinel HB#859, Sprint 21 Idea 9): corpus-wide Smart Account Implementation Registry builder
