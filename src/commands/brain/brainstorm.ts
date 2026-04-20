@@ -48,11 +48,39 @@ function resolveAuthor(argvAuthor: string | undefined): string {
 }
 
 function slugify(s: string): string {
+  // Task #492 (retro-509 change-1, HB#873): bumped cap 60 → 120 chars to
+  // reduce mismatch between user-typed idea text and stored idea.id.
+  // Older IDs at the 60-char cap remain valid; new IDs can carry fuller
+  // slugs. Partial-prefix matching in resolveIdeaId() handles both forms.
   return s
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
+    .slice(0, 120);
+}
+
+/**
+ * Task #492 (retro-509 change-1, HB#873): resolve a voter-supplied idea
+ * identifier against the brainstorm's ideas[] list using exact match, then
+ * falling back to unique-prefix match. Prevents "unknown-idea" errors when
+ * the voter typed a fuller (or partial) slug than the stored idea.id.
+ *
+ * Returns the canonical idea.id on success, or null if no match / ambiguous.
+ * Exported for unit testing.
+ */
+export function resolveIdeaId(
+  supplied: string,
+  storedIds: string[],
+): { id: string; reason: 'exact' | 'prefix' } | null {
+  // Exact match wins
+  if (storedIds.includes(supplied)) return { id: supplied, reason: 'exact' };
+  // Unique-prefix match (supplied is a prefix of exactly one stored id)
+  const prefixMatches = storedIds.filter((id) => id.startsWith(supplied));
+  if (prefixMatches.length === 1) return { id: prefixMatches[0], reason: 'prefix' };
+  // Unique-substring match (supplied is contained in exactly one stored id)
+  const substringMatches = storedIds.filter((id) => id.includes(supplied));
+  if (substringMatches.length === 1) return { id: substringMatches[0], reason: 'prefix' };
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -250,17 +278,35 @@ export const brainstormRespondHandler = {
         return;
       }
 
-      // Parse --vote entries into { ideaId: stance }
+      // Parse --vote entries into { ideaId: stance }.
+      // Task #492 (retro-509 change-1, HB#873): resolve voter-supplied idea IDs
+      // via exact → unique-prefix → unique-substring match against stored ideas[]
+      // to prevent "unknown-idea" errors when the supplied id doesn't exactly
+      // match the (slug-truncated) stored id.
+      const storedIdeaIds: string[] = Array.isArray(target.ideas)
+        ? (target.ideas as any[]).map((i) => i?.id).filter((s: any): s is string => typeof s === 'string')
+        : [];
       const votes: Record<string, 'support' | 'explore' | 'oppose'> = {};
       for (const entry of argv.vote ?? []) {
-        const [ideaId, stance] = entry.split('=').map((s) => s.trim());
-        if (!ideaId || !stance) {
+        const [suppliedId, stance] = entry.split('=').map((s) => s.trim());
+        if (!suppliedId || !stance) {
           throw new Error(`Malformed --vote "${entry}" — expected format <idea-id>=<stance>`);
         }
         if (stance !== 'support' && stance !== 'explore' && stance !== 'oppose') {
           throw new Error(`Invalid stance "${stance}" in --vote "${entry}" — must be support|explore|oppose`);
         }
-        votes[ideaId] = stance;
+        const resolved = resolveIdeaId(suppliedId, storedIdeaIds);
+        if (!resolved) {
+          throw new Error(
+            `--vote "${suppliedId}" does not match any idea id in brainstorm "${argv.id}". ` +
+              `Available ids (first 8): ${storedIdeaIds.slice(0, 8).join(', ') || '(none)'}`,
+          );
+        }
+        if (resolved.reason === 'prefix' && argv.verbose) {
+          // eslint-disable-next-line no-console
+          console.warn(`  [brainstorm] --vote "${suppliedId}" prefix-matched idea "${resolved.id}"`);
+        }
+        votes[resolved.id] = stance;
       }
 
       // HB#496: normalize --add-idea to an array (yargs returns array when flag
