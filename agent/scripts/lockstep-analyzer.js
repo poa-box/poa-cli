@@ -266,8 +266,19 @@ async function main() {
   const perPair = new Map(); // top-k → { coVoted, agreed }
   for (let k = 1; k < topN; k++) perPair.set(k, { coVoted: 0, agreed: 0 });
 
+  // HB#519 (vigil Task proposed in HB#518): individual-activity counters
+  // for top-1 and top-2 — used in DISJOINT-vs-artifact disambiguation when
+  // top-2 co-voted count is 0. If BOTH voters individually active in ≥10
+  // proposals with 0 co-votes → DISJOINT-DUAL-WHALE (structural avoidance).
+  // If either has <10 individual activity, 0 co-votes is sparse-overlap
+  // artifact, not signal.
+  let top1Active = 0;
+  let top2Active = 0;
+
   for (const [pid, choices] of byProposal.entries()) {
     const top1Choice = choices[voterAddrs[0]];
+    if (top1Choice !== undefined) top1Active++;
+    if (voterAddrs.length >= 2 && choices[voterAddrs[1]] !== undefined) top2Active++;
     if (top1Choice === undefined) continue;
     // Pairwise-with-top-1
     for (let k = 1; k < topN; k++) {
@@ -304,14 +315,23 @@ async function main() {
   // (top-1 + top-2 ≥ 50% per audit-snapshot) rather than full-cohort E-direct.
   const top2 = perPair.get(1) || { coVoted: 0, agreed: 0 };
   const top2PairwiseRate = top2.coVoted ? top2.agreed / top2.coVoted : 0;
+  // HB#519 DISJOINT disambiguation: when top-2 co-voted is 0, distinguish
+  // structural avoidance (DISJOINT) from sparse-overlap artifact. Threshold:
+  // both top-1 and top-2 must have ≥10 individual-activity for 0-coincidence
+  // to be meaningful (vigil HB#518 proposal).
+  const DISJOINT_ACTIVITY_THRESHOLD = 10;
   let dualWhaleVariant = 'N/A';
-  if (top2.coVoted >= 3) {
+  if (top2.coVoted === 0 && top1Active >= DISJOINT_ACTIVITY_THRESHOLD && top2Active >= DISJOINT_ACTIVITY_THRESHOLD) {
+    dualWhaleVariant = `DISJOINT (top-2 active=${top2Active}, top-1 active=${top1Active}, 0 co-votes — structural avoidance, per vigil HB#518)`;
+  } else if (top2.coVoted >= 3) {
     if (top2PairwiseRate >= 0.70) dualWhaleVariant = 'COORDINATED (top-2 pairwise ≥70%)';
     else dualWhaleVariant = 'INDEPENDENT (top-2 pairwise <70%)';
   } else {
-    dualWhaleVariant = 'INSUFFICIENT-DATA (top-2 co-voted <3 binary props)';
+    dualWhaleVariant = `INSUFFICIENT-DATA (top-2 co-voted <3; top-1 active=${top1Active}, top-2 active=${top2Active})`;
   }
-  console.log(`\nDual-whale top-2 diagnostic (argus HB#404 refinement):`);
+  console.log(`\nDual-whale top-2 diagnostic (argus HB#404 refinement + vigil HB#519 DISJOINT):`);
+  console.log(`  top-1 individual activity: ${top1Active} proposals`);
+  console.log(`  top-2 individual activity: ${top2Active} proposals`);
   console.log(`  top-2 pairwise: ${top2.agreed}/${top2.coVoted} = ${(top2PairwiseRate * 100).toFixed(1)}%`);
   console.log(`  Variant: ${dualWhaleVariant}`);
 
@@ -345,8 +365,11 @@ async function main() {
       : '';
     if (subTier === 'no-dominance') {
       patternSummary = `ratio ${ratio.toFixed(2)}× — top-1 NOT dominant; neither Pattern ι nor dual-whale${saturationCaveat}`;
+    } else if (top2.coVoted === 0 && top1Active >= DISJOINT_ACTIVITY_THRESHOLD && top2Active >= DISJOINT_ACTIVITY_THRESHOLD) {
+      // HB#519 DISJOINT signal — both active, 0 co-votes, structural avoidance
+      patternSummary = `ratio ${ratio.toFixed(2)}× (${subTier} band) + top-2 co-vote=0 WITH BOTH ACTIVE (top-1=${top1Active}, top-2=${top2Active}) → DISJOINT DUAL-WHALE candidate (structural avoidance, per vigil HB#518 heuristic)${saturationCaveat}`;
     } else if (top2.coVoted < 3) {
-      patternSummary = `ratio ${ratio.toFixed(2)}× (${subTier} band) + top-2 co-vote INSUFFICIENT (${top2.coVoted}) → Pattern ι candidate (PENDING larger sample per v2.1.3 caveat)${saturationCaveat}`;
+      patternSummary = `ratio ${ratio.toFixed(2)}× (${subTier} band) + top-2 co-vote INSUFFICIENT (${top2.coVoted}; top-1 active=${top1Active}, top-2 active=${top2Active}) → Pattern ι candidate (PENDING larger sample per v2.1.3 caveat; too sparse for DISJOINT per HB#518 threshold)${saturationCaveat}`;
     } else if (top2PairwiseRate >= 0.70) {
       patternSummary = `ratio ${ratio.toFixed(2)}× (${subTier} band) + top-2 pairwise ${(top2PairwiseRate * 100).toFixed(0)}% ≥ 70% → COORDINATED DUAL-WHALE (per v2.1.2 disqualifier — NOT Pattern ι)${saturationCaveat}`;
     } else {
@@ -360,7 +383,7 @@ async function main() {
   console.log(JSON.stringify({
     space, topN, binaryProposals: binaryProposals.length, allCoparticipated, allAgreed, allAgreeRate,
     pairwiseRates, majorityPairwise, tier, topVoters,
-    dualWhale: { top2CoVoted: top2.coVoted, top2Agreed: top2.agreed, top2PairwiseRate, variant: dualWhaleVariant },
+    dualWhale: { top2CoVoted: top2.coVoted, top2Agreed: top2.agreed, top2PairwiseRate, top1Active, top2Active, variant: dualWhaleVariant },
     patternSummary,
   }, null, 2));
 }
