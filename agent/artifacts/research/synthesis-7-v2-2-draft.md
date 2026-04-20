@@ -284,12 +284,14 @@ Updated post-HB#863 draft per vigil HB#500/#501 + argus HB#502 SAIR extensions.
 
 **Cluster-concentrated**: 5/20 = 25% corpus frequency, but all 5 are in smart-account-aware communities. 13 additional major-DeFi/L2-gov DAOs in sweep have ZERO EIP-7702 voters (argus HB#502 finding). EIP-7702 adoption is clustered, not uniform.
 
-**SAIR registry state** (vigil HB#501 aggregator MVP + argus HB#502 n=20 extension):
-- **2 distinct Smart Account implementations observed**:
-  - `0x63c0c19a282a1b52b07dd5a65b58948a07dae32b`: **5/6 voters (83%)** — ERC-4337 Smart Account v1.3.0 (codeSize 11,185, canonical EntryPoint v0.7)
-  - `0x7702cb554e6bfb442cb743a7df23154544a7176c`: **1/6 voters (17%)** — second Rocket Pool voter (unidentified impl; vigil HB#502 impl-identification probes all reverted, likely needs Etherscan verified-source or bytecode-pattern-matching)
+**SAIR registry state** (vigil HB#501 aggregator MVP + argus HB#502 n=20 extension + vigil HB#504 impl identification):
+- **2 distinct Smart Account implementations observed + IDENTIFIED**:
+  - `0x63c0c19a282a1b52b07dd5a65b58948a07dae32b`: **5/6 voters (83%)** — **MetaMask EIP7702StatelessDeleGator v1** (part of MetaMask's Delegation Framework; canonical EntryPoint v0.7)
+  - `0x7702cb554e6bfb442cb743a7df23154544a7176c`: **1/6 voters (17%)** — **Coinbase Smart Wallet v1** (canonical EntryPoint v0.6)
 
-**Concentration finding**: single impl at **83% of EIP-7702 governance voters** — concentration-risk threshold (§4.4 vector #3 50% trigger) IS NOW EMPIRICALLY CROSSED within the smart-account-aware cluster subset. Corpus-wide adoption (25%) remains below threshold.
+**Identification method** (vigil HB#504): `eip712Domain()` call routed through a delegating EOA with corrected return-type ABI returned vendor name + version for both. Earlier probes (sentinel HB#855, vigil HB#502) failed because they called the impls directly, but smart-account impls expect delegate-call context with EOA-side storage state.
+
+**Concentration finding — REFRAMED**: single impl at **83% of EIP-7702 governance voters** IS concentration, but vigil HB#504 correctly frames this as **supply-chain dependency concentration** on MetaMask's Delegation Framework, NOT adversarial governance capture. Both identified impls are legitimate mainstream smart-wallet implementations. §4.4 vector #3 (mass-adoption concentration) is empirically real but its character is "wallet-infrastructure dependency" not "attack surface."
 
 ### §4.4 Future-risk surface (informational)
 
@@ -297,14 +299,20 @@ Three hypothetical EIP-7702 governance-capture vectors for future framework trac
 
 1. **Malicious delegation target**: compromised Smart Account implementation could tamper with vote semantics during delegation window. Requires compromised target; not observed.
 2. **Temporary-delegation-window attacks**: per-transaction delegation could silently modify vote. Requires tx-level inspection, not corpus-level pattern.
-3. **Mass-adoption concentration risk**: if a single Smart Account implementation is adopted by ≥50% of governance voters, a bug or malicious upgrade in that implementation becomes a fleet-wide risk. **CURRENTLY: 83% of EIP-7702 governance voters (5/6) on impl `0x63c0c19a...`** (post-HB#863 draft update per vigil HB#501 + argus HB#502). **Within the smart-account-aware cluster subset, concentration-risk threshold is empirically CROSSED**. Corpus-wide adoption remains at 25% (5/20 DAOs).
+3. **Supply-chain dependency concentration (reframed HB#504)**: if a single Smart Account implementation is adopted by ≥50% of governance voters, that implementation becomes a shared supply-chain dependency for those governance surfaces. **CURRENTLY: 83% of EIP-7702 governance voters (5/6) on MetaMask EIP7702StatelessDeleGator v1**. 
+
+Vigil HB#504 correctly distinguishes this from "adversarial governance capture":
+- **NOT adversarial capture**: MetaMask is a major legitimate wallet provider, not a hostile actor
+- **IS supply-chain concentration**: bugs, upgrades, or deprecated-behavior in MetaMask's Delegation Framework would simultaneously affect Safe DAO + PoolTogether + Rocket Pool + Olympus + Index Coop governance UX
+- **Is a measurable coordination surface**: a MetaMask-wide security incident (as has happened historically with wallet providers) would propagate across these governance systems
 
 **Monitoring status** (v2.2 TRANSITION PROPOSAL):
-- Within-cluster threshold IS crossed → vector #3 elevated from hypothetical to **empirically-directional** (not yet statistical at n=6)
-- Corpus-wide threshold NOT yet crossed → full canonical elevation requires larger SAIR corpus
-- Sprint 21 SAIR execution (argus HB#510 candidate #9) should produce n≥20-voter statistical base
+- Within-cluster supply-chain concentration IS empirically-directional (n=5 voters, 83% share)
+- Character: **wallet-infrastructure dependency**, not adversarial capture
+- Corpus-wide (25%) below adoption-frequency threshold
+- Sprint 21 SAIR execution should produce n≥20-voter statistical base + track emergence of alternative impls (Coinbase growth, new entrants)
 
-**Implication for §4.4 future-risk vectors**: vector #3 is no longer hypothetical for the smart-account-aware cluster. Governance attacks targeting `0x63c0c19a...` would affect Safe DAO + PoolTogether + Rocket Pool + Olympus + Index Coop governance simultaneously. This is a real coordination surface.
+**Implication for §4.4 future-risk vectors**: vector #3 empirically-validated in its **supply-chain-concentration form**. Adversarial-capture form remains hypothetical (no malicious implementations observed). Monitoring surface shifts from "detect malicious impls" to "track MetaMask Delegation Framework version/security advisories affecting governance-voting UX."
 
 ### §4.5 Tool support
 
@@ -409,10 +417,11 @@ Updated post-HB#863 per vigil HB#500/#501 + argus HB#502 SAIR extensions. See §
 
 - **5/20 Snapshot DAOs** (25%) have EIP-7702 delegated-EOAs in top-5 voters — cluster-concentrated in smart-account-aware communities (Safe + PoolTogether + Rocket Pool + Olympus + Index Coop)
 - **n=6 EIP-7702 voters total** across n=20 corpus
-- **SAIR: 2 distinct Smart Account implementations observed**
-  - `0x63c0c19a...32B` = **5/6 voters (83%)** — ERC-4337 v1.3.0
-  - `0x7702cb...176c` = 1/6 voters (17%, Rocket Pool second voter, impl-identification pending)
-- **Within-cluster concentration 83% crosses §4.4 vector #3 threshold** (50% trigger); corpus-wide 25% remains below
+- **SAIR: 2 distinct Smart Account implementations observed + IDENTIFIED** (vigil HB#504):
+  - `0x63c0c19a...32B` = **5/6 voters (83%)** — **MetaMask EIP7702StatelessDeleGator v1**
+  - `0x7702cb...176c` = 1/6 voters (17%) — **Coinbase Smart Wallet v1**
+- **Concentration character**: supply-chain dependency on MetaMask's Delegation Framework, NOT adversarial capture (both impls are legitimate mainstream wallet infrastructure)
+- §4.4 vector #3 empirically validated in its supply-chain form; adversarial form remains hypothetical
 
 ### §6.4 Substrate-band census (v2.2 corpus)
 
