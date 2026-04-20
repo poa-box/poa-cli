@@ -40,6 +40,17 @@ import * as output from '../../lib/output';
 
 export type VoterClass = 'eoa' | 'proxy-candidate' | 'unknown';
 
+/**
+ * Proxy-family taxonomy (HB#833 v1.2, vigil HB#471-endorsed).
+ * Categorizes contract bytecode into known proxy families by size + signature.
+ * - 'eip-1167': OpenZeppelin minimal proxy clone (EIP-1167 standard)
+ * - 'dsproxy-maker': Maker VoteProxyFactory-deployed DSProxy (3947 bytes exactly)
+ * - 'safe-proxy': Gnosis Safe SafeProxy forwarder (~170 bytes, delegatecall pattern)
+ * - 'other-contract': any other contract bytecode not matching known families
+ * - 'none': EOA (no code)
+ */
+export type ProxyFamily = 'eip-1167' | 'dsproxy-maker' | 'safe-proxy' | 'other-contract' | 'none';
+
 interface AuditProxyFactoryArgs {
   address?: string;
   space?: string;
@@ -54,8 +65,9 @@ export interface ProxyFactoryAuditResult {
   chainId: number;
   status: 'scaffold' | 'partial' | 'complete';
   note?: string;
-  voters?: Array<{ address: string; class: VoterClass; codeSize?: number }>;
+  voters?: Array<{ address: string; class: VoterClass; codeSize?: number; family?: ProxyFamily }>;
   classSummary?: Record<VoterClass, number>;
+  familySummary?: Record<ProxyFamily, number>;
   proxyShare?: number;
   classification?: 'E-proxy-identity-obfuscating' | 'not-E-proxy' | 'inconclusive';
 }
@@ -125,6 +137,40 @@ export function classifyVoterByCode(code: string): VoterClass {
   // Minimal proxy bytecode (EIP-1167) is ~45 bytes; any code > 2 chars ("0x") is contract.
   if (code.length > 2) return 'proxy-candidate';
   return 'unknown';
+}
+
+/**
+ * Classify a contract's bytecode into a known proxy family by size + signature.
+ * Returns 'none' for EOAs, 'other-contract' for contracts not matching known patterns.
+ *
+ * Size-based heuristics are empirical (derived from HB#409 Maker Chief finding,
+ * HB#832 Uniswap multisig observation, EIP-1167 standard).
+ *
+ * Exported for unit testing.
+ */
+export function classifyProxyFamily(code: string): ProxyFamily {
+  if (!code || code === '0x' || code === '0x0') return 'none';
+  const codeSize = (code.length - 2) / 2;
+
+  // EIP-1167 minimal proxy: exactly 45 bytes, starts with the deterministic signature
+  // 0x363d3d373d3d3d363d73<20-byte target>5af43d82803e903d91602b57fd5bf3
+  if (codeSize === 45 && code.toLowerCase().startsWith('0x363d3d373d3d3d363d73')) {
+    return 'eip-1167';
+  }
+
+  // Maker VoteProxyFactory DSProxy: deterministic 3947-byte bytecode
+  // per HB#409 vigil finding (all 5 Chief top-voters had identical 3947-byte code).
+  if (codeSize === 3947) {
+    return 'dsproxy-maker';
+  }
+
+  // Gnosis Safe SafeProxy forwarder: typically 170-175 bytes (small delegatecall stub).
+  // Uniswap voter-5 observation HB#832: 170 bytes exactly.
+  if (codeSize >= 168 && codeSize <= 180) {
+    return 'safe-proxy';
+  }
+
+  return 'other-contract';
 }
 
 /**
@@ -246,20 +292,26 @@ export const auditProxyFactoryHandler = {
           try {
             const code = await provider.getCode(addr);
             const cls = classifyVoterByCode(code);
+            const family = classifyProxyFamily(code);
             return {
               address: addr,
               class: cls,
               codeSize: code ? (code.length - 2) / 2 : 0,
+              family,
             };
           } catch (e: any) {
             if (argv.verbose) console.error(`[audit-proxy-factory] getCode(${addr}) error:`, e?.message || e);
-            return { address: addr, class: 'unknown' as VoterClass, codeSize: 0 };
+            return { address: addr, class: 'unknown' as VoterClass, codeSize: 0, family: 'none' as ProxyFamily };
           }
         })
       );
 
       const { summary, proxyShare } = computeProxyShare(classified.map((v) => v.class));
       const classification = classifyDao(proxyShare, voterAddresses.length);
+      const familySummary: Record<ProxyFamily, number> = {
+        'eip-1167': 0, 'dsproxy-maker': 0, 'safe-proxy': 0, 'other-contract': 0, 'none': 0,
+      };
+      for (const v of classified) familySummary[v.family]++;
 
       const result: ProxyFactoryAuditResult = {
         target,
@@ -267,6 +319,7 @@ export const auditProxyFactoryHandler = {
         status: 'partial',
         voters: classified,
         classSummary: summary,
+        familySummary,
         proxyShare,
         classification,
         note: `Voter discovery: ${discoverySource}. Factory-pattern detection + proxy→owner resolution deferred to future work.`,
