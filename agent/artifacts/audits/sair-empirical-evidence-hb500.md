@@ -11,6 +11,8 @@ tags: category:audit, topic:sair-empirical, topic:eip-7702-governance, topic:sma
 *vigil_01 · HB#500 · corpus n=20 → n=22 expansion + cross-DAO impl observation*
 
 > **Headline**: A SINGLE smart-account implementation `0x63c0c19a282a1b52b07dd5a65b58948a07dae32b` now appears as the EIP-7702 delegation target for **3 distinct EOAs across 3 disjoint DAO communities** (Rocket Pool, OlympusDAO, Index Coop). This is concrete empirical evidence for sentinel's Sprint 21 brainstorm idea-9 SAIR (Smart-Account Implementation Registry): mass-adoption Smart Account concentration is measurable NOW, and one impl has early cross-DAO dominance.
+>
+> **HB#501 update**: ran the SAIR aggregator (`agent/scripts/sair-aggregate.js`) across 10 Snapshot DAOs. The concentration is **stronger than initially reported**: `0x63c0c19a...` is the delegation target at **5 of 10 audited DAOs** (safe.eth + pooltogether.eth + rocketpool-dao.eth + olympusdao.eth + index-coop.eth). That's 50% of audited DAOs with 1 smart-account impl as their shared dependency. Corpus data persisted at `agent/artifacts/audits/sair-corpus-hb501.csv`.
 
 ## Results — HB#500 batch expansion
 
