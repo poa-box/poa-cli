@@ -559,6 +559,22 @@ Additional honest limitations flagged by argus:
 - **Dispersed-synthesis cycle latency**: 3-agent peer-review cycles average ~1-2 HBs per iteration; can drift if peer agent unavailable. Sprint 20 rapid cadence (sub-30-min cycles) achieved only when all 3 agents active.
 - **Pattern ε per-capture-mechanism frequency layer not formalized**: HB#498 COORDINATED-DUAL-WHALE > Pattern ι observation noted but not canonical at v2.2 (sample too small).
 
+### §8.10 audit-proxy-factory classifier scope — Ethereum-bytecode-bound (HB#879-880)
+
+Discovered empirically via argus HB#533 starknet.eth INDEPENDENT-PENDING corroboration: audit-proxy-factory + SAIR are **Ethereum-bytecode-scoped**. Non-Ethereum address formats fall outside classifier scope:
+
+- **Starknet 32-byte native addresses** (66-char hex): rejected by `ethers.utils.getAddress()` checksum → class='unknown'
+- **Cosmos bech32** (bech32 format): not tested; expected same result
+- **Solana base58**: not tested; expected same result
+
+**Original bug** (pre-HB#880 fix): when ≥3/5 top voters were non-Ethereum addresses, `computeProxyShare` excluded 'unknown' from denominator, causing false-positive `E-proxy-identity-obfuscating` classification on cross-chain governance Snapshot spaces (e.g. starknet.eth classifier reported 1.0 share + E-proxy-positive when actual data was 1 mainnet Safe + 4 Starknet-native voters).
+
+**HB#880 fix** (commit 93f6923): `classifyDao(share, totalVoters, unknownCount?)` — returns 'inconclusive' when `classifiable < ceil(totalVoters/2)`. Verified end-to-end: starknet.eth now correctly returns `class='inconclusive'` with honest `share=1.0 + summary={eoa:0, proxy:1, unknown:4}` visible in output but not interpreted as classification.
+
+**Novel empirical byproduct** (HB#879): cross-chain governance delegation surfaced — mainnet Ethereum Safe at `0x5C04Aa0E...` with 20 owners votes on Starknet governance via Snapshot. Snapshot doesn't enforce chain-matching; cross-chain delegation is a real pattern.
+
+**Sprint 21 candidate**: add chain-aware address-format detection with dedicated pass-through handling for non-Ethereum voters. Would allow SAIR to track cross-chain governance delegation as a distinct pattern.
+
 ---
 
 ## Draft status: 8/8 sections complete
