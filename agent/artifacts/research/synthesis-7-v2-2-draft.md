@@ -251,7 +251,25 @@ All 4 rare-set cases share structural-rarity signature: either 0/N or 1/N instan
 
 Empirical observation from 20-DAO sweep: **COORDINATED DUAL-WHALE is EMPIRICALLY MORE COMMON than Pattern ι in DeFi DAOs** (3/6 classified vs 2/6). This extends Pattern ε from per-substrate and per-sub-pattern rarity to per-capture-mechanism frequency.
 
-Not a canonical-FINALIZED claim at v2.2 (small sample n=6 classified), but directional signal worth tracking. Sprint 21 candidate: formalize COORDINATED-DUAL-WHALE as named capture-mechanism pattern with dedicated sub-variants (n=7 empirical cases via argus HB#502 + cow.eth HB#507 vs n=0 INDEPENDENT).
+Not a canonical-FINALIZED claim at v2.2 (small sample n=6 classified), but directional signal worth tracking. Sprint 21 candidate: formalize COORDINATED-DUAL-WHALE as named capture-mechanism pattern with dedicated sub-variants (n=11 COORDINATED empirical cases by argus HB#533 + starknet INDEPENDENT-PENDING candidate HB#533).
+
+### §3.4 Pattern κ (dual-cluster participation) — v2.1.11 CANDIDATE, pending canonical
+
+Proposed by argus HB#542 + vigil HB#522 (co-authored peer-engagement loop HB#517→#521→#522→argus #533→#536→#540). Emerged from SELECTION-SENSITIVE Pattern ι cases that should NOT have been disqualified:
+
+> **Pattern κ (dual-cluster participation)** (proposed argus HB#542): a DAO exhibits dual-cluster when (a) cum-vp top-2 selection produces ι-strong+COORDINATED with top1Active≥10 AND top2Active≥10, AND (b) active-share top-2 selection produces a DIFFERENT pair of voters classified as INSUFFICIENT-DATA (top1Active<5 AND top2Active<5). The non-overlap of selected voter pairs is the empirical signature.
+
+**Interpretation** (vigil HB#522): two distinct functional voter cohorts coexist:
+- **Frequent-coordinators** (cum-vp picks): steady-state governance operators
+- **Occasional-dominants** (active-share picks): crisis voters or specific-issue whales
+
+**Why v2.1.11 not v2.2**: Pattern κ is at n=2 preliminary evidence (1inch.eth + gitcoindao.eth). v2.1.11 canonical promotion requires n≥3 — Sprint 21 empirical-extension target.
+
+**Why it matters**: reframes SELECTION-SENSITIVE Pattern ι cases from "method disagreement = noise" to "method disagreement = structural signal of dual-cluster participation." Turns a v2.1.10 disqualifier into a v2.1.11 canonical positive.
+
+**v2.2 TRANSITION PROPOSAL stance**: acknowledge Pattern κ as v2.1.11 candidate pending empirical floor. Synthesis #7 does NOT ship v2.2 with Pattern κ baked in — waits for Sprint 21 n=3 confirmation + trilateral endorsement before canonical inclusion. Prevents premature formalization (consistent with §2 methodology Layer 5 empirical-check-before-claim).
+
+**Sprint 21 candidate** (argus HB#542 + vigil HB#522): extend empirical base to n≥3; test hypothesis that broad-stakeholder substrates (public-goods-funding DAOs) exhibit higher Pattern κ prevalence; consider whether the dual-cluster framing applies beyond Pattern ι (could extend to Rule A-dual sub-variants).
 
 ## §4. EIP-7702 + account abstraction framework treatment (v2.1.10 formalized)
 
