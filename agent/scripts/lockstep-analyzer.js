@@ -40,15 +40,34 @@ function gql(query, variables = {}) {
   });
 }
 
-async function fetchProposals(space, first = 1000) {
-  // Fetch closed proposals, restrict to those with exactly 2 choices (binary)
+async function fetchProposals(space, first = 1000, includeMultiChoice = false) {
+  // Fetch closed proposals. By default restricted to choices.length === 2 (binary).
+  // HB#507 multi-choice extension: if includeMultiChoice, also accept 3-choice
+  // For/Against/Abstain proposals (treat Abstain as non-vote in lockstep analysis).
+  // Per HB#505 Sprint 21 strategy pivot direction (b): unblocks Aave-class multi-choice
+  // DAOs (cow.eth, makerdao, snapshot.eth, etc.) for Pattern ι classification.
   const q = `query($space: String!, $first: Int!) {
     proposals(first: $first, where: { space: $space, state: "closed" }, orderBy: "created", orderDirection: desc) {
       id type choices scores_total
     }
   }`;
   const d = await gql(q, { space, first });
-  return (d.proposals || []).filter(p => p.choices && p.choices.length === 2);
+  const all = d.proposals || [];
+  return all.filter(p => {
+    if (!p.choices) return false;
+    if (p.choices.length === 2) return true;
+    if (includeMultiChoice && p.choices.length === 3) {
+      // For/Against/Abstain pattern detection (case-insensitive third choice)
+      return /abstain/i.test(p.choices[2]);
+    }
+    return false;
+  }).map(p => {
+    // Annotate proposals with abstain-choice index for downstream filtering
+    if (p.choices.length === 3 && /abstain/i.test(p.choices[2])) {
+      return { ...p, abstainChoice: 3 };
+    }
+    return p;
+  });
 }
 
 async function fetchVotes(proposalIds, voterAddrs) {
@@ -133,12 +152,13 @@ async function fetchTopVoters(space, topN, selection) {
 }
 
 async function main() {
-  // args: space [topN=5] [--voters addr1,addr2,...] [--selection cum-vp|active-share]
+  // args: space [topN=5] [--voters addr1,addr2,...] [--selection cum-vp|active-share] [--multi-choice]
   const args = process.argv.slice(2);
   const space = args[0];
   let topN = 5;
   let explicitVoters = null;
   let selection = 'cum-vp';
+  let includeMultiChoice = false;
   for (let i = 1; i < args.length; i++) {
     if (args[i] === '--voters' && args[i + 1]) {
       explicitVoters = args[i + 1].split(',').map(s => s.trim().toLowerCase());
@@ -146,11 +166,13 @@ async function main() {
     } else if (args[i] === '--selection' && args[i + 1]) {
       selection = args[i + 1];
       i++;
+    } else if (args[i] === '--multi-choice') {
+      includeMultiChoice = true;
     } else if (/^\d+$/.test(args[i])) {
       topN = Number(args[i]);
     }
   }
-  if (!space) { console.error('Usage: node lockstep-analyzer.js <space.eth> [topN=5] [--voters addr1,...] [--selection cum-vp|active-share]'); process.exit(1); }
+  if (!space) { console.error('Usage: node lockstep-analyzer.js <space.eth> [topN=5] [--voters addr1,...] [--selection cum-vp|active-share] [--multi-choice]'); process.exit(1); }
   if (!['cum-vp', 'active-share'].includes(selection)) { console.error('--selection must be cum-vp or active-share'); process.exit(1); }
 
   const selectionLabel = explicitVoters ? 'explicit voters' : `auto-selected by ${selection}`;
@@ -173,17 +195,30 @@ async function main() {
     });
   }
 
-  const binaryProposals = await fetchProposals(space, 1000);
-  console.log(`\nBinary proposals found: ${binaryProposals.length}\n`);
+  const binaryProposals = await fetchProposals(space, 1000, includeMultiChoice);
+  const multiChoiceCount = binaryProposals.filter(p => p.abstainChoice).length;
+  console.log(`\nBinary proposals found: ${binaryProposals.length}${includeMultiChoice && multiChoiceCount > 0 ? ` (${binaryProposals.length - multiChoiceCount} pure-binary + ${multiChoiceCount} 3-choice w/ Abstain ignored)` : ''}\n`);
   if (binaryProposals.length === 0) {
-    console.log('No binary proposals available. Space may use multi-choice or gauge-allocation voting.');
+    console.log(`No binary proposals available.${includeMultiChoice ? '' : ' Space may use multi-choice or gauge-allocation voting (try --multi-choice flag).'}`);
     return;
+  }
+
+  // Build proposal → abstainChoice map for vote-filtering
+  const propAbstain = new Map();
+  for (const p of binaryProposals) {
+    if (p.abstainChoice) propAbstain.set(p.id, p.abstainChoice);
   }
 
   const voterAddrs = topVoters.map(v => v.address);
   const proposalIds = binaryProposals.map(p => p.id);
-  const votes = await fetchVotes(proposalIds, voterAddrs);
-  console.log(`Binary-proposal votes by top-${topN}: ${votes.length}\n`);
+  const allVotes = await fetchVotes(proposalIds, voterAddrs);
+  // HB#507 multi-choice handling: filter out votes where choice === Abstain index
+  const votes = allVotes.filter(v => {
+    const abstainIdx = propAbstain.get(v.proposal.id);
+    return !abstainIdx || v.choice !== abstainIdx;
+  });
+  const filteredCount = allVotes.length - votes.length;
+  console.log(`Binary-proposal votes by top-${topN}: ${votes.length}${filteredCount > 0 ? ` (${filteredCount} Abstain votes excluded)` : ''}\n`);
 
   // Index: proposal → { voter → choice }
   const byProposal = new Map();
