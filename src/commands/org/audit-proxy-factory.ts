@@ -166,14 +166,29 @@ export async function resolveProxyOwners(
     }
   }
   if (family === 'dsproxy-maker') {
-    const abi = ['function owner() view returns (address)'];
-    const proxy = new ethers.Contract(address, abi, provider);
-    try {
-      const owner = await proxy.owner();
-      return [owner.toLowerCase()];
-    } catch {
-      return null;
+    // HB#476 vigil investigation: Maker 3947-byte proxies exposed neither owner()
+    // (sentinel original attempt) nor cold()/hot() (vigil attempted fix). Direct
+    // probe shows call reverts on all 3 common DSProxy ABIs. Contract type is
+    // IDENTIFIED by bytecode signature but its exact OWNERSHIP INTERFACE is
+    // unresolved. Likely custom proxy contract NOT standard Maker VoteProxy.
+    // Best available: try each ABI in priority order, return null on all-fail.
+    const attempts = [
+      { abi: ['function cold() view returns (address)', 'function hot() view returns (address)'], call: async (c: any) => {
+        const [cold, hot] = await Promise.all([c.cold(), c.hot()]);
+        return [cold.toLowerCase(), hot.toLowerCase()];
+      }},
+      { abi: ['function owner() view returns (address)'], call: async (c: any) => {
+        const o = await c.owner();
+        return [o.toLowerCase()];
+      }},
+    ];
+    for (const { abi, call } of attempts) {
+      try {
+        const c = new ethers.Contract(address, abi, provider);
+        return await call(c);
+      } catch { /* try next */ }
     }
+    return null;
   }
   return null;
 }
