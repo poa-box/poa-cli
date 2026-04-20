@@ -32,6 +32,7 @@ import { auditVetokenHandler } from './audit-vetoken';
 import { auditParticipationHandler } from './audit-participation';
 import { auditDschiefHandler } from './audit-dschief';
 import { auditProxyFactoryHandler } from './audit-proxy-factory';
+import { boundaryScoreHandler } from './boundary-score';
 
 export function registerOrgCommands(yargs: Argv) {
   return yargs
@@ -56,6 +57,7 @@ export function registerOrgCommands(yargs: Argv) {
     .command('audit-governor', 'Audit on-chain Governor DAO governance', auditGovernorHandler.builder, auditGovernorHandler.handler)
     .command('audit-dschief', 'Audit DSChief-pattern executive-voting governance (MakerDAO Chief, Sky, forks) — task #472', auditDschiefHandler.builder, auditDschiefHandler.handler)
     .command('audit-proxy-factory', 'Detect E-proxy identity-obfuscating pattern (voters = contracts not EOAs) — task #473', auditProxyFactoryHandler.builder, auditProxyFactoryHandler.handler)
+    .command('boundary-score', 'Capture-cluster boundary score per argus v0.5 spec — task #489', boundaryScoreHandler.builder, boundaryScoreHandler.handler)
     .command('gaas-status', 'GaaS pipeline dashboard — audits, distribution, revenue', gaasStatusHandler.builder, gaasStatusHandler.handler)
     .command('publish', 'Convert IPFS content to shareable HTML page with Open Graph tags', publishHandler.builder, publishHandler.handler)
     .command('leaderboard', 'Governance health leaderboard — rank multiple DAOs', leaderboardHandler.builder, leaderboardHandler.handler)
