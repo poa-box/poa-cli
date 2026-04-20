@@ -65,7 +65,7 @@ export interface ProxyFactoryAuditResult {
   chainId: number;
   status: 'scaffold' | 'partial' | 'complete';
   note?: string;
-  voters?: Array<{ address: string; class: VoterClass; codeSize?: number; family?: ProxyFamily }>;
+  voters?: Array<{ address: string; class: VoterClass; codeSize?: number; family?: ProxyFamily; owners?: string[] }>;
   classSummary?: Record<VoterClass, number>;
   familySummary?: Record<ProxyFamily, number>;
   proxyShare?: number;
@@ -137,6 +137,45 @@ export function classifyVoterByCode(code: string): VoterClass {
   // Minimal proxy bytecode (EIP-1167) is ~45 bytes; any code > 2 chars ("0x") is contract.
   if (code.length > 2) return 'proxy-candidate';
   return 'unknown';
+}
+
+/**
+ * HB#834 v1.3: owner-resolution for proxy voters.
+ * Given a proxy family + address, attempt to enumerate the underlying owners
+ * via family-specific ABI calls. Returns null on failure (RPC error, ABI mismatch,
+ * or unsupported family).
+ *
+ * Currently supports:
+ *   - 'safe-proxy': Gnosis Safe getOwners() returning address[]
+ *   - 'dsproxy-maker': Maker DSProxy owner() returning address (wraps in [])
+ * Other families return null (EIP-1167 requires implementation-slot read; out of scope for v1.3).
+ */
+export async function resolveProxyOwners(
+  provider: ethers.providers.Provider,
+  address: string,
+  family: ProxyFamily,
+): Promise<string[] | null> {
+  if (family === 'safe-proxy') {
+    const abi = ['function getOwners() view returns (address[])'];
+    const safe = new ethers.Contract(address, abi, provider);
+    try {
+      const owners = await safe.getOwners();
+      return owners.map((a: string) => a.toLowerCase());
+    } catch {
+      return null;
+    }
+  }
+  if (family === 'dsproxy-maker') {
+    const abi = ['function owner() view returns (address)'];
+    const proxy = new ethers.Contract(address, abi, provider);
+    try {
+      const owner = await proxy.owner();
+      return [owner.toLowerCase()];
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 /**
@@ -293,11 +332,13 @@ export const auditProxyFactoryHandler = {
             const code = await provider.getCode(addr);
             const cls = classifyVoterByCode(code);
             const family = classifyProxyFamily(code);
+            const ownersResolved = await resolveProxyOwners(provider, addr, family);
             return {
               address: addr,
               class: cls,
               codeSize: code ? (code.length - 2) / 2 : 0,
               family,
+              ...(ownersResolved ? { owners: ownersResolved } : {}),
             };
           } catch (e: any) {
             if (argv.verbose) console.error(`[audit-proxy-factory] getCode(${addr}) error:`, e?.message || e);
