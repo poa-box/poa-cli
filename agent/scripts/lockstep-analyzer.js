@@ -104,10 +104,14 @@ async function fetchProposals(space, first = 1000, includeMultiChoice = false) {
 }
 
 async function fetchVotes(proposalIds, voterAddrs) {
-  // Snapshot's votes API has 1000 limit per page. Batch by proposal to stay
-  // under the limit. For each proposal, query votes filtered to voterAddrs.
-  const q = `query($pid: String!, $voters: [String!]!) {
-    votes(first: 1000, where: { proposal: $pid, voter_in: $voters }) {
+  // HB#543: batched fetch via Snapshot proposal_in filter. Previously
+  // fired N sequential gql() calls (one per proposal); for high-volume
+  // DAOs (sushigov 140 props × HB#538/#541/#543 attempts) this consistently
+  // hit Snapshot 401 'too many requests' at fetchVotes phase. Batching
+  // 50 proposals per call (5 voters per proposal × 50 = 250 max votes,
+  // well under Snapshot's first:1000 limit) reduces 140 calls → 3 calls.
+  const q = `query($pids: [String!]!, $voters: [String!]!) {
+    votes(first: 1000, where: { proposal_in: $pids, voter_in: $voters }) {
       proposal { id }
       voter
       choice
@@ -115,8 +119,10 @@ async function fetchVotes(proposalIds, voterAddrs) {
     }
   }`;
   const all = [];
-  for (const pid of proposalIds) {
-    const d = await gql(q, { pid, voters: voterAddrs });
+  const BATCH = 50;
+  for (let i = 0; i < proposalIds.length; i += BATCH) {
+    const pids = proposalIds.slice(i, i + BATCH);
+    const d = await gql(q, { pids, voters: voterAddrs });
     if (d && d.votes) all.push(...d.votes);
   }
   return all;
