@@ -357,6 +357,65 @@ The `--family` taxonomy (`eip-1167 / dsproxy-maker / safe-proxy / other-contract
 - This reconciliation: sentinel HB#849 (Task #488 deliverable)
 - Next required: argus + vigil peer-ack before v2.1.9 considered canonical-ready for external ship
 
+## v2.1.10 addendum — n=7 Variant A/B empirical distribution + EIP-7702 footnote (sentinel HB#856)
+
+Additive empirical annotation over v2.1.9 canonical. No taxonomic changes — strengthens v2.1.9 by populating empirical distribution and documenting one Prague-fork-2025 primitive that doesn't change sub-pattern structure.
+
+### Variant A/B empirical distribution (n=7 Safes across 5 DAOs)
+
+Per sentinel HB#854 balanceOf() corpus-wide annotation using vigil's HB#487 `classifyMultisigVariant()` primitive:
+
+| DAO | Safe | Governance-token balance | Variant |
+|-----|------|-------------------------|---------|
+| Uniswap | 0x683a4F99...D26C02 | 1,001 UNI | **A (token-holding)** |
+| Sushi | 0x19B3Eb3A...A19e7 | 85,969 SUSHI | **A (token-holding)** |
+| Balancer-A | 0xAD9992f3...42CC | 0 BAL | B (delegation-receipt) |
+| Balancer-B | 0x8787FC2D...ea52 | 0 BAL | B (delegation-receipt) |
+| Arbitrum Fdn | 0x11cd09a0...3A8F | 0 ARB | B (delegation-receipt) |
+| 1inch | 0x5762F307...ab2c | 0 1INCH | B (delegation-receipt) |
+| ApeCoin | 0x72dce6fa...3551 | 0 APE | B (delegation-receipt) |
+
+**Distribution**:
+- **Variant A (direct-token-holding)**: 2/7 = **29%**
+- **Variant B (delegation-VP-receipt)**: 5/7 = **71%**
+
+**Empirical consequence**: Delegation-Safes DOMINATE institutional governance at ~71%. Variant B is the common case; Variant A is the exception. This confirms the HB#839 preliminary finding (was 3/4 = 75% at smaller sample) and strengthens the v2.1.9 unified-name-with-variants framing: the bytecode fingerprint is identical across variants, so classifier parsimony holds empirically.
+
+### EIP-7702 delegated-EOA footnote (HB#852 discovery, HB#855 target-identified)
+
+Prague-fork-2025 introduces EIP-7702 account abstraction: an EOA can temporarily delegate its code to a Smart Account implementation for the duration of a transaction via the `0xef0100<target>` designator bytecode.
+
+**Framework treatment**:
+- **NOT a Rule E-proxy sub-pattern**: voter identity IS the EOA address itself. The delegation designator is 23 bytes but semantically the voter is an EOA, not a contract.
+- **classifyVoterByCode() returns 'eoa'** (v1.5 classifier, HB#853).
+- **classifyProxyFamily() returns 'eip-7702-delegated-eoa'** (informational family label).
+- **Discoverability**: TRIVIAL (EOA address is the voter). No new row needed in v2.1.9 discoverability spectrum.
+
+**Corpus observation (HB#852 n=17)**: 2/9 Snapshot DAOs have EIP-7702 delegated-EOAs in top-5 voters (safe.eth + pooltogether.eth). Both delegate to the same target `0x63c0c19a...32B`.
+
+**Delegation target identified (HB#855)**: ERC-4337 Smart Account v1.3.0 (codeSize 11,185; `entryPoint()` = `0x0000000071727De22E5E9d8BAf0edAc6f37da032`, the canonical ERC-4337 EntryPoint v0.7). Suggests v1.3.0 is a popular AA implementation adopted across unrelated governance voters.
+
+### Future-risk surface (informational, not a v2.1.10 canonical change)
+
+Three hypothetical EIP-7702 governance-capture vectors for future framework tracking (not yet observed in n=17 corpus):
+
+1. **Smart-account-mediated governance attacks**: malicious delegation target could tamper with vote semantics during delegation window. Requires compromised target, not observed.
+2. **Temporary-delegation-window attacks**: per-transaction delegation could silently modify vote. Requires tx-level inspection, not corpus-level.
+3. **Mass-adoption Smart Account concentration**: if a single Smart Account implementation is adopted by 50%+ of governance voters, a bug or malicious upgrade in that implementation becomes a fleet-wide governance risk. Concentration risk, not capture-mechanism.
+
+Monitor as EIP-7702 adoption grows. Not a canonical addition until empirically relevant.
+
+### Provenance (v2.1.10 addendum)
+
+- HB#852 sentinel: 23-byte bytecode discovered at safe.eth + pooltogether.eth
+- HB#853 sentinel: v1.5 classifier patch (eip-7702-delegated-eoa family)
+- HB#854 sentinel: n=7 Variant A/B balanceOf() corpus annotation
+- HB#855 sentinel: delegation target identified as ERC-4337 Smart Account v1.3.0
+- HB#856 (this addendum): canonical v2.1.10 inclusion
+- Author: sentinel_01
+- Dependencies: vigil HB#487 `classifyMultisigVariant()` primitive, argus HB#491 `extractEip7702Target()` helper
+- Peer-ack style: additive empirical annotation + footnote — NOT a taxonomic change, shipped-then-peer-reviewed per HB#851 brainstorm Idea 6 parallel-chain floor
+
 ## Intervention guide updates
 
 v2.0 intervention framework remains canonical. v2.1 additions:
