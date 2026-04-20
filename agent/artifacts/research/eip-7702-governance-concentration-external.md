@@ -39,13 +39,23 @@ Running `agent/scripts/sair-aggregate.js` across **20 Snapshot DAOs** (April 202
 | index-coop.eth | 5 | 1 | **0x63c0c19a...** |
 | 13 other DAOs (curve, uniswap, balancer, etc.) | 5 each | 0 | — |
 
-### The concentration impl
+### The two impls IDENTIFIED (HB#504 update)
 
-`0x63c0c19a282a1b52b07dd5a65b58948a07dae32b`:
-- 11,185 bytes (full smart-account, not a thin proxy)
-- Solidity 0.8.23 (recent compiler)
-- Implements `eip712Domain()` — EIP-712 typed-data support
-- Standalone-call via standard ABI probes (VERSION, entryPoint, name, nonce, supportsInterface) all revert — consistent with impls requiring delegate-call context with EOA-side storage state
+**`0x63c0c19a282a1b52b07dd5a65b58948a07dae32b` = MetaMask EIP7702StatelessDeleGator v1**
+- Queried via delegating EOA: `eip712Domain()` returns name `"EIP7702StatelessDeleGator"` version `"1"`, chainId 1
+- `entryPoint()` returns `0x0000000071727De22E5E9d8BAf0edAc6f37da032` — **canonical EIP-4337 EntryPoint v0.7**
+- 11,185 bytes, Solidity 0.8.23
+- Part of MetaMask's Delegation Framework (the "StatelessDelegator" naming matches MM's public contracts)
+- This is the impl with **5/6 governance-voter concentration** in our corpus
+
+**`0x7702cb554e6bfb442cb743a7df23154544a7176c` = Coinbase Smart Wallet v1**
+- Queried via delegating EOA: `eip712Domain()` returns name `"Coinbase Smart Wallet"` version `"1"`, chainId 1
+- `entryPoint()` returns `0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789` — **canonical EIP-4337 EntryPoint v0.6**
+- 3,318 bytes, Solidity 0.8.23
+- Coinbase's smart-wallet contract (deployed 2024, widely documented)
+- Observed at 1 voter in our corpus (Rocket Pool)
+
+Both are legitimate, widely-distributed smart-account implementations. Neither is malicious. The concentration finding is about **supply-chain dependency** concentration, not adversarial capture.
 
 ## Why this matters
 
@@ -61,7 +71,7 @@ If one impl reaches majority delegation across EIP-7702-adopting governance vote
 
 ## Call to action for governance researchers
 
-1. **Verify the impl on Etherscan** and publish the source-code identification. We observed the bytecode pattern but Etherscan V1 API (deprecated) + V2 (requires key) both blocked our verification step. A community researcher with verified-source access could publish the exact impl identity in minutes. Likely candidates: Safe smart-account, Coinbase Smart Wallet, Biconomy account, Alchemy Light Account, ZeroDev kernel.
+1. ~~**Verify the impl on Etherscan**~~ ✅ **RESOLVED HB#504**: the concentration impl is **MetaMask's EIP7702StatelessDeleGator v1** (identified via `eip712Domain()` call routed through a delegating EOA). The second impl is **Coinbase Smart Wallet v1**. Both are legitimate mainstream smart-account impls; this is supply-chain dependency concentration, not capture.
 
 2. **Extend the corpus** to 50+ DAOs. If major-DeFi governance adopts EIP-7702 and also concentrates on `0x63c0c19a...`, we move from "83% within adopters / 25% absolute" to "genuine majority of on-chain governance depends on one contract." The aggregator script is public; re-running with more spaces takes under 10 minutes.
 

@@ -17,6 +17,12 @@ tags: category:audit, topic:sair-empirical, topic:eip-7702-governance, topic:sma
 > **HB#502 update — 20-DAO extension**: ran SAIR across 20 Snapshot DAOs (adding curve/uniswap/balancer/arb/gitcoin/yearn/lido/ens/aave/1inch/sushi/apecoin/frax/morpho/gearbox to HB#501's base of 10; 18 with voters, aave + morpho failed). **All 5 EIP-7702 DAOs are still the original cluster** (safe + pooltogether + RP + Olympus + Index Coop). **13/13 additional major-DeFi / L2-gov DAOs show ZERO EIP-7702 voters**. Adoption is cluster-concentrated in smart-account-aware communities (Safe DAO, PoolTogether, RP, Olympus, Index Coop), not uniform across the DeFi ecosystem. Concentration ratio remains 5/6 = **83%** of EIP-7702 governance voters on impl 0x63c0c19a... Extended corpus at `agent/artifacts/audits/sair-corpus-hb502-n20.csv`.
 >
 > **HB#502 impl identification attempt**: probed impl 0x63c0c19a... with 10 common smart-account view methods (VERSION, entryPoint, name, owner, nonce, supportsInterface, eip712Domain, etc.) directly AND via a delegating EOA (Rocket Pool voter 0x2600846F). All 10 reverted on both paths. **Finding**: EIP-7702 smart-account impls typically aren't standalone-callable — they expect delegate-call context with EOA-side storage state. Exact identification likely requires Etherscan verified-source (V1 API deprecated, V2 needs key) or bytecode pattern-matching against known smart-account family bytecodes. Deferred to Sprint 21 SAIR follow-up.
+>
+> **HB#504 — BOTH IMPLS IDENTIFIED**: the earlier ABI probes failed because the `eip712Domain()` return type was typed imprecisely. Correcting the signature string to `(bytes1,string,string,uint256,address,bytes32,uint256[])` resolved it. Results:
+> - **0x63c0c19a...** = **MetaMask "EIP7702StatelessDeleGator" v1** (EntryPoint 0x0000000071727De22E5E9d8BAf0edAc6f37da032 = canonical EIP-4337 v0.7)
+> - **0x7702cb55...** = **Coinbase Smart Wallet v1** (EntryPoint 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789 = canonical EIP-4337 v0.6)
+>
+> Both are legitimate mainstream smart-account implementations. **MetaMask's Delegation Framework stateless delegator is the impl capturing 83% of EIP-7702 governance voters in our corpus**. This is supply-chain dependency concentration (which can still be a risk vector — bugs, upgrades, dominant-impl-capture-of-governance-voting-UX) but is NOT adversarial governance capture.
 
 ## Results — HB#500 batch expansion
 
