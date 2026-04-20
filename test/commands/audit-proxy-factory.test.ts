@@ -141,4 +141,44 @@ describe('classifyProxyFamily — HB#833 v1.2 bytecode-fingerprint taxonomy', ()
     const eip1167Upper = '0x363D3D373D3D3D363D73' + '0'.repeat(40) + '5af43d82803e903d91602b57fd5bf3';
     expect(classifyProxyFamily(eip1167Upper)).toBe('eip-1167');
   });
+
+  it('HB#853 v1.5: identifies EIP-7702 delegated-EOA by magic prefix + 23-byte size', () => {
+    // Real fixture from HB#852: safe.eth + pooltogether.eth top-5 voters
+    const eip7702 = '0xef010063c0c19a282a1b52b07dd5a65b58948a07dae32b';
+    expect(classifyProxyFamily(eip7702)).toBe('eip-7702-delegated-eoa');
+  });
+
+  it('HB#853 v1.5: rejects 23-byte code without 0xef0100 magic as other-contract', () => {
+    // Exactly 23 bytes but wrong magic prefix
+    const fake23 = '0x' + 'a'.repeat(46);
+    expect(classifyProxyFamily(fake23)).toBe('other-contract');
+  });
+
+  it('HB#853 v1.5: rejects 0xef0100-prefixed code that is not exactly 23 bytes', () => {
+    // Magic prefix but wrong size — 30 bytes
+    const wrongSize = '0xef0100' + 'a'.repeat(54);
+    expect(classifyProxyFamily(wrongSize)).toBe('other-contract');
+  });
+
+  it('HB#853 v1.5: case-insensitive matching on EIP-7702 magic prefix', () => {
+    const eip7702Upper = '0xEF010063C0C19A282A1B52B07DD5A65B58948A07DAE32B';
+    expect(classifyProxyFamily(eip7702Upper)).toBe('eip-7702-delegated-eoa');
+  });
+});
+
+describe('classifyVoterByCode — HB#853 v1.5 EIP-7702 delegated-EOA treated as EOA', () => {
+  it('returns "eoa" for EIP-7702 delegation designator (semantically EOA)', () => {
+    const eip7702 = '0xef010063c0c19a282a1b52b07dd5a65b58948a07dae32b';
+    expect(classifyVoterByCode(eip7702)).toBe('eoa');
+  });
+
+  it('still returns "proxy-candidate" for non-7702 23-byte code', () => {
+    const fake23 = '0x' + 'a'.repeat(46);
+    expect(classifyVoterByCode(fake23)).toBe('proxy-candidate');
+  });
+
+  it('still returns "proxy-candidate" for 0xef0100-prefixed code of wrong size', () => {
+    const wrongSize = '0xef0100' + 'a'.repeat(54);
+    expect(classifyVoterByCode(wrongSize)).toBe('proxy-candidate');
+  });
 });

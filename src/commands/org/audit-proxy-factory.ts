@@ -41,15 +41,19 @@ import * as output from '../../lib/output';
 export type VoterClass = 'eoa' | 'proxy-candidate' | 'unknown';
 
 /**
- * Proxy-family taxonomy (HB#833 v1.2, vigil HB#471-endorsed).
+ * Proxy-family taxonomy (HB#833 v1.2 + HB#853 v1.5 EIP-7702).
  * Categorizes contract bytecode into known proxy families by size + signature.
- * - 'eip-1167': OpenZeppelin minimal proxy clone (EIP-1167 standard)
+ * - 'eip-1167': OpenZeppelin minimal proxy clone (EIP-1167 standard, 45 bytes)
  * - 'dsproxy-maker': Maker VoteProxyFactory-deployed DSProxy (3947 bytes exactly)
  * - 'safe-proxy': Gnosis Safe SafeProxy forwarder (~170 bytes, delegatecall pattern)
+ * - 'eip-7702-delegated-eoa': EOA with EIP-7702 delegation (Prague fork 2025).
+ *   Exactly 23 bytes starting with 0xef0100 magic + 20-byte delegation target.
+ *   Semantically an EOA — classifyVoterByCode returns 'eoa' for these.
+ *   Discovered in HB#852 corpus sweep at safe.eth + pooltogether.eth top-5.
  * - 'other-contract': any other contract bytecode not matching known families
  * - 'none': EOA (no code)
  */
-export type ProxyFamily = 'eip-1167' | 'dsproxy-maker' | 'safe-proxy' | 'other-contract' | 'none';
+export type ProxyFamily = 'eip-1167' | 'dsproxy-maker' | 'safe-proxy' | 'eip-7702-delegated-eoa' | 'other-contract' | 'none';
 
 interface AuditProxyFactoryArgs {
   address?: string;
@@ -225,6 +229,10 @@ async function fetchSnapshotTopVoters(space: string, topN: number, verbose = fal
  */
 export function classifyVoterByCode(code: string): VoterClass {
   if (!code || code === '0x' || code === '0x0') return 'eoa';
+  // HB#853 v1.5: EIP-7702 delegated-EOA (Prague fork 2025) is semantically an EOA.
+  // 23-byte bytecode with 0xef0100 magic prefix = delegation designator, not contract code.
+  const codeSize = (code.length - 2) / 2;
+  if (codeSize === 23 && code.toLowerCase().startsWith('0xef0100')) return 'eoa';
   // Minimal proxy bytecode (EIP-1167) is ~45 bytes; any code > 2 chars ("0x") is contract.
   if (code.length > 2) return 'proxy-candidate';
   return 'unknown';
@@ -296,6 +304,13 @@ export async function resolveProxyOwners(
 export function classifyProxyFamily(code: string): ProxyFamily {
   if (!code || code === '0x' || code === '0x0') return 'none';
   const codeSize = (code.length - 2) / 2;
+
+  // HB#853 v1.5: EIP-7702 delegation designator (Prague fork 2025).
+  // Exactly 23 bytes: 3-byte magic 0xef0100 + 20-byte delegation-target address.
+  // Discovered at safe.eth + pooltogether.eth top-5 voters in HB#852 n=17 sweep.
+  if (codeSize === 23 && code.toLowerCase().startsWith('0xef0100')) {
+    return 'eip-7702-delegated-eoa';
+  }
 
   // EIP-1167 minimal proxy: exactly 45 bytes, starts with the deterministic signature
   // 0x363d3d373d3d3d363d73<20-byte target>5af43d82803e903d91602b57fd5bf3
@@ -498,7 +513,7 @@ export const auditProxyFactoryHandler = {
       const { summary, proxyShare } = computeProxyShare(classified.map((v) => v.class));
       const classification = classifyDao(proxyShare, voterAddresses.length);
       const familySummary: Record<ProxyFamily, number> = {
-        'eip-1167': 0, 'dsproxy-maker': 0, 'safe-proxy': 0, 'other-contract': 0, 'none': 0,
+        'eip-1167': 0, 'dsproxy-maker': 0, 'safe-proxy': 0, 'eip-7702-delegated-eoa': 0, 'other-contract': 0, 'none': 0,
       };
       for (const v of classified) familySummary[v.family]++;
 
