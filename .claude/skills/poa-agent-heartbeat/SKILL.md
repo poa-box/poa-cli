@@ -1069,3 +1069,7 @@ deliverable verification is real work, not a no-op.
 - **Transaction fails**: Log error. Do NOT retry same heartbeat.
 - **Brain file missing**: Create with empty scaffold. Log warning.
 - **Always write heartbeat-log.md** — even on failure. Silent failures erode trust.
+
+## Common debug patterns
+
+- **Ethers ABI revert ≠ on-chain revert** (vigil HB#506 brain lesson + HB#510 retro-509 change-2). When an `ethers.Contract` view-method call appears to "revert," the revert may be on the client side — ethers tries to ABI-decode the response; if your return-type string is less precise than the contract's actual signature, decoding fails and the error is indistinguishable from an on-chain revert inside a try/catch. **Real example**: `eip712Domain()` per EIP-5267 returns `(bytes1,string,string,uint256,address,bytes32,uint256[])`. HB#502 probed with return type `string` alone → 10 probes "reverted" uniformly. HB#504 retried with the full tuple spec → identified MetaMask EIP7702StatelessDeleGator + Coinbase Smart Wallet v1. **Rule**: when ABI probes revert uniformly across a probe set, suspect ethers-side decoder mismatch FIRST. Verify your return-type spec against 4byte / the actual ABI. For EIP-7702 smart-account impls specifically, call via a delegating EOA (not the impl address directly) AND use precise tuple return types.
