@@ -254,11 +254,31 @@ async function main() {
   console.log(`\n=== E-direct tier: ${tier} ===`);
   console.log(`(all-agree ${(allAgreeRate * 100).toFixed(1)}%; pairwise≥70% in ${majorityPairwise}/${pairwiseRates.length} pairs)\n`);
 
+  // v1.3-prototype summary: Pattern ι vs coordinated-dual-whale (vigil HB#459)
+  // Computes top-1/top-2 cum-vp ratio + applies v2.1.4 classification workflow.
+  let patternSummary = 'n/a';
+  if (topVoters.length >= 2 && topVoters[0].cumulativeVP && topVoters[1].cumulativeVP) {
+    const ratio = topVoters[0].cumulativeVP / topVoters[1].cumulativeVP;
+    const subTier = ratio >= 3 ? 'ι-extreme' : ratio >= 1.5 ? 'ι-strong' : ratio >= 1.0 ? 'ι-moderate' : 'no-dominance';
+    if (subTier === 'no-dominance') {
+      patternSummary = `ratio ${ratio.toFixed(2)}× — top-1 NOT dominant; neither Pattern ι nor dual-whale`;
+    } else if (top2.coVoted < 3) {
+      patternSummary = `ratio ${ratio.toFixed(2)}× (${subTier} band) + top-2 co-vote INSUFFICIENT (${top2.coVoted}) → Pattern ι candidate (PENDING larger sample per v2.1.3 caveat)`;
+    } else if (top2PairwiseRate >= 0.70) {
+      patternSummary = `ratio ${ratio.toFixed(2)}× (${subTier} band) + top-2 pairwise ${(top2PairwiseRate * 100).toFixed(0)}% ≥ 70% → COORDINATED DUAL-WHALE (per v2.1.2 disqualifier — NOT Pattern ι)`;
+    } else {
+      patternSummary = `ratio ${ratio.toFixed(2)}× (${subTier} band) + top-2 pairwise ${(top2PairwiseRate * 100).toFixed(0)}% < 70% → Pattern ι ${subTier} (co-vote LOW)`;
+    }
+  }
+  console.log(`\n=== Pattern ι vs dual-whale (v1.3-prototype per vigil HB#459) ===`);
+  console.log(`  ${patternSummary}\n`);
+
   console.log('JSON:');
   console.log(JSON.stringify({
     space, topN, binaryProposals: binaryProposals.length, allCoparticipated, allAgreed, allAgreeRate,
     pairwiseRates, majorityPairwise, tier, topVoters,
     dualWhale: { top2CoVoted: top2.coVoted, top2Agreed: top2.agreed, top2PairwiseRate, variant: dualWhaleVariant },
+    patternSummary,
   }, null, 2));
 }
 
