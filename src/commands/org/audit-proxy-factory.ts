@@ -66,6 +66,7 @@ interface AuditProxyFactoryArgs {
   governanceTokenChain?: number;
   governanceTokenRpc?: string;
   proposals?: string;
+  identifyImpl?: boolean;
 }
 
 /**
@@ -86,6 +87,48 @@ export function extractEip7702Target(code: string): string | null {
   const target = '0x' + lc.slice(8);
   if (!ethers.utils.isAddress(target)) return null;
   return target;
+}
+
+/**
+ * HB#505 v1.5.2: identify an EIP-7702 smart-account impl by calling eip712Domain()
+ * + entryPoint() on a delegating EOA. Returns { name, version, entryPoint } or null
+ * if the calls revert.
+ *
+ * CRITICAL: the return-type signature for eip712Domain() must be declared precisely
+ * as `(bytes1,string,string,uint256,address,bytes32,uint256[])` per EIP-5267. Using
+ * a less-specific type (e.g. missing the trailing extensions array) causes ethers
+ * to fail ABI decoding silently — the call looks reverted but is actually a
+ * decoder mismatch. See HB#504 root-cause analysis.
+ *
+ * Discovered impls at HB#504:
+ *   0x63c0c19a... = "EIP7702StatelessDeleGator" v1 (MetaMask Delegation Framework)
+ *   0x7702cb55... = "Coinbase Smart Wallet" v1
+ */
+export async function identifyEip7702Impl(
+  provider: ethers.providers.Provider,
+  delegatingEoa: string,
+): Promise<{ name: string; version: string; entryPoint: string | null } | null> {
+  const abi = [
+    'function eip712Domain() view returns (bytes1,string,string,uint256,address,bytes32,uint256[])',
+    'function entryPoint() view returns (address)',
+  ];
+  try {
+    const c = new ethers.Contract(delegatingEoa, abi, provider);
+    const domain = await c.eip712Domain();
+    // EIP-5267 order: [fields, name, version, chainId, verifyingContract, salt, extensions]
+    const name = String(domain[1] ?? '');
+    const version = String(domain[2] ?? '');
+    if (!name) return null;
+    let entryPoint: string | null = null;
+    try {
+      entryPoint = (await c.entryPoint()).toLowerCase();
+    } catch {
+      // entryPoint is optional — not all smart-account impls expose it
+    }
+    return { name, version, entryPoint };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -112,6 +155,9 @@ export interface ProxyFactoryAuditResult {
     multisigVariant?: MultisigVariant;
     governanceTokenBalance?: string;
     delegationTarget?: string;
+    implName?: string;
+    implVersion?: string;
+    implEntryPoint?: string | null;
   }>;
   classSummary?: Record<VoterClass, number>;
   familySummary?: Record<ProxyFamily, number>;
@@ -441,6 +487,11 @@ export const auditProxyFactoryHandler = {
         type: 'string',
         describe: 'Optional comma-separated Snapshot proposal IDs to pin voter discovery. Bypasses the default last-100-closed window. Addresses HB#490 time-windowed-voter-drift (see brain lesson snapshot-top-n-voters-are-time-windowed).',
       })
+      .option('identify-impl', {
+        type: 'boolean',
+        default: false,
+        describe: 'v1.5.2 (HB#505): for each eip-7702-delegated-eoa voter, call eip712Domain() + entryPoint() via the delegating EOA to surface impl name, version, and entryPoint. Enables Smart-Account Implementation Registry (SAIR) data collection.',
+      })
       .check((argv) => {
         if (!argv.address && !argv.space && !argv.voters) {
           throw new Error('Must provide --address, --space, or --voters');
@@ -549,6 +600,11 @@ export const auditProxyFactoryHandler = {
             // HB#491 v1.5.1: extract EIP-7702 delegation target (Task #490 step 4).
             const delegationTarget =
               family === 'eip-7702-delegated-eoa' ? extractEip7702Target(code) : null;
+            // HB#505 v1.5.2: optional impl identification for EIP-7702 voters.
+            const implInfo =
+              argv.identifyImpl && family === 'eip-7702-delegated-eoa'
+                ? await identifyEip7702Impl(provider, addr)
+                : null;
             return {
               address: addr,
               class: cls,
@@ -559,6 +615,9 @@ export const auditProxyFactoryHandler = {
                 ? { multisigVariant: variantInfo.variant, governanceTokenBalance: variantInfo.balance }
                 : {}),
               ...(delegationTarget ? { delegationTarget } : {}),
+              ...(implInfo
+                ? { implName: implInfo.name, implVersion: implInfo.version, implEntryPoint: implInfo.entryPoint }
+                : {}),
             };
           } catch (e: any) {
             if (argv.verbose) console.error(`[audit-proxy-factory] getCode(${addr}) error:`, e?.message || e);
