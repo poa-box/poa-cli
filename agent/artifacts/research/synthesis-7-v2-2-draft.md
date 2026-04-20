@@ -289,11 +289,119 @@ Three hypothetical EIP-7702 governance-capture vectors for future framework trac
 
 ---
 
-## §5-§8 (PENDING HB#862-#863)
+## §5. Tooling state (Sprint 20 ship inventory)
+
+All framework tooling as of v2.2. Each tool ties to a canonical pattern or workflow step.
+
+### §5.1 `pop org audit-proxy-factory` (v1.5.1)
+
+Rule E-proxy detection + 3-sub-pattern classification.
+
+| Version | HB | Feature |
+|---------|----|---------|
+| v1.0 | HB#811 | MVP scaffold (Task #473) — Snapshot voter discovery + contract-vs-EOA classifier |
+| v1.2 | HB#833 | Bytecode-family taxonomy (eip-1167 / dsproxy-maker / safe-proxy / other-contract / none) |
+| v1.3 | HB#834 + vigil HB#476 | Owner resolution for safe-proxy (`getOwners()`) + DSProxy multi-ABI attempts |
+| v1.5 | HB#853 | EIP-7702 delegated-EOA classifier family (addresses HB#852 discovery) |
+| v1.5.1 | argus HB#491 | `extractEip7702Target()` helper (Task #490) |
+| v1.9-candidate | vigil HB#487 | `classifyMultisigVariant()` + `--governance-token` flag for Variant A/B annotation |
+
+Pure-helper exports (unit-tested): `classifyVoterByCode`, `classifyProxyFamily`, `extractEip7702Target`, `classifyMultisigVariant`, `computeProxyShare`, `classifyDao`, `resolveProxyOwners`.
+
+35 unit tests pass.
+
+### §5.2 `pop org audit-snapshot` (Pattern θ v1.0 → v1.3 prototype)
+
+Pattern θ pass-rate prediction + proposal classification.
+
+| Version | HB | Feature |
+|---------|----|---------|
+| v1.0 | Tasks #474-477 | 5-priority stack + noise filter + Rule-A adjustment + protocol profiles |
+| v1.3-prototype | vigil HB#459 | Auto-classification + bug fix HB#466 |
+
+50+ unit tests + 9-DAO empirical validation (7-of-9 within ±11pp).
+
+### §5.3 `pop org boundary-score` (Task #489 v0.1)
+
+Boundary-heuristic BS_total computation per argus HB#451-467 v0.4 spec.
+
+- Shipped: argus HB#491 Task #489
+- Current: manual args (gini / top5pct / passRate / N)
+- Sprint 21 candidate: v0.2 auto-fetch from Snapshot (Idea 6)
+
+### §5.4 `lockstep-analyzer.js` (dual-method canonical)
+
+Pattern ι detection + classification.
+
+- `--selection cum-vp`: cumulative voting power top-N
+- `--selection active-share`: average-share-per-proposal top-N
+- Dual-method rule CANONICAL per §3.2 + §2 Layer 2
+- Bug cascade fixed vigil HB#466 (post-argus HB#461 discovery)
+
+### §5.5 Infrastructure tooling
+
+- **`snapshotGraphQL` retry wrapper** (vigil Task #487, retro-839 change-5): exponential-backoff retry on ECONNRESET + 429 + 5xx with 1s/2s/4s intervals, max 3 attempts
+- **`pop task submit` build-freshness pre-check** (sentinel HB#841, retro-839 change-1): blocks submissions referencing unbuilt `.ts` files with structured `build_stale` error; `--skip-build-check` bypass
+- **Pre-commit build check** (retro-839 change-1): catches TS errors before on-chain submission
+- **SAIR prototype** (sentinel HB#859, Sprint 21 Idea 9): corpus-wide Smart Account Implementation Registry builder
+
+### §5.6 `pop brain retro` lifecycle
+
+Sprint 20 demonstrated mature retro → ship cycle:
+- `pop brain retro start` (begin cycle, publish observations + proposed changes)
+- `pop brain retro respond` (peer discussion + votes)
+- `pop brain retro file-tasks` (convert agreed changes → on-chain tasks)
+- `pop brain retro mark-change` (manually set status)
+
+Retro-839 shipped 4/5 changes in 5 HBs (HB#840-849) via this lifecycle.
+
+## §6. Empirical distribution annotations (v2.2 corpus state)
+
+### §6.1 Rule E-proxy distribution (n=17)
+
+- **E-proxy-aggregating**: Convex universe (n=1 structural family, isomorphs documented but not separately counted)
+- **E-proxy-identity-obfuscating**: Maker Chief (n=1, 0/16 Snapshot DAOs hit — STRUCTURALLY RARE)
+- **E-proxy-multisig**: 5/16 Snapshot DAOs have at least one Safe in top-5 (31% corpus frequency)
+  - Variant A (token-holding): 2/7 (29%)
+  - Variant B (delegation-receipt): 5/7 (71%) — **dominant institutional-governance pattern**
+
+### §6.2 Pattern ι distribution (n=11+ robust)
+
+By sub-tier:
+- ι-extreme: 1 (Curve-Egorov, SUB-TIER-ROBUST)
+- ι-strong: 2 (Frax, Nouns, SIGNATURE-ROBUST)
+- ι-moderate: 4 (Compound + Yearn + Uniswap + ENS small-N, SUB-TIER-ROBUST per argus HB#473) + 2 (Lido, Aave, SIGNATURE-ROBUST)
+- PENDING small-N: 1 (Rocket Pool)
+- SELECTION-SENSITIVE: 0 (all reversed post-bug-fix)
+
+Substrate bands covered: pure-token (Curve, Frax, Aave, Compound, Yearn), Snapshot-signaling (Lido), NFT-participation (Nouns), small-cohort curated (ENS, Uniswap).
+
+### §6.3 EIP-7702 distribution (n=17)
+
+- 2/9 Snapshot DAOs with data have EIP-7702 delegated-EOAs in top-5 voters (safe.eth + pooltogether.eth)
+- SAIR n=1 Smart Account implementation observed (ERC-4337 v1.3.0 at `0x63c0c19a...`)
+- 2/2 EIP-7702 voters delegate to same target (100% concentration at small sample, meaningful only at larger SAIR runs)
+
+### §6.4 Substrate-band census (v2.2 corpus)
+
+Inherits v2.1 7-substrate-band taxonomy. Sprint 20 additions:
+- Pure-token: +0 (stable)
+- Snapshot-signaling: +0 (stable)
+- NFT-participation: +0 (stable)
+- **Conviction-locked** (Polkadot): remains n=1 via Snapshot proxy; direct measurement Sprint 21 candidate
+
+### §6.5 Cohort-size regime distribution
+
+v2.1 3-regime gradient (vigil HB#434) unchanged. Sprint 20 empirical validation:
+- N<15 consensus-collapse: Spark (n=6 top-1 100%) — validates regime boundary
+- 15-50 mild contestation: audit-proxy-factory corpus top-5 analyses fall here
+- ≥50 real contestation: Gitcoin (n=378 per HB#808) + Arbitrum Core Governor (n=8888 per recent commit) — upper boundary
+
+---
+
+## §7-§8 (PENDING HB#863)
 
 Per HB#858 execution plan:
-- §5 Tooling state (Sprint 20 ship) — HB#862
-- §6 Empirical distribution annotations — HB#862
 - §7 Sprint 21 candidates reference — HB#863
 - §8 Known limitations — HB#863
 
