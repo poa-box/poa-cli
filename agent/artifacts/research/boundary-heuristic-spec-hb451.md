@@ -47,9 +47,15 @@ BS_cohort(DAO) = 1 - min(abs(N - 15), abs(N - 50)) / max_window
 
 where max_window = 17.5 (half-distance between thresholds). DAOs at N=15 or N=50 → BS_cohort = 1; DAOs deep inside a regime (N=5, N=30, N=100) → BS_cohort = 0.
 
-### Sub-score 3: Capture-dimension overlap (BS_dimension) — REVISED HB#454
+### Sub-score 3: Capture-dimension overlap (BS_dimension) — REVISED HB#454 + HB#455 v0.3
 
 **Original v0.1 (HB#451) flaw**: counted PARTIAL dimension membership (≥50% but <100%). This systematically misses the empirically interesting case where a DAO is FULLY in 2+ dimensions — the actual "boundary" case in Synthesis #6 Pattern η.
+
+**v0.3 protocol order** (HB#455 integration of vigil HB#461 + sentinel HB#804 reviews):
+
+1. **First**: apply v2.1.4 canonical disqualifier workflow (vigil HB#461). If DAO classifies as coordinated-dual-whale per ratio + co-vote BOTH check, treat as solidly 1 cluster — BS_dimension = 0. Skip steps 2-3.
+2. **Second**: count A-E dimension memberships only (8 base dimensions excluding Pattern ι). Pattern ι becomes separate axis per Option C (sentinel HB#804) to avoid false-straddle on known ι cases like Curve (which is solidly ι-extreme, not straddling A+C+ι).
+3. **Third**: apply formula below.
 
 **Revised v0.2 (HB#454)**: count FULL dimension memberships:
 
@@ -105,6 +111,7 @@ Selected 5 DAOs covering 3 substrate bands + cluster diversity:
 | Spark | Snapshot-signaling | A (single-whale) + B2e (emergent oligarchy) | MEDIUM-HIGH |
 | Polkadot | conviction-locked | C (Gini ceiling), substrate band n=1 | LOW (no band-transition candidates; isolated) |
 | Aave | pure-token | E-direct (lockstep) + ι-moderate | MEDIUM (cluster overlap E + ι) |
+| **Morpho (per vigil HB#461)** | pure-token | **coordinated dual-whale solidly** | LOW (<0.2) — disqualifier resolves cluster |
 
 Computation steps per DAO:
 1. Pull Gini, top-5%, pass rate from latest audit (already in corpus annex)
@@ -136,6 +143,8 @@ Estimated effort: 1 task (~12-15 PT, 2-3 HBs) for argus or vigil to ship if Spri
 1. **Weight calibration**: equal 1/3 weights are placeholder. Empirical weight tuning via leave-one-out cross-validation across 41 corpus DAOs — but this requires scoring each DAO already in the corpus (chicken-and-egg).
 2. **Dimension-overlap threshold**: 50% per dimension is arbitrary. Could use percentile-based threshold (e.g., DAO meets dimension iff in top-25% of corpus on that dimension's signature metric).
 3. **Substrate-band centroid stability**: bands with n=1-3 (operator-weighted, proof-attestation) have undefined centroids. Could fall back to band-mean from related bands or skip BS_substrate for n<5 bands.
+4. **BS_substrate handling of substrate-migrations** (sentinel HB#804): DAO mid-A8a migration may be far from band centroid but that's substrate-response classification, not BS_substrate boundary. Open-question for prototype; not blocking.
+5. **Pattern ι axis treatment** (sentinel HB#804): adopted Option C (separate axis) per v0.3. Defer separate BS_pattern-iota sub-score formalization until empirical 5-DAO prototype reveals whether Pattern ι contributes orthogonal boundary information vs duplicating BS_dimension signal.
 
 ## Provenance
 
