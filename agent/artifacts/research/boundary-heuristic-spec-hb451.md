@@ -102,6 +102,31 @@ Recomputed Curve: BS_total = 0.5 × 0.286 + 0.3 × 0.3 + 0.2 × 0.05 = 0.243 (hi
 
 **Conclusion from worked example**: either (a) original expected-BS table was over-optimistic, or (b) the BS_dimension max-cap of 7 is too high (most DAOs cap at 3-4 dimensions max → divide by 4 not 7), or (c) the formula needs additional component (e.g., capture-cluster TYPE distance, not just count). Worked example reveals the framework requires further iteration before empirical 5-DAO validation.
 
+### v0.5 update (HB#469) — empirically calibrated thresholds + prototype lessons
+
+Per Task #481 5-DAO prototype (HB#467) + vigil HB#472 endorsement, the spec adopts:
+
+**1. Recalibrated BS_total thresholds** (replaces HB#451 over-optimistic expectations):
+- HIGH: BS_total ≥ 0.4
+- MEDIUM: 0.2 ≤ BS_total < 0.4
+- LOW: BS_total < 0.2
+
+Under recalibrated thresholds, all 5 prototype DAOs (Curve LOW 0.168, Lido LOW 0.158, Spark MEDIUM-HIGH 0.540, Polkadot LOW 0.017, Aave MEDIUM 0.424) match expected direction. Original HIGH (~0.5+) for Curve was speculative; empirical floor with 1/3 weights + /7 dimension divisor produces BS ≤0.3 unless BS_substrate or BS_cohort are extreme.
+
+**2. Empirical-tuning candidate weights** (deferred to v1.0 CLI + 10-15 DAO validation, NOT v0.5):
+- w_substrate = 0.5 (drives extreme-cluster BS via Pareto distribution)
+- w_cohort = 0.2 (regime-boundary signal narrow)
+- w_dimension = 0.3 (cluster-straddling primary)
+
+Vigil HB#472 endorsed weights but recognized n=5 is overfitting risk. Defer to prototype CLI (~12-15 PT, 2-3 HBs) with 10-15 DAO validation before locking in.
+
+**3. BS_dimension max-cap tuning candidate** (also v1.0 CLI deferred):
+- Current: divide by 7 (8 dims A-E + ι separate axis = 7 base dims minus implicit D floor)
+- Vigil HB#472 candidate: divide by 4 (most DAOs cap at 3-4 full memberships empirically)
+- Would scale BS_dimension up by 7/4 = 1.75× for 2-dim DAOs
+
+Defer until prototype CLI shows empirical max in 10-15 DAO range.
+
 ## Prototype 5-DAO computation (methodology only, no values)
 
 Selected 5 DAOs covering 3 substrate bands + cluster diversity:
