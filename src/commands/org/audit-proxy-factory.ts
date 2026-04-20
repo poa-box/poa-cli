@@ -61,6 +61,59 @@ export interface ProxyFactoryAuditResult {
 }
 
 /**
+ * Fetch top-N voters from a Snapshot space via GraphQL.
+ * Returns voter addresses sorted by voting-power participation.
+ *
+ * Uses last 100 proposals as voter discovery window.
+ */
+async function fetchSnapshotTopVoters(space: string, topN: number): Promise<string[]> {
+  const query = `
+    query($space: String!) {
+      proposals(where: {space: $space, state: "closed"}, first: 100, orderBy: "created", orderDirection: desc) {
+        id
+      }
+    }
+  `;
+  const propResp = await fetch('https://hub.snapshot.org/graphql', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables: { space } }),
+  });
+  const propJson = (await propResp.json()) as any;
+  if (propJson.errors) throw new Error(`Snapshot: ${propJson.errors[0].message}`);
+  const proposalIds = (propJson.data?.proposals || []).map((p: any) => p.id);
+  if (proposalIds.length === 0) return [];
+
+  const votesQuery = `
+    query($proposals: [String!]!) {
+      votes(where: {proposal_in: $proposals}, first: 1000, orderBy: "vp", orderDirection: desc) {
+        voter vp
+      }
+    }
+  `;
+  const votesResp = await fetch('https://hub.snapshot.org/graphql', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: votesQuery, variables: { proposals: proposalIds } }),
+  });
+  const votesJson = (await votesResp.json()) as any;
+  if (votesJson.errors) throw new Error(`Snapshot: ${votesJson.errors[0].message}`);
+
+  // Aggregate VP per voter
+  const voterVp = new Map<string, number>();
+  for (const v of votesJson.data?.votes || []) {
+    const prev = voterVp.get(v.voter) || 0;
+    voterVp.set(v.voter, prev + (v.vp || 0));
+  }
+
+  // Sort by total VP descending, take top-N
+  return Array.from(voterVp.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, topN)
+    .map(([addr]) => addr);
+}
+
+/**
  * Classify a single voter as EOA vs proxy-candidate via code-presence check.
  * Exported for unit testing.
  *
@@ -145,18 +198,31 @@ export const auditProxyFactoryHandler = {
       const network = resolveNetworkConfig(chainId, argv.rpc);
       const provider = new ethers.providers.JsonRpcProvider(network.rpc);
 
-      // MVP scaffold: if explicit voters provided, classify those directly.
-      // Snapshot/on-chain voter discovery deferred to HB#812+ follow-up.
+      // Voter discovery:
+      //   1. --voters: explicit comma-separated list (scaffold behavior)
+      //   2. --space: Snapshot space, fetch top-N voters via GraphQL (HB#824 addition)
+      //   3. --address: governance-contract event scan (deferred HB#825+)
       let voterAddresses: string[] = [];
+      let discoverySource: string = 'explicit';
       if (argv.voters) {
         voterAddresses = argv.voters.split(',').map((a) => a.trim()).filter(Boolean);
+        discoverySource = 'explicit';
+      } else if (argv.space) {
+        spin.text = `Fetching top-5 voters for Snapshot space ${argv.space}...`;
+        voterAddresses = await fetchSnapshotTopVoters(argv.space, 5);
+        discoverySource = `snapshot:${argv.space}`;
+        if (voterAddresses.length === 0) {
+          spin.stop();
+          output.error(`No voters found for Snapshot space "${argv.space}"`);
+          process.exit(1);
+        }
       } else {
         spin.stop();
         const result: ProxyFactoryAuditResult = {
           target,
           chainId,
           status: 'scaffold',
-          note: 'Voter discovery from --address/--space not yet implemented. Provide --voters with comma-separated addresses to classify directly. HB#812+ adds Snapshot integration.',
+          note: 'Voter discovery from --address requires governance-contract event scan (HB#825+). Use --space for Snapshot voter list OR --voters for explicit addresses.',
         };
         if (argv.json) {
           output.json(result);
@@ -195,6 +261,7 @@ export const auditProxyFactoryHandler = {
         classSummary: summary,
         proxyShare,
         classification,
+        note: `Voter discovery: ${discoverySource}. Factory-pattern detection + proxy→owner resolution deferred to future work.`,
       };
 
       spin.stop();
