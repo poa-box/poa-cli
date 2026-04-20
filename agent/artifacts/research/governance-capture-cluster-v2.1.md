@@ -130,6 +130,8 @@ When a top-1 voter has dominant cumulative voting power (ratio to top-2 cum-VP >
 
 **Critical note**: measurement is method-dependent. Pattern ι sub-tiers are defined via `lockstep-analyzer.js --selection cum-vp` (default). Audit-snapshot active-share percentages produce different top-5 cohorts that may NOT exhibit the same pattern. Specify selection method in any reference.
 
+**Classification workflow requires BOTH ratio AND binary co-vote measurement (v2.1.4 per sentinel HB#787 endorsing vigil HB#453)**: Ratio-only classification can mis-tag coordinated dual-whale as ι-moderate. Empirical: Lido 1.16× + 0/293 co-vote → ι-moderate; Rocket Pool 1.12× + 1/63 thin → ι-moderate pending; **Morpho 1.17× + 6/6 at 100% → COORDINATED dual-whale (NOT Pattern ι)**. Same ratio band, opposite coordination behavior. Always run lockstep-analyzer co-vote check before classifying any candidate with ratio in 1.0-3.0× range (ι-moderate + ι-strong bands).
+
 ### Sub-tiers (cum-vp selection)
 
 - **ι-extreme**: top-1 ≥ 3× top-2 cum-vp — founder-dominant (Curve Egorov)
