@@ -68,6 +68,26 @@ interface AuditProxyFactoryArgs {
 }
 
 /**
+ * HB#491 v1.5.1: extract the 20-byte delegation target from an EIP-7702 designator.
+ * Input: 23-byte bytecode "0xef0100<target20bytes>" (case-insensitive).
+ * Returns the lowercase 0x-prefixed target address, or null if the code is not
+ * a valid EIP-7702 designator.
+ *
+ * Task #490 step 4 (optional v1.5.1 follow-on to sentinel HB#853 v1.5 classifier).
+ * Exported for unit testing.
+ */
+export function extractEip7702Target(code: string): string | null {
+  if (!code) return null;
+  const lc = code.toLowerCase();
+  // 0x + ef0100 (6) + 40 target chars = 48 total chars for a 23-byte designator
+  if (lc.length !== 48) return null;
+  if (!lc.startsWith('0xef0100')) return null;
+  const target = '0x' + lc.slice(8);
+  if (!ethers.utils.isAddress(target)) return null;
+  return target;
+}
+
+/**
  * v2.1.9 E-proxy-multisig variant annotation (vigil HB#487, sentinel HB#849 canonical).
  * Variant A (direct-token-holding): Safe holds governance tokens directly (e.g. Uniswap Safe 1001 UNI)
  * Variant B (delegation-VP-receipt): Safe receives delegated VP without holding tokens (e.g. Balancer + ArbFdn Safes at 0)
@@ -90,6 +110,7 @@ export interface ProxyFactoryAuditResult {
     owners?: string[];
     multisigVariant?: MultisigVariant;
     governanceTokenBalance?: string;
+    delegationTarget?: string;
   }>;
   classSummary?: Record<VoterClass, number>;
   familySummary?: Record<ProxyFamily, number>;
@@ -493,6 +514,9 @@ export const auditProxyFactoryHandler = {
               governanceToken && family === 'safe-proxy'
                 ? await classifyMultisigVariant(tokenProvider, addr, governanceToken)
                 : null;
+            // HB#491 v1.5.1: extract EIP-7702 delegation target (Task #490 step 4).
+            const delegationTarget =
+              family === 'eip-7702-delegated-eoa' ? extractEip7702Target(code) : null;
             return {
               address: addr,
               class: cls,
@@ -502,6 +526,7 @@ export const auditProxyFactoryHandler = {
               ...(variantInfo
                 ? { multisigVariant: variantInfo.variant, governanceTokenBalance: variantInfo.balance }
                 : {}),
+              ...(delegationTarget ? { delegationTarget } : {}),
             };
           } catch (e: any) {
             if (argv.verbose) console.error(`[audit-proxy-factory] getCode(${addr}) error:`, e?.message || e);

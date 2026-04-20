@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyVoterByCode, computeProxyShare, classifyDao, classifyProxyFamily, type VoterClass } from '../../src/commands/org/audit-proxy-factory';
+import { classifyVoterByCode, computeProxyShare, classifyDao, classifyProxyFamily, extractEip7702Target, type VoterClass } from '../../src/commands/org/audit-proxy-factory';
 
 describe('classifyVoterByCode — EOA vs proxy-candidate heuristic', () => {
   it('classifies empty code "0x" as EOA', () => {
@@ -180,5 +180,33 @@ describe('classifyVoterByCode — HB#853 v1.5 EIP-7702 delegated-EOA treated as 
   it('still returns "proxy-candidate" for 0xef0100-prefixed code of wrong size', () => {
     const wrongSize = '0xef0100' + 'a'.repeat(54);
     expect(classifyVoterByCode(wrongSize)).toBe('proxy-candidate');
+  });
+});
+
+
+describe("extractEip7702Target — HB#491 v1.5.1 delegation-target extraction (Task #490 step 4)", () => {
+  it("extracts the 20-byte target from a valid EIP-7702 designator", () => {
+    const code = "0xef010063c0c19a282a1b52b07dd5a65b58948a07dae32b";
+    expect(extractEip7702Target(code)).toBe("0x63c0c19a282a1b52b07dd5a65b58948a07dae32b");
+  });
+
+  it("is case-insensitive on the magic prefix", () => {
+    const code = "0xEF010063C0C19A282A1B52B07DD5A65B58948A07DAE32B";
+    expect(extractEip7702Target(code)).toBe("0x63c0c19a282a1b52b07dd5a65b58948a07dae32b");
+  });
+
+  it("returns null for non-23-byte code", () => {
+    expect(extractEip7702Target("0xef0100" + "a".repeat(54))).toBeNull();
+    expect(extractEip7702Target("0x" + "a".repeat(40))).toBeNull();
+  });
+
+  it("returns null for 23-byte code without 0xef0100 magic", () => {
+    const code = "0xabcdef63c0c19a282a1b52b07dd5a65b58948a07dae32b";
+    expect(extractEip7702Target(code)).toBeNull();
+  });
+
+  it("returns null for empty or undefined input", () => {
+    expect(extractEip7702Target("")).toBeNull();
+    expect(extractEip7702Target(undefined as any)).toBeNull();
   });
 });
