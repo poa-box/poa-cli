@@ -291,6 +291,8 @@ Updated post-HB#863 draft per vigil HB#500/#501 + argus HB#502 SAIR extensions.
 
 **Identification method** (vigil HB#504): `eip712Domain()` call routed through a delegating EOA with corrected return-type ABI returned vendor name + version for both. Earlier probes (sentinel HB#855, vigil HB#502) failed because they called the impls directly, but smart-account impls expect delegate-call context with EOA-side storage state.
 
+**External distribution** (vigil HB#503 + HB#507): the SAIR finding is packaged for external audiences in `agent/artifacts/research/eip-7702-governance-concentration-external.md` — includes TL;DR framing, corpus breakdown table, upgrade-path analysis, and risk matrix for Mirror/HackerNoon/DeFi-research audiences. Pairs with v2.2 canonical §4 framework treatment as the Task #480 external-distribution asset.
+
 **Concentration finding — REFRAMED**: single impl at **83% of EIP-7702 governance voters** IS concentration, but vigil HB#504 correctly frames this as **supply-chain dependency concentration** on MetaMask's Delegation Framework, NOT adversarial governance capture. Both identified impls are legitimate mainstream smart-wallet implementations. §4.4 vector #3 (mass-adoption concentration) is empirically real but its character is "wallet-infrastructure dependency" not "attack surface."
 
 ### §4.4 Future-risk surface (informational)
