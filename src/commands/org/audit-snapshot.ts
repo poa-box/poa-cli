@@ -257,14 +257,49 @@ export function weightedMixPrediction(
 }
 
 async function querySnapshot(query: string, variables: any = {}): Promise<any> {
-  const response = await fetch(SNAPSHOT_API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables }),
-  });
-  const json = await response.json() as any;
-  if (json.errors) throw new Error(`Snapshot API: ${json.errors[0].message}`);
-  return json.data;
+  // HB#508 parity with audit-proxy-factory HB#487: retry/backoff for transient
+  // Snapshot failures (429, 5xx, ECONNRESET). Previously an HTTP 429 response
+  // returned { data: undefined } → `proposalData.proposals` threw
+  // "Cannot read properties of undefined (reading 'proposals')" with no hint
+  // that it was a rate-limit.
+  const body = JSON.stringify({ query, variables });
+  const maxAttempts = 3;
+  let lastErr: Error | null = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await fetch(SNAPSHOT_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+      if (response.status === 429 || response.status >= 500) {
+        throw new Error(`Snapshot HTTP ${response.status}`);
+      }
+      if (!response.ok) {
+        throw new Error(`Snapshot HTTP ${response.status} (non-retryable)`);
+      }
+      const json = (await response.json()) as any;
+      if (json.errors) throw new Error(`Snapshot API: ${json.errors[0].message}`);
+      if (!json.data) {
+        throw new Error('Snapshot API returned no data field');
+      }
+      return json.data;
+    } catch (e: any) {
+      lastErr = e;
+      const msg = String(e?.message || e);
+      const retryable =
+        msg.includes('ECONNRESET') ||
+        msg.includes('ETIMEDOUT') ||
+        msg.includes('EAI_AGAIN') ||
+        msg.includes('fetch failed') ||
+        msg.includes('HTTP 429') ||
+        /HTTP 5\d\d/.test(msg);
+      if (!retryable || attempt === maxAttempts) break;
+      const delayMs = 1000 * Math.pow(2, attempt - 1);
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr || new Error('Snapshot: unknown error');
 }
 
 export const auditSnapshotHandler = {
