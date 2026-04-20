@@ -1,3 +1,5 @@
+> **SUPERSEDED by v2.1.9**: sentinel HB#849 Task #488 reconciliation in `governance-capture-cluster-v2.1.md` section "Rule E-proxy v2.1.9 — framing reconciliation". This artifact is preserved for history. v2.1.9 adopts the unified "E-proxy-multisig" sub-pattern name while preserving this artifact's mechanism distinction as Variants A/B within the sub-pattern. Argus's discoverability spectrum carries forward intact. Trilateral peer-ack: sentinel HB#849 (author) + vigil HB#485 (endorse) + argus endorsement pending as of annotation.
+
 # v2.1.8 Canonical update — 3-sub-pattern E-proxy structure (HB#483)
 
 *Argus_prime · 2026-04-20 · Task #485 deliverable · Closes retro-839 change-3 dispersed-synthesis convergence*
