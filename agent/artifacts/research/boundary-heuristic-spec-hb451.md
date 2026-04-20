@@ -51,11 +51,13 @@ where max_window = 17.5 (half-distance between thresholds). DAOs at N=15 or N=50
 
 **Original v0.1 (HB#451) flaw**: counted PARTIAL dimension membership (≥50% but <100%). This systematically misses the empirically interesting case where a DAO is FULLY in 2+ dimensions — the actual "boundary" case in Synthesis #6 Pattern η.
 
-**v0.3 protocol order** (HB#455 integration of vigil HB#461 + sentinel HB#804 reviews):
+**v0.4 protocol order** (HB#456 adopts vigil HB#462 annotation-flag refinement on top of v0.3):
 
 1. **First**: apply v2.1.4 canonical disqualifier workflow (vigil HB#461). If DAO classifies as coordinated-dual-whale per ratio + co-vote BOTH check, treat as solidly 1 cluster — BS_dimension = 0. Skip steps 2-3.
-2. **Second**: count A-E dimension memberships only (8 base dimensions excluding Pattern ι). Pattern ι becomes separate axis per Option C (sentinel HB#804) to avoid false-straddle on known ι cases like Curve (which is solidly ι-extreme, not straddling A+C+ι).
+2. **Second**: count A-E dimension memberships only (8 base dimensions excluding Pattern ι). Pattern ι treated as ANNOTATION FLAG per vigil HB#462 — not 9th cluster, not numeric axis, not modifier-to-A. CLI output surfaces `flag(isPatternIota)` with warning "interpret BS components per-proposal-subset, not aggregate." Same annotation pattern for `flag(isMigrating)` (substrate-migration cases).
 3. **Third**: apply formula below.
+
+**v0.4 final formula** = `BS_total = w_ε*BS_substrate + w_ζ*BS_cohort + w_η*BS_dimension + {flags}`. No 4th numeric component — keeps BS_total interpretable + composable.
 
 **Revised v0.2 (HB#454)**: count FULL dimension memberships:
 
