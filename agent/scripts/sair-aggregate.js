@@ -35,11 +35,17 @@ const DEFAULT_SPACES = [
 function auditSpace(space) {
   const cli = path.resolve(__dirname, '..', '..', 'dist', 'index.js');
   try {
-    const out = execFileSync('node', [cli, 'org', 'audit-proxy-factory', '--space', space, '--json'], {
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 120000,
-      maxBuffer: 4 * 1024 * 1024,
-    });
+    // HB#506: pass --identify-impl so EIP-7702 voters auto-surface smart-account
+    // {implName, implVersion, implEntryPoint} alongside delegationTarget.
+    const out = execFileSync(
+      'node',
+      [cli, 'org', 'audit-proxy-factory', '--space', space, '--identify-impl', '--json'],
+      {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 180000,
+        maxBuffer: 4 * 1024 * 1024,
+      }
+    );
     const text = out.toString('utf8');
     // Output may have banner lines before the JSON payload. Scan lines bottom-up
     // for the last line that starts with `{` and parses as JSON.
@@ -62,8 +68,8 @@ function main() {
   const args = process.argv.slice(2);
   const spaces = args.length > 0 ? args : DEFAULT_SPACES;
 
-  const rows = []; // {space, voter, delegationTarget}
-  const targetAgg = new Map(); // target -> { voters:Set, spaces:Set }
+  const rows = []; // {space, voter, delegationTarget, implName, implVersion, implEntryPoint}
+  const targetAgg = new Map(); // target -> { voters:Set, spaces:Set, implName, implVersion, implEntryPoint }
   const spaceStatus = []; // {space, voterCount, eip7702Count, status}
 
   for (const space of spaces) {
@@ -84,18 +90,37 @@ function main() {
     for (const v of eip7702) {
       if (!v.delegationTarget) continue;
       const tgt = v.delegationTarget.toLowerCase();
-      rows.push({ space, voter: v.address, delegationTarget: tgt });
-      if (!targetAgg.has(tgt)) targetAgg.set(tgt, { voters: new Set(), spaces: new Set() });
+      rows.push({
+        space,
+        voter: v.address,
+        delegationTarget: tgt,
+        implName: v.implName || '',
+        implVersion: v.implVersion || '',
+        implEntryPoint: v.implEntryPoint || '',
+      });
+      if (!targetAgg.has(tgt)) {
+        targetAgg.set(tgt, {
+          voters: new Set(),
+          spaces: new Set(),
+          implName: v.implName || null,
+          implVersion: v.implVersion || null,
+          implEntryPoint: v.implEntryPoint || null,
+        });
+      }
       const agg = targetAgg.get(tgt);
       agg.voters.add(v.address.toLowerCase());
       agg.spaces.add(space);
+      // Back-fill impl info if first voter didn't have it but a later one does
+      if (!agg.implName && v.implName) agg.implName = v.implName;
+      if (!agg.implVersion && v.implVersion) agg.implVersion = v.implVersion;
+      if (!agg.implEntryPoint && v.implEntryPoint) agg.implEntryPoint = v.implEntryPoint;
     }
   }
 
-  // CSV output
-  console.log('space,voter,delegationTarget');
+  // CSV output with impl-name columns
+  console.log('space,voter,delegationTarget,implName,implVersion,implEntryPoint');
   for (const r of rows) {
-    console.log(`${r.space},${r.voter},${r.delegationTarget}`);
+    console.log(`${r.space},${r.voter},${r.delegationTarget},"${r.implName}",${r.implVersion},${r.implEntryPoint}`);
   }
 
   // Summary
@@ -109,7 +134,11 @@ function main() {
   const ranked = Array.from(targetAgg.entries())
     .sort((a, b) => b[1].spaces.size - a[1].spaces.size || b[1].voters.size - a[1].voters.size);
   for (const [tgt, agg] of ranked) {
-    process.stderr.write(`  ${tgt}  (${agg.voters.size} voter${agg.voters.size === 1 ? '' : 's'}, ${agg.spaces.size} DAO${agg.spaces.size === 1 ? '' : 's'}: ${Array.from(agg.spaces).join(', ')})\n`);
+    const implLabel = agg.implName ? `${agg.implName} v${agg.implVersion || '?'}` : '(unidentified)';
+    process.stderr.write(`  ${implLabel}  [${tgt}]  — ${agg.voters.size} voter${agg.voters.size === 1 ? '' : 's'}, ${agg.spaces.size} DAO${agg.spaces.size === 1 ? '' : 's'}: ${Array.from(agg.spaces).join(', ')}\n`);
+    if (agg.implEntryPoint) {
+      process.stderr.write(`    entryPoint: ${agg.implEntryPoint}\n`);
+    }
   }
   process.stderr.write('\nPer-space status:\n');
   for (const s of spaceStatus) {
