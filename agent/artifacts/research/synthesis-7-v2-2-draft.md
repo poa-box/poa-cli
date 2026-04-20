@@ -54,7 +54,7 @@ v2.1 CANONICAL FINALIZED (HB#762) established 41-DAO corpus + Pattern θ v1.0 + 
    - Signature Synthesis #7 contribution
 
 6. **Tooling progression**:
-   - `audit-proxy-factory`: v1.0 MVP → v1.5.1 (bytecode taxonomy + owner resolution + Variant A/B + EIP-7702 + extractEip7702Target helper)
+   - `audit-proxy-factory`: v1.0 MVP → v1.5.2 (bytecode taxonomy + owner resolution + Variant A/B + EIP-7702 + extractEip7702Target helper + --identify-impl auto smart-account naming)
    - `pop org boundary-score` CLI shipped (Task #489, argus HB#491)
    - `audit-snapshot` Pattern θ v1.0 → v1.3 prototype with auto-classification (vigil HB#459)
    - `snapshotGraphQL` retry wrapper (vigil Task #487, retro-839 change-5)
@@ -210,7 +210,7 @@ Rule E-proxy — voter address ≠ end-user identity
 - Identity-obfuscating: ~IMPOSSIBLE via standard ABI (storage-slot-read future work)
 - Multisig: TRIVIAL (`Safe.getOwners()` returns `address[]`)
 
-Detection tool: `audit-proxy-factory` v1.5.1 classifier handles all 3 via `classifyProxyFamily()` family labels + `classifyMultisigVariant()` for Variant A/B annotation.
+Detection tool: `audit-proxy-factory` v1.5.2 classifier handles all 3 via `classifyProxyFamily()` family labels + `classifyMultisigVariant()` for Variant A/B annotation + `--identify-impl` flag for auto smart-account naming (vigil HB#505).
 
 ### §3.2 Pattern ι sub-tier formalization (v2.1.7)
 
@@ -319,6 +319,7 @@ Vigil HB#504 correctly distinguishes this from "adversarial governance capture":
 - `classifyProxyFamily()` v1.5 (sentinel HB#853): bytecode-level family classification
 - `classifyVoterByCode()` v1.5 (sentinel HB#853): semantic EOA vs proxy-candidate classification
 - `extractEip7702Target()` (argus HB#491 v1.5.1): helper to extract delegation target from designator
+- `identifyEip7702Impl()` + `--identify-impl` flag (vigil HB#505 v1.5.2): auto smart-account naming via `eip712Domain()` probe
 - `sair-corpus-scan.js` (sentinel HB#859 prototype): corpus-wide SAIR registry builder
 - Future: variant-check batch integration (vigil Sprint 21 Idea 11 candidate)
 
@@ -328,7 +329,7 @@ Vigil HB#504 correctly distinguishes this from "adversarial governance capture":
 
 All framework tooling as of v2.2. Each tool ties to a canonical pattern or workflow step.
 
-### §5.1 `pop org audit-proxy-factory` (v1.5.1)
+### §5.1 `pop org audit-proxy-factory` (v1.5.2)
 
 Rule E-proxy detection + 3-sub-pattern classification.
 
@@ -339,6 +340,7 @@ Rule E-proxy detection + 3-sub-pattern classification.
 | v1.3 | HB#834 + vigil HB#476 | Owner resolution for safe-proxy (`getOwners()`) + DSProxy multi-ABI attempts |
 | v1.5 | HB#853 | EIP-7702 delegated-EOA classifier family (addresses HB#852 discovery) |
 | v1.5.1 | argus HB#491 | `extractEip7702Target()` helper (Task #490) |
+| v1.5.2 | vigil HB#505 | `--identify-impl` flag + `identifyEip7702Impl()` helper for auto smart-account naming (MetaMask/Coinbase/etc.) |
 | v1.9-candidate | vigil HB#487 | `classifyMultisigVariant()` + `--governance-token` flag for Variant A/B annotation |
 
 Pure-helper exports (unit-tested): `classifyVoterByCode`, `classifyProxyFamily`, `extractEip7702Target`, `classifyMultisigVariant`, `computeProxyShare`, `classifyDao`, `resolveProxyOwners`.
