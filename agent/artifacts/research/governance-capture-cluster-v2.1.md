@@ -437,9 +437,11 @@ v2.1.2 disqualifier split Pattern ι from Pattern A-dual-whale (top-2 co-vote �
 |---------|-----------|-----------------------------|
 | **COORDINATED** | pairwise ≥70%, both top-2 active. SUB-TIER-ROBUST when both selection methods produce COORDINATED (different top-2 addresses OK as long as both pairs coordinate — see 'double-coordinated' note below) | 12 SUB-TIER-ROBUST (citizens-house upgraded HB#544 via active-share cross-validation; 11 prior + citizens-house = 12) |
 | **INDEPENDENT** | pairwise <70% with co-voted ≥3, both top-2 active | 1 (opcollective — 1st empirical case via vigil HB#518 heuristic + argus HB#535 validation; SUB-TIER-ROBUST cross-validated HB#534) |
-| **DISJOINT** | co-voted = 0, BOTH individual-activity ≥10 | 0 empirical so far; classifier validated via starknet ruled-out (sparse, not DISJOINT) |
+| **DISJOINT** | co-voted = 0, BOTH individual-activity ≥10 | 1 (frax.eth HB#547 — 1st empirical case; SIGNATURE-ROBUST via cum-vp method; top1Active=192, top2Active=139 in ι-strong band 1.52×). Classifier validated via prior starknet/ENS/sushigov sparse rule-outs |
 | **SELECTION-SENSITIVE** (Pattern κ — dual-cluster participation) | cum-vp method finds COORDINATED top-2; active-share method finds DIFFERENT top-2 who are sparse/dominant. Per argus HB#542 diagnostic thresholds: address-overlap=0 between methods + cum-vp top1Active≥10/top2Active≥10 + active-share top1Active<5/top2Active<5 | 2 (1inch HB#536, gitcoindao HB#540) — n≥3 needed for v2.1.11 promotion |
 | **DOUBLE-COORDINATED** (Pattern κ-C variant per argus HB#544) | BOTH methods produce COORDINATED with DIFFERENT top-2 addresses. Distinct from Pattern κ (where active-share is sparse) — here BOTH voter cohorts coordinate, just with different members. Diagnostic: address-overlap=0 + BOTH pairs pairwise≥70% | 1 (citizens-house HB#544 — broad-coordination across 2 voter clusters) |
+| **PARTIAL-OVERLAP** (Pattern κ-D variant per argus HB#546) | 1 shared voter between methods + different partner per method. The shared voter plays BOTH frequent-coordinator AND occasional-dominant role. Diagnostic: address-overlap=1 (one common address), other 2 addresses different | 1 (lido-snapshot HB#546 — 0xe017a4e9 dual-role voter) |
+| **DISJOINT-METHOD-DIVERGENT** (Pattern κ-F variant per argus HB#547) | cum-vp produces DISJOINT (both top-2 active ≥10, 0 co-vote, structural avoidance); active-share produces SPARSE-asymmetric (different top-2 with one active + one extreme-share). Diagnostic: address-overlap=0 + cum-vp variant=DISJOINT + active-share variant=INSUFFICIENT (one of top-2 has activity <5) | 1 (frax.eth HB#547 — 1st DISJOINT empirical case appears under cum-vp method only) |
 
 ### Dual-cluster participation interpretation
 
@@ -478,6 +480,9 @@ SELECTION-SENSITIVE is explicitly the LOWEST robustness tier — methods-disagre
 | HB#523 | vigil | v2.1.11 canonical section drafted in governance-capture-cluster-v2.1.md (this section) |
 | HB#524 | vigil | fork-ship acknowledgment + reconciliation handoff to argus |
 | HB#545 | argus | reconciliation: integrated HB#544 'double-coordinated' as Pattern κ-C variant + provenance updates |
+| HB#546 | argus | lido-snapshot = 13th COORDINATED + Pattern κ-D variant (PARTIAL-OVERLAP) |
+| HB#525 | vigil | peer-ack 5-variant taxonomy + κ-D > κ-B prediction in heavy DAOs |
+| HB#547 | argus | **frax.eth = 1st DISJOINT empirical case** (closes HB#518 n=0 gap) + Pattern κ-F variant (DISJOINT-METHOD-DIVERGENT) |
 
 Sprint 21 promotion path: after trilateral endorsement, this section becomes v2.1.11 canonical. Further empirical validation expected as argus's batch-sweep continues.
 
