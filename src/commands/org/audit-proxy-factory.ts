@@ -58,18 +58,64 @@ interface AuditProxyFactoryArgs {
   chain?: number;
   rpc?: string;
   json?: boolean;
+  governanceToken?: string;
 }
+
+/**
+ * v2.1.9 E-proxy-multisig variant annotation (vigil HB#487, sentinel HB#849 canonical).
+ * Variant A (direct-token-holding): Safe holds governance tokens directly (e.g. Uniswap Safe 1001 UNI)
+ * Variant B (delegation-VP-receipt): Safe receives delegated VP without holding tokens (e.g. Balancer + ArbFdn Safes at 0)
+ *
+ * Pure post-classification annotation — `classifyProxyFamily()` stays bytecode-only per v2.1.9
+ * compatibility guarantee. Variant is only meaningful for family === 'safe-proxy'.
+ */
+export type MultisigVariant = 'A-token-holding' | 'B-delegation-receipt' | 'unknown';
 
 export interface ProxyFactoryAuditResult {
   target: string;
   chainId: number;
   status: 'scaffold' | 'partial' | 'complete';
   note?: string;
-  voters?: Array<{ address: string; class: VoterClass; codeSize?: number; family?: ProxyFamily; owners?: string[] }>;
+  voters?: Array<{
+    address: string;
+    class: VoterClass;
+    codeSize?: number;
+    family?: ProxyFamily;
+    owners?: string[];
+    multisigVariant?: MultisigVariant;
+    governanceTokenBalance?: string;
+  }>;
   classSummary?: Record<VoterClass, number>;
   familySummary?: Record<ProxyFamily, number>;
   proxyShare?: number;
   classification?: 'E-proxy-identity-obfuscating' | 'not-E-proxy' | 'inconclusive';
+}
+
+/**
+ * Classify a safe-proxy voter into v2.1.9 E-proxy-multisig Variant A vs B
+ * by querying balanceOf(voter) on the governance token contract.
+ *
+ * - balance > 0 → Variant A (direct-token-holding)
+ * - balance = 0 → Variant B (delegation-VP-receipt)
+ * - call fails → 'unknown'
+ *
+ * Called only when --governance-token is supplied AND family === 'safe-proxy'.
+ * Exported for unit testing.
+ */
+export async function classifyMultisigVariant(
+  provider: ethers.providers.Provider,
+  safeAddress: string,
+  governanceToken: string,
+): Promise<{ variant: MultisigVariant; balance: string }> {
+  const abi = ['function balanceOf(address) view returns (uint256)'];
+  try {
+    const token = new ethers.Contract(governanceToken, abi, provider);
+    const bal: ethers.BigNumber = await token.balanceOf(safeAddress);
+    const variant: MultisigVariant = bal.isZero() ? 'B-delegation-receipt' : 'A-token-holding';
+    return { variant, balance: bal.toString() };
+  } catch {
+    return { variant: 'unknown', balance: '0' };
+  }
 }
 
 /**
@@ -324,9 +370,16 @@ export const auditProxyFactoryHandler = {
         type: 'string',
         describe: 'RPC URL override',
       })
+      .option('governance-token', {
+        type: 'string',
+        describe: 'Optional governance token address. If set, safe-proxy voters are annotated with v2.1.9 E-proxy-multisig Variant A (token-holding) vs B (delegation-receipt) via balanceOf(voter).',
+      })
       .check((argv) => {
         if (!argv.address && !argv.space && !argv.voters) {
           throw new Error('Must provide --address, --space, or --voters');
+        }
+        if (argv.governanceToken && !ethers.utils.isAddress(argv.governanceToken as string)) {
+          throw new Error(`--governance-token must be a valid address, got: ${argv.governanceToken}`);
         }
         return true;
       }),
@@ -391,6 +444,7 @@ export const auditProxyFactoryHandler = {
 
       // Classify each voter via eth_getCode
       spin.text = `Classifying ${voterAddresses.length} voters...`;
+      const governanceToken = argv.governanceToken as string | undefined;
       const classified = await Promise.all(
         voterAddresses.map(async (addr) => {
           try {
@@ -398,12 +452,19 @@ export const auditProxyFactoryHandler = {
             const cls = classifyVoterByCode(code);
             const family = classifyProxyFamily(code);
             const ownersResolved = await resolveProxyOwners(provider, addr, family);
+            const variantInfo =
+              governanceToken && family === 'safe-proxy'
+                ? await classifyMultisigVariant(provider, addr, governanceToken)
+                : null;
             return {
               address: addr,
               class: cls,
               codeSize: code ? (code.length - 2) / 2 : 0,
               family,
               ...(ownersResolved ? { owners: ownersResolved } : {}),
+              ...(variantInfo
+                ? { multisigVariant: variantInfo.variant, governanceTokenBalance: variantInfo.balance }
+                : {}),
             };
           } catch (e: any) {
             if (argv.verbose) console.error(`[audit-proxy-factory] getCode(${addr}) error:`, e?.message || e);
