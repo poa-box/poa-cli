@@ -180,12 +180,12 @@ export const brainstormStartHandler = {
 // pop brain brainstorm-respond
 // ---------------------------------------------------------------------------
 
-interface RespondArgs {
+interface RespondArgs { // HB#496 — addIdea accepts array for repeated --add-idea flags
   doc: string;
   id: string;
   author?: string;
   message?: string;
-  addIdea?: string;
+  addIdea?: string | string[];
   vote?: string[];
 }
 
@@ -210,8 +210,9 @@ export const brainstormRespondHandler = {
         type: 'string',
       })
       .option('add-idea', {
-        describe: 'Add a new idea with this text (id auto-generated from a slug)',
-        type: 'string',
+        describe: 'Add a new idea with this text (id auto-generated from a slug). Repeatable to add multiple ideas in one call.',
+        type: 'array',
+        string: true,
       })
       .option('vote', {
         describe: 'Cast a vote: <idea-id>=<support|explore|oppose>. Repeatable.',
@@ -262,12 +263,19 @@ export const brainstormRespondHandler = {
         votes[ideaId] = stance;
       }
 
-      // If adding an idea, generate a new idea id from a slug
-      let addIdeaPayload: { id: string; message: string } | undefined;
-      if (argv.addIdea) {
-        const ideaId = `${slugify(argv.addIdea) || 'idea'}-${now}`;
-        addIdeaPayload = { id: ideaId, message: argv.addIdea };
-      }
+      // HB#496: normalize --add-idea to an array (yargs returns array when flag
+      // is repeated; previously the single-string handler called slugify on the
+      // array → `s.toLowerCase is not a function` error).
+      const addIdeaTexts: string[] = Array.isArray(argv.addIdea)
+        ? (argv.addIdea as string[]).filter((s) => typeof s === 'string' && s.length > 0)
+        : argv.addIdea
+        ? [argv.addIdea as string]
+        : [];
+      const addIdeaPayloads: Array<{ id: string; message: string }> = addIdeaTexts.map((text, i) => ({
+        // Small per-idea offset to guarantee unique IDs even if same-second dispatch
+        id: `${slugify(text) || 'idea'}-${now + i}`,
+        message: text,
+      }));
 
       // Task #375 idempotency check, agent-scoped
       const idempKey = (argv as any).idempotencyKey || argvToIdempotencyString(argv as Record<string, any>);
@@ -280,22 +288,46 @@ export const brainstormRespondHandler = {
         }
       }
 
-      const result = await routedDispatch({
-        type: 'respondToBrainstorm',
-        docId: argv.doc,
-        brainstormId: argv.id,
-        author,
-        message: argv.message,
-        addIdea: addIdeaPayload,
-        votes: Object.keys(votes).length > 0 ? votes : undefined,
-        timestamp: now,
-      });
+      // HB#496: dispatch one op per idea so the existing per-op schema stays
+      // intact. Message + votes attach to the FIRST dispatch; subsequent
+      // dispatches just carry their respective idea payloads. If no ideas,
+      // a single dispatch carries message + votes (original behaviour).
+      const dispatchedHeads: string[] = [];
+      let lastRoutedViaDaemon = false;
+      if (addIdeaPayloads.length === 0) {
+        const result = await routedDispatch({
+          type: 'respondToBrainstorm',
+          docId: argv.doc,
+          brainstormId: argv.id,
+          author,
+          message: argv.message,
+          votes: Object.keys(votes).length > 0 ? votes : undefined,
+          timestamp: now,
+        });
+        dispatchedHeads.push(result.headCid);
+        lastRoutedViaDaemon = result.routedViaDaemon;
+      } else {
+        for (let i = 0; i < addIdeaPayloads.length; i++) {
+          const result = await routedDispatch({
+            type: 'respondToBrainstorm',
+            docId: argv.doc,
+            brainstormId: argv.id,
+            author,
+            message: i === 0 ? argv.message : undefined,
+            addIdea: addIdeaPayloads[i],
+            votes: i === 0 && Object.keys(votes).length > 0 ? votes : undefined,
+            timestamp: now + i,
+          });
+          dispatchedHeads.push(result.headCid);
+          lastRoutedViaDaemon = result.routedViaDaemon;
+        }
+      }
 
       if (!(argv as any).noIdempotency) {
         recordIdempotentResult(author, 'brain.brainstormRespond', idempKey, {
           docId: argv.doc,
           brainstormId: argv.id,
-          headCid: result.headCid,
+          headCid: dispatchedHeads[dispatchedHeads.length - 1],
         });
       }
 
@@ -304,25 +336,31 @@ export const brainstormRespondHandler = {
           status: 'ok',
           docId: argv.doc,
           brainstormId: argv.id,
-          ideaAdded: addIdeaPayload?.id ?? null,
+          ideasAdded: addIdeaPayloads.map((p) => p.id),
           votesCast: Object.keys(votes),
           message: argv.message ? 'posted' : null,
-          headCid: result.headCid,
+          headCid: dispatchedHeads[dispatchedHeads.length - 1],
+          headCids: dispatchedHeads,
           author,
-          routedViaDaemon: result.routedViaDaemon,
+          routedViaDaemon: lastRoutedViaDaemon,
         });
       } else {
         console.log('');
         console.log(`  Responded to brainstorm "${argv.id}" in ${argv.doc}`);
         if (argv.message) console.log(`  message: posted`);
-        if (addIdeaPayload) console.log(`  new idea: ${addIdeaPayload.id}`);
+        for (const payload of addIdeaPayloads) {
+          console.log(`  new idea: ${payload.id}`);
+        }
         if (Object.keys(votes).length > 0) {
           console.log(`  votes:`);
           for (const [ideaId, stance] of Object.entries(votes)) {
             console.log(`    ${ideaId} = ${stance}`);
           }
         }
-        console.log(`  head:    ${result.headCid}`);
+        console.log(`  head:    ${dispatchedHeads[dispatchedHeads.length - 1]}`);
+        if (dispatchedHeads.length > 1) {
+          console.log(`  (${dispatchedHeads.length} ops dispatched — heads: ${dispatchedHeads.join(', ')})`);
+        }
         console.log('');
       }
     } catch (err: any) {
