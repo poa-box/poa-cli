@@ -196,7 +196,13 @@ export const auditProxyFactoryHandler = {
       const chainId = (argv.chain as number) || 1;
       const target = argv.address || argv.space || argv.voters || 'unknown';
       const network = resolveNetworkConfig(chainId, argv.rpc);
-      const provider = new ethers.providers.JsonRpcProvider(network.rpc);
+      // HB#469 vigil bug fix: JsonRpcProvider auto-detection silently fails on
+      // public RPCs (returns 0x/empty for getCode without errors). Use
+      // StaticJsonRpcProvider with explicit chainId to skip auto-detection.
+      const provider = new ethers.providers.StaticJsonRpcProvider(
+        { url: network.rpc, timeout: 30000 },
+        { chainId, name: network.name || `chain-${chainId}` },
+      );
 
       // Voter discovery:
       //   1. --voters: explicit comma-separated list (scaffold behavior)
