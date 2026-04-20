@@ -254,11 +254,16 @@ async function main() {
   console.log(`\n=== E-direct tier: ${tier} ===`);
   console.log(`(all-agree ${(allAgreeRate * 100).toFixed(1)}%; pairwise≥70% in ${majorityPairwise}/${pairwiseRates.length} pairs)\n`);
 
-  // v1.3-prototype summary: Pattern ι vs coordinated-dual-whale (vigil HB#459)
-  // Computes top-1/top-2 cum-vp ratio + applies v2.1.4 classification workflow.
+  // v1.3-prototype summary: Pattern ι vs coordinated-dual-whale (vigil HB#459 + HB#466 fix)
+  // Computes top-1/top-2 ratio + applies v2.1.4 classification workflow.
+  // HB#466 fix: under --selection active-share, ratio must use avgShare not cumulativeVP
+  // (Frax case shipped 0.00× misleading result because active-share top voters have
+  // tiny cum-VP but large per-proposal dominance).
   let patternSummary = 'n/a';
-  if (topVoters.length >= 2 && topVoters[0].cumulativeVP && topVoters[1].cumulativeVP) {
-    const ratio = topVoters[0].cumulativeVP / topVoters[1].cumulativeVP;
+  const metric0 = selection === 'active-share' ? topVoters[0].avgShare : topVoters[0].cumulativeVP;
+  const metric1 = topVoters.length >= 2 ? (selection === 'active-share' ? topVoters[1].avgShare : topVoters[1].cumulativeVP) : null;
+  if (metric0 && metric1) {
+    const ratio = metric0 / metric1;
     const subTier = ratio >= 3 ? 'ι-extreme' : ratio >= 1.5 ? 'ι-strong' : ratio >= 1.0 ? 'ι-moderate' : 'no-dominance';
     if (subTier === 'no-dominance') {
       patternSummary = `ratio ${ratio.toFixed(2)}× — top-1 NOT dominant; neither Pattern ι nor dual-whale`;
