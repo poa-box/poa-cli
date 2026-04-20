@@ -57,6 +57,65 @@ import { openBrainDoc, stopBrainNode } from '../../lib/brain';
 import { routedDispatch } from '../../lib/brain-ops';
 import type { BrainRetro, RetroProposedChange } from '../../lib/brain-projections';
 import * as output from '../../lib/output';
+import { query } from '../../lib/subgraph';
+import { resolveOrgId } from '../../lib/resolve';
+
+/**
+ * Task #494 (retro-509 change-3, HB#874): pre-flight query to detect
+ * already-filed tasks for a (retroId, changeId) pair. Prevents the
+ * race-condition duplicate-task pattern from retro-839 (sentinel HB#849
+ * had to reconcile taxonomy fork between argus #485 + vigil #486).
+ *
+ * Search: the description template in buildTaskDescription() always
+ * embeds `- Retro id: {retro.id}` and `- Change id: {change.id}` on
+ * separate lines. Any task created via file-tasks (by any agent) has
+ * these markers. Querying the subgraph for tasks with BOTH markers
+ * returns a deterministic dedup identifier.
+ *
+ * Returns the existing task id if found, null otherwise.
+ * Exported for unit testing.
+ */
+export async function findExistingFiledTask(
+  orgId: string,
+  chainId: number | undefined,
+  retroId: string,
+  changeId: string,
+): Promise<string | null> {
+  const gql = `
+    query FindFiledTask($orgId: Bytes!) {
+      organization(id: $orgId) {
+        projects(first: 100) {
+          tasks(first: 1000, orderBy: taskId, orderDirection: desc) {
+            taskId
+            metadata {
+              description
+            }
+          }
+        }
+      }
+    }
+  `;
+  try {
+    const resp: any = await query(gql, { orgId }, chainId);
+    const projects = resp?.organization?.projects || [];
+    const retroMarker = `- Retro id: ${retroId}`;
+    const changeMarker = `- Change id: ${changeId}`;
+    for (const p of projects) {
+      for (const t of p.tasks || []) {
+        const desc = t?.metadata?.description || '';
+        if (desc.includes(retroMarker) && desc.includes(changeMarker)) {
+          return String(t.taskId);
+        }
+      }
+    }
+    return null;
+  } catch {
+    // If subgraph query fails, return null — idempotency guard fails open
+    // rather than blocking legitimate filing. The retro CRDT status='filed'
+    // check remains the primary single-agent idempotency mechanism.
+    return null;
+  }
+}
 
 interface RetroFileTasksArgs {
   doc: string;
@@ -269,9 +328,51 @@ export const retroFileTasksHandler = {
       // decoupled from the task create plumbing (which has its own
       // sponsored-tx + fee-limit logic we don't want to duplicate).
       const cliPath = process.argv[1]; // dist/index.js, same entrypoint
-      const filed: Array<{ changeId: string; taskId: string; txHash: string }> = [];
+      const filed: Array<{ changeId: string; taskId: string; txHash: string; dedup?: boolean }> = [];
+
+      // Task #494 (retro-509 change-3): resolve orgId ONCE for dedup queries
+      // before the main loop. If resolution fails, dedup silently disabled
+      // (single-agent status='filed' check remains primary idempotency).
+      let orgIdForDedup: string | null = null;
+      try {
+        orgIdForDedup = await resolveOrgId((argv as any).org, (argv as any).chain);
+      } catch {
+        // Continue without dedup; log only in verbose
+        if ((argv as any).verbose) {
+          // eslint-disable-next-line no-console
+          console.warn('  [file-tasks] orgId resolution failed; idempotency dedup disabled for this run');
+        }
+      }
 
       for (const change of agreed) {
+        // Task #494: pre-flight dedup query — has another agent already filed
+        // a task for this (retroId, changeId)? If yes, skip creation + flip
+        // the local change to 'filed' pointing at the discovered task id.
+        if (orgIdForDedup) {
+          const existingTaskId = await findExistingFiledTask(
+            orgIdForDedup,
+            (argv as any).chain,
+            argv.retro!,
+            change.id,
+          );
+          if (existingTaskId) {
+            if (!output.isJsonMode()) {
+              console.log(`  ↻ ${change.id} → task #${existingTaskId} (already filed by another agent; dedup-skipped)`);
+            }
+            // Flip local retro change status to 'filed' pointing at discovered task
+            await routedDispatch({
+              type: 'updateChangeStatus',
+              docId: argv.doc,
+              retroId: argv.retro,
+              changeId: change.id,
+              newStatus: 'filed',
+              filedTaskId: existingTaskId,
+            });
+            filed.push({ changeId: change.id, taskId: existingTaskId, txHash: 'dedup-no-tx', dedup: true });
+            continue;
+          }
+        }
+
         const { name, description } = buildTaskDescription(retro, change);
         const createArgs = [
           cliPath, 'task', 'create',
