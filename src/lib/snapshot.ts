@@ -31,6 +31,63 @@ export interface SnapshotGraphQLOptions {
 
 const DEFAULT_ENDPOINT = 'https://hub.snapshot.org/graphql';
 
+/**
+ * HB#515 Task #496 (retro-509 change-5): iterate a per-DAO audit function
+ * across a list of Snapshot spaces, collecting per-space results with error
+ * isolation. Callers provide the audit function; this helper handles the
+ * iteration scaffolding.
+ *
+ * - Sequential iteration (parallel would amplify Snapshot rate-limits; also
+ *   tames per-DAO audit CPU cost for bytecode classification work).
+ * - Per-space try/catch: one DAO failing doesn't abort the batch.
+ * - Optional progress callback for verbose reporting / mid-run UIs.
+ *
+ * Usage:
+ *   const results = await iterateSnapshotAudits(
+ *     ['safe.eth', 'pooltogether.eth'],
+ *     (space) => auditSpaceViaCli(space),
+ *     { onProgress: (s, r) => console.warn(`[sair] ${s} done`) },
+ *   );
+ *
+ * Exported for unit testing.
+ */
+export interface IterateSnapshotAuditsOptions<T> {
+  /** Called after each space's audit completes (with result or error). */
+  onProgress?: (space: string, result: T | null, error?: Error) => void;
+  /** If true, emit warnings for per-space errors. Default false. */
+  verbose?: boolean;
+}
+
+export interface SnapshotAuditResult<T> {
+  space: string;
+  result: T | null;
+  error?: Error;
+}
+
+export async function iterateSnapshotAudits<T>(
+  spaces: string[],
+  auditFn: (space: string) => Promise<T>,
+  options: IterateSnapshotAuditsOptions<T> = {},
+): Promise<SnapshotAuditResult<T>[]> {
+  const out: SnapshotAuditResult<T>[] = [];
+  for (const space of spaces) {
+    try {
+      const result = await auditFn(space);
+      out.push({ space, result });
+      if (options.onProgress) options.onProgress(space, result);
+    } catch (e: any) {
+      const error = e instanceof Error ? e : new Error(String(e));
+      out.push({ space, result: null, error });
+      if (options.onProgress) options.onProgress(space, null, error);
+      if (options.verbose) {
+        // eslint-disable-next-line no-console
+        console.warn(`  [iterate] ${space}: ${error.message.slice(0, 200)}`);
+      }
+    }
+  }
+  return out;
+}
+
 export async function snapshotGraphQL<T = any>(
   query: string,
   variables: Record<string, unknown> = {},

@@ -64,7 +64,7 @@ function auditSpace(space) {
   }
 }
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   const spaces = args.length > 0 ? args : DEFAULT_SPACES;
 
@@ -72,6 +72,11 @@ function main() {
   const targetAgg = new Map(); // target -> { voters:Set, spaces:Set, implName, implVersion, implEntryPoint }
   const spaceStatus = []; // {space, voterCount, eip7702Count, status}
 
+  // HB#515: could use shared iterateSnapshotAudits from dist/lib/snapshot.js
+  // but keeping sequential subprocess call pattern to avoid mixing cjs/esm
+  // import plumbing in this zero-dep node script. The lib helper is now the
+  // preferred API for NEW aggregators that can import it; this script remains
+  // the pre-lib-helper reference impl.
   for (const space of spaces) {
     process.stderr.write(`[sair] auditing ${space}...\n`);
     const r = auditSpace(space);
