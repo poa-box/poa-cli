@@ -46,6 +46,12 @@ async function fetchProposals(space, first = 1000, includeMultiChoice = false) {
   // For/Against/Abstain proposals (treat Abstain as non-vote in lockstep analysis).
   // Per HB#505 Sprint 21 strategy pivot direction (b): unblocks Aave-class multi-choice
   // DAOs (cow.eth, makerdao, snapshot.eth, etc.) for Pattern ι classification.
+  //
+  // HB#530: also annotate gauge-allocation proposals (>3 choices, type='weighted'
+  // or 'ranked-choice') as a separate stat so the caller knows when --multi-choice
+  // is insufficient. Sprint 21 candidate: gauge-allocation lockstep variant
+  // (Aerodrome/Velodrome/Pendle/Beethoven require lockstep over WEIGHT DISTRIBUTIONS,
+  // not single choices). Currently emits a one-line stat for visibility.
   const q = `query($space: String!, $first: Int!) {
     proposals(first: $first, where: { space: $space, state: "closed" }, orderBy: "created", orderDirection: desc) {
       id type choices scores_total
@@ -53,6 +59,16 @@ async function fetchProposals(space, first = 1000, includeMultiChoice = false) {
   }`;
   const d = await gql(q, { space, first });
   const all = d.proposals || [];
+  // HB#530: count gauge-allocation candidates for stderr stat (visibility for
+  // Sprint 21 gauge-allocation lockstep candidate)
+  const gaugeAllocationCount = all.filter(p => {
+    if (!p.choices) return false;
+    if (p.choices.length <= 3) return false;
+    return p.type === 'weighted' || p.type === 'ranked-choice' || p.type === 'quadratic';
+  }).length;
+  if (gaugeAllocationCount > 0) {
+    console.warn(`  [lockstep] ${gaugeAllocationCount} gauge-allocation proposals (>3 choices, type=weighted/ranked-choice/quadratic) skipped — Sprint 21 candidate to handle weight-distribution lockstep`);
+  }
   return all.filter(p => {
     if (!p.choices) return false;
     if (p.choices.length === 2) return true;
