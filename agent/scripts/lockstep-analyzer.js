@@ -21,6 +21,11 @@ const https = require('https');
 const SNAPSHOT_URL = 'https://hub.snapshot.org/graphql';
 
 function gql(query, variables = {}) {
+  // HB#531: surface Snapshot rate-limit + GraphQL error responses with
+  // a clear message instead of silently resolving to undefined (which
+  // then crashes downstream `d.proposals` access). Snapshot rate-limit
+  // body is `{"error":"unauthorized","error_description":"too many requests..."}`;
+  // GraphQL errors return `{errors:[{message:...}]}`.
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({ query, variables });
     const req = https.request(
@@ -30,7 +35,19 @@ function gql(query, variables = {}) {
         let out = '';
         res.on('data', (c) => (out += c));
         res.on('end', () => {
-          try { resolve(JSON.parse(out).data); } catch (e) { reject(e); }
+          let parsed;
+          try { parsed = JSON.parse(out); }
+          catch (e) { return reject(new Error(`Snapshot non-JSON response: ${out.slice(0, 200)}`)); }
+          if (parsed && parsed.error) {
+            return reject(new Error(`Snapshot ${parsed.error}: ${parsed.error_description || ''}`));
+          }
+          if (parsed && Array.isArray(parsed.errors) && parsed.errors.length) {
+            return reject(new Error(`Snapshot GraphQL error: ${parsed.errors[0].message || JSON.stringify(parsed.errors[0])}`));
+          }
+          if (!parsed || parsed.data === undefined) {
+            return reject(new Error(`Snapshot empty response: ${out.slice(0, 200)}`));
+          }
+          resolve(parsed.data);
         });
       }
     );
