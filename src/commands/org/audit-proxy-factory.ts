@@ -37,6 +37,7 @@ import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { resolveNetworkConfig } from '../../config/networks';
 import * as output from '../../lib/output';
+import { snapshotGraphQL as sharedSnapshotGraphQL } from '../../lib/snapshot';
 
 export type VoterClass = 'eoa' | 'proxy-candidate' | 'unknown';
 
@@ -193,58 +194,18 @@ export async function classifyMultisigVariant(
 }
 
 /**
- * POST a Snapshot GraphQL query with retry + exponential backoff.
+ * Local adapter around the shared `snapshotGraphQL` helper (src/lib/snapshot.ts).
+ * Preserves the original return shape (`{ data: ... }`) used by callers in this file.
  *
- * retro-839 change-5 (vigil HB#483 Task #487): Snapshot GraphQL exhibits
- * transient ECONNRESET + 429 rate-limits + occasional empty-result cache
- * misses on re-runs. This wrapper retries on network errors, 5xx, and 429
- * with 1s/2s/4s backoff (max 3 attempts). 4xx (except 429) fails fast.
+ * History: HB#487 original retry/backoff, HB#509 extracted to lib/snapshot.ts.
  */
 async function snapshotGraphQL(
   query: string,
   variables: Record<string, unknown>,
   verbose = false,
 ): Promise<any> {
-  const url = 'https://hub.snapshot.org/graphql';
-  const body = JSON.stringify({ query, variables });
-  const maxAttempts = 3;
-  let lastErr: Error | null = null;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-      });
-      if (resp.status === 429 || resp.status >= 500) {
-        throw new Error(`Snapshot HTTP ${resp.status}`);
-      }
-      if (!resp.ok) {
-        throw new Error(`Snapshot HTTP ${resp.status} (non-retryable)`);
-      }
-      const json = (await resp.json()) as any;
-      if (json.errors) throw new Error(`Snapshot: ${json.errors[0].message}`);
-      return json;
-    } catch (e: any) {
-      lastErr = e;
-      const msg = String(e?.message || e);
-      const retryable =
-        msg.includes('ECONNRESET') ||
-        msg.includes('ETIMEDOUT') ||
-        msg.includes('EAI_AGAIN') ||
-        msg.includes('fetch failed') ||
-        msg.includes('HTTP 429') ||
-        /HTTP 5\d\d/.test(msg);
-      if (!retryable || attempt === maxAttempts) break;
-      const delayMs = 1000 * Math.pow(2, attempt - 1);
-      if (verbose) {
-        // eslint-disable-next-line no-console
-        console.warn(`  [snapshot] attempt ${attempt}/${maxAttempts} failed (${msg}); retrying in ${delayMs}ms`);
-      }
-      await new Promise((r) => setTimeout(r, delayMs));
-    }
-  }
-  throw lastErr || new Error('Snapshot: unknown error');
+  const data = await sharedSnapshotGraphQL<any>(query, variables, { verbose });
+  return { data };
 }
 
 /**

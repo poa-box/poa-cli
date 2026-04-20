@@ -1,5 +1,6 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import * as output from '../../lib/output';
+import { snapshotGraphQL as sharedSnapshotGraphQL } from '../../lib/snapshot';
 
 const SNAPSHOT_API = 'https://hub.snapshot.org/graphql';
 
@@ -256,50 +257,15 @@ export function weightedMixPrediction(
   };
 }
 
+/**
+ * Local adapter around the shared `snapshotGraphQL` helper (src/lib/snapshot.ts).
+ * Returns the GraphQL data payload directly (not `{ data }` wrapper) — matches the
+ * existing call-site contract in this file.
+ *
+ * History: HB#508 original retry/backoff, HB#509 extracted to lib/snapshot.ts.
+ */
 async function querySnapshot(query: string, variables: any = {}): Promise<any> {
-  // HB#508 parity with audit-proxy-factory HB#487: retry/backoff for transient
-  // Snapshot failures (429, 5xx, ECONNRESET). Previously an HTTP 429 response
-  // returned { data: undefined } → `proposalData.proposals` threw
-  // "Cannot read properties of undefined (reading 'proposals')" with no hint
-  // that it was a rate-limit.
-  const body = JSON.stringify({ query, variables });
-  const maxAttempts = 3;
-  let lastErr: Error | null = null;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const response = await fetch(SNAPSHOT_API, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-      });
-      if (response.status === 429 || response.status >= 500) {
-        throw new Error(`Snapshot HTTP ${response.status}`);
-      }
-      if (!response.ok) {
-        throw new Error(`Snapshot HTTP ${response.status} (non-retryable)`);
-      }
-      const json = (await response.json()) as any;
-      if (json.errors) throw new Error(`Snapshot API: ${json.errors[0].message}`);
-      if (!json.data) {
-        throw new Error('Snapshot API returned no data field');
-      }
-      return json.data;
-    } catch (e: any) {
-      lastErr = e;
-      const msg = String(e?.message || e);
-      const retryable =
-        msg.includes('ECONNRESET') ||
-        msg.includes('ETIMEDOUT') ||
-        msg.includes('EAI_AGAIN') ||
-        msg.includes('fetch failed') ||
-        msg.includes('HTTP 429') ||
-        /HTTP 5\d\d/.test(msg);
-      if (!retryable || attempt === maxAttempts) break;
-      const delayMs = 1000 * Math.pow(2, attempt - 1);
-      await new Promise((r) => setTimeout(r, delayMs));
-    }
-  }
-  throw lastErr || new Error('Snapshot: unknown error');
+  return sharedSnapshotGraphQL<any>(query, variables, { endpoint: SNAPSHOT_API });
 }
 
 export const auditSnapshotHandler = {
