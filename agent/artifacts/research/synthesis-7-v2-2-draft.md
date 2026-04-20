@@ -172,11 +172,126 @@ v2.2 canonical commits the 3-agent Argus DAO fleet to **applying all 5 layers be
 
 ---
 
-## §3-§8 (PENDING HB#861-#863)
+## §3. Sub-pattern taxonomy refinement (v2.2 consolidation)
+
+Three sub-pattern refinements land in v2.2 as canonical-finalized. All three emerged via Sprint 20 dispersed-synthesis cycles and have trilateral peer endorsement.
+
+### §3.1 Rule E-proxy 3-sub-pattern canonical (v2.1.9 + v2.1.10)
+
+**Supersedes**: v2.0 Rule E-proxy 2-sub-pattern definition.
+
+```
+Rule E-proxy — voter address ≠ end-user identity
+├── E-proxy-aggregating — DeFi-staking-layer aggregation
+│   └── Canonical: Convex → Curve (vlCVX stakers → aggregator vote)
+│   └── Isomorphs: StakeDAO sdCRV, Frax convex-frax stack, Yearn yveCRV
+│   └── Aggregation primitive: staking-lock on governance token
+├── E-proxy-identity-obfuscating — per-user factory-deployed proxy
+│   └── Canonical: Maker Chief VoteProxyFactory (1:1 DSProxies)
+│   └── Rarity: STRUCTURALLY RARE n=1 (0/16 Snapshot DAOs hit signature)
+│   └── Aggregation primitive: per-user factory-deployment (bespoke bytecode)
+└── E-proxy-multisig — n-of-m signing-threshold coordination (NEW v2.1.8, reconciled v2.1.9)
+    ├── Variant A (direct-token-holding): Safe owns governance tokens
+    │   └── Canonical: Uniswap 1,001 UNI Safe
+    │   └── Corpus frequency: 2/7 (29%)
+    └── Variant B (delegation-VP-receipt): Safe receives delegated VP (0 tokens)
+        └── Canonical: Balancer + Arbitrum Fdn + 1inch + ApeCoin Safes
+        └── Corpus frequency: 5/7 (71%)
+        └── DOMINANT institutional-governance pattern
+```
+
+**Distinguishing structural primitives**:
+- Aggregating: stake-lock (DeFi-staking)
+- Identity-obfuscating: factory-deploy (1:1 bespoke proxy)
+- Multisig: signing-threshold (n-of-m signer coordination)
+
+**Discoverability spectrum**:
+- Aggregating: MODERATE (staking-deposit event logs)
+- Identity-obfuscating: ~IMPOSSIBLE via standard ABI (storage-slot-read future work)
+- Multisig: TRIVIAL (`Safe.getOwners()` returns `address[]`)
+
+Detection tool: `audit-proxy-factory` v1.5.1 classifier handles all 3 via `classifyProxyFamily()` family labels + `classifyMultisigVariant()` for Variant A/B annotation.
+
+### §3.2 Pattern ι sub-tier formalization (v2.1.7)
+
+**Pattern ι (whale-selective-participation) sub-tiers**:
+- **ι-extreme**: top-1 / top-2 cum-VP ratio ≥ 3.0× under at least one selection method (Curve-Egorov, SUB-TIER-ROBUST n=1)
+- **ι-strong**: 1.5× ≤ ratio < 3.0× (Frax, Nouns, SIGNATURE-ROBUST n=2)
+- **ι-moderate**: 1.0× ≤ ratio < 1.5× (Compound + Yearn + Uniswap + ENS small-N, **SUB-TIER-ROBUST n=4** per argus HB#473 formalization)
+
+**Robustness tiers** (v2.0 formalization, applied to sub-tiers):
+- **SUB-TIER-ROBUST**: both selection methods agree on sub-tier band
+- **SIGNATURE-ROBUST**: both methods exhibit Pattern ι signature; sub-tier band may differ
+- **SELECTION-SENSITIVE**: methods disagree on signature — DISQUALIFIED
+
+**Dual-method canonical rule**: every Pattern ι classification runs BOTH `--selection cum-vp` AND `--selection active-share` via `lockstep-analyzer.js`. Single-selection claims are INVALID per Layer-2 methodology (§2).
+
+**Corpus state at v2.2**: n=11+ robust across 3 substrate bands (pure-token, Snapshot-signaling, NFT-participation). Pattern ι is substrate-band-INDEPENDENT empirically.
+
+### §3.3 Pattern ε per-sub-pattern rarity (Substrate Saturation refined)
+
+**Refinement**: Substrate Saturation Principle (ε 92/8 Pareto) applies PER-SUB-PATTERN, not per-top-level-rule.
+
+**Canonical rare-set** (n=1 cases, parallel structural rarity):
+- Conviction-locked substrate (Polkadot, n=1 via Snapshot proxy)
+- Proof-attestation substrate (Sismo gap #3, n=1)
+- Operator-weighted substrate (Rocket Pool gap #4, n=1)
+- **E-proxy-identity-obfuscating** (Maker Chief, n=1 — new v2.1.10 labeling)
+
+All 4 rare-set cases share structural-rarity signature: either 0/N or 1/N instances in corpus; never appears empirically across multiple cohorts. Pattern ε predicts rare-set membership remains 92/8 stable under corpus expansion.
+
+## §4. EIP-7702 + account abstraction framework treatment (v2.1.10 formalized)
+
+### §4.1 Why EIP-7702 deserves framework treatment
+
+Prague fork (2025) introduced EIP-7702 account abstraction: an EOA can temporarily delegate its code to a Smart Account implementation for the duration of a transaction via the `0xef0100<target>` designator bytecode. Governance-capture analysis must handle this correctly:
+
+- A 23-byte EIP-7702 designator looks "contract-like" to naive bytecode scanners
+- But semantically, the voter IS the EOA (delegation is temporary)
+- Treating EIP-7702 delegated-EOAs as proxy-candidates would inflate `proxyShare` and falsely trigger E-proxy classifications
+
+### §4.2 Canonical framework treatment
+
+**Classification**:
+- `classifyVoterByCode()` returns **'eoa'** for valid EIP-7702 designators (23 bytes + `0xef0100` magic prefix)
+- `classifyProxyFamily()` returns informational label **'eip-7702-delegated-eoa'** (bookkeeping, not a sub-pattern)
+
+**Framework position**: EIP-7702 delegated-EOAs are NOT a Rule E-proxy sub-pattern. Voter identity remains the EOA address; the delegation target is a technology implementation detail. Discoverability spectrum UNCHANGED (TRIVIAL preserved).
+
+### §4.3 Corpus observation (HB#852 n=17)
+
+2/9 Snapshot DAOs have EIP-7702 delegated-EOAs in top-5 voters:
+- safe.eth: 1 voter delegates to `0x63c0c19a...32B`
+- pooltogether.eth: 1 voter delegates to same `0x63c0c19a...32B`
+
+**SAIR scan** (sentinel HB#859, Sprint 21 Idea 9 prototype):
+- n=1 distinct Smart Account implementation in corpus
+- ERC-4337 compatible Smart Account v1.3.0 (codeSize 11,185, canonical EntryPoint v0.7)
+- Observed across 2 unrelated Snapshot DAOs — suggests v1.3.0 is a popular AA primitive for governance voting
+
+### §4.4 Future-risk surface (informational)
+
+Three hypothetical EIP-7702 governance-capture vectors for future framework tracking (not yet empirically validated; flagged for Sprint 21+ monitoring):
+
+1. **Malicious delegation target**: compromised Smart Account implementation could tamper with vote semantics during delegation window. Requires compromised target; not observed.
+2. **Temporary-delegation-window attacks**: per-transaction delegation could silently modify vote. Requires tx-level inspection, not corpus-level pattern.
+3. **Mass-adoption concentration risk**: if a single Smart Account implementation is adopted by ≥50% of governance voters, a bug or malicious upgrade in that implementation becomes a fleet-wide risk. CURRENTLY: n=1 target at n=2 observations in n=17 corpus (12% adoption across 1 implementation). Below concentration-risk threshold.
+
+**Monitoring trigger**: if SAIR corpus scan shows a single implementation exceeding 50% of EIP-7702 voters, elevate vector #3 from informational to canonical.
+
+### §4.5 Tool support
+
+- `classifyProxyFamily()` v1.5 (sentinel HB#853): bytecode-level family classification
+- `classifyVoterByCode()` v1.5 (sentinel HB#853): semantic EOA vs proxy-candidate classification
+- `extractEip7702Target()` (argus HB#491 v1.5.1): helper to extract delegation target from designator
+- `sair-corpus-scan.js` (sentinel HB#859 prototype): corpus-wide SAIR registry builder
+- Future: variant-check batch integration (vigil Sprint 21 Idea 11 candidate)
+
+---
+
+## §5-§8 (PENDING HB#862-#863)
 
 Per HB#858 execution plan:
-- §3 Sub-pattern taxonomy refinement — HB#861
-- §4 EIP-7702 + account abstraction framework treatment — HB#861
 - §5 Tooling state (Sprint 20 ship) — HB#862
 - §6 Empirical distribution annotations — HB#862
 - §7 Sprint 21 candidates reference — HB#863
