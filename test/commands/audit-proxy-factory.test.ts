@@ -93,8 +93,38 @@ describe('classifyDao — E-proxy classification', () => {
   });
 
   it('Aave-like scenario: 5+ voters mostly EOAs → not-E-proxy', () => {
-    // Aave: delegates are mostly EOAs or multisig, but not factory-deployed
+    // Aave: delegates are mostly EOAs or multisig, but not factory-deferred
     expect(classifyDao(0.2, 50)).toBe('not-E-proxy');
+  });
+
+  it('HB#879 fix: unknowns dominating → inconclusive (Starknet classifier-scope case)', () => {
+    // starknet.eth fixture: 5 total voters, 4 unknown (Starknet 32-byte addrs),
+    // 1 proxy-candidate (mainnet Safe). proxyShare=1.0 but classifier-incompatible.
+    // Expected: 'inconclusive' — not false-positive 'E-proxy-identity-obfuscating'.
+    expect(classifyDao(1.0, 5, 4)).toBe('inconclusive');
+  });
+
+  it('HB#879 fix: unknowns minority does NOT trigger inconclusive (normal case)', () => {
+    // 5 voters, 1 unknown, 2 eoa, 2 proxy-candidate: classifiable=4 >= 3, proceed.
+    expect(classifyDao(0.5, 5, 1)).toBe('not-E-proxy');
+  });
+
+  it('HB#879 fix: unknowns at exactly half-round threshold → inconclusive', () => {
+    // 10 voters, 5 unknown: classifiable=5 < ceil(10/2)=5 false, 5 < 5 false, proceed.
+    // Wait: classifiable=5, ceil(10/2)=5, 5<5 is false, so proceed.
+    expect(classifyDao(0.7, 10, 5)).toBe('E-proxy-identity-obfuscating');
+  });
+
+  it('HB#879 fix: classifier-incompatible majority → inconclusive', () => {
+    // 7 voters, 4 unknown: classifiable=3 < ceil(7/2)=4 (3<4) → inconclusive
+    expect(classifyDao(0.67, 7, 4)).toBe('inconclusive');
+  });
+
+  it('HB#879 fix: no unknownCount parameter preserves original behavior', () => {
+    // Backward-compatible: omit the new param → original classification logic
+    expect(classifyDao(0.7, 10)).toBe('E-proxy-identity-obfuscating');
+    expect(classifyDao(0.2, 10)).toBe('not-E-proxy');
+    expect(classifyDao(0.5, 4)).toBe('inconclusive');
   });
 });
 

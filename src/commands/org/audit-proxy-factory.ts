@@ -399,12 +399,25 @@ export function computeProxyShare(classes: VoterClass[]): {
  * - proxy-share > 0.5 AND voters ≥ 5: E-proxy-identity-obfuscating
  * - proxy-share <= 0.5 AND voters ≥ 5: not-E-proxy
  * - voters < 5: inconclusive (small-sample caveat)
+ * - HB#879 classifier-scope: if unknownCount > (eoa + proxy-candidate),
+ *   voters are mostly classifier-incompatible (non-Ethereum addresses like
+ *   Starknet 32-byte, Cosmos bech32, Solana base58). proxyShare is not
+ *   interpretable; return 'inconclusive' to avoid false-positive E-proxy
+ *   classification on cross-chain governance spaces.
  */
 export function classifyDao(
   proxyShare: number,
-  totalVoters: number
+  totalVoters: number,
+  unknownCount?: number,
 ): 'E-proxy-identity-obfuscating' | 'not-E-proxy' | 'inconclusive' {
   if (totalVoters < 5) return 'inconclusive';
+  // HB#879 fix: if unknowns dominate (>= majority), refuse to classify.
+  // Classifiable-voter count = totalVoters - unknownCount. If classifiable < ceil(totalVoters/2),
+  // share is not statistically meaningful.
+  if (typeof unknownCount === 'number' && unknownCount > 0) {
+    const classifiable = totalVoters - unknownCount;
+    if (classifiable < Math.ceil(totalVoters / 2)) return 'inconclusive';
+  }
   return proxyShare > 0.5 ? 'E-proxy-identity-obfuscating' : 'not-E-proxy';
 }
 
@@ -588,7 +601,9 @@ export const auditProxyFactoryHandler = {
       );
 
       const { summary, proxyShare } = computeProxyShare(classified.map((v) => v.class));
-      const classification = classifyDao(proxyShare, voterAddresses.length);
+      // HB#879 fix: pass unknownCount so classifier can inconclusive-out when
+      // non-Ethereum addresses dominate (e.g., Starknet native 32-byte addrs).
+      const classification = classifyDao(proxyShare, voterAddresses.length, summary.unknown);
       const familySummary: Record<ProxyFamily, number> = {
         'eip-1167': 0, 'dsproxy-maker': 0, 'safe-proxy': 0, 'eip-7702-delegated-eoa': 0, 'other-contract': 0, 'none': 0,
       };
