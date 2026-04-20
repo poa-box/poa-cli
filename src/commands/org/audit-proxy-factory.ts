@@ -59,6 +59,8 @@ interface AuditProxyFactoryArgs {
   rpc?: string;
   json?: boolean;
   governanceToken?: string;
+  governanceTokenChain?: number;
+  governanceTokenRpc?: string;
 }
 
 /**
@@ -374,6 +376,14 @@ export const auditProxyFactoryHandler = {
         type: 'string',
         describe: 'Optional governance token address. If set, safe-proxy voters are annotated with v2.1.9 E-proxy-multisig Variant A (token-holding) vs B (delegation-receipt) via balanceOf(voter).',
       })
+      .option('governance-token-chain', {
+        type: 'number',
+        describe: 'Chain ID for --governance-token queries. Defaults to --chain. Use a different chain for cross-chain DAOs (e.g. --chain 1 + --governance-token-chain 42161 for Arbitrum L2 token + L1 signer-Safe).',
+      })
+      .option('governance-token-rpc', {
+        type: 'string',
+        describe: 'RPC URL override for --governance-token-chain (optional, falls back to resolved config).',
+      })
       .check((argv) => {
         if (!argv.address && !argv.space && !argv.voters) {
           throw new Error('Must provide --address, --space, or --voters');
@@ -445,6 +455,18 @@ export const auditProxyFactoryHandler = {
       // Classify each voter via eth_getCode
       spin.text = `Classifying ${voterAddresses.length} voters...`;
       const governanceToken = argv.governanceToken as string | undefined;
+      // HB#489 cross-chain: allow governance-token queries against a different chain
+      // (e.g. ARB on L2 while signer-Safes are on L1). Defaults to voter-chain.
+      let tokenProvider = provider;
+      const tokenChainId = argv.governanceTokenChain as number | undefined;
+      if (governanceToken && tokenChainId && tokenChainId !== chainId) {
+        const tokenNetwork = resolveNetworkConfig(tokenChainId);
+        const tokenRpcUrl = (argv.governanceTokenRpc as string | undefined) || tokenNetwork.resolvedRpc;
+        tokenProvider = new ethers.providers.StaticJsonRpcProvider(
+          tokenRpcUrl,
+          { chainId: tokenChainId, name: tokenNetwork.name || `chain-${tokenChainId}` },
+        );
+      }
       const classified = await Promise.all(
         voterAddresses.map(async (addr) => {
           try {
@@ -454,7 +476,7 @@ export const auditProxyFactoryHandler = {
             const ownersResolved = await resolveProxyOwners(provider, addr, family);
             const variantInfo =
               governanceToken && family === 'safe-proxy'
-                ? await classifyMultisigVariant(provider, addr, governanceToken)
+                ? await classifyMultisigVariant(tokenProvider, addr, governanceToken)
                 : null;
             return {
               address: addr,
