@@ -195,12 +195,13 @@ export const auditProxyFactoryHandler = {
     try {
       const chainId = (argv.chain as number) || 1;
       const target = argv.address || argv.space || argv.voters || 'unknown';
-      const network = resolveNetworkConfig(chainId, argv.rpc);
-      // HB#469 vigil bug fix: JsonRpcProvider auto-detection silently fails on
-      // public RPCs (returns 0x/empty for getCode without errors). Use
-      // StaticJsonRpcProvider with explicit chainId to skip auto-detection.
+      const network = resolveNetworkConfig(chainId);
+      const rpcUrl = argv.rpc || network.resolvedRpc;
+      // HB#469 vigil bug fix: JsonRpcProvider auto-detection fails silently on
+      // some public RPCs. Use StaticJsonRpcProvider with explicit chainId to
+      // skip auto-detection.
       const provider = new ethers.providers.StaticJsonRpcProvider(
-        { url: network.rpc, timeout: 30000 },
+        rpcUrl,
         { chainId, name: network.name || `chain-${chainId}` },
       );
 
@@ -233,7 +234,7 @@ export const auditProxyFactoryHandler = {
         if (argv.json) {
           output.json(result);
         } else {
-          output.info('audit-proxy-factory (scaffold)', { ...result });
+          output.info(`audit-proxy-factory (scaffold): ${JSON.stringify(result, null, 2)}`);
         }
         return;
       }
@@ -250,7 +251,8 @@ export const auditProxyFactoryHandler = {
               class: cls,
               codeSize: code ? (code.length - 2) / 2 : 0,
             };
-          } catch {
+          } catch (e: any) {
+            if (argv.verbose) console.error(`[audit-proxy-factory] getCode(${addr}) error:`, e?.message || e);
             return { address: addr, class: 'unknown' as VoterClass, codeSize: 0 };
           }
         })
