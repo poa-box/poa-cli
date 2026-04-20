@@ -334,6 +334,48 @@ export const triageHandler = {
         // Brainstorm check is best-effort — same isolation as the retro check.
       }
 
+      // Recent shared-brain lessons digest (Task #495 retro-509 change-4).
+      // Surface N most recent pop.brain.shared lessons as INFO context so peers
+      // see new heuristics without separate `pop brain read` invocation. Closes
+      // cross-agent state-propagation latency gap (HB#515 self-audit blind spot #4).
+      // Cost-guard via doc-heads.json + dynamic brain.ts import.
+      let recentLessons: Array<{ id: string; title: string; author: string; preview: string; ageSeconds: number }> = [];
+      try {
+        const manifestPath = path.join(homedir(), '.pop-agent', 'brain', 'doc-heads.json');
+        if (fs.existsSync(manifestPath)) {
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          if (manifest['pop.brain.shared']) {
+            const { readBrainDoc, stopBrainNode } = require('../../lib/brain');
+            try {
+              const { doc: sharedDoc } = await readBrainDoc('pop.brain.shared');
+              const lessons: any[] = Array.isArray(sharedDoc?.lessons) ? sharedDoc.lessons : [];
+              const nowSecs = Math.floor(Date.now() / 1000);
+              // Filter: not removed; sort by timestamp desc; take 5 most recent
+              const filtered = lessons
+                .filter((l: any) => l && !l.removed && l.timestamp && l.title)
+                .sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0))
+                .slice(0, 5);
+              recentLessons = filtered.map((l: any) => {
+                const body = (l.body || '').replace(/\s+/g, ' ').trim();
+                const preview = body.length > 200 ? body.slice(0, 200) + '…' : body;
+                const author = (l.author || '').toLowerCase();
+                return {
+                  id: l.id || '',
+                  title: l.title,
+                  author: author.startsWith('0x') ? author.slice(0, 10) : author,
+                  preview,
+                  ageSeconds: l.timestamp ? nowSecs - l.timestamp : 0,
+                };
+              });
+            } finally {
+              try { await stopBrainNode(); } catch { /* best-effort */ }
+            }
+          }
+        }
+      } catch {
+        // Recent-lessons digest is best-effort — same isolation as retro/brainstorm checks.
+      }
+
       // Unclaimed distributions — skip ones known to have no allocation for this address
       const noAllocSet = getNoAllocationSet(myAddr);
       const orgIdLower = modules.orgId.toLowerCase();
@@ -443,7 +485,7 @@ export const triageHandler = {
       };
 
       if (output.isJsonMode()) {
-        output.json({ actions, changes, context });
+        output.json({ actions, changes, context, recentLessons });
       } else {
         console.log('');
         console.log('  Agent Triage');
@@ -466,6 +508,18 @@ export const triageHandler = {
           console.log('  Changes since last heartbeat:');
           for (const c of changes) {
             console.log(`    △ ${c.detail}`);
+          }
+        }
+
+        // Recent shared-brain lessons digest (Task #495 retro-509 change-4)
+        if (recentLessons.length > 0) {
+          console.log('');
+          console.log('  Recent shared-brain lessons:');
+          for (const l of recentLessons) {
+            const ageMin = Math.floor(l.ageSeconds / 60);
+            const ageStr = ageMin < 60 ? `${ageMin}m` : ageMin < 1440 ? `${Math.floor(ageMin / 60)}h` : `${Math.floor(ageMin / 1440)}d`;
+            console.log(`    ✦ [${ageStr} by ${l.author}] ${l.title}`);
+            if (l.preview) console.log(`      ${l.preview.slice(0, 150)}${l.preview.length > 150 ? '…' : ''}`);
           }
         }
 
