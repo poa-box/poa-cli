@@ -30,6 +30,7 @@ interface SubmitArgs {
   'idempotency-key'?: string;
   'no-idempotency'?: boolean;
   'allow-uncommitted'?: boolean;
+  'skip-build-check'?: boolean;
 }
 
 export const submitHandler = {
@@ -61,6 +62,12 @@ export const submitHandler = {
       default: false,
       describe:
         'Task #465 (retro-542 change-3): bypass the deliverable-committed pre-check. By default, pop task submit scans the --submission text for file paths and blocks if any referenced file is untracked or has unstaged changes (HB#520 loss-audit prevention). Use this only when the submission references in-progress files intentionally.',
+    })
+    .option('skip-build-check', {
+      type: 'boolean',
+      default: false,
+      describe:
+        'retro-839 change-1 (HB#841): bypass the build-freshness pre-check. By default, if the submission references any .ts file under src/, pop task submit verifies dist/index.js is newer than all src/**/*.ts — preventing resubmission of unbuilt code (HB#830→#831 lost-cycle prevention). Pass this flag for submissions that reference .ts files but intentionally skip rebuild.',
     }),
 
   handler: async (argv: ArgumentsCamelCase<SubmitArgs>) => {
@@ -87,6 +94,48 @@ export const submitHandler = {
             console.error('');
           }
           process.exit(3);
+        }
+      }
+    }
+
+    // retro-839 change-1 (HB#841): build-freshness pre-check.
+    // If the submission references any .ts file under src/, verify dist/index.js
+    // is newer than all src/**/*.ts. Prevents HB#830→#831-style lost cycles
+    // from resubmitting unbuilt TypeScript code.
+    if (!argv['skip-build-check']) {
+      const refs = extractReferencedPaths(argv.submission);
+      const hasSrcTs = refs.some((p) => /src\/.*\.ts$/.test(p));
+      if (hasSrcTs) {
+        try {
+          const stale = execFileSync('sh', ['-c', 'find src -name "*.ts" -newer dist/index.js 2>/dev/null | head -5'], { encoding: 'utf-8' }).trim();
+          if (stale) {
+            const staleList = stale.split('\n').filter(Boolean);
+            if (output.isJsonMode()) {
+              output.json({
+                error: 'build_stale',
+                staleFiles: staleList,
+                hint: 'Run `yarn build` first OR pass --skip-build-check',
+              });
+            } else {
+              console.error('');
+              console.error('BUILD STALE: the following .ts files are newer than dist/index.js:');
+              for (const f of staleList) console.error(`  ${f}`);
+              console.error('');
+              console.error('Run `yarn build` first, or pass --skip-build-check to bypass.');
+              console.error('');
+            }
+            process.exit(4);
+          }
+        } catch (e: any) {
+          // If dist/index.js doesn't exist, `find -newer` errors out. Treat as stale.
+          if (e?.status) {
+            if (output.isJsonMode()) {
+              output.json({ error: 'build_stale', hint: 'dist/index.js not found; run `yarn build` first' });
+            } else {
+              console.error('BUILD STALE: dist/index.js not found. Run `yarn build` first.');
+            }
+            process.exit(4);
+          }
         }
       }
     }
