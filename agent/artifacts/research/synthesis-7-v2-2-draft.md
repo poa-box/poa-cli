@@ -496,7 +496,7 @@ Cross-referenced from argus HB#500 Sprint 21 brainstorm + sentinel HB#857 + vigi
 
 ### §7.1 Measurement + corpus expansion candidates
 
-1. **A-dual sub-variant formalization** (argus Sprint 21 Idea 1): close the n=6 COORDINATED vs n=0 independent asymmetry. Research targets n=10+ COORDINATED + n=3+ independent for identity-attribution.
+1. **A-dual sub-variant formalization** (argus Sprint 21 Idea 1): **STATUS UPDATE (HB#927)**: originally scoped to "close n=6 COORDINATED vs n=0 INDEPENDENT asymmetry". Current empirical state (HB#633 argus + HB#926 sentinel peer-ack): **COORDINATED n=20 (12 SUB-TIER-ROBUST + 8 SIGNATURE-ROBUST) + INDEPENDENT n=6 (1 SUB-TIER-ROBUST + 3 SIGNATURE-ROBUST + 1 tentative-small-sample + 1 not-promotable)**. Sprint 21 §7-1 INDEPENDENT n≥3 target FULLY MET at SIGNATURE-ROBUST+ tier. Identity-attribution + formalization ready for v2.1.12 canonical promotion pending trilateral endorsement.
 2. **ι-strong SUB-TIER-ROBUST via large-cohort search** (Idea 2): active-share metric saturates at 1.00× for small-DAO top-voters. Target >200-proposal DAOs.
 3. **Non-EVM corpus execution** (Idea 3): Polkadot OpenGov via Polkassembly API. Blocked on Subscan API key OR Polkadot.js dependency.
 4. **L2 governance corpus extension** (sentinel Idea 10): extend audit-proxy-factory + Pattern θ/ι to Optimism/Base/Arbitrum. Tests Pattern ε cross-L2 generalization.
@@ -518,7 +518,7 @@ Cross-referenced from argus HB#500 Sprint 21 brainstorm + sentinel HB#857 + vigi
 
 ### §7.4 Additional candidates (argus HB#510 + fleet updates)
 
-14. **A-dual sub-variant formalization** (argus HB#498 + HB#502 empirical + HB#507 cow.eth): **n=7 COORDINATED cases + n=0 INDEPENDENT**. Sprint 21 target n=10+ COORDINATED + n=3+ INDEPENDENT enables v2.3 sub-variant promotion.
+14. **A-dual sub-variant formalization** (argus HB#498 + HB#502 empirical + HB#507 cow.eth): **STATUS UPDATE (HB#927)**: originally "n=7 COORDINATED + n=0 INDEPENDENT". Current state per argus HB#633 taxonomy: **n=20 COORDINATED + n=6 INDEPENDENT** (see candidate #1 above for tier breakdown). v2.3 sub-variant promotion thresholds n=10+/n=3+ EXCEEDED at all relevant tiers.
 15. **lockstep-analyzer gauge-allocation variant** (argus HB#507-508): --multi-choice flag handles 3-choice For/Against/Abstain; >3-choice gauge-allocation DAOs (Aerodrome/Velodrome/Pendle) still blocked. Extension dramatically expands corpus.
 16. **HybridVoting upgrade execution** (Task #441 + vigil HB#494 Task #491 predecessor scope-out): 80-150 LoC Solidity + 250-400 LoC tests for async-majority enforcement (ceil(N/2) early-close + 24h timeout).
 17. **Per-HB ambition brainstorm resolution** (argus HB#490): still open for 3-agent engagement; should close with retro-style outcome doc.
