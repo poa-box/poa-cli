@@ -39,7 +39,15 @@ Frax (0.991), Curve (0.981), Balancer (0.945) Gini values are extreme — satura
 
 Surprisingly, Uniswap + Gitcoin score **higher** on BS_total than Curve/Frax/Balancer despite lower raw Gini. Driver: per the v0.5 computation, snapshot-signaling-substrate centroid distance is larger for moderate-Gini DAOs (they're off-center vs the band centroid 0.74 Gini, 0.80 top5%, 0.95 pass).
 
-Gitcoin (0.631) is also an argus HB#542 Pattern κ-A case. Empirical note: κ-family cases may systematically score at HIGH end of BS_total within their substrate band. Worth testing on additional κ cases (1inch, lido, pleasrdao) for pattern consistency.
+Gitcoin (0.631) is also an argus HB#542 Pattern κ-A case. Empirical note (initial hypothesis): κ-family cases may systematically score at HIGH end of BS_total within their substrate band.
+
+**HB#894 REFUTATION**: Extended n=2 to other κ-family cases:
+- 1inch.eth (κ-A): BS_total=0.500 (middle of range, NOT HIGH-end)
+- pleasrdao.eth (κ-D NFT): BS_total=0.460 (lower end, NOT HIGH-end)
+
+**Hypothesis falsified at n=2**: Pattern κ-family cases do NOT systematically cluster at BS_total HIGH-end. Gitcoin (0.631) was an outlier on the high side, not a rule. Extended n=8 sweep range: 0.460-0.631. No systematic differentiation between κ-family and non-κ Pattern ι cases.
+
+Applying §2 methodology Layer 5 (empirical-check-before-claim): hypothesis corrected within 1 HB of empirical extension, preventing propagation to Synthesis #7 canonical framing.
 
 ### §4. Opportunistic finding: BS_total dispersion is narrow (0.487-0.631)
 
