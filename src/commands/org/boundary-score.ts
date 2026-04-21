@@ -29,8 +29,108 @@
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import * as output from '../../lib/output';
+import { snapshotGraphQL } from '../../lib/snapshot';
 
 const SNAPSHOT_API = 'https://hub.snapshot.org/graphql';
+
+/**
+ * Task #498 (retro-Sprint-21 idea-6, HB#892 v0.2): auto-fetch boundary-score
+ * inputs (gini / top5pct / passRate / N) directly from Snapshot for the given
+ * space. Mirrors the metric-computation logic in audit-snapshot.ts (lines
+ * ~320-390): fetch closed proposals + votes, aggregate voter VP, compute
+ * Gini via mean-abs-difference, top-5 cumulative share, and pass rate by
+ * first-choice-wins heuristic.
+ *
+ * Returns { gini, top5pct, passRate, N } where N is unique-voter count.
+ * Throws if Snapshot returns no closed proposals.
+ *
+ * Exported for unit testing.
+ */
+export async function autoFetchMetricsFromSnapshot(
+  space: string,
+  proposalSampleSize: number = 100,
+): Promise<{ gini: number; top5pct: number; passRate: number; N: number; proposalsAnalyzed: number }> {
+  // Snapshot limit: `proposal_in` argument ≤ 100 items. Keep sample at 100 max.
+  if (proposalSampleSize > 100) proposalSampleSize = 100;
+  // Fetch last N closed proposals
+  const propQuery = `
+    query($space: String!, $first: Int!) {
+      proposals(where: {space: $space, state: "closed"}, first: $first, orderBy: "created", orderDirection: desc) {
+        id
+        state
+        scores
+      }
+    }
+  `;
+  // Note: lib/snapshot.ts snapshotGraphQL already unwraps .data, returns the inner object directly
+  const propJson = await snapshotGraphQL(propQuery, { space, first: proposalSampleSize });
+  const closed = (propJson.proposals || []).filter((p: any) => p && Array.isArray(p.scores));
+  if (closed.length === 0) {
+    throw new Error(`No closed proposals for Snapshot space "${space}" (auto-fetch requires at least 1 closed proposal)`);
+  }
+
+  // Fetch all votes for those proposals
+  const proposalIds: string[] = closed.map((p: any) => p.id);
+  // Snapshot enforces first ≤ 1000 per query. Fetch up to 1000 highest-VP votes
+  // across the proposal set. Note: this samples the top-VP slice which is what
+  // matters for Gini + top-5 metrics; lower-VP votes would only reduce top-5
+  // share (bounded by denominator) without changing the tail characteristic.
+  const votesQuery = `
+    query($proposals: [String!]!) {
+      votes(where: {proposal_in: $proposals}, first: 1000, orderBy: "vp", orderDirection: desc) {
+        voter
+        vp
+      }
+    }
+  `;
+  const votesJson = await snapshotGraphQL(votesQuery, { proposals: proposalIds });
+  const votes = votesJson.votes || [];
+
+  // Aggregate VP per voter
+  const voterPower: Record<string, number> = {};
+  for (const v of votes) {
+    voterPower[v.voter] = (voterPower[v.voter] || 0) + (v.vp || 0);
+  }
+  const sortedVoters = Object.entries(voterPower).sort((a, b) => b[1] - a[1]);
+  const totalVP = sortedVoters.reduce((sum, [, vp]) => sum + vp, 0);
+  const N = sortedVoters.length;
+
+  if (N === 0 || totalVP === 0) {
+    throw new Error(`No votes found for Snapshot space "${space}" across ${closed.length} closed proposals`);
+  }
+
+  // Compute Gini via mean-abs-difference (matches audit-snapshot formula)
+  const vpValues = sortedVoters.map(([, vp]) => vp).sort((a, b) => a - b);
+  let gini = 0;
+  if (vpValues.length > 1 && totalVP > 0) {
+    let sumDiffs = 0;
+    for (let i = 0; i < vpValues.length; i++) {
+      for (let j = 0; j < vpValues.length; j++) {
+        sumDiffs += Math.abs(vpValues[i] - vpValues[j]);
+      }
+    }
+    gini = sumDiffs / (2 * vpValues.length * totalVP);
+  }
+
+  // Top-5 cumulative share (fraction, 0-1)
+  const top5vp = sortedVoters.slice(0, 5).reduce((sum, [, vp]) => sum + vp, 0);
+  const top5pct = totalVP > 0 ? top5vp / totalVP : 0;
+
+  // Pass rate: first-choice-wins heuristic (matches audit-snapshot line 349-352)
+  const passedCount = closed.filter((p: any) => {
+    if (!p.scores || p.scores.length < 2) return true;
+    return p.scores[0] > p.scores[1];
+  }).length;
+  const passRate = closed.length > 0 ? passedCount / closed.length : 0;
+
+  return {
+    gini: parseFloat(gini.toFixed(3)),
+    top5pct: parseFloat(top5pct.toFixed(3)),
+    passRate: parseFloat(passRate.toFixed(3)),
+    N,
+    proposalsAnalyzed: closed.length,
+  };
+}
 
 export type SubstrateBand = 'pure-token' | 'snapshot-signaling' | 'nft-participation' | 'conviction-locked' | 'unknown';
 
@@ -246,13 +346,45 @@ async function handlerImpl(argv: ArgumentsCamelCase<BoundaryScoreArgs>): Promise
   const weights = parseWeights(argv.weights);
   const dimParse = parseDimensionFlags(argv.dimensionFlags);
 
+  // Task #498 v0.2: auto-fetch mode. If --space is supplied AND one-or-more
+  // of gini/top5pct/passRate are missing, fetch from Snapshot. Manual args
+  // still override — e.g. --space curve.eth --gini 0.85 uses 0.85 not fetched.
+  let effectiveGini = argv.gini;
+  let effectiveTop5pct = argv.top5pct;
+  let effectivePassRate = argv.passRate;
+  let effectiveCohortN = argv.cohortN;
+  let autoFetched = false;
+  let autoFetchedNotes: string[] = [];
+
+  const needsFetch = argv.space && (
+    argv.gini === undefined ||
+    argv.top5pct === undefined ||
+    argv.passRate === undefined
+  );
+  if (needsFetch) {
+    try {
+      const metrics = await autoFetchMetricsFromSnapshot(argv.space!);
+      // Only fill in missing values; manual args override fetched
+      if (effectiveGini === undefined) effectiveGini = metrics.gini;
+      if (effectiveTop5pct === undefined) effectiveTop5pct = metrics.top5pct;
+      if (effectivePassRate === undefined) effectivePassRate = metrics.passRate;
+      if (effectiveCohortN === undefined) effectiveCohortN = metrics.N;
+      autoFetched = true;
+      autoFetchedNotes.push(
+        `Auto-derived from Snapshot: gini=${metrics.gini}, top5=${(metrics.top5pct * 100).toFixed(1)}%, passRate=${(metrics.passRate * 100).toFixed(1)}%, N=${metrics.N} (${metrics.proposalsAnalyzed} proposals analyzed)`,
+      );
+    } catch (err: any) {
+      autoFetchedNotes.push(`Auto-fetch failed: ${err?.message || err}. Using manual args only.`);
+    }
+  }
+
   const result: BoundaryScoreResult = {
     space: argv.space,
     inputs: {
-      gini: argv.gini,
-      top5pct: argv.top5pct,
-      passRate: argv.passRate,
-      cohortN: argv.cohortN,
+      gini: effectiveGini,
+      top5pct: effectiveTop5pct,
+      passRate: effectivePassRate,
+      cohortN: effectiveCohortN,
       substrateBand: argv.substrateBand as SubstrateBand,
       dimensionFlags: dimParse.dims,
       isPatternIota: argv.isPatternIota,
@@ -268,10 +400,10 @@ async function handlerImpl(argv: ArgumentsCamelCase<BoundaryScoreArgs>): Promise
 
   const computed = computeBoundaryScore({
     band: argv.substrateBand as SubstrateBand,
-    gini: argv.gini,
-    top5pct: argv.top5pct,
-    passRate: argv.passRate,
-    N: argv.cohortN,
+    gini: effectiveGini,
+    top5pct: effectiveTop5pct,
+    passRate: effectivePassRate,
+    N: effectiveCohortN,
     fullMembershipCount: dimParse.count,
     isCoordinatedDualWhale: false, // future: derive from audit data
     isPatternIota: argv.isPatternIota,
@@ -283,7 +415,8 @@ async function handlerImpl(argv: ArgumentsCamelCase<BoundaryScoreArgs>): Promise
   result.bsTotal = computed.bsTotal;
   result.classification = computed.classification;
   result.flags = computed.flags;
-  result.notes = computed.notes;
+  result.notes = [...autoFetchedNotes, ...computed.notes];
+  if (autoFetched) (result as any).autoFetched = true;
 
   if (argv.json) {
     output.json(result);
