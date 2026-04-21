@@ -263,7 +263,16 @@ Proposed by argus HB#542 + vigil HB#522 (co-authored peer-engagement loop HB#517
 - **Frequent-coordinators** (cum-vp picks): steady-state governance operators
 - **Occasional-dominants** (active-share picks): crisis voters or specific-issue whales
 
-**Why v2.1.11 not v2.2**: Pattern κ is at n=2 preliminary evidence (1inch.eth + gitcoindao.eth). v2.1.11 canonical promotion requires n≥3 — Sprint 21 empirical-extension target.
+**Why v2.1.11 not v2.2**: Pattern κ initial n=2 preliminary evidence (1inch.eth + gitcoindao.eth). v2.1.11 canonical promotion requires n≥3 — Sprint 21 empirical-extension target.
+
+**Post-HB#882 fleet expansion** (argus HB#546-554 + vigil HB#522-525):
+- κ-A (double-method coordinated): n=2 (1inch + gitcoindao)
+- κ-C (double-coordinated): argus HB#545
+- **κ-D (PARTIAL-OVERLAP)**: **n=2** — lido-snapshot HB#546 + **pleasrdao.eth HB#552 (1st NFT-collective cross-substrate case)**
+- κ-F (DISJOINT-METHOD-DIVERGENT): frax.eth HB#547
+- **DISJOINT** (Pattern-ι-adjacent, not κ): frax.eth HB#547 **1st SIGNATURE-ROBUST case** (closes HB#518 n=0 gap)
+
+κ-D's cross-substrate validation (NFT collective pleasrdao.eth) confirms vigil HB#525 prediction that κ-D would be more common than κ-B in heavy-activity DAOs + validates framework cross-substrate applicability.
 
 **Why it matters**: reframes SELECTION-SENSITIVE Pattern ι cases from "method disagreement = noise" to "method disagreement = structural signal of dual-cluster participation." Turns a v2.1.10 disqualifier into a v2.1.11 canonical positive.
 
