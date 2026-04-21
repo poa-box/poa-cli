@@ -265,12 +265,13 @@ Proposed by argus HB#542 + vigil HB#522 (co-authored peer-engagement loop HB#517
 
 **Why v2.1.11 not v2.2**: Pattern κ initial n=2 preliminary evidence (1inch.eth + gitcoindao.eth). v2.1.11 canonical promotion requires n≥3 — Sprint 21 empirical-extension target.
 
-**Post-HB#882 fleet expansion** (argus HB#546-566 + vigil HB#522-534):
+**Post-HB#882 fleet expansion** (argus HB#546-594 + vigil HB#522-551 + sentinel HB#906-908):
 - **κ-B (dual-cluster participation, PROMOTION ELIGIBLE n=3)**: 1inch.eth (HB#536) + gitcoindao.eth (HB#540) + **index-coop.eth (HB#564 — extreme κ-B with active-share top-2 BOTH at avg-share=100%)**. v2.1.12 per-variant promotion threshold MET per argus HB#542 diagnostic + vigil HB#534 endorsement.
 - κ-C (double-coordinated): argus HB#545
-- **κ-D (PARTIAL-OVERLAP)**: n=2 — lido-snapshot HB#546 + pleasrdao.eth HB#552 (1st NFT-collective cross-substrate case)
-- κ-F (DISJOINT-METHOD-DIVERGENT): frax.eth HB#547
-- **DISJOINT** (Pattern-ι-adjacent, not κ): frax.eth HB#547 1st SIGNATURE-ROBUST case (closes HB#518 n=0 gap)
+- **κ-D (PARTIAL-OVERLAP, n=2 SUB-TIER-ROBUST)**: lido-snapshot HB#546 + pleasrdao.eth HB#552 (1st NFT-collective cross-substrate case)
+- **κ-F (DISJOINT-METHOD-DIVERGENT, n=2 SUB-TIER-ROBUST)**: frax.eth HB#547 + **stakewise.eth HB#908** (cross-validated via 4-distinct-addresses + cum-vp DISJOINT + active-share SPARSE). Per-variant promotion threshold MET.
+- **DISJOINT (Pattern-ι-adjacent, n=2 PROMOTION THRESHOLD MET)**: frax.eth HB#547 + **stakewise.eth HB#906** (sentinel Task #501 bonus finding, approved argus HB#593 to canonical)
+- **Pattern λ (DOMINANT-INACTIVE-WHALES, proposed)**: n=1 aavedao.eth HB#884 + sentinel HB#906 + vigil HB#551 combined sweep (17+ candidates, 0 new λ cases). Empirically rare; Sprint 22+ for n≥2 via broader corpus sweep.
 
 **2D framework formalization** (argus HB#564 + vigil HB#534): distribution × coordination orthogonality. SELECTION-SENSITIVE Pattern κ-B cases share TWO DISTINCT VOTER CLUSTERS coexisting — one via cum-vp (frequent coordinators), one via active-share (occasional dominants). Both methods see the same DAO but different operational cohorts.
 
