@@ -173,6 +173,7 @@ interface BoundaryScoreArgs {
   gini?: number;
   top5pct?: number;
   passRate?: number;
+  patternThetaPassRate?: number; // Task #500 (vigil HB#536): Pattern θ integration
   cohortN?: number;
   substrateBand?: SubstrateBand;
   dimensionFlags?: string;
@@ -378,6 +379,26 @@ async function handlerImpl(argv: ArgumentsCamelCase<BoundaryScoreArgs>): Promise
     }
   }
 
+  // Task #500 (HB#536 vigil): Pattern θ integration. When --pattern-theta-pass-rate
+  // is supplied, it OVERRIDES the empirical passRate used in BS_substrate. Also
+  // emit a divergence warning if |theta - empirical| > 0.10 so operators notice
+  // cases where θ and empirical disagree materially (typically Rule-A captured
+  // DAOs where empirical is inflated by automatic-pass flow).
+  let empiricalPassRateForRecord: number | undefined;
+  if (argv.patternThetaPassRate !== undefined) {
+    empiricalPassRateForRecord = effectivePassRate;
+    const theta = argv.patternThetaPassRate;
+    if (effectivePassRate !== undefined && Math.abs(theta - effectivePassRate) > 0.10) {
+      autoFetchedNotes.push(
+        `⚠ Pattern θ prediction diverges from empirical: θ=${theta.toFixed(2)} vs empirical=${effectivePassRate.toFixed(2)} (diff=${Math.abs(theta - effectivePassRate).toFixed(2)}). Pattern θ accounts for proposal type + Rule-A capture + noise filter; consider this a more reliable substrate-distance input.`,
+      );
+    }
+    autoFetchedNotes.push(
+      `Pattern θ override applied: BS_substrate uses predictedPassRate=${theta.toFixed(3)} instead of empirical=${(effectivePassRate ?? 0).toFixed(3)}.`,
+    );
+    effectivePassRate = theta;
+  }
+
   const result: BoundaryScoreResult = {
     space: argv.space,
     inputs: {
@@ -431,7 +452,11 @@ export const boundaryScoreHandler = {
       .option('space', { type: 'string', describe: 'Snapshot space ID (e.g. curve.eth)' })
       .option('gini', { type: 'number', describe: 'Gini coefficient (0-1)' })
       .option('top5pct', { type: 'number', describe: 'Top-5 voter concentration (0-1)' })
-      .option('pass-rate', { type: 'number', describe: 'Pass rate (0-1)' })
+      .option('pass-rate', { type: 'number', describe: 'Pass rate (0-1; empirical: fraction of closed proposals that passed)' })
+      .option('pattern-theta-pass-rate', {
+        type: 'number',
+        describe: 'Pattern θ predicted pass rate (0-1). When supplied, USED INSTEAD OF empirical --pass-rate in BS_substrate. Pattern θ accounts for decision-type weighted-mix + Rule-A adjustment + noise filter; more reliable than empirical for capture-adjusted cases. Task #500 (HB#536 vigil). Run `pop org audit-snapshot --space X --classify-proposals --json` and pass its predictedPassRate here.',
+      })
       .option('cohort-n', { type: 'number', describe: 'Voter cohort size N' })
       .option('substrate-band', { type: 'string', choices: ['pure-token', 'snapshot-signaling', 'nft-participation', 'conviction-locked', 'unknown'] as const, describe: 'Substrate band' })
       .option('dimension-flags', { type: 'string', describe: 'Comma-separated dimension memberships (e.g. "A,C,B2e")' })
