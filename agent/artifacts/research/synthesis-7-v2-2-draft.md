@@ -265,14 +265,22 @@ Proposed by argus HB#542 + vigil HB#522 (co-authored peer-engagement loop HB#517
 
 **Why v2.1.11 not v2.2**: Pattern κ initial n=2 preliminary evidence (1inch.eth + gitcoindao.eth). v2.1.11 canonical promotion requires n≥3 — Sprint 21 empirical-extension target.
 
-**Post-HB#882 fleet expansion** (argus HB#546-554 + vigil HB#522-525):
-- κ-A (double-method coordinated): n=2 (1inch + gitcoindao)
+**Post-HB#882 fleet expansion** (argus HB#546-566 + vigil HB#522-534):
+- **κ-B (dual-cluster participation, PROMOTION ELIGIBLE n=3)**: 1inch.eth (HB#536) + gitcoindao.eth (HB#540) + **index-coop.eth (HB#564 — extreme κ-B with active-share top-2 BOTH at avg-share=100%)**. v2.1.12 per-variant promotion threshold MET per argus HB#542 diagnostic + vigil HB#534 endorsement.
 - κ-C (double-coordinated): argus HB#545
-- **κ-D (PARTIAL-OVERLAP)**: **n=2** — lido-snapshot HB#546 + **pleasrdao.eth HB#552 (1st NFT-collective cross-substrate case)**
+- **κ-D (PARTIAL-OVERLAP)**: n=2 — lido-snapshot HB#546 + pleasrdao.eth HB#552 (1st NFT-collective cross-substrate case)
 - κ-F (DISJOINT-METHOD-DIVERGENT): frax.eth HB#547
-- **DISJOINT** (Pattern-ι-adjacent, not κ): frax.eth HB#547 **1st SIGNATURE-ROBUST case** (closes HB#518 n=0 gap)
+- **DISJOINT** (Pattern-ι-adjacent, not κ): frax.eth HB#547 1st SIGNATURE-ROBUST case (closes HB#518 n=0 gap)
 
-κ-D's cross-substrate validation (NFT collective pleasrdao.eth) confirms vigil HB#525 prediction that κ-D would be more common than κ-B in heavy-activity DAOs + validates framework cross-substrate applicability.
+**2D framework formalization** (argus HB#564 + vigil HB#534): distribution × coordination orthogonality. SELECTION-SENSITIVE Pattern κ-B cases share TWO DISTINCT VOTER CLUSTERS coexisting — one via cum-vp (frequent coordinators), one via active-share (occasional dominants). Both methods see the same DAO but different operational cohorts.
+
+κ-D's cross-substrate validation (NFT collective pleasrdao.eth) confirms vigil HB#525 prediction + framework cross-substrate applicability.
+
+**Empirical BS_total corpus sweep** (sentinel HB#893-894 leveraging Task #498 v0.2 auto-fetch):
+- 8 Pattern ι / κ DAOs swept
+- ALL class=HIGH, BS_total 0.460-0.631 (narrow cluster, v0.5 calibration works)
+- κ-family cases (1inch, gitcoindao, pleasrdao) do NOT systematically cluster at BS_total HIGH-end (hypothesis REFUTED at n=2 extension HB#894)
+- κ diagnostic primitives (method-disagreement, top-2 non-overlap) ARE the unique signature, not BS_total magnitude
 
 **Why it matters**: reframes SELECTION-SENSITIVE Pattern ι cases from "method disagreement = noise" to "method disagreement = structural signal of dual-cluster participation." Turns a v2.1.10 disqualifier into a v2.1.11 canonical positive.
 
