@@ -20,6 +20,52 @@ const https = require('https');
 
 const SNAPSHOT_URL = 'https://hub.snapshot.org/graphql';
 
+// HB#567 Task #499: cosine-similarity helper for WEIGHTED pattern-mode.
+// Snapshot weighted votes have choice as `{choice_idx: weight}` object
+// (e.g. {"1": 50, "2": 50} for split 50/50 across choices 1 and 2).
+// Two voters AGREE if either: (a) cosine_similarity > 0.7 across normalized
+// weight vectors, OR (b) argmax of weights matches (same dominant choice).
+function cosineSimilarity(weightsA, weightsB) {
+  if (!weightsA || !weightsB || typeof weightsA !== 'object' || typeof weightsB !== 'object') return 0;
+  const keys = new Set([...Object.keys(weightsA), ...Object.keys(weightsB)]);
+  let dot = 0, magA = 0, magB = 0;
+  for (const k of keys) {
+    const a = Number(weightsA[k] || 0);
+    const b = Number(weightsB[k] || 0);
+    dot += a * b;
+    magA += a * a;
+    magB += b * b;
+  }
+  if (magA === 0 || magB === 0) return 0;
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+}
+
+function argmaxKey(weights) {
+  if (!weights || typeof weights !== 'object') return null;
+  let bestKey = null, bestVal = -Infinity;
+  for (const k of Object.keys(weights)) {
+    const v = Number(weights[k] || 0);
+    if (v > bestVal) { bestVal = v; bestKey = k; }
+  }
+  return bestKey;
+}
+
+// Pairwise-agree across pattern modes:
+// - binary/categorical: integer choice equality
+// - weighted: cosine_similarity > 0.7 OR same argmax (dominant choice match)
+function agreeOn(choiceA, choiceB, patternMode) {
+  if (choiceA === undefined || choiceB === undefined) return false;
+  if (patternMode === 'weighted') {
+    if (typeof choiceA !== 'object' || typeof choiceB !== 'object') {
+      // Edge: if a vote in a 'weighted' proposal has integer choice (single-pref shorthand), treat as exact match
+      return choiceA === choiceB;
+    }
+    if (cosineSimilarity(choiceA, choiceB) > 0.7) return true;
+    return argmaxKey(choiceA) === argmaxKey(choiceB);
+  }
+  return choiceA === choiceB;
+}
+
 function gql(query, variables = {}) {
   // HB#531: surface Snapshot rate-limit + GraphQL error responses with
   // a clear message instead of silently resolving to undefined (which
@@ -106,6 +152,14 @@ async function fetchProposals(space, first = 1000, includeMultiChoice = false, p
       // Accept single-choice types only (weighted/ranked-choice/quadratic are
       // deferred to follow-on implementation that needs cosine/Kendall-tau helpers)
       if (p.type && p.type !== 'single-choice' && p.type !== 'basic') return false;
+      return true;
+    }
+    // HB#567 Task #499 follow-on: WEIGHTED mode accepts gauge-allocation proposals
+    // (type='weighted'); vote.choice is an object {choice_idx: weight}; pairwise
+    // agreement = cosine_similarity(weights_a, weights_b) > 0.7 OR argmax(a) === argmax(b).
+    if (patternMode === 'weighted') {
+      // Accept any choices count (typically >2); only weighted type
+      if (p.type !== 'weighted') return false;
       return true;
     }
     return false;
@@ -230,11 +284,11 @@ async function main() {
       topN = Number(args[i]);
     }
   }
-  if (!space) { console.error('Usage: node lockstep-analyzer.js <space.eth> [topN=5] [--voters addr1,...] [--selection cum-vp|active-share] [--multi-choice] [--pattern-mode binary|categorical]'); process.exit(1); }
+  if (!space) { console.error('Usage: node lockstep-analyzer.js <space.eth> [topN=5] [--voters addr1,...] [--selection cum-vp|active-share] [--multi-choice] [--pattern-mode binary|categorical|weighted]'); process.exit(1); }
   if (!['cum-vp', 'active-share'].includes(selection)) { console.error('--selection must be cum-vp or active-share'); process.exit(1); }
-  if (!['binary', 'categorical'].includes(patternMode)) {
-    // HB#531 Task #497 MVP: only binary + categorical implemented. weighted + ranked deferred.
-    console.error(`--pattern-mode must be binary or categorical (weighted + ranked are follow-on work); got: ${patternMode}`);
+  if (!['binary', 'categorical', 'weighted'].includes(patternMode)) {
+    // HB#531 Task #497 MVP: binary + categorical implemented. HB#567 Task #499: weighted added. ranked deferred.
+    console.error(`--pattern-mode must be binary | categorical | weighted (ranked is follow-on); got: ${patternMode}`);
     process.exit(1);
   }
 
@@ -312,12 +366,12 @@ async function main() {
     if (top1Choice !== undefined) top1Active++;
     if (voterAddrs.length >= 2 && choices[voterAddrs[1]] !== undefined) top2Active++;
     if (top1Choice === undefined) continue;
-    // Pairwise-with-top-1
+    // Pairwise-with-top-1 (HB#567: agreeOn() abstracts equality across pattern modes)
     for (let k = 1; k < topN; k++) {
       const cho = choices[voterAddrs[k]];
       if (cho !== undefined) {
         perPair.get(k).coVoted++;
-        if (cho === top1Choice) perPair.get(k).agreed++;
+        if (agreeOn(cho, top1Choice, patternMode)) perPair.get(k).agreed++;
       }
     }
     // All-agree
@@ -325,7 +379,11 @@ async function main() {
     if (allPresent) {
       allCoparticipated++;
       const all = voterAddrs.map(a => choices[a]);
-      if (all.every(c => c === all[0])) allAgreed++;
+      // HB#567: weighted-mode all-agree = all pairwise agree with first; else integer equality.
+      const allMatch = patternMode === 'weighted'
+        ? all.every(c => agreeOn(c, all[0], 'weighted'))
+        : all.every(c => c === all[0]);
+      if (allMatch) allAgreed++;
     }
   }
 
