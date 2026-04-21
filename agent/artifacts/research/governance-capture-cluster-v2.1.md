@@ -425,13 +425,15 @@ v2.0 intervention framework remains canonical. v2.1 additions:
 - **Pattern θ v0.9 Rule-A adjustment**: CLI now flags captured DAOs with rubber-stamp prediction override (floor 0.85)
 - **Pattern ι scope caveat**: Priority-0 caveat — selective-participation breaks aggregate pass-rate predictions
 
-## Pattern A-dual-whale taxonomy extension (v2.1.11 candidate) — Pattern κ (dual-cluster participation)
+## Pattern A-dual-whale taxonomy extension (v2.1.12 — promoted HB#588 trilateral) — Pattern κ (dual-cluster participation) + SUBSET-OPPOSITION
 
 *Emerging from peer-engagement loop HB#517→#540→#522→#524 fork-reconciliation, April 2026. Pattern κ naming adopted per argus HB#542 parallel ship (standalone artifact `dual-cluster-participation-v2-1-11-candidate-hb542.md`). 'Dual-cluster participation' remains the descriptive shorthand.*
 
-v2.1.2 disqualifier split Pattern ι from Pattern A-dual-whale (top-2 co-vote ≥3 AND pairwise ≥70% → NOT Pattern ι, IS A-coord-dual-whale). v2.1.11 candidate refines with 2 new sub-variants:
+*v2.1.12 PROMOTED HB#588 vigil trilateral endorsement + HB#589 SUBSET-OPPOSITION row shipped. Trilateral: argus HB#664 + sentinel HB#940/#941 + vigil HB#588. Section header updated HB#590 vigil.*
 
-### 4 sub-variants (v2.1.11 proposed)
+v2.1.2 disqualifier split Pattern ι from Pattern A-dual-whale (top-2 co-vote ≥3 AND pairwise ≥70% → NOT Pattern ι, IS A-coord-dual-whale). v2.1.12 canonical refines with multiple sub-variants (originally v2.1.11 4-sub-variant draft; v2.1.12 expands to 8 sub-variants including SUBSET-OPPOSITION):
+
+### 8 sub-variants (v2.1.12 canonical)
 
 | Variant | Signature | Empirical count (Apr 2026) |
 |---------|-----------|-----------------------------|
