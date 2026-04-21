@@ -248,6 +248,11 @@ async function fetchVotes(proposalIds, voterAddrs) {
   return all;
 }
 
+// HB#566 Task #503: module-level diagnostic state. Tracks per-page vote counts
+// from most recent fetchTopVoters call so JSON output can include it without
+// changing the function signature. Reset at each fetchTopVoters entry.
+let lastFetchPageCounts = [];
+
 async function fetchTopVoters(space, topN, selection) {
   // v2.1 methodology (vigil HB#423): two top-voter selection methods:
   //   - 'cumulative-vp' (default): sum each voter's VP across all their votes in
@@ -267,9 +272,31 @@ async function fetchTopVoters(space, topN, selection) {
   const byVoter = new Map(); // cumulative-VP accumulator
   const perProposalVoters = new Map(); // active-share: proposal -> sum of VP
   const perVoterPerProposal = new Map(); // active-share: `voter:proposal` -> vp
+  // HB#566 Task #503: per-page assertion + retry. fetchTopVoters loop terminates
+  // on votes.length===0 (true end) OR votes.length<1000 (assumed end). Snapshot
+  // GraphQL can return transient short pages mid-stream that are NOT end-of-data;
+  // if that happens between a 1000-vote page and eventual 1000-vote page, the
+  // resulting 4K window is a partial-fetch that flips borderline classifications
+  // across sessions (cvx.eth cross-agent divergence HB#619/#921/#623).
+  // Fix: if page N returns <1000 AND previous page was exactly 1000, retry once
+  // with same skip offset. Only terminate if the retry also returns <1000.
+  const pageCounts = [];
   for (let page = 0; page < 4; page++) {
-    const d = await gql(q, { space, first: 1000, skip: page * 1000 });
-    const votes = (d && d.votes) || [];
+    let d = await gql(q, { space, first: 1000, skip: page * 1000 });
+    let votes = (d && d.votes) || [];
+    // Retry-on-mid-stream-short-page: prior page was full (1000) + this page is short.
+    // Pure end-of-data looks like: prior=1000 + this=<1000 OR prior=<1000 + this=0.
+    // Transient short looks like: prior=1000 + this=<1000 but genuine data exists past this skip.
+    if (page > 0 && pageCounts[page - 1] === 1000 && votes.length < 1000 && votes.length > 0) {
+      console.warn(`  [lockstep] fetchTopVoters page ${page} short (${votes.length} < 1000) after full prior page; retrying once (Task #503 robustness guard)`);
+      const retry = await gql(q, { space, first: 1000, skip: page * 1000 });
+      const retryVotes = (retry && retry.votes) || [];
+      if (retryVotes.length > votes.length) {
+        console.warn(`  [lockstep] retry returned ${retryVotes.length} votes (up from ${votes.length}) — transient short page confirmed, using retry data`);
+        votes = retryVotes;
+      }
+    }
+    pageCounts.push(votes.length);
     if (votes.length === 0) break;
     for (const v of votes) {
       const addr = v.voter.toLowerCase();
@@ -283,6 +310,9 @@ async function fetchTopVoters(space, topN, selection) {
     }
     if (votes.length < 1000) break;
   }
+  // Stash page counts for JSON diagnostic output. Module-level state avoids
+  // changing the fetchTopVoters return signature; caller reads via getLastFetchPageCounts().
+  lastFetchPageCounts = pageCounts.slice();
 
   if (selection === 'active-share') {
     // Compute each voter's per-proposal share, average over proposals they voted on
@@ -526,6 +556,11 @@ async function main() {
     pairwiseRates, majorityPairwise, tier, topVoters,
     dualWhale: { top2CoVoted: top2.coVoted, top2Agreed: top2.agreed, top2PairwiseRate, top1Active, top2Active, variant: dualWhaleVariant },
     patternSummary,
+    // HB#566 Task #503: diagnostic field — per-page vote counts for fetchTopVoters.
+    // Surfaces partial-fetch issues (e.g., [1000, 1000, 847, 0] may indicate transient
+    // short page at page 2). Retry logic guards against the case; this field lets
+    // callers verify whether the retry fired.
+    fetchPageCounts: lastFetchPageCounts,
   }, null, 2));
 }
 
