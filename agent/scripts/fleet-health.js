@@ -63,6 +63,34 @@ function fetchBrainSharedDoc() {
   return JSON.parse(out);
 }
 
+// HB#581 v1.1: self-daemon-status check. If OUR daemon has issues (connections=0,
+// missing subscribedDocs, old rebroadcast), peer-silence flags may indicate our
+// side not theirs. Per RULE #17 channel-independence + HB#646/HB#648 2-layer
+// broadcast-failure experience: knowing YOUR OWN node state is prerequisite for
+// interpreting peer darkPeer flags.
+function fetchOwnDaemonStatus() {
+  try {
+    const out = execSync('pop brain daemon status --json', {
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024,
+    });
+    return JSON.parse(out);
+  } catch (e) {
+    return null;
+  }
+}
+
+function assessOwnHealth(status) {
+  if (!status) return { ok: false, reason: 'daemon status unreachable' };
+  const issues = [];
+  if (status.status !== 'running') issues.push(`daemon not running (${status.status})`);
+  if (!status.connections || status.connections === 0) issues.push('connections=0 (no peers)');
+  const expected = ['pop.brain.shared'];
+  const subs = status.subscribedDocs || [];
+  for (const e of expected) if (!subs.includes(e)) issues.push(`missing subscription: ${e}`);
+  return { ok: issues.length === 0, issues, connections: status.connections, subscribedDocsCount: subs.length };
+}
+
 function computeLatestPerAuthor(doc) {
   const lessons = (doc && doc.doc && doc.doc.lessons) || [];
   const latestByAuthor = new Map();
@@ -83,6 +111,10 @@ function formatHoursAgo(hoursAgo) {
 
 function main() {
   const args = parseArgs(process.argv);
+  // HB#581 v1.1: check own daemon status BEFORE reading brain doc, so we can
+  // caveat peer darkPeer flags if our side has issues.
+  const ownStatus = fetchOwnDaemonStatus();
+  const ownHealth = assessOwnHealth(ownStatus);
   let doc;
   try {
     doc = fetchBrainSharedDoc();
@@ -113,12 +145,17 @@ function main() {
     console.log(JSON.stringify({
       generatedAt: new Date().toISOString(),
       thresholdHours: args.thresholdHours,
+      ownHealth,
       agents: report,
       anyDarkPeer: anyDark,
     }, null, 2));
   } else {
     console.log(`Fleet health — ${new Date().toISOString()}`);
     console.log(`Threshold: ${args.thresholdHours}h (per RULE #16)`);
+    if (!ownHealth.ok) {
+      console.log(`⚠  Own daemon issues: ${(ownHealth.issues || [ownHealth.reason]).join('; ')}`);
+      console.log('   Peer darkPeer flags below MAY reflect your node, not theirs.');
+    }
     console.log();
     for (const r of report) {
       const age = r.hoursAgo === null ? 'NEVER' : formatHoursAgo(r.hoursAgo);
@@ -130,6 +167,8 @@ function main() {
       console.log('Per RULE #17 channel-independence: darkPeer flag indicates BRAIN CRDT silence');
       console.log('ONLY. On-chain + git channels may still be active for that agent. Verify via');
       console.log('`git log --since=24h` or on-chain task activity before inferring agent down.');
+      console.log('HB#646/HB#648 precedent: silence can also be doc-routing bug or broadcast failure,');
+      console.log('not just daemon-down — remediation depends on root cause.');
     }
   }
 
