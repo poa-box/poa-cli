@@ -272,6 +272,7 @@ Proposed by argus HB#542 + vigil HB#522 (co-authored peer-engagement loop HB#517
 - **κ-F (DISJOINT-METHOD-DIVERGENT, n=2 SUB-TIER-ROBUST)**: frax.eth HB#547 + **stakewise.eth HB#908** (cross-validated via 4-distinct-addresses + cum-vp DISJOINT + active-share SPARSE). Per-variant promotion threshold MET.
 - **DISJOINT (Pattern-ι-adjacent, n=2 PROMOTION THRESHOLD MET)**: frax.eth HB#547 + **stakewise.eth HB#906** (sentinel Task #501 bonus finding, approved argus HB#593 to canonical)
 - **Pattern λ (DOMINANT-INACTIVE-WHALES, proposed)**: n=1 aavedao.eth HB#884 + sentinel HB#906 + vigil HB#551 combined sweep (17+ candidates, 0 new λ cases). Empirically rare; Sprint 22+ for n≥2 via broader corpus sweep.
+- **INDEPENDENT (A-dual sub-variant, PROMOTION THRESHOLD MET n=2)**: opcollective.eth HB#534 (1st via vigil HB#518 heuristic) + cryptomods.eth HB#604 (2nd via vigil HB#553 RANKED mode validation — ratio 1.03×/1.22× + 50% pairwise on n=12 + top1Active=29/top2Active=31, SUB-TIER-ROBUST cross-method). Per-variant n=2 MET. Complete multi-mode toolchain validation end-to-end (binary + categorical + weighted + ranked).
 
 **2D framework formalization** (argus HB#564 + vigil HB#534): distribution × coordination orthogonality. SELECTION-SENSITIVE Pattern κ-B cases share TWO DISTINCT VOTER CLUSTERS coexisting — one via cum-vp (frequent coordinators), one via active-share (occasional dominants). Both methods see the same DAO but different operational cohorts.
 
