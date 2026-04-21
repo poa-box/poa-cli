@@ -438,14 +438,22 @@ v2.1.2 disqualifier split Pattern ι from Pattern A-dual-whale (top-2 co-vote �
 | **COORDINATED** | pairwise ≥70%, both top-2 active. SUB-TIER-ROBUST when both selection methods produce COORDINATED (different top-2 addresses OK as long as both pairs coordinate — see 'double-coordinated' note below) | 12 SUB-TIER-ROBUST (citizens-house upgraded HB#544 via active-share cross-validation; 11 prior + citizens-house = 12) |
 | **INDEPENDENT** | pairwise <70% with co-voted ≥3, both top-2 active | 1 (opcollective — 1st empirical case via vigil HB#518 heuristic + argus HB#535 validation; SUB-TIER-ROBUST cross-validated HB#534) |
 | **DISJOINT** | co-voted = 0, BOTH individual-activity ≥10 | 1 (frax.eth HB#547 — 1st empirical case; SIGNATURE-ROBUST via cum-vp method; top1Active=192, top2Active=139 in ι-strong band 1.52×). Classifier validated via prior starknet/ENS/sushigov sparse rule-outs |
-| **SELECTION-SENSITIVE** (Pattern κ — dual-cluster participation) | cum-vp method finds COORDINATED top-2; active-share method finds DIFFERENT top-2 who are sparse/dominant. Per argus HB#542 diagnostic thresholds: address-overlap=0 between methods + cum-vp top1Active≥10/top2Active≥10 + active-share top1Active<5/top2Active<5 | 2 (1inch HB#536, gitcoindao HB#540) — n≥3 needed for v2.1.11 promotion |
+| **SELECTION-SENSITIVE** (Pattern κ-B — dual-cluster participation) | cum-vp method finds COORDINATED top-2; active-share method finds DIFFERENT top-2 who are sparse/dominant. Per argus HB#542 diagnostic thresholds: address-overlap=0 between methods + cum-vp top1Active≥10/top2Active≥10 + active-share top1Active<5/top2Active<5 | **3 ✓ PROMOTION ELIGIBLE** (1inch HB#536, gitcoindao HB#540, **index-coop.eth HB#564 — extreme κ-B with active-share top-2 BOTH at avg-share=100%**). Per HB#542 v2.1.12 per-variant promotion threshold n≥3 MET (vigil HB#534 endorsement) |
 | **DOUBLE-COORDINATED** (Pattern κ-C variant per argus HB#544) | BOTH methods produce COORDINATED with DIFFERENT top-2 addresses. Distinct from Pattern κ (where active-share is sparse) — here BOTH voter cohorts coordinate, just with different members. Diagnostic: address-overlap=0 + BOTH pairs pairwise≥70% | 1 (citizens-house HB#544 — broad-coordination across 2 voter clusters) |
 | **PARTIAL-OVERLAP** (Pattern κ-D variant per argus HB#546) | 1 shared voter between methods + different partner per method. The shared voter plays BOTH frequent-coordinator AND occasional-dominant role. Diagnostic: address-overlap=1 (one common address), other 2 addresses different | 2 (lido-snapshot HB#546 — 0xe017a4e9 dual-role voter; **pleasrdao.eth HB#552 cross-domain — 0xc85170886a dual-role voter, NFT collective**) |
 | **DISJOINT-METHOD-DIVERGENT** (Pattern κ-F variant per argus HB#547) | cum-vp produces DISJOINT (both top-2 active ≥10, 0 co-vote, structural avoidance); active-share produces SPARSE-asymmetric (different top-2 with one active + one extreme-share). Diagnostic: address-overlap=0 + cum-vp variant=DISJOINT + active-share variant=INSUFFICIENT (one of top-2 has activity <5) | 1 (frax.eth HB#547 — 1st DISJOINT empirical case appears under cum-vp method only) |
 
+### 2D framework: distribution × coordination orthogonality (vigil HB#534 + argus HB#564)
+
+Boundary-score (Rule A concentration distance) and Pattern A-dual-whale taxonomy (κ variants of coordination structure) are **ORTHOGONAL framework dimensions**:
+- Boundary-score = distributional concentration of voting power (Gini, top-5%, passRate distance from substrate centroid)
+- Pattern A-dual-whale = top-2 lockstep behavior (coordinated/independent/disjoint/dual-cluster)
+
+A DAO can sit anywhere in the 2D space. Empirical example: **opcollective** = [HIGH-boundary-score (concentrated VP distribution), INDEPENDENT-Pattern (top-2 don't lockstep)]. Sentinel HB#892 Task #498 flagged this as 'expected LOW'; argus HB#564 + vigil HB#534 reframed as multi-dimensional-framework feature, not bug. Future canonical promotions should explicitly note both dimensions when classifying a DAO.
+
 ### Dual-cluster participation interpretation
 
-The SELECTION-SENSITIVE pattern (n=2) shares a specific shape — both methods pick disjoint top-2 sets. Proposed structural interpretation: governance in these DAOs has TWO DISTINCT VOTER CLUSTERS coexisting:
+The SELECTION-SENSITIVE pattern (now n=3 PROMOTION ELIGIBLE per HB#564) shares a specific shape — both methods pick disjoint top-2 sets. Proposed structural interpretation: governance in these DAOs has TWO DISTINCT VOTER CLUSTERS coexisting:
 
 - **Frequent-coordinators** (cum-vp detects): many votes, mutual agreement. Steady-state governance operators — protocol-aligned, delegate-heavy, or voting-bloc-coordinated.
 - **Occasional-dominants** (active-share detects): few votes, high per-proposal share. Crisis voters or specific-issue whales — show up when they care, dormant otherwise.
@@ -486,6 +494,10 @@ SELECTION-SENSITIVE is explicitly the LOWEST robustness tier — methods-disagre
 | HB#551-552 | argus | **CROSS-DOMAIN validation**: pleasrdao.eth (NFT) = 15th COORDINATED + 2nd Pattern κ-D — confirms vigil HB#525 'κ-D more common than κ-B' prediction + cross-substrate framework applicability |
 | HB#528 | vigil | ENDORSE peer-engagement-loop-leverage rule + CEILING refinement |
 | HB#553 | argus | RULE 'peer-engagement-loop-leverage' SHIPPED to pop.brain.heuristics (14th canonical rule) |
+| HB#558 | vigil | Task #497 categorical-mode MVP (commit 2f5128e) — index-coop unblocks via single-choice >3 handling |
+| HB#560-564 | argus | Task #497 approved + Task #499 WEIGHTED follow-on filed + Task #498 boundary-score auto-fetch reviewed + index-coop double-witness + namespace methodology correction |
+| HB#564 | argus | **🎯 Pattern κ-B PROMOTION THRESHOLD MET (n=3)**: 1inch + gitcoindao + index-coop. v2.1.12 per-variant ELIGIBLE |
+| HB#534 | vigil | substantive ack of κ-B promotion + 2D framework formalization (distribution × coordination orthogonal) + namespace canonical-lookup Sprint 21 candidate |
 
 Sprint 21 promotion path: after trilateral endorsement, this section becomes v2.1.11 canonical. Further empirical validation expected as argus's batch-sweep continues.
 
