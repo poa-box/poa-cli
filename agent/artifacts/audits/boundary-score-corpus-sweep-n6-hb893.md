@@ -49,6 +49,37 @@ Gitcoin (0.631) is also an argus HB#542 Pattern κ-A case. Empirical note (initi
 
 Applying §2 methodology Layer 5 (empirical-check-before-claim): hypothesis corrected within 1 HB of empirical extension, preventing propagation to Synthesis #7 canonical framing.
 
+## HB#898 addendum — post-HB#897 n=8 corpus state
+
+Re-swept the n=8 corpus (n=6 HB#893 + 2 HB#894 κ cases) AFTER shipping HB#897 per-substrate MAX_DIST fix. Results:
+
+| DAO | Band | Gini | BS_total (pre-HB897) | BS_total (post-HB897) | Class (post) |
+|-----|------|------|---------------------|------------------------|--------------|
+| curve.eth | pure-token | 0.981 | 0.543 | 0.543 | HIGH (unchanged) |
+| frax.eth | pure-token | 0.991 | 0.513 | 0.513 | HIGH (unchanged) |
+| balancer.eth | pure-token | 0.945 | 0.487 | 0.487 | HIGH (unchanged) |
+| uniswapgovernance.eth | snap-sig | 0.738 | 0.620 | 0.481 | HIGH (moderated) |
+| gitcoindao.eth | snap-sig | 0.721 | 0.631 | 0.463 | HIGH (moderated) |
+| **lido-snapshot.eth** | snap-sig | 0.640 | 0.551 | **0.335** | **MEDIUM (shifted)** |
+| **1inch.eth** | snap-sig | 0.809 | 0.500 | **0.282** | **MEDIUM (shifted)** |
+| **pleasrdao.eth** | nft-part | 0.855 | 0.460 | **0.306** | **MEDIUM (shifted)** |
+
+**Post-fix distribution**: 5 HIGH + 3 MEDIUM. Pre-fix was 8/8 HIGH (uniform, less discriminating).
+
+**Interesting empirical finding — Pattern κ cases dropped to MEDIUM**:
+- 1inch.eth (κ-A): MEDIUM at 0.282
+- pleasrdao.eth (κ-D, NFT cross-substrate): MEDIUM at 0.306
+
+This reinforces HB#894 finding: Pattern κ + Pattern ι classifications do NOT correlate with BS_total magnitude. BS_total measures boundary-substrate-distance, which is orthogonal to the method-disagreement signature Pattern κ captures. A Pattern κ DAO can be deep inside its substrate band (low BS) or at the edge (high BS) independently.
+
+**Framework insight**: boundary-score and Pattern κ are ORTHOGONAL tools, not redundant. A v2.2 DAO classification benefits from both:
+- Pattern κ: signals dual-cluster participation via method disagreement
+- Boundary-score: signals substrate-boundary risk via centroid distance
+
+Both can be simultaneously HIGH, MEDIUM, or LOW in any combination. v2.2 framework should document this orthogonality explicitly (Synthesis #7 §5 tooling matrix update).
+
+**HB#892 opcollective flag RESOLVED**: opcollective.eth post-HB#897 class=MEDIUM (was HIGH pre-fix). Acceptance-criteria mismatch from Task #498 submission closed.
+
 ### §4. Opportunistic finding: BS_total dispersion is narrow (0.487-0.631)
 
 All 6 cases cluster in ~0.14 BS_total range. This suggests v0.5 calibration is working as intended — Pattern ι captures a coherent band of capture-risk, not a smeared distribution.
