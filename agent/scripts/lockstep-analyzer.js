@@ -50,9 +50,45 @@ function argmaxKey(weights) {
   return bestKey;
 }
 
+// HB#553: Kendall-tau distance for RANKED-CHOICE mode (Task #497 + #499 follow-on).
+// Snapshot ranked-choice ballots: choice is an array of 1-indexed candidate positions
+// in preference order, e.g. [3,1,2] means candidate 3 first-preference, 1 second, 2 third.
+// Normalized Kendall tau distance ∈ [0, 1]: 0 = identical ranking, 1 = reversed.
+// For agreement threshold (consistent with weighted mode's cosine>0.7): tau ≤ 0.3.
+// Only compare candidates ranked by BOTH voters (intersection). If intersection <2
+// pairs, fall back to first-preference equality.
+function kendallTauDistance(rankingA, rankingB) {
+  if (!Array.isArray(rankingA) || !Array.isArray(rankingB)) return 1;
+  const setA = new Set(rankingA);
+  const setB = new Set(rankingB);
+  const common = [...setA].filter(c => setB.has(c));
+  if (common.length < 2) return 1;
+  const idxA = new Map(rankingA.map((c, i) => [c, i]));
+  const idxB = new Map(rankingB.map((c, i) => [c, i]));
+  let discordant = 0, totalPairs = 0;
+  for (let i = 0; i < common.length; i++) {
+    for (let j = i + 1; j < common.length; j++) {
+      totalPairs++;
+      const a1 = idxA.get(common[i]);
+      const a2 = idxA.get(common[j]);
+      const b1 = idxB.get(common[i]);
+      const b2 = idxB.get(common[j]);
+      // Discordant if orders disagree: (a1<a2 && b1>b2) OR (a1>a2 && b1<b2)
+      if ((a1 < a2 && b1 > b2) || (a1 > a2 && b1 < b2)) discordant++;
+    }
+  }
+  return totalPairs === 0 ? 1 : discordant / totalPairs;
+}
+
+function firstPreference(ranking) {
+  if (!Array.isArray(ranking) || ranking.length === 0) return null;
+  return ranking[0];
+}
+
 // Pairwise-agree across pattern modes:
 // - binary/categorical: integer choice equality
 // - weighted: cosine_similarity > 0.7 OR same argmax (dominant choice match)
+// - ranked (HB#553): normalized Kendall-tau ≤ 0.3 OR same first-preference
 function agreeOn(choiceA, choiceB, patternMode) {
   if (choiceA === undefined || choiceB === undefined) return false;
   if (patternMode === 'weighted') {
@@ -62,6 +98,14 @@ function agreeOn(choiceA, choiceB, patternMode) {
     }
     if (cosineSimilarity(choiceA, choiceB) > 0.7) return true;
     return argmaxKey(choiceA) === argmaxKey(choiceB);
+  }
+  if (patternMode === 'ranked') {
+    if (!Array.isArray(choiceA) || !Array.isArray(choiceB)) {
+      // Edge: integer choice in ranked proposal (single-pref shorthand) → treat as exact match
+      return choiceA === choiceB;
+    }
+    if (kendallTauDistance(choiceA, choiceB) <= 0.3) return true;
+    return firstPreference(choiceA) === firstPreference(choiceB);
   }
   return choiceA === choiceB;
 }
@@ -160,6 +204,13 @@ async function fetchProposals(space, first = 1000, includeMultiChoice = false, p
     if (patternMode === 'weighted') {
       // Accept any choices count (typically >2); only weighted type
       if (p.type !== 'weighted') return false;
+      return true;
+    }
+    // HB#553 Task #497/#499 follow-on: RANKED mode accepts ranked-choice proposals
+    // (type='ranked-choice'); vote.choice is an array of 1-indexed candidate positions;
+    // pairwise agreement = normalized Kendall-tau ≤ 0.3 OR first-preference match.
+    if (patternMode === 'ranked') {
+      if (p.type !== 'ranked-choice') return false;
       return true;
     }
     return false;
@@ -284,11 +335,11 @@ async function main() {
       topN = Number(args[i]);
     }
   }
-  if (!space) { console.error('Usage: node lockstep-analyzer.js <space.eth> [topN=5] [--voters addr1,...] [--selection cum-vp|active-share] [--multi-choice] [--pattern-mode binary|categorical|weighted]'); process.exit(1); }
+  if (!space) { console.error('Usage: node lockstep-analyzer.js <space.eth> [topN=5] [--voters addr1,...] [--selection cum-vp|active-share] [--multi-choice] [--pattern-mode binary|categorical|weighted|ranked]'); process.exit(1); }
   if (!['cum-vp', 'active-share'].includes(selection)) { console.error('--selection must be cum-vp or active-share'); process.exit(1); }
-  if (!['binary', 'categorical', 'weighted'].includes(patternMode)) {
-    // HB#531 Task #497 MVP: binary + categorical implemented. HB#567 Task #499: weighted added. ranked deferred.
-    console.error(`--pattern-mode must be binary | categorical | weighted (ranked is follow-on); got: ${patternMode}`);
+  if (!['binary', 'categorical', 'weighted', 'ranked'].includes(patternMode)) {
+    // HB#531 Task #497 MVP: binary + categorical. HB#567 Task #499: weighted. HB#553: ranked (Kendall-tau).
+    console.error(`--pattern-mode must be binary | categorical | weighted | ranked; got: ${patternMode}`);
     process.exit(1);
   }
 
