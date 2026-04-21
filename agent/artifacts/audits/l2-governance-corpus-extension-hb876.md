@@ -18,8 +18,8 @@ tags: category:audit, topic:l2-governance-extension, topic:sprint-21-idea-10-pro
 |-------|----------------|-----------------|--------|
 | opcollective.eth | OP Collective (Optimism L2 governance) | 5 | 5/5 EOA, not-E-proxy |
 | basenamedao.eth | Base Name Service DAO (Base L2) | 5 | 5/5 EOA, not-E-proxy |
-| velodromefi.eth | Velodrome (Optimism DeFi, veVELO) | 0 | **empty** — binary-voter-list failed |
-| aerodromefi.eth | Aerodrome (Base DeFi, veAERO) | 0 | **empty** |
+| velodromefi.eth | Velodrome (Optimism DeFi, veVELO) | 0 | **empty — NOT ON SNAPSHOT (HB#911 correction)** |
+| aerodromefi.eth | Aerodrome (Base DeFi, veAERO) | 0 | **empty — NOT ON SNAPSHOT (HB#911 correction)** |
 | stargatedao.eth | Stargate (cross-chain) | 0 | **empty** (also empty HB#852) |
 
 **Data returned**: 2/5 spaces → small n=2 sample. 3 empty spaces hint at multi-choice voting (gauge-allocation on veVELO/veAERO — Sprint 21 Idea 15 argus HB#507-508 lockstep-analyzer multi-choice variant work blocks extension here).
@@ -38,7 +38,11 @@ Both data-returning L2 spaces show **5/5 EOA, 0 proxy-candidates** in top-5 vote
 
 ### §2. Gauge-allocation L2 DeFi blocks binary-voter-list queries
 
-Velodrome (OP) + Aerodrome (Base) returned empty. These are gauge-allocation voting systems (veVELO / veAERO select pool weight distributions). Snapshot binary-voter extraction returns no data because the voting is ALL multi-choice (per-gauge weight allocations).
+Velodrome (OP) + Aerodrome (Base) returned empty.
+
+**HB#911 correction**: Per direct Snapshot GraphQL probe HB#911 (after vigil HB#553 multi-choice extension shipped), **both spaces have ZERO proposals on Snapshot** — they don't use Snapshot governance at all. Original HB#876 interpretation "gauge-allocation multi-choice blocking extraction" was WRONG. These protocols likely govern entirely on-chain via direct veVELO/veAERO votes, bypassing Snapshot.
+
+This means: multi-choice extension (argus HB#507-508, vigil HB#553) does NOT unblock velodrome/aerodrome corpus inclusion; they're structurally outside Snapshot corpus scope.
 
 This matches argus HB#499 observation: "Snapshot DeFi DAO sample exhaustion... beyond requires... multi-choice extension." L2 DeFi corpus expansion is blocked until multi-choice lockstep variant (Sprint 21 Idea 15) lands.
 
