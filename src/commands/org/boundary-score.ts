@@ -151,8 +151,22 @@ export const SUBSTRATE_CENTROIDS: Record<SubstrateBand, [number, number, number]
 /**
  * Max distance within band for BS_substrate normalization.
  * Approximated from HB#467 worked examples (Spark 0.186 max in pure-token band).
+ *
+ * HB#897 refinement (Option B per HB#896 analysis): per-substrate MAX_DIST.
+ * Snapshot-signaling band has wider natural cluster dispersion (more governance-
+ * model diversity: DAO-wide + dev proposals + gauge votes). HB#896 empirical
+ * sweep of n=5 snapshot-signaling DAOs (ens/opcollective/arb-fdn/gitcoin/safe)
+ * showed distances 0.34-0.48 from centroid, all max-clamping to 1.0 at
+ * MAX_DIST=0.20. Per-substrate max-dist preserves pure-token tightness while
+ * allowing snapshot-signaling dispersion without loss of discriminating power.
  */
-const MAX_DIST_IN_BAND = 0.20;
+const MAX_DIST_IN_BAND: Record<SubstrateBand, number> = {
+  'pure-token': 0.20,
+  'snapshot-signaling': 0.50,
+  'nft-participation': 0.30,
+  'conviction-locked': 0.20,
+  unknown: 0.20,
+};
 
 /**
  * Default weights per HB#467 recalibration recommendation.
@@ -223,7 +237,8 @@ export function computeBSSubstrate(
   const dist = Math.sqrt(
     (gini - cGini) ** 2 + (top5pct - cTop5) ** 2 + (passRate - cPass) ** 2,
   );
-  return Math.min(1, dist / MAX_DIST_IN_BAND);
+  const maxDist = MAX_DIST_IN_BAND[band] ?? 0.20;
+  return Math.min(1, dist / maxDist);
 }
 
 /**
