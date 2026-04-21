@@ -57,7 +57,12 @@ function gql(query, variables = {}) {
   });
 }
 
-async function fetchProposals(space, first = 1000, includeMultiChoice = false) {
+// HB#531 Task #497 MVP (vigil): --pattern-mode flag supports CATEGORICAL >3-choice
+// lockstep analysis. Categorical agreement = exact choice-index match (same logic as
+// binary, just relaxes the length filter). WEIGHTED + RANKED modes deferred as
+// follow-on (need cosine-similarity + Kendall-tau helpers + object/array vote.choice
+// parsing).
+async function fetchProposals(space, first = 1000, includeMultiChoice = false, patternMode = 'binary') {
   // Fetch closed proposals. By default restricted to choices.length === 2 (binary).
   // HB#507 multi-choice extension: if includeMultiChoice, also accept 3-choice
   // For/Against/Abstain proposals (treat Abstain as non-vote in lockstep analysis).
@@ -92,6 +97,16 @@ async function fetchProposals(space, first = 1000, includeMultiChoice = false) {
     if (includeMultiChoice && p.choices.length === 3) {
       // For/Against/Abstain pattern detection (case-insensitive third choice)
       return /abstain/i.test(p.choices[2]);
+    }
+    // HB#531 Task #497 MVP: CATEGORICAL mode accepts any single-choice >3 voting
+    // (budget allocation / multi-candidate elections). Vote.choice is an integer
+    // (1-indexed choice); agreement = exact match. Same pairwise-agreement logic
+    // as binary; just relaxes the length filter.
+    if (patternMode === 'categorical' && p.choices.length > 3) {
+      // Accept single-choice types only (weighted/ranked-choice/quadratic are
+      // deferred to follow-on implementation that needs cosine/Kendall-tau helpers)
+      if (p.type && p.type !== 'single-choice' && p.type !== 'basic') return false;
+      return true;
     }
     return false;
   }).map(p => {
@@ -198,6 +213,7 @@ async function main() {
   let explicitVoters = null;
   let selection = 'cum-vp';
   let includeMultiChoice = false;
+  let patternMode = 'binary';
   for (let i = 1; i < args.length; i++) {
     if (args[i] === '--voters' && args[i + 1]) {
       explicitVoters = args[i + 1].split(',').map(s => s.trim().toLowerCase());
@@ -207,12 +223,20 @@ async function main() {
       i++;
     } else if (args[i] === '--multi-choice') {
       includeMultiChoice = true;
+    } else if (args[i] === '--pattern-mode' && args[i + 1]) {
+      patternMode = args[i + 1];
+      i++;
     } else if (/^\d+$/.test(args[i])) {
       topN = Number(args[i]);
     }
   }
-  if (!space) { console.error('Usage: node lockstep-analyzer.js <space.eth> [topN=5] [--voters addr1,...] [--selection cum-vp|active-share] [--multi-choice]'); process.exit(1); }
+  if (!space) { console.error('Usage: node lockstep-analyzer.js <space.eth> [topN=5] [--voters addr1,...] [--selection cum-vp|active-share] [--multi-choice] [--pattern-mode binary|categorical]'); process.exit(1); }
   if (!['cum-vp', 'active-share'].includes(selection)) { console.error('--selection must be cum-vp or active-share'); process.exit(1); }
+  if (!['binary', 'categorical'].includes(patternMode)) {
+    // HB#531 Task #497 MVP: only binary + categorical implemented. weighted + ranked deferred.
+    console.error(`--pattern-mode must be binary or categorical (weighted + ranked are follow-on work); got: ${patternMode}`);
+    process.exit(1);
+  }
 
   const selectionLabel = explicitVoters ? 'explicit voters' : `auto-selected by ${selection}`;
   console.log(`\nLockstep analysis: ${space} (top-${topN}, ${selectionLabel})\n`);
@@ -234,11 +258,13 @@ async function main() {
     });
   }
 
-  const binaryProposals = await fetchProposals(space, 1000, includeMultiChoice);
+  const binaryProposals = await fetchProposals(space, 1000, includeMultiChoice, patternMode);
   const multiChoiceCount = binaryProposals.filter(p => p.abstainChoice).length;
-  console.log(`\nBinary proposals found: ${binaryProposals.length}${includeMultiChoice && multiChoiceCount > 0 ? ` (${binaryProposals.length - multiChoiceCount} pure-binary + ${multiChoiceCount} 3-choice w/ Abstain ignored)` : ''}\n`);
+  const categoricalCount = patternMode === 'categorical' ? binaryProposals.filter(p => p.choices && p.choices.length > 3).length : 0;
+  const propLabel = patternMode === 'categorical' ? 'Classifiable proposals (binary + categorical)' : 'Binary proposals';
+  console.log(`\n${propLabel} found: ${binaryProposals.length}${includeMultiChoice && multiChoiceCount > 0 ? ` (${binaryProposals.length - multiChoiceCount - categoricalCount} pure-binary + ${multiChoiceCount} 3-choice w/ Abstain ignored${categoricalCount > 0 ? ` + ${categoricalCount} categorical >3-choice` : ''})` : ''}\n`);
   if (binaryProposals.length === 0) {
-    console.log(`No binary proposals available.${includeMultiChoice ? '' : ' Space may use multi-choice or gauge-allocation voting (try --multi-choice flag).'}`);
+    console.log(`No classifiable proposals available.${includeMultiChoice ? '' : ' Space may use multi-choice or gauge-allocation voting (try --multi-choice flag).'}${patternMode === 'binary' ? ' For budget-allocation / multi-candidate elections, try --pattern-mode categorical.' : ''}`);
     return;
   }
 
