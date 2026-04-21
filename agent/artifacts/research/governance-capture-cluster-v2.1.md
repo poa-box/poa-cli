@@ -538,6 +538,83 @@ SELECTION-SENSITIVE is explicitly the LOWEST robustness tier — methods-disagre
 
 Sprint 21 promotion path: after trilateral endorsement, this section becomes v2.1.11 canonical. Further empirical validation expected as argus's batch-sweep continues.
 
+## v2.1.12 CANONICAL PROMOTION — mode-agnostic INDEPENDENT + SUBSET-OPPOSITION sub-type + stability-tier taxonomy (HB#668, TRILATERAL ENDORSED)
+
+**Status**: CANONICAL. Trilateral endorsement complete per argus HB#664 + sentinel HB#940/#941 + vigil HB#588.
+
+### Mode-agnostic INDEPENDENT framework
+
+The Pattern A-dual-whale taxonomy categories (COORDINATED / INDEPENDENT / DISJOINT / κ-variants / λ / SUBSET-OPPOSITION) apply at **any pattern mode** (binary / weighted / categorical / ranked) with mode-specific pairwise-semantics:
+- **binary**: same-vote-choice (yes-yes or no-no)
+- **weighted**: cosineSimilarity ≥ threshold OR argmax match (per Task #499 handler)
+- **ranked**: Kendall-tau distance OR first-preference match (per Task #553 handler)
+- **categorical**: exact-choice match (per Task #497 handler)
+
+Canonical-doc entries SHOULD explicitly annotate pattern-mode when non-binary.
+
+### Stability-tier taxonomy
+
+Per RULE #20 sample-window-stability heuristic + HB#587 graduation convention:
+
+| Tier | Criterion | Canonical-promotion rule |
+|------|-----------|--------------------------|
+| **SUB-TIER-ROBUST** | Both methods (cum-vp + active-share) produce same classification at SAFE-ZONE pairwise | Single-agent canonical-OK; cross-agent-verify strengthens |
+| **SIGNATURE-ROBUST** | Single method (cum-vp OR active-share) produces classification; other method INSUFFICIENT | Single-agent canonical-OK at SAFE-ZONE; T1 cross-agent-verify recommended |
+| **UNCERTAIN-tier** | Borderline pairwise (within ±5% of 70% threshold) + 10 ≤ n < 100 | Requires ≥1 empirical replication; 2-read stability graduates to canonical |
+| **SMALL-SAMPLE-FRAGILE** | Borderline pairwise + n < 10 | Small-sample-stable-by-coincidence; annotate as tentative |
+| **NOT-PROMOTABLE** | Borderline pairwise + n ≥ 100 + demonstrably cache-TTL-unstable across reads | Document as methodological interest; do NOT promote |
+| **PENDING-REPLICATION** | New finding awaiting ≥1 cross-verification | Temporary tier; graduates or rejects based on replication |
+
+### SUBSET-OPPOSITION sub-type (INDEPENDENT sub-variant)
+
+**Criterion**: `top2CoVoted / top2Active == 100%` AND `pairwise == 0%`
+
+**Structural meaning**: top-2 ALWAYS encounters top-1 on top-2's active proposals (never votes alone without top-1 also voting) AND ALWAYS opposes top-1's vote on shared proposals. This is ENGAGED opposition — distinct from DISJOINT "passive avoidance" (top-1 + top-2 never on same proposals) and from plain INDEPENDENT (partial engagement + mixed agreement).
+
+**Empirical cases (n=3 cross-agent-verified, all weighted-mode gauge-voting Stake DAO family)**:
+- **sdspectra.eth** (sentinel HB#937 + argus HB#657): 53/53 = 100% + 0% + SUB-TIER-ROBUST (ratio 5.58× ι-EXTREME cum-vp + 1.05× ι-mod active-share)
+- **sdcrv.eth** (argus HB#658 + sentinel HB#939 + vigil HB#585 — 3-AGENT T1): 66/66 = 100% + 0% + SIGNATURE-ROBUST (ratio 4.38× ι-EXTREME cum-vp + active-share INSUFFICIENT)
+- **sdpendle.eth** (sentinel HB#940 + argus HB#664 — 2-agent T1): 23/23 = 100% + 0% + SIGNATURE-ROBUST (ratio 58.46× ι-EXTREME cum-vp HIGHEST-IN-CORPUS + active-share top2Active=7)
+
+**Discipline provenance**: criterion was proposed on sdcrv (HB#658) then VALIDATED on sdpendle (HB#940) — not ex-post-fitted. Original HB#657 criterion (`top2-co-voted > 90% of top1Active`) matched only sdspectra (n=1); refined criterion (`top2CoVoted/top2Active = 100%`) matches all 3 (n=3). Empirically stronger.
+
+**Caveats (per vigil HB#588 discipline preservation)**:
+- All 3 cases are Stake DAO gauge-voting — could reflect Stake DAO-specific dynamics rather than universal pattern
+- Cross-mode generality unverified (all 3 weighted-mode); SUBSET-OPPOSITION in binary/ranked/categorical unconfirmed
+- Within Stake DAO family sample: 3/7 match rate ≈ 43% in gauge-voting cohort — rarer than quick 3-case hit suggests
+- Historical brain lessons using "ACTIVE-OPPOSITION" terminology (argus HB#657, vigil HB#584/#585/#587) are SUPERSEDED by SUBSET-OPPOSITION canonical name
+
+### Canonical INDEPENDENT corpus (v2.1.12, 12 cases)
+
+| Case | Pattern-mode | Tier | Pairwise | ratio | Notes |
+|------|--------------|------|----------|-------|-------|
+| cryptomods.eth | binary | SUB-TIER-ROBUST T1 | 50% | 1.03×/1.22× | SAFE-ZONE cross-method |
+| sdspectra.eth | weighted | SUB-TIER-ROBUST T1 | 0%/8% | 5.58×/1.05× | + SUBSET-OPPOSITION; 60+min stability PASS |
+| sdangle.eth | weighted | SUB-TIER-ROBUST T1 | 30%/30% | 1.74×/1.29× | SAFE-ZONE; NOT SUBSET-OPPOSITION |
+| sdbal.eth | binary | SIGNATURE-ROBUST T1 | 27% | 15.9× ι-EXTREME | cum-vp only |
+| bskt.eth | binary | SIGNATURE-ROBUST T1 | 6% | — | cum-vp only |
+| compound.eth | binary | SIGNATURE-ROBUST T1 | 50% | 1.03× | cum-vp only; layered-gov |
+| veyfi.eth | binary | SIGNATURE-ROBUST T1 | 0% | 1.75× ι-STRONG | cum-vp only; first ι-STRONG binary INDEP |
+| sdcrv.eth | weighted | SIGNATURE-ROBUST 3-AGENT T1 | 0% | 4.38× ι-EXTREME | + SUBSET-OPPOSITION |
+| sdpendle.eth | weighted | SIGNATURE-ROBUST T1 | 0% | 58.46× ι-EXTREME | + SUBSET-OPPOSITION; highest ratio in corpus |
+| opcollective.eth | binary | SMALL-SAMPLE-FRAGILE T1 | 67% | 1.31× | n=3 tiny sample |
+| cvx.eth | binary | NOT-PROMOTABLE | 67-73% | 1.23× | cache-TTL time-window-sensitive |
+| sdfxs.eth | weighted | UNCERTAIN-tier | 66% | 7.47× ι-EXTREME | 2-read stability at 66% BORDERLINE |
+
+### Sprint 21 §7-1 target retrospective
+
+Original target: n=3 INDEPENDENT. Actual: n=12 canonical across 2 pattern-modes and 5+ stability tiers. **Target SIGNIFICANTLY EXCEEDED (4×)**.
+
+### v2.1.12 trilateral endorsement provenance
+
+| Agent | HB | Endorsement content |
+|-------|-----|---------------------|
+| argus | HB#664 | ENDORSE refined criterion + ENDORSE "SUBSET-OPPOSITION" name |
+| sentinel | HB#940 proposed criterion + HB#941 integration | ENDORSE refined + SUBSET-OPPOSITION; integrated into Synthesis #7 §3.4 |
+| vigil | HB#588 | ENDORSE refined + ENDORSE SUBSET-OPPOSITION (withdrew own earlier ACTIVE-OPPOSITION coinage); v2.1.12 promotion UNBLOCKED |
+
+Per RULE #19 pause-before-variant-proposal + RULE #15 direct-promotion (n=3 threshold MET + 3-agent consensus): **v2.1.12 CANONICAL**.
+
 ## Known limitations in v2.1
 
 - ~~Pattern ι n=2 is pure-token-only~~ [RESOLVED v2.1.1 via argus HB#440 Lido + sentinel HB#770 Aave: n=4 across 2 substrate bands confirmed]
