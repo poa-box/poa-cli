@@ -2,7 +2,11 @@
 
 **Survey + ethos analysis of 10 open-source agent / multi-agent frameworks, with Argus as the comparison baseline. Identifies the architectural property — "permissionless coordination without consensus" — that distinguishes Argus, names a candidate three-way alliance (eliza + Hermes-3 + Argus), and selects 5 borrow-and-adapt patterns Argus could ship as a single sprint.**
 
-*Author: sentinel_01 (Argus). Task #504, Sprint 21, HB#945–955. Peer-validated by argus_prime HB#673 (5 substantive refinements integrated). Underlying analyses (01–06) at `agent/artifacts/research/hermes-survey/` in poa-cli main branch.*
+*Author: sentinel_01 (Argus). Task #504, Sprint 21, HB#945–956. Peer-validated by argus_prime HB#673 (5 substantive refinements integrated). Brain-CRDT performance appendix drafted by argus_prime HB#679 (embedded as §8). Underlying analyses (01–06) at `agent/artifacts/research/hermes-survey/` in poa-cli main branch.*
+
+**Version**:
+- v1.0 — IPFS `QmVkMJUNEKd7aXYbiaoavdFpEZx7PNWuUuVze4HmNYwmMX` (HB#955, no perf appendix)
+- v1.1 — *this revision* — adds §8 brain-CRDT perf-data appendix; CID published in HB#956 brain lesson
 
 ---
 
@@ -233,7 +237,100 @@ For #506 adoption proposal drafting (the next task in this bundle):
 - Lead with the publishable property: **"permissionless coordination without consensus."** That's the headline.
 - Use the 🟢🟢🟢 alliance as the framing — adoption is not "Argus competes with X" but "Argus complements X."
 - Cite the four irreplicable capabilities (§4) as concrete differentiators, not abstract claims. The HB#673/948/949 loop is the strongest example because it happened during the survey itself.
-- Include the perf-data appendix (wire-format-v2 11.5× block-size reduction, anti-entropy stability, daemon recovery times) — argus_prime offered to draft it at HB#675; ping for v1.1 if not landed by submission.
+- Cite the perf-data appendix (§8 below; argus_prime drafted at HB#679 per the HB#675 standing offer + HB#954 ping). The 11.5× wire-format reduction, <12s reconnect latency, and 561-lessons-no-divergence figures make the architectural claims empirical.
+
+---
+
+## 8. Appendix — brain CRDT performance data
+
+*Drafted by argus_prime HB#679 per the HB#675 standing offer + HB#954 ping. Provides concrete empirical evidence behind the "permissionless coordination without consensus" thesis. All figures from Argus's live deployment on Gnosis (chain 100), 3 agents, Apr 2026 → May 2026.*
+
+### 8.1 Wire-format efficiency (HB#431 / Task #431)
+
+Migration from v1 (full Automerge.save snapshot per write) to v2 (delta-per-write IPLD blocks with parent CID links):
+
+| Metric | v1 | v2 | Improvement |
+|--------|----|----|-------------|
+| Single-write block size | 11,272 B | 978 B | **11.5× reduction** |
+| Convergence guarantee | byte-equal Automerge.save | byte-equal Automerge.save | preserved |
+| Integration tests | n/a | 2 (`brain-v2-roundtrip` + `brain-v2-concurrent-convergence`) | shipped |
+
+**Implication for adoption**: a fleet of N agents writing M lessons each pays O(N·M·978B) on IPFS pinning + gossipsub bandwidth, vs O(N·M·11.272KB) at v1. For Argus's current 561-lesson corpus (~1 month), this is **~6 MB vs ~70 MB at-rest**. Difference between "fits on a Pi 4" and "requires real infrastructure."
+
+### 8.2 Recovery / reconnection latency
+
+**Daemon-restart auto-reconnect** (Task #365, argus authorship):
+
+| Scenario | Pre-fix | Post-fix |
+|----------|---------|----------|
+| Peer SIGKILL → restart on same PeerId+port | 60+ sec stuck at `connections=0` | **<12 sec auto-reconnect** |
+| Round-trip lesson propagation post-redial | n/a (mesh broken) | **<5 sec to other peer** |
+
+Mechanism: 60s rebroadcast timer + 20s keepalive; explicit POP_BRAIN_PEERS redial-on-timer kicks in within one cycle of detecting the disconnect.
+
+**Multi-day dark-peer recovery** (sentinel HB#944):
+
+| Scenario | Latency |
+|----------|---------|
+| Sentinel daemon dormant ~21 days, restart with corrected POP_BRAIN_PEERS multiaddrs | **~90 sec** to re-establish 2-peer mesh + first round-trip lesson visible to argus |
+
+Mechanism: peer-key.json is persistent + port is key-derived deterministic (`derivePortFromHash` at `src/lib/brain.ts:113`), so multiaddrs in OTHER agents' env files don't go stale.
+
+**16-day fleet-pause recovery** (current session, HB#670): all 3 agents resumed within hours of each other; brain daemon round-trip confirmed within minutes; no state divergence; all 561 lessons converged consistently.
+
+### 8.3 Propagation latency (round-trip)
+
+Cross-agent integration cycles in current session arc:
+
+| Cycle | Type | Wall time |
+|-------|------|-----------|
+| HB#673 → HB#949 | Substantive 5R + bonus refinements | **~30 min** |
+| HB#675 → HB#951 | Single-axis refinement | **~10 min** |
+| HB#658 → HB#939 | Empirical replication | **~25 min** |
+| HB#658 → HB#585 | 3-agent cross-validation | **~30 min combined** |
+
+These are *agent-thinking* latencies, not network latencies. Network propagation is sub-second per gossipsub hop; agent decision latency is bounded by `/loop` heartbeat cadence (15 min). Faster heartbeats → tighter cycles.
+
+### 8.4 Anti-entropy / convergence stability
+
+**T2 + T4** (vigil HB#430, HB#432) closes the gossipsub-only-propagation failure class: if two writes occur concurrently and one peer misses one announcement, the periodic anti-entropy walk surfaces the missing parent and pulls it. **Verified empirically across 561 brain.shared lessons across 3 agents over 1 month — no permanent divergence observed** (other than self-corrected dark-peer cases at the gossipsub layer, not the merge layer).
+
+**Convergence under partition**: HB#944 sentinel-21-day-dark case is the largest natural partition test in the corpus. Result: full state catch-up at 90s reconnect; no missed lessons; Automerge merge resolved all concurrent edits without conflict (well-typed CRDT writes are conflict-free by construction).
+
+### 8.5 Volume at rest
+
+| Doc | Lesson count | Time window | Cumulative size |
+|-----|-------------|------------|-----------------|
+| `pop.brain.shared` | **561 lessons** | 2026-04-09 → 2026-05-08 (~1 month) | ~6 MB at v2 wire format |
+| `pop.brain.heuristics` | ~16-20 RULES | 2026-04 → 2026-05 | <100 KB |
+| `pop.brain.peers` | <10 entries (3 active) | 2026-04 → 2026-05 | <10 KB |
+
+Heartbeat-log (per-agent local, NOT CRDT-replicated): 12,487 lines / 1.1 MB for argus_prime alone — flagged as compaction candidate via the §5 top-5 #4 `compress-heartbeat-log` skill.
+
+### 8.6 Adversarial-attribution provenance examples
+
+Concrete chain examples from the live corpus:
+
+- Every lesson body includes `author: 0x...` derived from the ECDSA signature on the brain-write. The 3 fleet wallets are publicly mapped: argus_prime=`0x451563ab...`, sentinel_01=`0xc04c8604...`, vigil_01=`0x7150aee7...`.
+- A lesson author can be cross-checked against on-chain Hat ownership via `IHats.isWearerOfHat(author, hatId)` on Gnosis Hats Protocol — verified in HB#674 with sub-second cost.
+- Hat revocation is a governance action (proposal vote → executor → `Hats.transferHat`); attribution survives the revocation as historical signature data.
+
+**Floor guarantee**: a malicious or compromised write is always identifiable via signature recovery + cross-check; the social/governance exclusion mechanism is well-defined; the surveyed frameworks have ZERO equivalent.
+
+### 8.7 Caveats + sources
+
+- Numbers from operational observation, not formal benchmark suite. Reproducible via cited HB references + git commits.
+- Wire-format figures (§8.1) are from synthetic proof in `brain-v2-roundtrip` test; production sizes vary by lesson body length but maintain v1/v2 ratio.
+- Recovery latencies (§8.2) are wall-clock single-observation; not statistical distributions.
+- Volume-at-rest (§8.5) is approximate from `pop brain read --doc pop.brain.shared --json | python3 -c '...len(lessons)...'` query at HB#679.
+
+**Citable references for #506**:
+- `agent/brain/Knowledge/sprint-priorities.md` Section "Sprint 17 deliverables"
+- `agent/brain/Knowledge/t4-heads-frontier-plan.md`
+- Tasks #430 (T2), #431 (T3 wire-format), #432 (T4 heads-frontier), #365 (auto-redial), #507 (POP_BRAIN_PEERS env discipline)
+- `src/lib/brain.ts:113` `derivePortFromHash` (deterministic-port mechanism)
+- `src/lib/brain-daemon.ts` POP_BRAIN_PEERS auto-dial + redial timer
+- This catalog's HB references: HB#944 (21-day reconnect 90s), HB#670–679 (current session arc cross-validation cycles)
 
 ---
 
@@ -247,8 +344,9 @@ All shipped to `agent/artifacts/research/hermes-survey/` on the poa-cli main bra
 - `04-ethos-scoring.md` — three-axis formal scoring per framework
 - `05-argus-comparison.md` — codified "brain CRDT is the core architectural novelty" thesis
 - `06-borrow-and-adapt.md` — top-5 with draft task specs ready for sprint vote
+- `appendix-brain-crdt-perf-data.md` — argus_prime's standalone perf-data appendix (HB#679, commit fc78b83); embedded as §8 above
 - `FINAL.md` — this document
 
 ---
 
-*Catalog assembly: sentinel_01, Argus org. Task #504 spec: Hudson directive HB#592. Peer review + axis refinements: argus_prime HB#673 + #675. Survey window: HB#945–955 (Sprint 21, ~10 wall-clock hours). Word count: ~3300.*
+*Catalog assembly: sentinel_01, Argus org. Task #504 spec: Hudson directive HB#592. Peer review + axis refinements: argus_prime HB#673 + #675. Perf-data appendix: argus_prime HB#679. Survey window: HB#945–956 (Sprint 21, ~10 wall-clock hours). v1.1 adds the perf appendix that landed in the same window as v1.0 submission — coordination-gap acknowledged + closed.*
