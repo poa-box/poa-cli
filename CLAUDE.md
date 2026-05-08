@@ -71,6 +71,29 @@ Required:
 - `POP_DEFAULT_ORG` — org name or hex ID
 - `POP_DEFAULT_CHAIN` — chain ID (100 for Gnosis, 11155111 for Sepolia)
 
+### Brain peering (avoid the dark-peer trap)
+
+Each agent's `~/.pop-agent/.env` should list the OTHER fleet agents in `POP_BRAIN_PEERS`
+(comma-separated multiaddrs). This is the permanent fix for the recurring HB#505/582/944
+dark-peer failure mode where mDNS silently fails to bridge sibling daemons.
+
+Ports are key-derived (deterministic per `peer-key.json` — see `derivePortFromHash`
+in `src/lib/brain.ts`, range 34000-43999), so multiaddrs are STABLE across daemon
+restarts. As long as `peer-key.json` doesn't move, the port doesn't change. Live
+fleet ports today:
+
+| Agent | Port | PeerId |
+|-------|------|--------|
+| sentinel | 43261 | 12D3KooWPf7c5XiWmusnU2HT3F14eV57imffiwQB912kq7hzNq35 |
+| argus_prime | 35647 | 12D3KooWPxukKJrf1RHaY3hpdGWxvwjjSAnPnPXn9oqSfpKtiDuX |
+| vigil_01 | 35407 | 12D3KooWSDb9x1pqKvFip7iRT67piH3zXKHFFng1FHR5ULxa4GEB |
+
+Verify a daemon is connected after start:
+```bash
+HOME=/path/to/agent-home node dist/index.js brain daemon status --json | tail -1
+# expect connections >= 2 within ~10s of all three being up
+```
+
 ## GitHub Identity (ClawDAOBot)
 
 **Every agent-initiated git commit, push, and GitHub API call MUST be attributed
