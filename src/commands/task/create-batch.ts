@@ -134,6 +134,19 @@ export const createBatchHandler = {
 
       spin.stop();
 
+      // Task #514 (HB#969): in --dry-run mode, surface the encoded calldata
+      // BEFORE attempting gas estimation. The acceptance criterion 'easy to
+      // verify visually' requires user-visible calldata output; pre-#514
+      // behavior was silent gas-estimate-then-revert which gave operators no
+      // way to inspect the encoded batch shape pre-flight.
+      if (argv.dryRun) {
+        const calldata = contract.interface.encodeFunctionData('createTasksBatch', [pid, tupleInputs]);
+        const sizeBytes = (calldata.length - 2) / 2;
+        output.info(`[dry-run] Encoded calldata (${sizeBytes} bytes, selector ${calldata.slice(0, 10)}):`);
+        console.log(calldata);
+        output.info(`[dry-run] Will encode ${tasks.length} task(s) into a single createTasksBatch call.`);
+      }
+
       const batchSpin = output.spinner(`Submitting createTasksBatch (${tasks.length} tasks, single atomic tx)...`);
       batchSpin.start();
 

@@ -15,7 +15,7 @@ import { statsHandler } from './stats';
 export function registerTaskCommands(yargs: Argv) {
   return yargs
     .command('create', 'Create a new task', createHandler.builder, createHandler.handler)
-    .command('create-batch', 'Create tasks from JSONL file', createBatchHandler.builder, createBatchHandler.handler)
+    .command('create-batch', 'Create tasks from JSONL file via atomic batch (createTasksBatch contract call — single tx, all-or-nothing semantics)', createBatchHandler.builder, createBatchHandler.handler)
     .command('list', 'List tasks', listHandler.builder, listHandler.handler)
     .command('view', 'View task details', viewHandler.builder, viewHandler.handler)
     .command('claim', 'Claim a task', claimHandler.builder, claimHandler.handler)
