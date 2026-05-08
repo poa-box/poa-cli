@@ -11,6 +11,8 @@ import { proposeDistributionHandler } from './propose-distribution';
 import { claimMineHandler } from './claim-mine';
 import { sendHandler } from './send';
 import { proposeSdaiHandler } from './propose-sdai';
+import { incomingHandler } from './incoming';
+import { bridgeHandler } from './bridge';
 
 export function registerTreasuryCommands(yargs: Argv) {
   return yargs
@@ -27,5 +29,7 @@ export function registerTreasuryCommands(yargs: Argv) {
     .command('claim-mine', 'Auto-claim from all unclaimed distributions', claimMineHandler.builder, claimMineHandler.handler)
     .command('send', 'Propose a transfer from Executor via governance', sendHandler.builder, sendHandler.handler)
     .command('propose-sdai', 'Propose depositing xDAI into sDAI for yield', proposeSdaiHandler.builder, proposeSdaiHandler.handler)
+    .command('incoming', 'List recent incoming token transfers to Executor (recovered HB#615 from unwired state)', incomingHandler.builder, incomingHandler.handler)
+    .command('bridge', 'Propose cross-chain bridge transfer via governance (recovered HB#615 from unwired state)', bridgeHandler.builder, bridgeHandler.handler)
     .demandCommand(1, 'Please specify a treasury action');
 }

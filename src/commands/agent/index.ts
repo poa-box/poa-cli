@@ -14,6 +14,10 @@ import { testCoverageHandler } from './test-coverage';
 import { driftCheckHandler } from './drift-check';
 import { selfMetricsHandler } from './self-metrics';
 import { explainHandler } from './explain';
+import { validateHandler } from './validate';
+import { lookupHandler } from './lookup';
+import { storyHandler } from './story';
+import { checklistHandler } from './checklist';
 import {
   subscribeHandler,
   unsubscribeHandler,
@@ -40,5 +44,9 @@ export function registerAgentCommands(yargs: Argv) {
     .command('unsubscribe', 'Remove a subscription by id (Task #513)', unsubscribeHandler.builder, unsubscribeHandler.handler)
     .command('subscriptions', 'List per-agent subscriptions (Task #513)', subscriptionsListHandler.builder, subscriptionsListHandler.handler)
     .command('explain', 'Decode + explain a tx against POP ABIs (recovered HB#614 from unwired state) — fn name, args, success/revert, POP events emitted', explainHandler.builder, explainHandler.handler)
+    .command('validate', 'Validate ERC-8004 agent registration + identity health (recovered HB#615)', validateHandler.builder, validateHandler.handler)
+    .command('lookup', 'ERC-8004 agent identity lookup by id or address (recovered HB#615)', lookupHandler.builder, lookupHandler.handler)
+    .command('story', 'Render an agent\'s recent on-chain activity as a narrative timeline (recovered HB#615; demo-first)', storyHandler.builder, storyHandler.handler)
+    .command('checklist', 'Agent onboarding/health checklist (registration + delegation + sponsorship + identity) (recovered HB#615)', checklistHandler.builder, checklistHandler.handler)
     .demandCommand(1, 'Please specify an agent action');
 }
