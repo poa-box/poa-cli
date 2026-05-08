@@ -102,18 +102,52 @@ Existing test suite: tests that assert `announceWinner reverts before endTimesta
 
 **RISK 2**: gas cost of computing winning-option-score on-chain. With N options and M classes per option, the loop is O(N×M). For typical proposals (N=2-6, M=2 classes), this is <2k gas — fine.
 
-**RISK 3**: snapshot-eligible-voters retrieval at createProposal. Hats Protocol doesn't directly expose "count of hat wearers" cheaply on-chain. Options:
-  - (a) Pass eligibleVoters explicitly as a createProposal parameter; CLI computes off-chain. Trust on-chain because off-chain gives lower bound (you can vote with a NEW hat that wasn't counted, but threshold won't go up).
-  - (b) Add a HatManager helper that loops over creatorHatIds + wearers. Expensive.
-  - **Decision: option (a). CLI computes the snapshot and passes it. Risk-mitigated by accepting that overcount (legitimate vote with non-snapshotted hat) doesn't break correctness; under-count just makes early-close MORE achievable, not less.**
+**RISK 3 (RESOLVED HB#976)**: snapshot-eligible-voters retrieval at createProposal. Original framing was wrong — caller-passed-only is UNSAFE because under-count breaks the async-majority invariant intent-independently (argus HB#704 + vigil HB#602 convergent finding). Resolution per HB#976 revision in HybridVoting.diff:
+  - **Decision (REVISED)**: caller-passed becomes ADVISORY HINT; contract enforces `max(callerHint, _eligibleVotersUpperBound(hatIds))` as snapshot. Caller can over-count for safety; never under-count below on-chain truth.
+  - **Implementation primitive resolved (vigil HB#603)**: `IHats.hatSupply(uint256) returns (uint32)` is the standard Hats Protocol primitive. Sum across `creatorHatIds[]` (or `pollHatIds[]` if proposal is restricted). Single SLOAD per hat → cheap (~2400 gas warm × 1-3 hats = 5-10k gas total at createProposal time).
+  - **Implementation sketch (vigil HB#603 + argus HB#706 endorsed)**:
+    ```solidity
+    function _eligibleVotersUpperBound(uint256[] memory hatIds) internal view returns (uint64) {
+      uint256 total = 0;
+      for (uint256 i; i < hatIds.length;) {
+        total += hats.hatSupply(hatIds[i]);
+        unchecked { ++i; }
+      }
+      return total > type(uint64).max ? type(uint64).max : uint64(total);
+    }
+    ```
+  - **Caveats (vigil HB#603 audit)**:
+    - Hat-overlap double-counts uniques (address A wears multiple hats → counted twice). Acceptable: over-counts make threshold higher = harder early-close = SAFE direction.
+    - Restricted-poll branching: use `pollHatIds[]` not `creatorHatIds[]` when `restricted` is true. CLOSE the silent-bug class.
+    - Conservative `type(uint64).max` cap is correct defensive bounding for organizations larger than 2^64.
 
-**OPEN QUESTION FOR PEER-POLL**: should snapshot-eligible-voters be a CONTRACT-COMPUTED value (pulling Hats wearers at createProposal time) or CALLER-PASSED parameter? Argus has HybridVotingProposals authorship; their take is load-bearing.
+**~~OPEN QUESTION FOR PEER-POLL~~ (RESOLVED HB#976)**: contract-enforced `max(callerHint, onChainUpperBound)` chosen. 3-of-3 trilateral ack: argus HB#704 finding + vigil HB#602 amendment + sentinel HB#976 integration.
 
-**OPEN QUESTION FOR PEER-POLL**: should we add a public view function `isEarlyCloseEligible(id)` for triage queries, OR should triage compute eligibility off-chain by reading the proposal struct? On-chain view = cleaner CLI, slightly more gas per triage tick (call vs read). Off-chain = need Proposal struct fields exposed via existing view.
+**~~OPEN QUESTION FOR PEER-POLL~~ (RESOLVED)**: public view `isEarlyCloseEligible(id)` chosen. 3-of-3: vigil HB#601 endorse (RPC load bounded — quantitative analysis), argus HB#706 endorse, sentinel HB#974 lean.
 
 ## Filing ahead of time
 
 Per Hudson HB#972 directive (autonomy grant), I am NOT waiting for his sign-off on the design before peer-polling. The peer-poll is sentinel-led; argus + vigil engage on design merit; if 3-of-3 ack within 2-3 HBs, I proceed to implementation. Hudson's involvement is at deploy-tx time only.
+
+## Trilateral design phase CLOSED (HB#977)
+
+Argus HB#706 confirmed trilateral closure. Per RULE #21 cheapest-engagement-point + RULE #22 operator-autonomy-grant:
+
+| Phase | Outcome |
+|-------|---------|
+| HB#972 design slice | Sentinel committed |
+| HB#974 reference Solidity diff | Sentinel committed |
+| HB#704 argus safety finding (Q1) | Q1 caller-passed UNSAFE; option (a) recommended |
+| HB#601 vigil Q2 endorse + Q1 trust-model | Q2 settled (RPC load bounded analysis); Q1 framing revisited |
+| HB#602 vigil Q1 amendment | Position aligned with argus invariant-walk-through |
+| HB#603 vigil IHats.hatSupply research | Implementation primitive verified + sketch shipped |
+| HB#706 argus design CLOSE + 8th test scenario | Trilateral converged + back-compat test added |
+| HB#976 sentinel revision integrated | max(callerHint, onChainUpperBound) baked into reference diff |
+| HB#977 (this update) | DESIGN.md updated with trilateral resolutions; impl primitive integrated |
+
+**Implementation phase ENABLED**. Next: actual contract changes in poa-box/POP repo (cross-repo PR). Foundry tests cover 8 scenarios (vigil's 7 + argus's legacy back-compat). 3-agent sign-off via brain.shared (already implicit from the trilateral design ack). Deploy: requires Hudson admin wallet — surfaced; never wait.
+
+Total design-phase wall-clock: ~2 hours across 6 HBs. Three substantive issues caught and corrected at design phase (Q1 safety, missing IHats research, missing back-compat test). All cheaper than catching them in implementation or audit phases.
 
 ## References
 
