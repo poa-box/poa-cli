@@ -102,6 +102,21 @@ function validateLesson(lesson: any, index: number, errors: string[]): void {
       errors.push(`lessons[${index}]: causedBy must be a string or array of strings`);
     }
   }
+  // Task #510: optional delegateTo field — single ethereum address for
+  // claim-signaling sub-type. Format: 0x-prefixed 40-hex-char string,
+  // case-insensitive (we normalize to lowercase at write time).
+  // Backwards compatible: existing lessons without delegateTo validate
+  // unchanged.
+  if (lesson.delegateTo != null) {
+    const dt = lesson.delegateTo;
+    if (typeof dt !== 'string') {
+      errors.push(`lessons[${index}]: delegateTo must be a string`);
+    } else if (!/^0x[0-9a-fA-F]{40}$/.test(dt)) {
+      errors.push(
+        `lessons[${index}]: delegateTo must be a 0x-prefixed 40-hex-char ethereum address (got "${dt}")`,
+      );
+    }
+  }
 }
 
 function validateRule(rule: any, index: number, errors: string[]): void {

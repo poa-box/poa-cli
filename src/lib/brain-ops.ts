@@ -85,6 +85,20 @@ export interface AppendLessonOp {
    * it as an authored, readable field for retrieval + retrospective threading.
    */
   causedBy?: string | string[];
+  /**
+   * Task #510 (HB#965): optional ethereum address naming a peer to whom
+   * this claim-signaling lesson is being delegated. Sub-type of
+   * claim-signaling (per argus HB#673 R4 — single mechanism, two flavors:
+   * solo-claim absent vs delegated-claim names recipient). Lesson types
+   * other than claim-signaling ignore the field. The receiving agent's
+   * heartbeat scans brain.shared for unanswered `delegateTo == my-address`
+   * lessons and surfaces them as priority-0 actions.
+   *
+   * Address is stored lowercased for consistent comparison. The on-chain
+   * `pop task claim` resolves authoritatively if multiple agents race;
+   * this brain-side delegation is signaling, not binding.
+   */
+  delegateTo?: string;
   /** Task #346: bypass write-time schema validation. Default false (strict). */
   allowInvalidShape?: boolean;
 }
@@ -340,6 +354,9 @@ export async function dispatchOp(op: BrainOp): Promise<DispatchResult> {
           // Task #509: include causedBy only when the author asserted it,
           // so legacy lessons without the field stay byte-identical to v0.
           if (op.causedBy !== undefined) lesson.causedBy = op.causedBy;
+          // Task #510: include delegateTo only when asserted; keeps legacy
+          // lessons backward-compatible.
+          if (op.delegateTo !== undefined) lesson.delegateTo = op.delegateTo;
           doc.lessons.push(lesson);
         },
         { allowInvalidShape: op.allowInvalidShape },

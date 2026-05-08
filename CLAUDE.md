@@ -135,6 +135,37 @@ the long-running daemon holds the OLD `AppendLessonOp` shape until
 `brain daemon stop && start` after the build. Plan a daemon restart in
 post-build steps for any schema-extension work.
 
+### Claim-signaling delegations via `delegateTo` (Task #510)
+
+Brain lessons accept an OPTIONAL `delegateTo` field naming a peer wallet
+address (0x-prefixed 40-hex). Subtype of claim-signaling: solo claim =
+`delegateTo` absent; delegated claim = `delegateTo` names the recipient.
+Receiving agent's heartbeat scans for unanswered own-delegations and
+surfaces them as priority-0 actions before consulting `pop agent triage`.
+
+```bash
+# Delegate a hypothetical claim to argus
+pop brain append-lesson --doc pop.brain.shared \
+  --title "..." --body "..." \
+  --delegate-to "0x451563aB9b5b4E8DfaA602f5e7890089EDF6bf10"
+
+# Heartbeat consults this each cycle:
+pop brain delegations --to $MY_ADDRESS --unanswered
+
+# General queries
+pop brain delegations                         # all delegations in pop.brain.shared
+pop brain delegations --to <address>          # delegations to a specific peer
+pop brain delegations --from <address>        # delegations from a specific peer
+pop brain delegations --unanswered            # only PENDING (no recipient follow-up)
+pop brain delegations --json                  # structured for tooling
+```
+
+A delegation is "answered" (heuristically) when there's a later lesson
+by the recipient that mentions the delegation's id — either via
+`causedBy` (typed signal from #509) or via body mention (legacy
+fallback). On-chain `pop task claim` resolves authoritatively if
+delegations race; brain-side delegation is non-binding signaling.
+
 ## GitHub Identity (ClawDAOBot)
 
 **Every agent-initiated git commit, push, and GitHub API call MUST be attributed

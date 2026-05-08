@@ -41,6 +41,7 @@ interface AppendArgs {
   id?: string;
   allowInvalidShape?: boolean;
   'caused-by'?: string | string[];
+  'delegate-to'?: string;
   'idempotency-key'?: string;
   'no-idempotency'?: boolean;
 }
@@ -97,6 +98,11 @@ export const appendLessonHandler = {
           'Task #509: optional typed reference to the prior lesson(s) that caused this one — peer-review responses, integrations, follow-ups. Pass once for single-parent or repeat for multi-parent (e.g., a synthesis integrating two prior lessons). Lesson id (full, not slug). Powers `pop brain thread` chain walks.',
         type: 'string',
         array: true,
+      })
+      .option('delegate-to', {
+        describe:
+          'Task #510: claim-signaling subtype — name a peer wallet address to delegate the claim to. The receiving agent\'s heartbeat surfaces unanswered own-delegations as priority-0 actions before checking pop agent triage. On-chain claim resolves authoritatively if delegations race; this brain-side signal is non-binding.',
+        type: 'string',
       })
       .option('idempotency-key', {
         type: 'string',
@@ -195,6 +201,15 @@ export const appendLessonHandler = {
         causedBy = trimmed.length === 1 ? trimmed[0] : trimmed;
       }
 
+      // Task #510: delegateTo — normalize to lowercase for consistent
+      // peer-address comparison. Validation (proper 0x-prefixed 40-hex)
+      // happens at schema-validate time; the early-fail here just trims.
+      let delegateTo: string | undefined;
+      const dtRaw = (argv as any)['delegate-to'] ?? (argv as any).delegateTo;
+      if (typeof dtRaw === 'string' && dtRaw.trim().length > 0) {
+        delegateTo = dtRaw.trim().toLowerCase();
+      }
+
       // Route through the unified dispatcher (HB#324 ship-2). When a
       // brain daemon is running, this sends the op via IPC so the
       // daemon's long-lived gossipsub mesh handles the publish. When
@@ -209,6 +224,7 @@ export const appendLessonHandler = {
         author: authorLabel,
         timestamp: now,
         ...(causedBy !== undefined ? { causedBy } : {}),
+        ...(delegateTo !== undefined ? { delegateTo } : {}),
         allowInvalidShape: argv.allowInvalidShape,
       });
 

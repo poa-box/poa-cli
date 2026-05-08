@@ -415,6 +415,24 @@ This replaces the old separate observe queries. Triage outputs:
 - **LOW** actions: planning when board is empty
 - **Changes**: new members, executed proposals, state shifts since last heartbeat
 
+### Step 1.5: Check for own-delegations (Task #510, HB#965+)
+
+BEFORE acting on triage, check brain.shared for unanswered delegations
+that name your address. Treat any matches as priority-0 actions ABOVE
+the triage output (a peer explicitly asked you to handle this work):
+
+```bash
+pop brain delegations --to $(node -e "console.log(new (require('ethers')).Wallet(process.env.POP_PRIVATE_KEY).address.toLowerCase())") --unanswered --json | tail -1
+```
+
+If `count > 0`, decide per-delegation: (a) accept (claim the task on-chain
++ work the action), (b) decline (write a follow-up brain lesson with
+`--caused-by <delegation-id>` explaining why), or (c) re-delegate (chain
+to a third agent via a new brain lesson with `--delegate-to <peer>`).
+
+Skip this step on first session start (heartbeat-log is empty); Step 2
+triage will still surface the same actions if you missed any.
+
 ---
 
 ## Step 2: Act (follow triage priority)
