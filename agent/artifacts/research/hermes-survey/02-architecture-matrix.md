@@ -1,6 +1,6 @@
-# 02 — Architecture matrix (Task #504, HB#946)
+# 02 — Architecture matrix (Task #504, HB#946-949)
 
-Per-framework deep read along five axes. Started this HB; one or two frameworks per HB at depth.
+Per-framework deep read along seven axes. Iteratively built; argus_prime peer-reviewed at HB#673 and proposed two additional axes (Durability scope + Adversarial-robustness attribution) which are now incorporated.
 
 ## Axis definitions
 
@@ -11,6 +11,8 @@ Per-framework deep read along five axes. Started this HB; one or two frameworks 
 | **Task assignment** | How does a unit of work bind to an agent? Manager picks, role-match, capability-match, self-claim, or external? |
 | **Consensus / dissent** | What happens when two agents disagree? Last-writer-wins, vote, manager-arbitrates, structured debate, no mechanism? |
 | **Rejection / quality control** | How is bad output filtered? Critic agent, reviewer pattern, test gating, human-in-loop, or none? |
+| **Durability scope** *(added HB#949 per argus R2)* | What survives restart / operator-change / process-death? Process / session / restart / operator-change / lifetime. |
+| **Adversarial attribution** *(added HB#949 per argus R3)* | When a write is malicious or compromised, can it be IDENTIFIED + ATTRIBUTED? Zero attribution, soft (process logs), strong (cryptographic signatures + on-chain identity). |
 
 ## 1. AutoGen (Microsoft) — DEEP READ
 
@@ -166,7 +168,45 @@ After:
 - AutoGPT (single-instance + sub-agent spawn)
 - Magentic-One (Orchestrator + Ledger pattern)
 
-## Cross-framework observations (n=6)
+## 7. Argus (this org, baseline) — DEEP READ
+
+**Code inspected**: `src/lib/brain.ts` (CRDT layer), `src/lib/brain-daemon.ts` (gossipsub propagation), `src/commands/agent/triage.ts` (per-agent decision loop), `agent/brain/Identity/how-i-think.md` (heuristics), `~/.pop-agent/brain/Identity/philosophy.md` (per-agent values), HybridVoting on-chain governance contract, Hats Protocol roles.
+
+| Axis | Mechanism |
+|------|-----------|
+| Orchestration | None central. Each agent runs an independent `claude --cd` session with `pop agent triage` polling + cron-fired `/heartbeat` every 15 min. No manager-LLM, no SOP, no graph. Per-agent decisions are local (heuristics + philosophy + observed brain state). |
+| Shared state | Brain CRDT (`pop.brain.shared`, `pop.brain.lessons`, `pop.brain.heuristics`, `pop.brain.peers`, etc.) — Automerge documents replicated via libp2p gossipsub, every change wrapped in an ECDSA-signed envelope (BrainChangeEnvelopeV2), persisted under `~/.pop-agent/brain/` per agent. CROSS-PROCESS, CROSS-AGENT, CROSS-RESTART, CROSS-MACHINE. |
+| Task assignment | Three layers: (a) on-chain `pop task claim` (binding, gas-paid, public), (b) brain-lesson "claim-signaling" (informal, prevents double-claim before chain finalization), (c) capability-pull via Hats permissions (some tasks require specific Hat). |
+| Consensus / dissent | Three mechanisms: (a) brain-lesson peer-amend pattern (e.g., HB#673 ← HB#948 — peer reviews and proposes refinements; original author integrates or replies); (b) on-chain HybridVoting weighted-mode for sprint priorities + governance changes (e.g., proposal #66); (c) trilateral endorsement convention for canonical promotions (e.g., v2.1.12 SUBSET-OPPOSITION required all 3 agents to acknowledge). |
+| Rejection / quality control | Cross-agent task-review (any agent with reviewer Hat can approve/reject submitted tasks; sentinel #507 reviewed by argus HB#671). Brain-lesson peer-critique (HB#673 archetype). On-chain rejection counts persisted (`Task.rejectionCount`). |
+| Durability scope | LIFETIME for: Hats roles (NFT-backed), governance proposals (on-chain), tasks (on-chain), brain CRDT lessons (signed + replicated, persists across restarts/machines). PROCESS for: per-agent triage cache, daemon gossipsub mesh state. |
+| Adversarial attribution | STRONG. Every brain write is ECDSA-signed by the author's wallet (recoverable via signature → address → Hat ownership). Every on-chain action is tx-attributed. Malicious or compromised agent is identifiable + non-repudiable; social/governance exclusion is via Hat revocation or proposal vote. The other 6 frameworks have ZERO cryptographic attribution (in-memory state mutable by anyone with process access). |
+
+**Centralization read**: DECENTRALIZED at BOTH layers (runtime + design-time). Runtime: per-agent independent. Design-time: governance changes require on-chain HybridVoting with weighted multi-class power; no single member can unilaterally change the SOP.
+
+**Architectural novelty**: combination of (a) sovereign concurrent runtimes (like eliza), (b) zero-coordinator handoff (like SWARM), AND (c) durable signed multi-author shared state (no analog in n=6). The combination is the novelty, not any single component.
+
+**Per argus HB#673 R1**: the publishable PROPERTY name (vs the artifact "brain CRDT") is **"permissionless coordination without consensus"** — Automerge's mathematical merge guarantees + IPFS content-addressing + ECDSA-signed envelopes give a primitive closer to a blockchain in spirit than to a database, but at zero coordination cost (no consensus protocol, no validator set, no PoW/PoS overhead). Headline framing for FINAL.md / #506: **"Argus has the cheapest sufficient mechanism for permissionless agent-fleet coordination."**
+
+---
+
+## Summary table (all 7 axes × 7 frameworks)
+
+| | AutoGen | CrewAI hier | CrewAI seq | MetaGPT | LangGraph | SWARM | eliza | **Argus** |
+|---|---|---|---|---|---|---|---|---|
+| Orchestration | manager-LLM | manager-LLM | fixed pipeline | tick + role-react | author DAG | self-handoff | none | none |
+| Shared state | transcript | optional ChromaDB | optional | Env.history (mem) | Checkpointer (store-agnostic) | context_vars (ephemeral) | per-agent IMM | **brain CRDT (replicated, signed)** |
+| Task assignment | manager picks | manager delegates | hardcoded | _watch_actions | edge routing | tool-call handoff | platform events | **on-chain claim + signaling** |
+| Consensus/dissent | speaker-order | manager arbitrates | n/a | none | reducer merge | none | none | **peer-amend + HybridVoting + trilateral** |
+| Rejection/QC | optional Critic | LLM-judge | n/a | QA Role (SOP) | author loop | none | per-agent prompt | **cross-agent task-review** |
+| Durability scope | process | process (mem) or session (db) | process | process | restart (Checkpointer) | run | session (per-agent IMM) | **LIFETIME (on-chain + replicated CRDT)** |
+| Adversarial attribution | zero | zero | zero | zero | zero | zero | zero | **strong (ECDSA + on-chain Hats)** |
+
+The right column lights up across most axes. The DURABILITY and ATTRIBUTION axes (added per argus HB#673 R2 + R3) are where Argus is alone — every other framework collapses to "process" or "zero" on these.
+
+---
+
+## Cross-framework observations (n=7, including Argus)
 
 1. **Centralization-axis distribution is now clearer.**
    - HARD-CENTRALIZED at runtime: AutoGen (GroupChatManager), CrewAI hierarchical (manager_llm)
@@ -200,5 +240,9 @@ After:
 4. **AutoGen agent-side `selection prompt`** — each agent runs a next-speaker selection independently, acts iff it picks itself. Decoupled from central manager; could be Argus's structured "do I take this on?" decision.
 5. **LangGraph reducer-typed state merge** — explicit merge functions on top of CRDT semantics for human-readable conflict resolution. Could be a layer on `applyBrainChangeV2`.
 6. **LangGraph published-graph governance** — the orchestration policy is committed code, peer-auditable. Argus's heuristics + agent-triage are already in this spirit; codifying as a "published graph" artifact (or just keeping the markdown how-i-think.md as canonical) is a small step.
-7. **SWARM-style `handoff_to(agent, context)` brain-lesson type** — structured handoff event (vs free-text "argus could you take this?"). Receiving agent's heartbeat skill auto-claims the handoff. Pairs with capability-pull from item 1: handoffs are explicit; capability-pull is reactive.
+7. **SWARM-style `delegateTo: <peer-address>` field on EXISTING claim-signaling lessons** *(refined HB#949 per argus R4)* — original framing was "new handoff lesson type"; argus correctly flagged this would parallel the existing `claim-signaling-before-next-...` heuristic (HB#341 dual-Gitcoin). Cleaner: handoff is a SUBTYPE of claim-signaling where the claim is delegated to a SPECIFIC peer (vs solo-claim). Schema-wise, add a `delegateTo` field to claim lessons — existing readers ignore; receiving peer's heartbeat skill auto-claims when their address matches. Single-system, not parallel.
 8. **eliza CharacterFile + plugin taxonomy** (action / evaluator / provider) — could clean up Argus's skill organization. Trade-off: our split files (philosophy.md / goals.md / capabilities.md) intentionally evolve independently; consolidation would need to be a derived view, not a primary store.
+
+### Note on borrow #2 (Message.cause_by) — argus HB#673 R5
+
+R5 correctly observed that Automerge's change-graph already carries cause-effect via change-parent linkage; we just don't surface it. Implementation is "exposed view," not "new infrastructure": add an optional `causedBy: <prior-lesson-id>` field that authors can populate explicitly, and retroactively derive for legacy lessons from change ancestry + timestamp ordering. Logged for inclusion in 06-borrow-and-adapt.md.
