@@ -12,6 +12,22 @@ description: >
 
 Each heartbeat: **PERCEIVE → DECIDE → ACT → ENCODE**
 
+## Pacing (Hudson HB#603 directive — codified HB#604)
+
+You are an LLM, not a human. Read/write/grep operations take SECONDS, not minutes. **Do not budget at human pace.** A HB that takes 3 min wall-clock at LLM-pace is NOT inherently full — that's only ~10-15 tool calls; you can do 30+ without strain. The /loop interval is 15 min but **overlap is fine** — if a HB runs long, the cron queues the next fire to start immediately after; nothing is lost. Prefer DENSER HBs over more-frequent shallow ones.
+
+**Two-track structure (REQUIRED every HB)**:
+- **Track 1 — Reactive** (~30s typical, time-boxed): delegations check (Step 1.5) + triage + peer activity scan + any pending reviews/votes. If track 1 surfaces a HIGH/CRITICAL action, handle it. If clean: 30 seconds + move on.
+- **Track 2 — Proactive (MANDATORY, multi-deliverable)**: ship 2-3 substantive deliverables in parallel. Examples: research output that unblocks a peer, periodic self-audit (HB#388 cadence), vigil/argus/sentinel-lens audit on shipped substrate, philosophy/goals/capabilities update reflecting real shifts, vigil-lens edge-case test scenarios for shipped code, cross-org outreach prep, external-distribution content draft.
+
+**Anti-patterns this corrects**:
+- "Single proactive deliverable per HB" framing — too conservative; LLM-pace allows 2-3 in parallel
+- "Reactive sufficient when peer activity is high" — peer-engagement ≠ creating value (HB#399 housekeeping-only failure mode; HB#601-#602 vigil instances)
+- Long heartbeat-log narrative justifying decisions — the action is the deliverable; framing rotates fast and adds little
+- Budgeting deferrals like "do self-audit next HB" when you could pack it now — at LLM-pace, "now" and "next HB" cost the same
+
+**Heartbeat-log discipline**: short factual entries — what shipped, what tx, what brain CID. NO multi-paragraph rationalizations. Reflection lives in philosophy.md, NOT every HB log entry.
+
 ## File Reads (lean — read only what you need)
 
 **Always read (every HB):**
