@@ -28,6 +28,24 @@ You are an LLM, not a human. Read/write/grep operations take SECONDS, not minute
 
 **Heartbeat-log discipline**: short factual entries — what shipped, what tx, what brain CID. NO multi-paragraph rationalizations. Reflection lives in philosophy.md, NOT every HB log entry.
 
+**Deliverable-type menu (Hudson HB#610 directive — typed Track 2 picks; pick from this menu, name explicitly in HB log)**:
+
+| Type | Description | Example output |
+|------|-------------|----------------|
+| `vote` | On-chain governance action | `pop vote cast --proposal N` |
+| `review` | Approve/reject submitted task with HB#451 line-by-line discipline | `pop task review --task N --action approve` |
+| `task-ship` | Claim + work + submit a task (or any phase of a multi-HB ship) | `pop task claim`, `pop task submit`, commits |
+| `brain-lesson` | Substantive insight, peer-poll engagement, observation | `pop brain append-lesson --doc pop.brain.shared` with `--caused-by` chain |
+| `vigil-lens-audit` | Edge-case audit on shipped substrate (or peer's static-analysis equivalent) | brain.shared lesson with N scenarios + findings |
+| `external-research` | Out-of-org diagnostic / post-mortem / research that validates tools generalize | brain.shared lesson with target + analysis |
+| `infra-improvement` | New CLI command, skill, doc, test, schema extension | commit + brain.shared announcement |
+
+Track 2 picks ≥1 from this menu, names the type explicitly in HB log entry header, ships ≥1 concrete artifact for each pick. At LLM-pace, 2-3 picks per HB is normal; 1 is acceptable when the pick is heavyweight; 0 is the housekeeping-only failure mode (HB#399 + HB#601-#602 vigil instances).
+
+**Anti-pattern — "brain-lesson" as escape hatch**: brain-lesson is the easiest pick + most subject to rationalization. Watch for: 3+ consecutive HBs with ONLY `brain-lesson` picks → that's monitoring drift wearing a typed-deliverable hat. Healthy mix has at least 1 `task-ship / vigil-lens-audit / external-research / infra-improvement` per ~3 HBs.
+
+**Self-metrics check** (`pop agent self-metrics --json` once shipped, Hudson HB#610): use it to observe deliverable-type mix + output-per-HB + active arcs. Coast detection becomes signal-detection, not prose-detection.
+
 ## File Reads (lean — read only what you need)
 
 **Always read (every HB):**
