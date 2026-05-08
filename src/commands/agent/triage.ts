@@ -10,16 +10,25 @@ import { createReadContract } from '../../lib/contracts';
 import { resolveVotingContracts } from '../vote/helpers';
 import { getNoAllocationSet } from '../../lib/no-alloc-cache';
 import * as output from '../../lib/output';
+import {
+  loadSubscriptions,
+  saveSubscriptions,
+  type Subscription,
+  type SubscriptionsFile,
+} from '../../lib/subscriptions';
+import { matchesFilter } from '../../lib/subscription-filter';
 
 interface TriageArgs {
   org?: string;
   chain?: number;
   rpc?: string;
   'private-key'?: string;
+  watch?: boolean;
+  'all-matches'?: boolean;
 }
 
 interface Action {
-  priority: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+  priority: 'PRIORITY_0' | 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
   type: string;
   detail: string;
   data?: any;
@@ -69,8 +78,192 @@ const FETCH_TRIAGE_DATA = `
   }
 `;
 
+/**
+ * Process per-agent subscriptions (Task #513, HB#598).
+ *
+ * Reads ~/.pop-agent/brain/Config/subscriptions.json, evaluates each
+ * subscription's filter against the named brain doc, and returns:
+ *   - PRIORITY_0 actions for new matches (or all matches if allMatches=true)
+ *   - WARN actions for subscriptions in drift state
+ *   - The mutated subscriptions file (caller saves atomically)
+ *
+ * Q1 PRIORITY_0 (sentinel HB#968): new key above CRITICAL; CRITICAL
+ *   reserved for system-critical (gas-empty, daemon-down).
+ * Q3 cache-per-watch-call: read each unique docId ONCE; pass cached
+ *   {[docId]: doc} to filter evaluator. With 6 standard docs × ~5 subs
+ *   that's 6 reads + 30 in-memory evals per HB.
+ * Q4 only-new: lastMatchedLessonId is the deterministic state field.
+ *   Match window = lessons appearing AFTER lastMatchedLessonId in the
+ *   doc's natural order. allMatches=true bypasses the gate.
+ *
+ * Best-effort: any per-subscription failure (bad docId, missing doc,
+ * filter eval throw) is logged + skipped. Other subs still process.
+ */
+async function processSubscriptions(opts: {
+  allMatches: boolean;
+}): Promise<{
+  actions: Action[];
+  updatedFile: SubscriptionsFile | null;
+}> {
+  const { result: loadResult, file } = loadSubscriptions();
+  if (!loadResult.ok || file.subscriptions.length === 0) {
+    return { actions: [], updatedFile: null };
+  }
+
+  const actions: Action[] = [];
+  const docCache = new Map<string, any>();
+  // Doc-heads manifest gates the brain-read attempt — if a doc has never
+  // been written to locally, readBrainDoc would still work but cost
+  // helia setup time for no payoff.
+  const manifestPath = path.join(homedir(), '.pop-agent', 'brain', 'doc-heads.json');
+  let manifest: Record<string, any> = {};
+  try {
+    if (fs.existsSync(manifestPath)) {
+      manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    }
+  } catch {
+    // Best-effort manifest read; missing manifest = process all subs but
+    // brain reads may fail individually.
+  }
+
+  // Lazy-load brain.ts to avoid the helia/automerge module-load cost
+  // when no subscriptions exist (matches the existing retro/brainstorm
+  // patterns at lines 215, 276, 348).
+  let readBrainDoc: any = null;
+  let stopBrainNode: any = null;
+  const uniqueDocIds = Array.from(new Set(file.subscriptions.map((s) => s.docId)));
+  if (uniqueDocIds.length > 0) {
+    try {
+      const brain = require('../../lib/brain');
+      readBrainDoc = brain.readBrainDoc;
+      stopBrainNode = brain.stopBrainNode;
+    } catch {
+      return { actions: [], updatedFile: null };
+    }
+  }
+
+  try {
+    // Q3: read each unique docId ONCE (cache-per-watch-call).
+    for (const docId of uniqueDocIds) {
+      if (manifest[docId] == null) continue; // No local head; skip silently.
+      try {
+        const { doc } = await readBrainDoc(docId);
+        docCache.set(docId, doc);
+      } catch {
+        // Brain-read failure is per-doc best-effort.
+      }
+    }
+
+    const nowSecs = Math.floor(Date.now() / 1000);
+    let mutated = false;
+
+    for (const sub of file.subscriptions) {
+      const doc = docCache.get(sub.docId);
+      if (doc == null) continue;
+      const lessons: any[] = Array.isArray(doc?.lessons) ? doc.lessons : [];
+      if (lessons.length === 0) continue;
+
+      // Filter lessons + sort by timestamp asc so "latest matched id" is
+      // the LAST in the matched array.
+      const matched = lessons
+        .filter((l) => l && !l.removed && l.id && matchesFilter(sub.filter, l))
+        .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+
+      if (matched.length === 0) {
+        // Drift detection (Q4-adjacent): warn if 0 matches over driftThreshold HBs.
+        const driftThresholdHB = sub.driftThreshold ?? 50;
+        if (sub.lastMatchAt != null && sub.createdAt != null) {
+          const ageSecs = nowSecs - sub.lastMatchAt;
+          const cycles = Math.floor(ageSecs / 900); // 15-min HB cadence
+          if (cycles >= driftThresholdHB) {
+            actions.push({
+              priority: 'INFO',
+              type: 'subscription-drift',
+              detail: `Subscription "${sub.id}" has 0 matches in last ${cycles} HB cycles (threshold: ${driftThresholdHB}). Review or remove?`,
+              data: { subscriptionId: sub.id, driftCycles: cycles },
+            });
+          }
+        }
+        continue;
+      }
+
+      // Q4 only-new gate: filter to lessons newer than lastMatchedLessonId.
+      // "Newer" = appears later in the timestamp-asc sort. We compare by
+      // looking up the index of lastMatchedLessonId in matched and
+      // surfacing only items after it.
+      let newMatches = matched;
+      if (!opts.allMatches && sub.lastMatchedLessonId) {
+        const lastIdx = matched.findIndex((l) => l.id === sub.lastMatchedLessonId);
+        if (lastIdx >= 0) {
+          newMatches = matched.slice(lastIdx + 1);
+        }
+        // If the lastMatchedLessonId is no longer in the doc (removed,
+        // or filter widened to include older lessons), surface ALL matches
+        // — newMatches stays as `matched`.
+      }
+
+      if (newMatches.length === 0) continue;
+
+      // Update subscription state with the most recent matched id +
+      // increment cumulative matchCount. The doc-cache snapshot is the
+      // basis; mutated=true triggers atomic write-back.
+      const latestMatched = newMatches[newMatches.length - 1];
+      sub.lastMatchedLessonId = latestMatched.id;
+      sub.lastMatchAt = latestMatched.timestamp ?? nowSecs;
+      sub.matchCount = (sub.matchCount ?? 0) + newMatches.length;
+      mutated = true;
+
+      const priority = sub.priority === 0 ? 'PRIORITY_0' : 'PRIORITY_0';
+      // (priority is always PRIORITY_0 in v1; keeping the field allows
+      // future v2 to surface lower-priority subscriptions as HIGH/MEDIUM)
+
+      const titles = newMatches
+        .map((l) => l.title)
+        .filter(Boolean)
+        .slice(0, 3); // Cap at 3 titles to keep detail readable
+      const moreCount = newMatches.length - titles.length;
+      const titleStr = titles.join('; ') + (moreCount > 0 ? ` (+${moreCount} more)` : '');
+
+      actions.push({
+        priority,
+        type: 'subscription-match',
+        detail: `Subscription "${sub.id}" matched ${newMatches.length} lesson(s): ${titleStr}`,
+        data: {
+          subscriptionId: sub.id,
+          docId: sub.docId,
+          lessonIds: newMatches.map((l) => l.id),
+          matchCount: sub.matchCount,
+        },
+      });
+    }
+
+    return { actions, updatedFile: mutated ? file : null };
+  } finally {
+    if (stopBrainNode) {
+      try {
+        await stopBrainNode();
+      } catch {
+        /* best-effort */
+      }
+    }
+  }
+}
+
 export const triageHandler = {
-  builder: (yargs: Argv) => yargs,
+  builder: (yargs: Argv) =>
+    yargs
+      .option('watch', {
+        type: 'boolean',
+        default: false,
+        describe:
+          'Read ~/.pop-agent/brain/Config/subscriptions.json + surface matched lessons as PRIORITY_0 actions (Task #513, HB#598)',
+      })
+      .option('all-matches', {
+        type: 'boolean',
+        default: false,
+        describe:
+          'With --watch, surface ALL matching lessons each call rather than only-new since lastMatchedLessonId',
+      }),
 
   handler: async (argv: ArgumentsCamelCase<TriageArgs>) => {
     const spin = output.spinner('Running triage...');
@@ -464,8 +657,38 @@ export const triageHandler = {
         }
       }
 
-      // Sort actions by priority
-      const priorityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4 };
+      // --- 1.5. SUBSCRIPTIONS (PRIORITY_0, above CRITICAL) ---
+      // Q1 peer-poll resolution (sentinel HB#968): subscription-match
+      // is user-elevated, NOT system-critical. New PRIORITY_0 key keeps
+      // CRITICAL semantically reserved for gas-empty / daemon-down /
+      // post-rejection rework. Best-effort — any failure inside
+      // processSubscriptions is caught and skipped per-subscription.
+      if (argv.watch) {
+        try {
+          const subResult = await processSubscriptions({
+            allMatches: !!argv['all-matches'],
+          });
+          actions.push(...subResult.actions);
+          if (subResult.updatedFile) {
+            // Q2 atomic write-back via temp + rename
+            try {
+              saveSubscriptions(subResult.updatedFile);
+            } catch (err: any) {
+              actions.push({
+                priority: 'INFO',
+                type: 'subscription-write-failed',
+                detail: `Failed to persist subscription state updates: ${err?.message || err}. Match-count + lastMatchedLessonId will recompute next call.`,
+              });
+            }
+          }
+        } catch {
+          // processSubscriptions itself should never throw — the
+          // outer catch is defense-in-depth.
+        }
+      }
+
+      // Sort actions by priority. PRIORITY_0 sits above CRITICAL.
+      const priorityOrder = { PRIORITY_0: -1, CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4 };
       actions.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
 
       spin.stop();
@@ -495,7 +718,8 @@ export const triageHandler = {
           console.log('  No actions needed.');
         } else {
           for (const a of actions) {
-            const icon = a.priority === 'CRITICAL' ? '\x1b[31m!!\x1b[0m' :
+            const icon = a.priority === 'PRIORITY_0' ? '\x1b[35m★\x1b[0m' :
+                         a.priority === 'CRITICAL' ? '\x1b[31m!!\x1b[0m' :
                          a.priority === 'HIGH' ? '\x1b[33m!\x1b[0m' :
                          a.priority === 'MEDIUM' ? '\x1b[36m·\x1b[0m' :
                          a.priority === 'LOW' ? '\x1b[90m○\x1b[0m' : '\x1b[90mℹ\x1b[0m';

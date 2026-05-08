@@ -260,3 +260,38 @@ export function loadSubscriptions(filePath?: string): { result: ValidationResult
   }
   return { result, file };
 }
+
+/**
+ * Atomic write-back of subscriptions.json. Q2 peer-poll resolution
+ * (sentinel HB#968): write-tmp-with-pid+timestamp, fs.renameSync
+ * (POSIX atomic), cleanup-on-failure. Pattern reused from
+ * src/lib/brain.ts saveHeadsManifestV2().
+ *
+ * Concurrent edit IS realistic for subscriptions.json — heartbeat
+ * triage --watch updates matchCount + lastMatchedLessonId on every
+ * fire (every 15 min) AND the editing CLI (subscribe/unsubscribe)
+ * mutates the same file. Atomic rename means readers always see a
+ * complete file, never a half-written one.
+ */
+export function saveSubscriptions(file: SubscriptionsFile, filePath?: string): void {
+  const finalPath = filePath ?? getSubscriptionsPath();
+  // Ensure Config directory exists. ~/.pop-agent/brain/Config/ may not exist
+  // on first write for an agent that has never had subscriptions before.
+  const configDir = path.dirname(finalPath);
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true });
+  }
+  const tmpPath = `${finalPath}.tmp.${process.pid}.${Date.now()}`;
+  fs.writeFileSync(tmpPath, JSON.stringify(file, null, 2));
+  try {
+    fs.renameSync(tmpPath, finalPath);
+  } catch (err) {
+    // Best-effort cleanup if the rename failed (per saveHeadsManifestV2 pattern).
+    try {
+      fs.unlinkSync(tmpPath);
+    } catch {
+      // ignore
+    }
+    throw err;
+  }
+}

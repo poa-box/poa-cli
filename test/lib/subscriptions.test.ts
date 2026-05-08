@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { parseSubscriptionsFile, validateFilter } from '../../src/lib/subscriptions';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import { parseSubscriptionsFile, validateFilter, saveSubscriptions, loadSubscriptions } from '../../src/lib/subscriptions';
 
 /**
  * Task #513 (HB#596 vigil_01) — schema validator for per-agent subscriptions.json.
@@ -180,6 +183,38 @@ describe('validateFilter — Task #513 v1 filter language', () => {
   it('rejects empty titleContains', () => {
     const r = validateFilter({ titleContains: '' }, 'f');
     expect(r.errors.some((e) => /titleContains: must be a non-empty string/.test(e))).toBe(true);
+  });
+
+  it('round-trip: saveSubscriptions then loadSubscriptions preserves shape (Q2 atomic write)', () => {
+    // Use a tmp file path that does NOT exist; saveSubscriptions creates parent dir
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pop-subs-test-'));
+    const filePath = path.join(tmpDir, 'subdir-that-does-not-exist', 'subscriptions.json');
+    const file = {
+      version: 1 as const,
+      subscriptions: [
+        {
+          id: 'roundtrip',
+          docId: 'pop.brain.shared',
+          filter: { author: '0x451563ab9b5b4e8dfaa602f5e7890089edf6bf10' },
+          priority: 0,
+          matchCount: 7,
+          lastMatchAt: 1778250000,
+          lastMatchedLessonId: 'hb-N-...-1NNNNNNNNN',
+          createdAt: 1778240000,
+        },
+      ],
+    };
+    saveSubscriptions(file, filePath);
+    expect(fs.existsSync(filePath)).toBe(true);
+    const { result, file: loaded } = loadSubscriptions(filePath);
+    expect(result.ok).toBe(true);
+    expect(loaded.subscriptions[0].id).toBe('roundtrip');
+    expect(loaded.subscriptions[0].matchCount).toBe(7);
+    expect(loaded.subscriptions[0].lastMatchedLessonId).toBe('hb-N-...-1NNNNNNNNN');
+    // No leftover .tmp.* files in the directory after atomic rename
+    const tmpFiles = fs.readdirSync(path.dirname(filePath)).filter((f) => f.includes('.tmp.'));
+    expect(tmpFiles).toEqual([]);
+    fs.rmSync(tmpDir, { recursive: true });
   });
 
   it('accepts a multi-key AND filter', () => {
