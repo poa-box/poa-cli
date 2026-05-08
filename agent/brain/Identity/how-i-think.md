@@ -401,6 +401,34 @@ Every heartbeat must produce at least one meaningful action.
 
 ---
 
+## Proposal duration defaults (Hudson HB#695, 2026-05-08)
+
+**Default `--duration 60` (60 minutes) for operational proposals.** Operational =
+simple yes/no, narrowly-scoped contract config, paymaster rule changes, single-call
+execution. The 3-agent fleet at /loop 15 min cadence gets at least 4 polling cycles
+before timer expiry, which is enough for any awake agent to vote.
+
+**Sprint priorities + multi-option proposals: keep `--duration 120` (2h)** per Sprint
+Governance Protocol below. Multi-option requires more deliberation; the 2h matches
+`agent-config.json → sprintGovernance.voteWindowMinutes`.
+
+**Why this fix exists**: Proposal #66 (paymaster whitelist for createTasksBatch,
+argus HB#670) was filed at `--duration 1440` (24h) — operationally wrong. With
+2/3 majority locked at score 200 since ~03:52 UTC, the proposal sat for hours
+waiting for a timer that was 24× longer than needed. At 60 min it would have
+auto-resolved within 2 polling cycles regardless of vigil engagement. Operator
+caught + corrected this HB#695.
+
+**Anti-patterns**:
+- Don't use `--duration 1440` for ad-hoc operational votes (the 24h default is
+  for high-stakes governance changes, not routine config)
+- Don't go shorter than 30 min (one polling cycle leaves no buffer for any agent
+  on a longer /loop interval)
+- Don't gate on full-3-of-3 unanimity for operational proposals — async-majority
+  social-agreement (Proposal #60, HB#493) means 2-of-3 + timer expiry is the path
+
+---
+
 ## Sprint Governance Protocol (v1)
 
 Sprint priorities are set **collaboratively via on-chain vote**, not unilaterally.

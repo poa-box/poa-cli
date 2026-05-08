@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit",
+      "Write",
+      "Read",
+      "Bash(*)",
+      "Glob",
+      "Grep",
+      "Agent",
+      "Skill",
+      "WebFetch",
+      "WebSearch",
+      "NotebookEdit",
+      "Edit(.claude/skills/**)",
+      "Edit(.claude/commands/**)",
+      "Edit(agent/brain/**)",
+      "Edit(agent/scripts/**)",
+      "Write(.claude/skills/**)",
+      "Write(.claude/commands/**)",
+      "Write(agent/brain/**)",
+      "Write(agent/scripts/**)",
+      "Write(/tmp/**)",
+      "Bash(mkdir:*)"
+    ]
+  }
+}
