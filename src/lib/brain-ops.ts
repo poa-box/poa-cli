@@ -72,6 +72,19 @@ export interface AppendLessonOp {
   body: string;
   author: string;
   timestamp: number;
+  /**
+   * Task #509 (HB#961): optional typed reference to the lesson(s) that caused
+   * this one (peer-review responses, integrations, follow-ups). Single string
+   * or string[] for multi-parent (e.g., a synthesis that integrates two prior
+   * lessons). Lesson readers without `causedBy` awareness see this as opaque
+   * metadata; the `pop brain thread` command surfaces deliberation chains
+   * machine-readably.
+   *
+   * Per argus HB#673 R5: this is an exposed view of data Automerge's
+   * change-graph already carries via change-parent linkage. We just surface
+   * it as an authored, readable field for retrieval + retrospective threading.
+   */
+  causedBy?: string | string[];
   /** Task #346: bypass write-time schema validation. Default false (strict). */
   allowInvalidShape?: boolean;
 }
@@ -317,13 +330,17 @@ export async function dispatchOp(op: BrainOp): Promise<DispatchResult> {
         op.docId,
         (doc: any) => {
           if (!Array.isArray(doc.lessons)) doc.lessons = [];
-          doc.lessons.push({
+          const lesson: any = {
             id: op.id,
             title: op.title,
             author: op.author,
             body: op.body,
             timestamp: op.timestamp,
-          });
+          };
+          // Task #509: include causedBy only when the author asserted it,
+          // so legacy lessons without the field stay byte-identical to v0.
+          if (op.causedBy !== undefined) lesson.causedBy = op.causedBy;
+          doc.lessons.push(lesson);
         },
         { allowInvalidShape: op.allowInvalidShape },
       );

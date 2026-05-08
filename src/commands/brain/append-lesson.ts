@@ -40,6 +40,7 @@ interface AppendArgs {
   author?: string;
   id?: string;
   allowInvalidShape?: boolean;
+  'caused-by'?: string | string[];
   'idempotency-key'?: string;
   'no-idempotency'?: boolean;
 }
@@ -90,6 +91,12 @@ export const appendLessonHandler = {
           'Bypass write-time schema validation (Task #346). Use only when you deliberately need a non-canonical shape.',
         type: 'boolean',
         default: false,
+      })
+      .option('caused-by', {
+        describe:
+          'Task #509: optional typed reference to the prior lesson(s) that caused this one — peer-review responses, integrations, follow-ups. Pass once for single-parent or repeat for multi-parent (e.g., a synthesis integrating two prior lessons). Lesson id (full, not slug). Powers `pop brain thread` chain walks.',
+        type: 'string',
+        array: true,
       })
       .option('idempotency-key', {
         type: 'string',
@@ -178,6 +185,16 @@ export const appendLessonHandler = {
         }
       }
 
+      // Task #509: collapse single-element causedBy array to a string for
+      // tighter on-the-wire shape. Yargs always hands us an array when
+      // `array: true` is set, even for a single value.
+      let causedBy: string | string[] | undefined;
+      const cbRaw = (argv as any)['caused-by'] ?? (argv as any).causedBy;
+      if (Array.isArray(cbRaw) && cbRaw.length > 0) {
+        const trimmed = cbRaw.map((s: string) => String(s).trim()).filter(Boolean);
+        causedBy = trimmed.length === 1 ? trimmed[0] : trimmed;
+      }
+
       // Route through the unified dispatcher (HB#324 ship-2). When a
       // brain daemon is running, this sends the op via IPC so the
       // daemon's long-lived gossipsub mesh handles the publish. When
@@ -191,6 +208,7 @@ export const appendLessonHandler = {
         body,
         author: authorLabel,
         timestamp: now,
+        ...(causedBy !== undefined ? { causedBy } : {}),
         allowInvalidShape: argv.allowInvalidShape,
       });
 

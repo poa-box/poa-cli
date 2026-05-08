@@ -82,6 +82,26 @@ function validateLesson(lesson: any, index: number, errors: string[]): void {
       }
     }
   }
+  // Task #509: optional causedBy field. Single string (single-parent) or
+  // array of strings (multi-parent — synthesis integrating multiple priors).
+  // Each entry must be a non-empty string lesson id. Backwards compatible:
+  // existing lessons without causedBy validate unchanged.
+  if (lesson.causedBy != null) {
+    const cb = lesson.causedBy;
+    if (typeof cb === 'string') {
+      if (cb.length === 0) {
+        errors.push(`lessons[${index}]: causedBy must be a non-empty string id`);
+      }
+    } else if (Array.isArray(cb)) {
+      for (let i = 0; i < cb.length; i++) {
+        if (typeof cb[i] !== 'string' || cb[i].length === 0) {
+          errors.push(`lessons[${index}]: causedBy[${i}] must be a non-empty string id`);
+        }
+      }
+    } else {
+      errors.push(`lessons[${index}]: causedBy must be a string or array of strings`);
+    }
+  }
 }
 
 function validateRule(rule: any, index: number, errors: string[]): void {
