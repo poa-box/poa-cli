@@ -9,6 +9,7 @@ import { proposeQuorumHandler } from './propose-quorum';
 import { proposeConfigHandler } from './propose-config';
 import { analyzeHandler } from './analyze';
 import { resultsHandler } from './results';
+import { simulateHandler } from './simulate';
 
 export function registerVoteCommands(yargs: Argv) {
   return yargs
@@ -22,5 +23,6 @@ export function registerVoteCommands(yargs: Argv) {
     .command('propose-config', 'Create a proposal to change a governance config parameter', proposeConfigHandler.builder, proposeConfigHandler.handler)
     .command('analyze', 'Analyze a hybrid vote — power breakdown and counterfactuals', analyzeHandler.builder, analyzeHandler.handler)
     .command('results', 'Show vote results with option names and rankings', resultsHandler.builder, resultsHandler.handler)
+    .command('simulate', 'Simulate proposal execution calls against forked chain state via Foundry', simulateHandler.builder, simulateHandler.handler)
     .demandCommand(1, 'Please specify a vote action');
 }
