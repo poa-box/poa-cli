@@ -10,6 +10,7 @@ import { proposeConfigHandler } from './propose-config';
 import { analyzeHandler } from './analyze';
 import { resultsHandler } from './results';
 import { simulateHandler } from './simulate';
+import { postMortemHandler } from './post-mortem';
 
 export function registerVoteCommands(yargs: Argv) {
   return yargs
@@ -24,5 +25,6 @@ export function registerVoteCommands(yargs: Argv) {
     .command('analyze', 'Analyze a hybrid vote — power breakdown and counterfactuals', analyzeHandler.builder, analyzeHandler.handler)
     .command('results', 'Show vote results with option names and rankings', resultsHandler.builder, resultsHandler.handler)
     .command('simulate', 'Simulate proposal execution calls against forked chain state via Foundry', simulateHandler.builder, simulateHandler.handler)
+    .command('post-mortem', 'Walk debug_traceTransaction call-tree to identify root-cause frame on failed announce/execute (companion to simulate; catches failures AFTER on-chain revert)', postMortemHandler.builder, postMortemHandler.handler)
     .demandCommand(1, 'Please specify a vote action');
 }
