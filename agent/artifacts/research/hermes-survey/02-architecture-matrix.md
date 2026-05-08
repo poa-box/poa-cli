@@ -102,11 +102,60 @@ Per-framework deep read along five axes. Started this HB; one or two frameworks 
 
 ---
 
-## (Frameworks 5-12 to be added in subsequent HBs)
+## 5. SWARM (OpenAI experimental) — DEEP READ
+
+**Repo HEAD inspected**: github.com/openai/swarm (`swarm/core.py`, `swarm/types.py`). Note: SWARM is officially an "educational framework" that OpenAI declared superseded by the Agents SDK in Oct 2025; I'm reading it because the handoff PRIMITIVE is what's interesting, not the runtime.
+
+| Axis | Mechanism |
+|------|-----------|
+| Orchestration | None central. Agent A is invoked, returns either (a) a normal text response → loop ends, or (b) a special `Result` containing `agent: Agent` → runtime switches to Agent B. The runtime is a 50-line `Swarm.run()` while-loop. |
+| Shared state | Conversation `messages` list + a `context_variables` dict that flows between agents. Both ephemeral per `run()` call. No durable persistence built-in. |
+| Task assignment | Self-selected. Each agent has `functions: list[Callable]`; one of those functions can return a different Agent, triggering handoff. The CURRENT agent decides whom to hand off to via tool-call. |
+| Consensus / dissent | None. Sequential — only one agent active at a time. No concurrent agents, no merge. |
+| Rejection / quality control | None. Each agent's output is final for its turn. |
+
+**Centralization read**: ORCHESTRATION-DECENTRALIZED. No manager, no SOP, no graph — agents themselves choose handoff via tool-call. The runtime is so thin it's barely there. But: it's still SEQUENTIAL — one agent at a time.
+
+**Borrowable** (HIGH VALUE, simplest pattern):
+- **Handoff via tool-call** is exactly what Argus needs for "I think agent X should pick this up" delegation. Today, agents broadcast brain lessons saying "argus_prime — could you take this?". SWARM's pattern would let an agent CALL a function `handoff_to(agent_name, context)` that the runtime treats as a transfer-of-control event. We could implement this on top of brain CRDT: a structured "handoff" lesson type that the receiving agent's heartbeat skill auto-claims.
+- **`context_variables` flowing through**: a typed dict that every agent in the chain reads + can update. Differs from messages (which are append-only). Useful for "shared scratchpad" style cooperation — could be a brain doc subscription with reducer semantics.
+
+**RED FLAGS**: SEQUENTIAL is the hard limit. Argus is fundamentally CONCURRENT (3 agents, all running heartbeat loops in parallel). SWARM's handoff primitive borrows well; SWARM's runtime model does not.
+
+**Comparison to Argus**: closest in SPIRIT (no orchestrator, agents self-select), but architecturally different (sequential vs concurrent; ephemeral vs persistent state).
+
+---
+
+## 6. elizaOS (formerly ai16z/eliza) — DEEP READ
+
+**Repo HEAD inspected**: github.com/elizaOS/eliza (`packages/core/src/runtime.ts`, `packages/core/src/agent.ts`, `packages/core/src/types.ts`).
+
+| Axis | Mechanism |
+|------|-----------|
+| Orchestration | None across agents. Each agent is its own runtime (`AgentRuntime`) with its own characterFile + plugin set + memory. Multi-agent emerges from independent runtimes interacting via SHARED PLATFORMS (Discord, Twitter, Telegram channels). |
+| Shared state | Per-agent: `IMemoryManager` with multiple stores (messages, descriptions, facts, lore, documents). Cross-agent: only the platform itself (e.g., Discord channel transcript). No first-class shared state primitive. |
+| Task assignment | None. Agents react to platform events they're subscribed to. No notion of "task" in the framework — agents have personalities + tools + memory; what they do is emergent from prompt + reaction. |
+| Consensus / dissent | None. Two eliza agents in the same Discord channel will both respond to triggers; they don't coordinate. |
+| Rejection / quality control | None. Per-agent moderation via prompt; no cross-agent review. |
+
+**Centralization read**: FULLY-DECENTRALIZED at orchestration. Each runtime is sovereign. The "framework" is actually a personality+plugin system, not a multi-agent coordinator.
+
+**Borrowable** (MEDIUM-HIGH VALUE):
+- **CharacterFile pattern**: an agent's personality / values / lore in a single declarative JSON. Argus today has this distributed across `who-i-am.md` + `philosophy.md` + `goals.md` + `capabilities.md`. eliza's pattern is to consolidate. Trade-off: Argus's split lets each file evolve independently (philosophy vs goals vs identity) which is intentional. Worth exploring whether a unified "character" derived view could co-exist.
+- **Plugin separation**: actions, evaluators, providers as separate plugin types. Argus today has loose `pop` CLI commands + skills. The eliza taxonomy (action = does-something, evaluator = post-action filter, provider = pre-action context) is cleaner. Could inform how we structure agent skills.
+- **Memory typing**: `IMemoryManager` has TYPED memory stores (messages vs facts vs descriptions vs lore). Argus today has `pop.brain.shared` + `pop.brain.lessons` + `pop.brain.heuristics` etc. — already typed by doc. eliza validates the architectural choice.
+
+**RED FLAGS**: NONE for ethos. eliza is the most decentralized framework surveyed. The lack of cross-agent coordination is exactly what Argus's brain CRDT solves WITHOUT centralizing.
+
+**Comparison to Argus**: eliza shows what "fully sovereign agents" looks like — no shared state at all, coordination only via external platforms. Argus is one architectural layer beyond: sovereign agents PLUS a CRDT-based shared brain. The difference is brain CRDT, which gives Argus structured peer-coordination eliza lacks.
+
+---
+
+## (Frameworks 7-12 to be added in subsequent HBs)
 
 Next HB targets:
-- SWARM (peer-handoff — closest to Argus's no-orchestrator model)
-- eliza (independent-runtime)
+- Letta (memory architecture — most directly relevant to brain CRDT design)
+- Hermes-Function-Calling + Hermes-3 (the required Hermes-line entries — likely shorter writeups since they don't ship orchestration)
 
 After:
 - SWARM (peer-handoff — closest to Argus's brain-CRDT/no-orchestrator)
@@ -117,14 +166,33 @@ After:
 - AutoGPT (single-instance + sub-agent spawn)
 - Magentic-One (Orchestrator + Ledger pattern)
 
-## Cross-framework observations so far (n=4)
+## Cross-framework observations (n=6)
 
-1. **The incumbent split is starker than expected.** AutoGen + CrewAI are HARD-CENTRALIZED (manager-LLM picks next-speaker). MetaGPT + LangGraph are STRUCTURALLY-DECENTRALIZED at orchestration but CENTRALIZED-AT-DESIGN-TIME (the SOP / graph IS the policy, picked by the author). Argus is decentralized at BOTH layers — runtime decisions are per-agent + governance changes go through proposals.
-2. **Persistent shared state is the diff-axis.** None of the four frameworks has a CRDT-style multi-author durable store as a first-class primitive. MetaGPT has a Message bus (in-memory, single-process); LangGraph has a Checkpointer (store-agnostic, single-process); CrewAI/AutoGen have optional memory plugins. Argus's brain CRDT (gossipsub-replicated, ECDSA-signed, Automerge-backed) has no analog in this baseline.
-3. **No structured-dissent mechanism in any of the four.** Disagreement resolution by speaker-order (AutoGen), manager-arbitration (CrewAI), capability-pull message-passing (MetaGPT), or reducer-merge (LangGraph). Argus's three-agent peer-review-and-amend (e.g., HB#664 SUBSET-OPPOSITION trilateral endorsement) and sprint-vote-as-policy-update (e.g., #66 paymaster whitelist) are both structurally novel.
-4. **Convergent design hints.** LangGraph's `Checkpointer` abstraction = unified-ai-brain's `HeadsManifestStore`. MetaGPT's `Environment.history` = brain CRDT's `pop.brain.shared`. The architectural trajectory is converging; we got there earlier from the "decentralized substrate first" direction.
+1. **Centralization-axis distribution is now clearer.**
+   - HARD-CENTRALIZED at runtime: AutoGen (GroupChatManager), CrewAI hierarchical (manager_llm)
+   - DECENTRALIZED-RUNTIME / CENTRALIZED-DESIGN-TIME: MetaGPT (SOP), LangGraph (graph topology), CrewAI sequential (pipeline)
+   - DECENTRALIZED-BOTH: SWARM (handoff via tool-call, no SOP), eliza (sovereign runtimes), Argus
+   - Argus's distinguishing feature among the third class: PERSISTENT MULTI-AUTHOR SHARED STATE (brain CRDT). SWARM/eliza are sovereign-but-isolated. Argus is sovereign-and-coordinated.
 
-## Cumulative borrow-and-adapt candidates (running list)
+2. **Persistent shared state remains the diff-axis after n=6.** None of the surveyed frameworks has a CRDT-style multi-author durable store as a first-class primitive. The closest:
+   - LangGraph Checkpointer (single-process, store-agnostic)
+   - MetaGPT Environment.history (single-process, in-memory)
+   - eliza per-agent IMemoryManager (per-agent, no cross-agent merge)
+   - SWARM context_variables (per-run, ephemeral)
+   Argus's brain CRDT (gossipsub-replicated + ECDSA-signed + Automerge-backed) is structurally novel against ALL n=6.
+
+3. **Three frameworks have NO orchestration layer at all** (SWARM via handoff, eliza via independent runtimes, Argus via brain-broadcast + agent-pull). Of those three, only Argus has structured shared state. SWARM is sequential + ephemeral; eliza is concurrent + isolated. Argus is concurrent + coordinated, which is the unique combination.
+
+4. **Convergent design hints (validation):**
+   - LangGraph's `Checkpointer` ≈ unified-ai-brain's `HeadsManifestStore`
+   - MetaGPT's `Environment.history` ≈ brain CRDT's `pop.brain.shared`
+   - eliza's typed `IMemoryManager` ≈ our typed brain docs (`pop.brain.shared` / `lessons` / `heuristics`)
+   - SWARM's `context_variables` ≈ a typed brain doc with reducer
+   Independent designers reaching converging abstractions = our architectural choices are well-grounded.
+
+5. **The "brain" question Hudson raised is sharpened.** When other agent-team frameworks say "memory" or "shared state," they mean per-process or per-Crew. Argus's "brain" is the only one that means cross-process, cross-agent, cross-restart, cross-machine, signed, replicated, mergeable. The ARCHITECTURAL NOVELTY is the brain CRDT itself — the rest of Argus's stack (Hats, sprint governance, philosophy.md) is best-of-incumbent-patterns assembled coherently.
+
+## Cumulative borrow-and-adapt candidates (running list, 8 entries)
 
 1. **Capability-pull task assignment via `_watch_actions`** (MetaGPT) — agents subscribe to typed events and auto-act on match. Argus today: agents poll triage CLI. Adopting watch-actions could automate routine reactions while keeping triage for human-checked priorities.
 2. **Typed `Message.cause_by` for audit trails** (MetaGPT) — every output references the action that caused it. Argus today: free-text brain lessons. Adding `causedBy: <prior-lesson-id>` field to brain-lesson schema would make deliberation chains machine-readable + retrieval-friendly.
@@ -132,3 +200,5 @@ After:
 4. **AutoGen agent-side `selection prompt`** — each agent runs a next-speaker selection independently, acts iff it picks itself. Decoupled from central manager; could be Argus's structured "do I take this on?" decision.
 5. **LangGraph reducer-typed state merge** — explicit merge functions on top of CRDT semantics for human-readable conflict resolution. Could be a layer on `applyBrainChangeV2`.
 6. **LangGraph published-graph governance** — the orchestration policy is committed code, peer-auditable. Argus's heuristics + agent-triage are already in this spirit; codifying as a "published graph" artifact (or just keeping the markdown how-i-think.md as canonical) is a small step.
+7. **SWARM-style `handoff_to(agent, context)` brain-lesson type** — structured handoff event (vs free-text "argus could you take this?"). Receiving agent's heartbeat skill auto-claims the handoff. Pairs with capability-pull from item 1: handoffs are explicit; capability-pull is reactive.
+8. **eliza CharacterFile + plugin taxonomy** (action / evaluator / provider) — could clean up Argus's skill organization. Trade-off: our split files (philosophy.md / goals.md / capabilities.md) intentionally evolve independently; consolidation would need to be a derived view, not a primary store.
