@@ -185,19 +185,28 @@ function archiveEntryFor(block) {
 
 // ─── Verification sample (per #512 acceptance criterion 4) ─────────────────
 function verifySample(originalBlocks, archiveText) {
-  // Sample 5 random blocks; for each: confirm all task IDs + commits + brain heads
-  // present in the original ALSO appear in the archive entry.
-  const sampleSize = Math.min(5, originalBlocks.length);
-  if (sampleSize === 0) return { passed: 0, failed: 0, samples: [] };
+  // Per sentinel HB#970 robustness suggestion (b): "first N + last N + K random middle"
+  // for deterministic edge coverage. With 819 blocks in a single batch, pure-random K=5
+  // is 0.6% coverage — would miss off-by-one regressions in compression-window edges.
+  // Hybrid: 2 from start + 2 from end + 3 random middle = 7 samples.
+  const blocks = originalBlocks.filter(b => b.hb !== null);
+  if (blocks.length === 0) return { passed: 0, failed: 0, samples: [] };
+
   const indices = new Set();
-  while (indices.size < sampleSize && indices.size < originalBlocks.length) {
-    indices.add(Math.floor(Math.random() * originalBlocks.length));
+  // First 2 + last 2 (deterministic edge coverage)
+  if (blocks.length >= 1) indices.add(0);
+  if (blocks.length >= 2) indices.add(1);
+  if (blocks.length >= 3) indices.add(blocks.length - 1);
+  if (blocks.length >= 4) indices.add(blocks.length - 2);
+  // 3 random middle (skip if already in indices)
+  while (indices.size < Math.min(7, blocks.length)) {
+    indices.add(Math.floor(Math.random() * blocks.length));
   }
+
   const samples = [];
   let passed = 0, failed = 0;
   for (const idx of indices) {
-    const block = originalBlocks[idx];
-    if (block.hb === null) continue; // skip prelude
+    const block = blocks[idx];
     const origPreserves = extractPreserves(block.lines.join('\n'));
     const allTokens = [
       ...origPreserves.taskIds,
@@ -207,7 +216,8 @@ function verifySample(originalBlocks, archiveText) {
     ];
     const missing = allTokens.filter(t => !archiveText.includes(t));
     const ok = missing.length === 0;
-    samples.push({ hb: block.hb, ok, tokensChecked: allTokens.length, missing: missing.slice(0, 3) });
+    const position = idx === 0 ? 'first' : idx === blocks.length - 1 ? 'last' : idx <= 1 ? 'near-first' : idx >= blocks.length - 2 ? 'near-last' : 'random';
+    samples.push({ hb: block.hb, ok, tokensChecked: allTokens.length, missing: missing.slice(0, 3), position });
     if (ok) passed++; else failed++;
   }
   return { passed, failed, samples };

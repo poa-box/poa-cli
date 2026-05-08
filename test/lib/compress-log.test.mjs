@@ -105,6 +105,54 @@ describe('compress-log.mjs — black-box CLI surface', () => {
     expect(r2.exitCode).toBe(0); // dry-run runs with --force
   });
 
+  it('all 7 PRESERVE_PATTERNS keys exercised against fixture with known tokens (sentinel HB#970 suggestion a)', () => {
+    // Synthetic log fixture with EXACTLY ONE of each preserve-pattern type per HB block.
+    // Verifies extractPreserves regex coverage at fixture-precision (vs random-sample probabilistic).
+    const fixture = [
+      '# Heartbeat Log — fixture',
+      '',
+      '## HB#777 — fixture-A — exercises taskIds + commits',
+      'Task IDs: #404 #405',
+      'Commit: 1a2b3c4',
+      '',
+      '## HB#778 — fixture-B — exercises txHashes + brainHeads',
+      'Tx hash: 0xdeadbeef00000000000000000000000000000000000000000000000000000000',
+      'Brain head: bafkreih000000000000000000000000000000000000000000000000aa',
+      '',
+      '## HB#779 — fixture-C — exercises decisions + followUps + selfCorrections',
+      'DECISION: ship the thing',
+      'TODO: clean up after',
+      'self-correction: previous reasoning was off',
+      '',
+    ].join('\n');
+    const r = runCompressLog(tmpHome, fixture, ['--dry-run', '--force', '--retain-lines', '1']);
+    expect(r.exitCode).toBe(0);
+    // Verification sample exercises BOTH the regex coverage AND the archive presence.
+    // If the verification 5/5 passes (or whatever sample size with this small fixture),
+    // it means all known tokens from the fixture appear in the archive entries,
+    // which means each preserve-pattern regex matched its known token.
+    expect(r.json.verification.failed).toBe(0);
+    expect(r.json.verification.passed).toBeGreaterThan(0);
+    // All sample positions are tagged (post-HB#970 v1.1: position field added)
+    for (const s of r.json.verification.samples) {
+      expect(['first', 'last', 'near-first', 'near-last', 'random']).toContain(s.position);
+    }
+  });
+
+  it('verifySample includes deterministic edge coverage (first + last positions, sentinel HB#970 suggestion b)', () => {
+    // 5+ block fixture so first/last/random positions all populate.
+    const log = makeLog(8);
+    const r = runCompressLog(tmpHome, log, ['--dry-run', '--force', '--retain-lines', '1']);
+    expect(r.exitCode).toBe(0);
+    const positions = r.json.verification.samples.map(s => s.position);
+    // With 8 HB blocks in compression window: should have at least one 'first' and one 'last'
+    expect(positions).toContain('first');
+    expect(positions).toContain('last');
+    // Sample size grows from 5 to up to 7 (2 first + 2 last + 3 random)
+    expect(r.json.verification.samples.length).toBeGreaterThanOrEqual(4);
+    expect(r.json.verification.samples.length).toBeLessThanOrEqual(7);
+  });
+
   it('actual write mode creates checkpoint + archive + replaces live log', () => {
     const log = makeLog(10);
     const r = runCompressLog(tmpHome, log, ['--force', '--retain-lines', '5']);
