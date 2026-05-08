@@ -39,7 +39,9 @@ const DEFAULTS = {
 
 const HOME = homedir();
 const LOG_PATH = join(HOME, '.pop-agent', 'brain', 'Memory', 'heartbeat-log.md');
-const ARCHIVE_PATH = 'agent/brain/Memory/heartbeat-log-archive.md';
+// Archive path is per-agent local (HOME-relative) per SKILL.md spec — keeps personal
+// context private + provides test isolation (different HOME → different archive).
+const ARCHIVE_PATH = join(HOME, '.pop-agent', 'brain', 'Memory', 'heartbeat-log-archive.md');
 const CONFIG_PATH = 'agent/brain/Config/agent-config.json';
 
 // ─── CLI arg parser (minimal, no yargs dependency) ──────────────────────────

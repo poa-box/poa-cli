@@ -84,8 +84,8 @@ The skill body, when invoked, performs the following steps:
 
 1. **Pre-flight checks**:
    - Confirm `~/.pop-agent/brain/Memory/heartbeat-log.md` exists + is readable
-   - Confirm `agent/brain/Memory/heartbeat-log-archive.md` is writable (create
-     if absent)
+   - Confirm `~/.pop-agent/brain/Memory/heartbeat-log-archive.md` is writable
+     (create if absent). Path is HOME-relative per per-agent-local intent.
    - Read agent-config.json for thresholds + disable flags
    - Verify line count > threshold; if not, exit "no-op, log under threshold"
 
@@ -179,8 +179,8 @@ runtime work is:
   config keys above (default values match defaults specified here)
 - `.claude/commands/compress-log.md` — slash command frontmatter pointing
   at this skill
-- `agent/brain/Memory/heartbeat-log-archive.md` — created on first compress;
-  per-agent local
+- `~/.pop-agent/brain/Memory/heartbeat-log-archive.md` — created on first
+  compress; per-agent local (HOME-relative)
 - Heartbeat skill Step 0.6 — line count check + skill invocation (~5 LoC
   added to poa-agent-heartbeat/SKILL.md)
 
