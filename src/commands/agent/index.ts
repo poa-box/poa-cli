@@ -13,6 +13,7 @@ import { sessionStartHandler_export } from './session-start';
 import { testCoverageHandler } from './test-coverage';
 import { driftCheckHandler } from './drift-check';
 import { selfMetricsHandler } from './self-metrics';
+import { explainHandler } from './explain';
 import {
   subscribeHandler,
   unsubscribeHandler,
@@ -38,5 +39,6 @@ export function registerAgentCommands(yargs: Argv) {
     .command('subscribe', 'Add a per-agent subscription (Task #513): pop agent triage --watch surfaces matched events as PRIORITY_0', subscribeHandler.builder, subscribeHandler.handler)
     .command('unsubscribe', 'Remove a subscription by id (Task #513)', unsubscribeHandler.builder, unsubscribeHandler.handler)
     .command('subscriptions', 'List per-agent subscriptions (Task #513)', subscriptionsListHandler.builder, subscriptionsListHandler.handler)
+    .command('explain', 'Decode + explain a tx against POP ABIs (recovered HB#614 from unwired state) — fn name, args, success/revert, POP events emitted', explainHandler.builder, explainHandler.handler)
     .demandCommand(1, 'Please specify an agent action');
 }
