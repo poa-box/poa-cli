@@ -77,15 +77,27 @@ export const createBatchHandler = {
       const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', signer);
       const pid = parseProjectId(argv.project);
 
-      const results: Array<{ name: string; taskId?: string; txHash?: string; status: string; error?: string }> = [];
+      // Task #508 (HB#967): use TaskManager.createTasksBatch (selector
+      // 0xc18aa1c9 — single atomic call, all-or-nothing semantics) instead
+      // of the previous per-task client-side loop. Saves N×(21k base + per-call
+      // overhead) gas and reduces sponsored-tx pressure on the PaymasterHub
+      // (companion to Proposal #66 paymaster whitelist).
+      //
+      // Per the contract spec (poa-box/POP TaskManager.sol L456-475):
+      // - permission checked once via _requireCanCreate(pid)
+      // - reverts with EmptyBatch() if tasks.length == 0 (we early-return so
+      //   we never trigger this on the contract)
+      // - per-task validation runs inside _createTask; one bad task aborts
+      //   the whole batch. With --continue-on-error the caller can split + retry.
 
-      for (let i = 0; i < tasks.length; i++) {
-        const task = tasks[i];
-        const spin = output.spinner(`[${i + 1}/${tasks.length}] Creating "${task.name}"...`);
-        spin.start();
+      const spin = output.spinner(`Building batch of ${tasks.length} task(s) (pinning metadata in parallel)...`);
+      spin.start();
 
-        try {
-          // Build metadata (key order matches frontend)
+      // Pin all metadata in parallel BEFORE building the tuple array. Each
+      // task's metadata pin is independent; serializing them would dominate
+      // wall-time for any non-trivial batch.
+      const tupleInputs = await Promise.all(
+        tasks.map(async (task) => {
           const metadata = {
             name: task.name,
             description: task.description,
@@ -94,7 +106,6 @@ export const createBatchHandler = {
             estHours: task.estHours || 0,
             submission: '',
           };
-
           const cid = await pinJson(JSON.stringify(metadata));
           const metadataHash = ipfsCidToBytes32(cid);
           const titleBytes = stringToBytes(task.name);
@@ -107,42 +118,90 @@ export const createBatchHandler = {
             bountyPayoutWei = ethers.utils.parseUnits(task.bountyAmount.toString(), decimals);
           }
 
-          const result = await executeTx(
-            contract,
-            'createTask',
-            [payoutWei, titleBytes, metadataHash, pid, bountyToken, bountyPayoutWei, task.requiresApplication || false],
-            { dryRun: argv.dryRun }
-          );
+          // Tuple order MUST match the Solidity struct CreateTaskInput:
+          // (payout, title, metadataHash, bountyToken, bountyPayout, requiresApplication)
+          // NOTE: pid is NOT in the tuple — it's a top-level arg to createTasksBatch.
+          return [
+            payoutWei,
+            titleBytes,
+            metadataHash,
+            bountyToken,
+            bountyPayoutWei,
+            task.requiresApplication || false,
+          ];
+        })
+      );
 
-          spin.stop();
+      spin.stop();
 
-          if (result.success) {
-            const taskCreatedEvent = result.logs?.find(l => l.name === 'TaskCreated');
-            const taskId = taskCreatedEvent?.args?.id?.toString();
+      const batchSpin = output.spinner(`Submitting createTasksBatch (${tasks.length} tasks, single atomic tx)...`);
+      batchSpin.start();
+
+      const result = await executeTx(
+        contract,
+        'createTasksBatch',
+        [pid, tupleInputs],
+        { dryRun: argv.dryRun }
+      );
+
+      batchSpin.stop();
+
+      const results: Array<{ name: string; taskId?: string; txHash?: string; status: string; error?: string }> = [];
+
+      if (result.success) {
+        // Parse N TaskCreated events from the receipt and zip with input names.
+        // Order is preserved: the contract creates tasks in input order, so
+        // logs[k].args.id corresponds to tasks[k] (subject to other events
+        // interleaved — we filter by event name then assume order).
+        const taskCreatedEvents = (result.logs ?? []).filter((l: any) => l.name === 'TaskCreated');
+        for (let i = 0; i < tasks.length; i++) {
+          const task = tasks[i];
+          const evt = taskCreatedEvents[i];
+          const taskId = evt?.args?.id?.toString();
+          if (taskId) {
             results.push({ name: task.name, taskId, txHash: result.txHash, status: 'ok' });
             output.success(`[${i + 1}/${tasks.length}] "${task.name}" created`, { taskId });
           } else {
-            results.push({ name: task.name, status: 'failed', error: result.error });
-            output.error(`[${i + 1}/${tasks.length}] "${task.name}" failed: ${result.error}`);
-            if (!argv.continueOnError) break;
+            // Receipt was successful but we couldn't match an event for this
+            // index. Treat as soft-warning rather than failure since the tx
+            // landed; the operator can verify on-chain.
+            results.push({ name: task.name, txHash: result.txHash, status: 'ok-no-event' });
+            output.warn(`[${i + 1}/${tasks.length}] "${task.name}" — tx succeeded but TaskCreated event not parsed at index ${i}`);
           }
-        } catch (err: any) {
-          spin.stop();
-          results.push({ name: task.name, status: 'failed', error: err.message });
-          output.error(`[${i + 1}/${tasks.length}] "${task.name}" failed: ${err.message}`);
-          if (!argv.continueOnError) break;
+        }
+      } else {
+        // Whole batch reverted — record per-task failure with the same reason.
+        // continueOnError is now a soft hint: with batch-atomic semantics it
+        // doesn't change behavior on a single-tx revert. For per-task
+        // continue-on-error flow, callers should split the batch client-side.
+        for (const task of tasks) {
+          results.push({ name: task.name, status: 'failed', error: result.error });
+        }
+        output.error(`Batch failed atomically: ${result.error}`);
+        if (argv.continueOnError) {
+          output.warn(`--continue-on-error has no effect on atomic batch reverts. To bypass a bad task, split the input and retry.`);
         }
       }
 
       // Summary
-      const succeeded = results.filter(r => r.status === 'ok').length;
+      const succeeded = results.filter(r => r.status === 'ok' || r.status === 'ok-no-event').length;
       const failed = results.filter(r => r.status === 'failed').length;
 
       if (output.isJsonMode()) {
-        output.json({ results, total: tasks.length, succeeded, failed });
+        output.json({
+          results,
+          total: tasks.length,
+          succeeded,
+          failed,
+          txHash: result.txHash,
+          atomic: true,
+        });
       } else {
         console.log('');
-        output.info(`Batch complete: ${succeeded} succeeded, ${failed} failed out of ${tasks.length}`);
+        output.info(
+          `Batch complete (atomic): ${succeeded} succeeded, ${failed} failed out of ${tasks.length}` +
+            (result.txHash ? `  tx ${result.txHash}` : ''),
+        );
       }
 
       if (failed > 0) process.exit(2);
