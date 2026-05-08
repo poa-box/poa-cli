@@ -54,6 +54,31 @@ describe('parseSubscriptionsFile — Task #513 schema', () => {
     expect(file?.subscriptions[0].matchCount).toBe(0);
     // lastMatchAt defaults to null
     expect(file?.subscriptions[0].lastMatchAt).toBeNull();
+    // lastMatchedLessonId defaults to null (Q4 peer-poll resolution)
+    expect(file?.subscriptions[0].lastMatchedLessonId).toBeNull();
+  });
+
+  it('preserves lastMatchedLessonId when provided (Q4 peer-poll: id-based match window)', () => {
+    const raw = JSON.stringify({
+      version: 1,
+      subscriptions: [
+        {
+          id: 'a',
+          docId: 'pop.brain.shared',
+          filter: { tags: ['paymaster'] },
+          lastMatchedLessonId: 'hb-697-vigil-hb-593-ack-...-1778249252',
+          lastMatchAt: 1778249252,
+          matchCount: 3,
+        },
+      ],
+    });
+    const { result, file } = parseSubscriptionsFile(raw);
+    expect(result.ok).toBe(true);
+    expect(file?.subscriptions[0].lastMatchedLessonId).toBe(
+      'hb-697-vigil-hb-593-ack-...-1778249252',
+    );
+    expect(file?.subscriptions[0].lastMatchAt).toBe(1778249252);
+    expect(file?.subscriptions[0].matchCount).toBe(3);
   });
 
   it('rejects duplicate ids', () => {

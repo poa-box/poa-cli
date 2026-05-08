@@ -44,17 +44,30 @@ export interface Subscription {
   filter: SubscriptionFilter;
   /**
    * Surface priority for matched events. Default 0 (above HIGH/MEDIUM).
-   * Q1 in the HB#595 peer-poll: whether to use new key PRIORITY_0 or
-   * reuse CRITICAL — CLI integration layer resolves; this layer just
+   * Per Q1 peer-poll resolution (sentinel HB#968): new key PRIORITY_0
+   * above HIGH; CRITICAL reserved for system-critical (gas-empty,
+   * daemon-down). CLI integration layer resolves; this layer just
    * carries the agent's stated priority.
    */
   priority?: number;
-  /** Optional override for drift threshold (default 10 HB cycles). */
+  /** Optional override for drift threshold. Default 50 HB cycles
+   *  (~12.5h at 15-min cadence). Picked to be sane-default for
+   *  slow-moving topics; fast-moving subscriptions can override
+   *  explicitly. Per sentinel HB#968 META. */
   driftThreshold?: number;
   /** Updated by the triage layer; total cumulative matches observed. */
   matchCount?: number;
-  /** Updated by the triage layer; unix-seconds timestamp of last match. */
+  /** Updated by the triage layer; unix-seconds timestamp of last match.
+   *  Used for human-readable drift-age display + as fallback when
+   *  lastMatchedLessonId is null. */
   lastMatchAt?: number | null;
+  /** Updated by the triage layer; lesson id of the most recent match.
+   *  PRIMARY state-tracking field for "match window only-new" semantics
+   *  (Q4 peer-poll resolution per sentinel HB#968). Lesson IDs are
+   *  deterministic + comparable; timestamp comparison fights clock skew
+   *  + gossipsub delays + Automerge merge ordering. Reset to null on
+   *  filter-widening edits (the editing CLI handles the reset). */
+  lastMatchedLessonId?: string | null;
   /** Set at create time. Used for drift-age calculation. */
   createdAt?: number;
 }
@@ -156,6 +169,8 @@ export function parseSubscriptionsFile(raw: string): { result: ValidationResult;
       driftThreshold: typeof s.driftThreshold === 'number' ? s.driftThreshold : undefined,
       matchCount: typeof s.matchCount === 'number' ? s.matchCount : 0,
       lastMatchAt: typeof s.lastMatchAt === 'number' ? s.lastMatchAt : null,
+      lastMatchedLessonId:
+        typeof s.lastMatchedLessonId === 'string' ? s.lastMatchedLessonId : null,
       createdAt: typeof s.createdAt === 'number' ? s.createdAt : undefined,
     });
   }
