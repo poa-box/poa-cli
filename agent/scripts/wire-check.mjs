@@ -23,7 +23,8 @@
 // Should be added as a CI check + run periodically as a brain-lesson trigger.
 
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname, normalize } from 'node:path';
+import { execSync } from 'node:child_process';
 
 const ROOT = 'src/commands';
 
@@ -94,6 +95,41 @@ function checkDomain(domain) {
   return { domain, indexExists: true, unwired, wired, total: tsFiles.length };
 }
 
+// HB#986: dangling-import check (tracked-imports-untracked-source pattern).
+//
+// Counterpart to the orphan-tool check above. Catches the inverse failure mode
+// where a committed .ts file imports from a relative path whose target exists
+// on disk but was never `git add`-ed. Local builds pass; fresh clones fail with
+// TS2307 module-not-found. Pattern documented in HB#985 brain.shared lesson.
+function checkDanglingImports() {
+  const tracked = execSync('git ls-files src/', { encoding: 'utf8' })
+    .trim()
+    .split('\n')
+    .filter(Boolean);
+  const trackedSet = new Set(tracked);
+  const importRegex = /from\s+['"](\.\.?\/[^'"]+)['"]/g;
+  const violations = [];
+
+  for (const f of tracked) {
+    if (!f.endsWith('.ts')) continue;
+    let body;
+    try { body = readFileSync(f, 'utf8'); } catch { continue; }
+    for (const m of body.matchAll(importRegex)) {
+      const imp = m[1];
+      const baseDir = dirname(f);
+      const resolvedBase = normalize(join(baseDir, imp));
+      const candidates = [resolvedBase, resolvedBase + '.ts', resolvedBase + '/index.ts'];
+      const isTracked = candidates.some((c) => trackedSet.has(c));
+      if (isTracked) continue;
+      const existingOnDisk = candidates.find((c) => existsSync(c));
+      if (existingOnDisk) {
+        violations.push({ source: f, importPath: imp, resolvedTo: existingOnDisk });
+      }
+    }
+  }
+  return violations;
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const domains = listDomains();
@@ -102,14 +138,17 @@ function main() {
   const totalUnwired = results.reduce((sum, r) => sum + r.unwired.length, 0);
   const totalWired = results.reduce((sum, r) => sum + r.wired.length, 0);
 
+  const danglingImports = checkDanglingImports();
+
   if (args.json) {
     console.log(JSON.stringify({
-      summary: { totalUnwired, totalWired, domains: domains.length },
+      summary: { totalUnwired, totalWired, totalDanglingImports: danglingImports.length, domains: domains.length },
       results,
+      danglingImports,
     }, null, 2));
   } else {
     console.log(`\n  wire-check: ${totalWired} CLI handlers wired across ${domains.length} domains`);
-    console.log(`  ${totalUnwired === 0 ? '✓ NO unwired CLI handlers' : `⚠️  ${totalUnwired} UNWIRED handlers found:`}\n`);
+    console.log(`  ${totalUnwired === 0 ? '✓ NO unwired CLI handlers' : `⚠️  ${totalUnwired} UNWIRED handlers found:`}`);
     for (const r of results) {
       if (r.unwired.length > 0) {
         console.log(`  src/commands/${r.domain}/`);
@@ -118,16 +157,27 @@ function main() {
         }
       }
     }
-    if (totalUnwired === 0) {
-      console.log('  All CLI handlers are wired into their domain index.ts. No orphans detected.\n');
+    console.log(`  ${danglingImports.length === 0 ? '✓ NO dangling imports' : `⚠️  ${danglingImports.length} DANGLING imports (committed code → untracked source):`}`);
+    for (const v of danglingImports) {
+      console.log(`    ⚠️  ${v.source} → '${v.importPath}' (file exists at ${v.resolvedTo} but is not git-tracked)`);
+    }
+    console.log();
+    if (totalUnwired === 0 && danglingImports.length === 0) {
+      console.log('  All CLI handlers are wired and all relative imports resolve to tracked files. Repo is clean.\n');
     } else {
-      console.log(`\n  Fix: import the handler in src/commands/<domain>/index.ts + add a .command() registration.`);
-      console.log(`  Pattern n=4 across HB#670/#613/#614/#714/#716 demonstrates this is a recurring class.`);
-      console.log(`  Reference: HB#717 brain.shared lesson "wire-check.mjs hygiene script shipped".\n`);
+      if (totalUnwired > 0) {
+        console.log(`  Fix unwired: import the handler in src/commands/<domain>/index.ts + add a .command() registration.`);
+        console.log(`  Pattern n=4 across HB#670/#613/#614/#714/#716 demonstrates this is a recurring class.`);
+      }
+      if (danglingImports.length > 0) {
+        console.log(`  Fix dangling: \`git add\` the listed files. Pattern n=2 surfaced HB#985 (vote/simulate.ts, lib/x402.ts).`);
+      }
+      console.log(`  Reference: brain.shared HB#717 (wire-check) + HB#985 (dangling-imports).\n`);
     }
   }
 
-  process.exit(args.strict && totalUnwired > 0 ? 1 : 0);
+  const hasErrors = totalUnwired > 0 || danglingImports.length > 0;
+  process.exit(args.strict && hasErrors ? 1 : 0);
 }
 
 main();
