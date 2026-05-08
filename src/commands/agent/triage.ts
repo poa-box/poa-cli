@@ -13,10 +13,10 @@ import * as output from '../../lib/output';
 import {
   loadSubscriptions,
   saveSubscriptions,
+  evaluateSubscriptions,
   type Subscription,
   type SubscriptionsFile,
 } from '../../lib/subscriptions';
-import { matchesFilter } from '../../lib/subscription-filter';
 
 interface TriageArgs {
   org?: string;
@@ -79,25 +79,20 @@ const FETCH_TRIAGE_DATA = `
 `;
 
 /**
- * Process per-agent subscriptions (Task #513, HB#598).
+ * Process per-agent subscriptions (Task #513, HB#598; refactored
+ * HB#600 per argus HB#702-correction findings 1-3).
  *
- * Reads ~/.pop-agent/brain/Config/subscriptions.json, evaluates each
- * subscription's filter against the named brain doc, and returns:
- *   - PRIORITY_0 actions for new matches (or all matches if allMatches=true)
- *   - WARN actions for subscriptions in drift state
- *   - The mutated subscriptions file (caller saves atomically)
+ * I/O wrapper around evaluateSubscriptions() (pure function in
+ * src/lib/subscriptions.ts). Steps:
+ *   1. Load subscriptions.json
+ *   2. Read each unique brain doc ONCE (Q3 cache-per-watch-call)
+ *   3. Read agent-config.json heartbeatIntervalMinutes (drift cadence)
+ *   4. Delegate to evaluateSubscriptions for the pure logic
+ *   5. Caller saves atomically when mutated
  *
- * Q1 PRIORITY_0 (sentinel HB#968): new key above CRITICAL; CRITICAL
- *   reserved for system-critical (gas-empty, daemon-down).
- * Q3 cache-per-watch-call: read each unique docId ONCE; pass cached
- *   {[docId]: doc} to filter evaluator. With 6 standard docs × ~5 subs
- *   that's 6 reads + 30 in-memory evals per HB.
- * Q4 only-new: lastMatchedLessonId is the deterministic state field.
- *   Match window = lessons appearing AFTER lastMatchedLessonId in the
- *   doc's natural order. allMatches=true bypasses the gate.
- *
- * Best-effort: any per-subscription failure (bad docId, missing doc,
- * filter eval throw) is logged + skipped. Other subs still process.
+ * Best-effort isolation: per-subscription failures inside
+ * evaluateSubscriptions are bounded; per-doc read failures are
+ * skipped silently here.
  */
 async function processSubscriptions(opts: {
   allMatches: boolean;
@@ -110,8 +105,24 @@ async function processSubscriptions(opts: {
     return { actions: [], updatedFile: null };
   }
 
-  const actions: Action[] = [];
-  const docCache = new Map<string, any>();
+  // Read heartbeat cadence from agent-config.json (per argus HB#702-correction
+  // finding 2: don't hardcode 15-min cycle). Falls back to 15 if missing.
+  let heartbeatIntervalMinutes = 15;
+  try {
+    const configPath = path.join(
+      __dirname,
+      '..', '..', '..', 'agent', 'brain', 'Config', 'agent-config.json',
+    );
+    if (fs.existsSync(configPath)) {
+      const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (typeof cfg.heartbeatIntervalMinutes === 'number') {
+        heartbeatIntervalMinutes = cfg.heartbeatIntervalMinutes;
+      }
+    }
+  } catch {
+    // Config read is best-effort; default 15 is sane.
+  }
+
   // Doc-heads manifest gates the brain-read attempt — if a doc has never
   // been written to locally, readBrainDoc would still work but cost
   // helia setup time for no payoff.
@@ -122,13 +133,10 @@ async function processSubscriptions(opts: {
       manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
     }
   } catch {
-    // Best-effort manifest read; missing manifest = process all subs but
-    // brain reads may fail individually.
+    // Best-effort manifest read.
   }
 
-  // Lazy-load brain.ts to avoid the helia/automerge module-load cost
-  // when no subscriptions exist (matches the existing retro/brainstorm
-  // patterns at lines 215, 276, 348).
+  // Lazy-load brain.ts (matches retro/brainstorm patterns at lines 215, 276, 348).
   let readBrainDoc: any = null;
   let stopBrainNode: any = null;
   const uniqueDocIds = Array.from(new Set(file.subscriptions.map((s) => s.docId)));
@@ -144,8 +152,9 @@ async function processSubscriptions(opts: {
 
   try {
     // Q3: read each unique docId ONCE (cache-per-watch-call).
+    const docCache = new Map<string, any>();
     for (const docId of uniqueDocIds) {
-      if (manifest[docId] == null) continue; // No local head; skip silently.
+      if (manifest[docId] == null) continue;
       try {
         const { doc } = await readBrainDoc(docId);
         docCache.set(docId, doc);
@@ -154,90 +163,16 @@ async function processSubscriptions(opts: {
       }
     }
 
-    const nowSecs = Math.floor(Date.now() / 1000);
-    let mutated = false;
+    // Delegate pure logic to evaluateSubscriptions.
+    const { actions: evalActions, mutated } = evaluateSubscriptions(file, docCache, {
+      allMatches: opts.allMatches,
+      heartbeatIntervalMinutes,
+    });
 
-    for (const sub of file.subscriptions) {
-      const doc = docCache.get(sub.docId);
-      if (doc == null) continue;
-      const lessons: any[] = Array.isArray(doc?.lessons) ? doc.lessons : [];
-      if (lessons.length === 0) continue;
-
-      // Filter lessons + sort by timestamp asc so "latest matched id" is
-      // the LAST in the matched array.
-      const matched = lessons
-        .filter((l) => l && !l.removed && l.id && matchesFilter(sub.filter, l))
-        .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
-
-      if (matched.length === 0) {
-        // Drift detection (Q4-adjacent): warn if 0 matches over driftThreshold HBs.
-        const driftThresholdHB = sub.driftThreshold ?? 50;
-        if (sub.lastMatchAt != null && sub.createdAt != null) {
-          const ageSecs = nowSecs - sub.lastMatchAt;
-          const cycles = Math.floor(ageSecs / 900); // 15-min HB cadence
-          if (cycles >= driftThresholdHB) {
-            actions.push({
-              priority: 'INFO',
-              type: 'subscription-drift',
-              detail: `Subscription "${sub.id}" has 0 matches in last ${cycles} HB cycles (threshold: ${driftThresholdHB}). Review or remove?`,
-              data: { subscriptionId: sub.id, driftCycles: cycles },
-            });
-          }
-        }
-        continue;
-      }
-
-      // Q4 only-new gate: filter to lessons newer than lastMatchedLessonId.
-      // "Newer" = appears later in the timestamp-asc sort. We compare by
-      // looking up the index of lastMatchedLessonId in matched and
-      // surfacing only items after it.
-      let newMatches = matched;
-      if (!opts.allMatches && sub.lastMatchedLessonId) {
-        const lastIdx = matched.findIndex((l) => l.id === sub.lastMatchedLessonId);
-        if (lastIdx >= 0) {
-          newMatches = matched.slice(lastIdx + 1);
-        }
-        // If the lastMatchedLessonId is no longer in the doc (removed,
-        // or filter widened to include older lessons), surface ALL matches
-        // — newMatches stays as `matched`.
-      }
-
-      if (newMatches.length === 0) continue;
-
-      // Update subscription state with the most recent matched id +
-      // increment cumulative matchCount. The doc-cache snapshot is the
-      // basis; mutated=true triggers atomic write-back.
-      const latestMatched = newMatches[newMatches.length - 1];
-      sub.lastMatchedLessonId = latestMatched.id;
-      sub.lastMatchAt = latestMatched.timestamp ?? nowSecs;
-      sub.matchCount = (sub.matchCount ?? 0) + newMatches.length;
-      mutated = true;
-
-      const priority = sub.priority === 0 ? 'PRIORITY_0' : 'PRIORITY_0';
-      // (priority is always PRIORITY_0 in v1; keeping the field allows
-      // future v2 to surface lower-priority subscriptions as HIGH/MEDIUM)
-
-      const titles = newMatches
-        .map((l) => l.title)
-        .filter(Boolean)
-        .slice(0, 3); // Cap at 3 titles to keep detail readable
-      const moreCount = newMatches.length - titles.length;
-      const titleStr = titles.join('; ') + (moreCount > 0 ? ` (+${moreCount} more)` : '');
-
-      actions.push({
-        priority,
-        type: 'subscription-match',
-        detail: `Subscription "${sub.id}" matched ${newMatches.length} lesson(s): ${titleStr}`,
-        data: {
-          subscriptionId: sub.id,
-          docId: sub.docId,
-          lessonIds: newMatches.map((l) => l.id),
-          matchCount: sub.matchCount,
-        },
-      });
-    }
-
-    return { actions, updatedFile: mutated ? file : null };
+    return {
+      actions: evalActions as Action[],
+      updatedFile: mutated ? file : null,
+    };
   } finally {
     if (stopBrainNode) {
       try {
@@ -687,7 +622,14 @@ export const triageHandler = {
         }
       }
 
-      // Sort actions by priority. PRIORITY_0 sits above CRITICAL.
+      // Sort actions by priority. PRIORITY_0 sits above CRITICAL for
+      // OUTPUT ORDER (user-requested matches surface first in --json/text).
+      // ACTION URGENCY is a separate concern: CRITICAL is action-blocking
+      // (gas-empty, daemon-down, post-rejection rework); PRIORITY_0 is
+      // informational ("you asked to know"). Operators reading triage
+      // output should still act on CRITICAL items first regardless of
+      // position in the sorted action list. Per argus HB#702-correction
+      // finding 4 documentation clarification.
       const priorityOrder = { PRIORITY_0: -1, CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4 };
       actions.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
 

@@ -17,6 +17,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { matchesFilter, type LessonForMatch } from './subscription-filter';
 
 /**
  * v1 filter language per task #513 [CONSTRAINTS]: exact-match string
@@ -259,6 +260,132 @@ export function loadSubscriptions(filePath?: string): { result: ValidationResult
     return { result, file: { version: 1, subscriptions: [] } };
   }
   return { result, file };
+}
+
+/**
+ * Pure-function subscription evaluator (Task #513, HB#600 refactor per
+ * argus HB#702-correction finding 3).
+ *
+ * Inputs: subscriptions file + cached docs (read once by caller, e.g.,
+ * triage.ts processSubscriptions wrapper) + opts (allMatches override,
+ * heartbeatIntervalMinutes for drift detection cycle calc — fixes
+ * argus HB#702-correction finding 2).
+ *
+ * Outputs: evaluation actions (subscription-match PRIORITY_0 + drift
+ * INFO) + mutated flag (caller saves atomically when true).
+ *
+ * The match logic, only-new gating (Q4 lastMatchedLessonId), drift
+ * detection, priority assignment, and mutation tracking all live here
+ * as pure logic — testable without mocking helia/brain CRDT.
+ */
+export interface EvaluateOpts {
+  /** Override Q4 only-new gate; surface every match each call. Default false. */
+  allMatches?: boolean;
+  /** HB cadence in minutes for drift cycle calc. Default 15. */
+  heartbeatIntervalMinutes?: number;
+  /** Override "now" for deterministic testing. Default Date.now()/1000. */
+  nowSecs?: number;
+}
+
+export interface EvaluateAction {
+  priority: 'PRIORITY_0' | 'INFO';
+  type: 'subscription-match' | 'subscription-drift';
+  detail: string;
+  data: any;
+}
+
+export function evaluateSubscriptions(
+  file: SubscriptionsFile,
+  docs: Map<string, { lessons?: any[] } | undefined>,
+  opts: EvaluateOpts = {},
+): { actions: EvaluateAction[]; mutated: boolean } {
+  const allMatches = !!opts.allMatches;
+  const heartbeatIntervalMinutes = opts.heartbeatIntervalMinutes ?? 15;
+  const nowSecs = opts.nowSecs ?? Math.floor(Date.now() / 1000);
+  const cycleSecs = heartbeatIntervalMinutes * 60;
+
+  const actions: EvaluateAction[] = [];
+  let mutated = false;
+
+  for (const sub of file.subscriptions) {
+    const doc = docs.get(sub.docId);
+    if (!doc) continue;
+    const lessons: any[] = Array.isArray(doc.lessons) ? doc.lessons : [];
+    if (lessons.length === 0) continue;
+
+    // Filter + sort by timestamp asc so latest matched id is the LAST entry.
+    const matched = lessons
+      .filter((l) => l && !l.removed && l.id && matchesFilter(sub.filter, l as LessonForMatch))
+      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+
+    if (matched.length === 0) {
+      // Drift detection: WARN-equivalent INFO when 0 matches over driftThreshold cycles.
+      const driftThresholdHB = sub.driftThreshold ?? 50;
+      if (sub.lastMatchAt != null) {
+        const ageSecs = nowSecs - sub.lastMatchAt;
+        const cycles = Math.floor(ageSecs / cycleSecs);
+        if (cycles >= driftThresholdHB) {
+          actions.push({
+            priority: 'INFO',
+            type: 'subscription-drift',
+            detail: `Subscription "${sub.id}" has 0 matches in last ${cycles} HB cycles (threshold: ${driftThresholdHB}). Review or remove?`,
+            data: { subscriptionId: sub.id, driftCycles: cycles },
+          });
+        }
+      }
+      continue;
+    }
+
+    // Q4 only-new gate: surface only lessons newer than lastMatchedLessonId.
+    let newMatches = matched;
+    if (!allMatches && sub.lastMatchedLessonId) {
+      const lastIdx = matched.findIndex((l) => l.id === sub.lastMatchedLessonId);
+      if (lastIdx >= 0) {
+        newMatches = matched.slice(lastIdx + 1);
+      }
+      // If lastMatchedLessonId is no longer in the doc (removed, or filter
+      // widened to include older lessons), surface ALL matches — newMatches
+      // stays as `matched`.
+    }
+
+    if (newMatches.length === 0) continue;
+
+    // Update subscription state with the most recent matched id +
+    // increment cumulative matchCount. Mutated=true triggers atomic write-back.
+    const latestMatched = newMatches[newMatches.length - 1];
+    sub.lastMatchedLessonId = latestMatched.id;
+    sub.lastMatchAt = latestMatched.timestamp ?? nowSecs;
+    sub.matchCount = (sub.matchCount ?? 0) + newMatches.length;
+    mutated = true;
+
+    // Per Q1 peer-poll resolution: PRIORITY_0 is the user-elevated key.
+    // Future v2 may surface lower-priority subscriptions as HIGH/MEDIUM
+    // by reading sub.priority; for v1 all matches surface as PRIORITY_0.
+    // TODO: v2 multi-priority subscription levels (use sub.priority).
+    const priority: 'PRIORITY_0' = 'PRIORITY_0';
+
+    const titles = newMatches
+      .map((l) => l.title)
+      .filter(Boolean)
+      .slice(0, 3);
+    const moreCount = newMatches.length - titles.length;
+    const titleStr =
+      titles.join('; ') + (moreCount > 0 ? ` (+${moreCount} more)` : '');
+
+    actions.push({
+      priority,
+      type: 'subscription-match',
+      detail: `Subscription "${sub.id}" matched ${newMatches.length} lesson(s): ${titleStr}`,
+      data: {
+        subscriptionId: sub.id,
+        docId: sub.docId,
+        lessonIds: newMatches.map((l) => l.id),
+        matchCount: sub.matchCount,
+      },
+    });
+  }
+
+  return { actions, mutated };
 }
 
 /**
