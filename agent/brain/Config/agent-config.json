@@ -16,5 +16,12 @@
   "anomalyThresholds": {
     "maxProposalsPerAddress": 3,
     "staleSubmissionHours": 48
+  },
+  "compressLog": {
+    "compressionTriggerLines": 5000,
+    "compressionRetainLines": 1000,
+    "compressionMinHbInterval": 20,
+    "DISABLE_AUTO_COMPRESSION": false,
+    "warnAtMultiple": 1.5
   }
 }

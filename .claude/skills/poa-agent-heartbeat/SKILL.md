@@ -399,6 +399,74 @@ Cross-references:
 
 ---
 
+## Step 0.6: Heartbeat-log size check (Task #512, HB#697+)
+
+After session-bootstrap, check the per-agent heartbeat-log file size.
+Long logs slow context loading + retrieval; the `compress-log` skill
+provides voluntary-default with involuntary-fallback compression per
+Letta-pattern adapted by argus HB#675 R6.
+
+```bash
+LOG="$HOME/.pop-agent/brain/Memory/heartbeat-log.md"
+[ -f "$LOG" ] && wc -l < "$LOG"
+```
+
+Read `agent/brain/Config/agent-config.json` `compressLog` section:
+- `compressionTriggerLines` (default 5000) — line count above which the
+  log is candidate for compression
+- `compressionRetainLines` (default 1000) — verbatim retention window
+- `compressionMinHbInterval` (default 20) — minimum HBs between
+  compression runs
+- `DISABLE_AUTO_COMPRESSION` (default false) — operator opt-out
+- `warnAtMultiple` (default 1.5) — emit warning at this multiple of
+  trigger threshold
+
+### Behavior
+
+- **Below trigger threshold** → no-op, continue to Step 1.
+- **Above trigger × warnAtMultiple** AND `DISABLE_AUTO_COMPRESSION=true`
+  → emit one-line warning to your text output (NOT a brain.shared
+  lesson; this is operator-visible only):
+  `compress-log: heartbeat-log at N lines (M× threshold); /compress-log to compress manually`
+- **Above trigger threshold** AND last-compression > `compressionMinHbInterval`
+  HBs ago AND `DISABLE_AUTO_COMPRESSION=false` → invoke the
+  `compress-log` skill via the Skill tool. Auto-compression respects
+  the same checkpoint + verification safety as manual.
+- **Above trigger threshold** AND last-compression too recent → no-op
+  with a quiet log line (not a warning).
+
+### Why this exists at Step 0.6
+
+This is a per-agent local-state check that runs BEFORE triage so the
+auto-compression doesn't fire mid-deliberation. Compress-log creates a
+checkpoint + may take 1-2 min wall-clock for an LLM-driven prose
+summarization pass; running it before Step 1 keeps the rest of the HB
+deterministic.
+
+If compress-log auto-fires this HB, that IS the substantive action of
+the HB — Step 1 still runs but the substantive-work check (Step 2.5)
+counts the compression as primary action. Don't double-count by also
+shipping a feature.
+
+### Failure modes + recovery
+
+- Skill invocation fails → emit warning, continue to Step 1, re-attempt
+  next HB. Never block the heartbeat on compression failure.
+- Disk full / write error during compression → compress-log internal
+  safety restores from checkpoint; the live log is unchanged. Continue.
+- Threshold accidentally set too low → emits warnings every HB; operator
+  bumps via `agent-config.json` edit.
+
+### Provenance
+
+- Task #512 (CLI Infrastructure, 16 PT)
+- Skill at `.claude/skills/compress-log/SKILL.md` (HB#696 step 1/4)
+- Config keys at `agent/brain/Config/agent-config.json → compressLog`
+- Argus HB#675 R6 voluntary-default + involuntary-fallback refinement
+- Source pattern: Letta IMemoryManager auto-compression
+
+---
+
 ## Step 1: Triage
 
 Run the triage command — it synthesizes all observations into a prioritized
