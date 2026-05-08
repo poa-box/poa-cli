@@ -286,3 +286,126 @@ landscape).
 - HB#977: integration tests via Foundry
 - HB#978: 3-agent sign-off via brain.shared
 - Deploy: requires Hudson admin wallet — surfaced separately, never wait.
+
+---
+
+# REVISION HB#976 — Q1 SAFETY FIX (per argus HB#704 + vigil HB#602)
+
+## What was wrong
+
+The original File 3 above (HybridVotingProposals.sol) used **caller-passed eligibility WITHOUT an on-chain safety floor**. My HB#974 framing claimed under-count was just a "more achievable speed knob." Argus HB#704 walked the math:
+
+```
+snapshotEligibleVoters = 2 (caller-passed)
+actual fleet = 3 (on-chain truth)
+threshold = (2 + 1) / 2 = 1
+→ Single voter triggers early-close
+→ But 1 of 3 actual eligible ≠ "majority of eligible voters"
+→ BREAKS Proposal #60 async-majority invariant
+```
+
+Vigil HB#601 initially endorsed caller-passed under a "fleet trust model" framing. Vigil HB#602 then AMENDED to align with argus: under-count is **intent-INDEPENDENT** — even an honest miscount (e.g., a hat just added that the off-chain CLI didn't see) violates the invariant.
+
+This is a SAFETY issue, not a UX issue. The original design conditioned safety on intent; the corrected design must be intent-independent.
+
+## Corrected design shape
+
+`max(callerEligibleHint, onChainHatBearerCount)` as the snapshot:
+- **Over-count** (caller hint > on-chain truth) → contract honors caller's higher value (conservative; harder to early-close — SAFE)
+- **Under-count** (caller hint < on-chain truth) → contract overrides with on-chain truth (preserves invariant — SAFE)
+- **Zero hint** → contract uses on-chain truth alone (simplest default — SAFE)
+
+Caller can never make early-close LESS safe than on-chain truth would.
+
+## Revised File 3 contract surface
+
+```solidity
+// Existing back-compat call (now with on-chain snapshot opt-in by default)
+function createProposal(...) external {
+    _createProposal(..., 0); // 0 hint = use on-chain truth alone
+}
+
+// Caller can OVER-count for extra safety (e.g., expecting hats added soon)
+function createProposalWithEligibleSnapshot(..., uint64 callerEligibleHint) external {
+    _createProposal(..., callerEligibleHint);
+}
+
+// Explicit OPT-OUT: timer-only proposal (sprint priorities want full window)
+function createProposalLegacyTimerOnly(...) external {
+    _createProposal(..., type(uint64).max); // sentinel: threshold uncrossable
+}
+
+// Internal — enforces the safety floor
+function _createProposal(..., uint64 callerEligibleHint) internal {
+    // ... existing body ...
+    Proposal storage p = ...;
+    if (callerEligibleHint == type(uint64).max) {
+        p.snapshotEligibleVoters = type(uint64).max; // legacy-timer opt-out
+    } else {
+        uint64 onChainTruth = _countUniqueHatBearers(hatIds);
+        p.snapshotEligibleVoters = callerEligibleHint > onChainTruth
+            ? callerEligibleHint
+            : onChainTruth;
+    }
+}
+
+// Counts unique addresses across hatIds via Hats Protocol enumeration
+// Implementation deferred to poa-box/POP impl phase — depends on Hats
+// enumeration capabilities (Hats.getWearers if exposed, OR fleet
+// membership registry contract).
+function _countUniqueHatBearers(uint256[] calldata hatIds)
+    internal view returns (uint64);
+```
+
+## Gas impact assessment (per vigil's HB#601 RPC-load methodology applied to gas)
+
+`_countUniqueHatBearers` is paid ONCE at createProposal:
+- Typical (1-3 hatIds × 3 fleet wearers + dedup): <10k gas
+- At scale (10 hatIds × 100 wearers + linear dedup): ~150k gas
+
+createProposal already costs ~582k gas (per HB#502 sponsored-tx debugging). Adding 10-150k = +2-25%. Acceptable for the safety win.
+
+vote() and announceWinner() costs UNCHANGED — `snapshotEligibleVoters` is just read.
+
+## CLI integration revision (revised section in original diff)
+
+`computeEligibleVotersSnapshot` becomes ADVISORY HINT only:
+
+```typescript
+// In src/commands/vote/create.ts:
+const callerHint = await computeEligibleVotersSnapshot(args.hatIds, hatsContract);
+// Caller can pass 0 to skip the hint (contract uses on-chain truth alone)
+// Caller can pass anyValue >= callerHint for safer over-count
+const tx = await hybridVoting.createProposalWithEligibleSnapshot(
+    metadata, minutesDuration, numOptions, batches, hatIds, callerHint,
+);
+```
+
+Or simply:
+```typescript
+// Cleanest: always pass 0; let contract compute on-chain truth
+const tx = await hybridVoting.createProposal(metadata, ..., hatIds);
+// (back-compat path now defaults to on-chain snapshot per revised design)
+```
+
+## What stays unchanged from HB#974 reference diff
+
+- File 1 HybridVoting.sol Proposal struct fields (uniqueVoterCount, snapshotEligibleVoters): UNCHANGED
+- File 1 isExpiredOrEarlyClose modifier logic: UNCHANGED
+- File 1 isEarlyCloseEligible external view: UNCHANGED
+- File 2 HybridVotingCore.sol vote() increment + _isEarlyCloseEligible: UNCHANGED
+- Storage layout (uint64 packing into slot 0): UNCHANGED
+
+The revision is ONLY in File 3 (HybridVotingProposals.sol) `_createProposal` and the new `_countUniqueHatBearers` internal.
+
+## Trust-model upgrade noted
+
+Original design conditioned safety on caller intent (fleet-internal trust). Revised design is intent-INDEPENDENT — honest miscounts also can't violate the invariant. Safer for v2 scaling to less-trusted callers (per vigil HB#601 caveat).
+
+## Acknowledgment
+
+Argus HB#704 + vigil HB#602 = textbook RULE #21 cheapest-engagement-point catch. Cost: ~3 min × 2 reviewers + ~10 min sentinel re-design + this revision section. Avoids: shipping the broken invariant + needing a contract upgrade (potentially weeks of dev + governance + deploy time + on-chain risk).
+
+The original design was wrong on Q1; argus + vigil identified the safety break BEFORE any contract code was written. Both peer-poll engagements were substantive (line-by-line diff walk-through, not rubber-stamp). vigil HB#602 self-correction (their HB#601 anchored on adversarial framing; argus's HB#704 surfaced the broader intent-independent issue) demonstrates the same META-discipline they applied to the #513 4-finding-fix self-correction.
+
+Per RULE #21 + Hudson HB#972 directive: design phase converged on safer-by-construction shape. Implementation phase resumes from this revised spec; argus HB#704 explicit ack of safety-fixed shape closes the Q1 peer-poll. Q2 (on-chain view fn) was endorsed unchanged.
