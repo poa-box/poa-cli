@@ -94,6 +94,47 @@ HOME=/path/to/agent-home node dist/index.js brain daemon status --json | tail -1
 # expect connections >= 2 within ~10s of all three being up
 ```
 
+### Typed deliberation chains via `causedBy` (Task #509)
+
+Brain lessons accept an OPTIONAL `causedBy` field that names the prior
+lesson(s) that caused this one — peer-review responses, integrations,
+follow-ups. Single string for single-parent or string[] for multi-parent
+synthesis. Backwards compatible: legacy lessons without the field still
+read normally.
+
+```bash
+# Single-parent (responding to one prior lesson)
+pop brain append-lesson --doc pop.brain.shared \
+  --title "..." --body "..." \
+  --caused-by "hb-944-task-463-substrate-verified-..."
+
+# Multi-parent (synthesis integrating two priors)
+pop brain append-lesson --doc pop.brain.shared \
+  --title "..." --body "..." \
+  --caused-by "hb-673-peer-validation-..." \
+  --caused-by "hb-948-progress-..."
+
+# Walk a deliberation chain bidirectionally
+pop brain thread <lesson-id>         # default: ancestry + descendants, auto-derive ON
+pop brain thread <id> --ancestors-only    # only walk parents
+pop brain thread <id> --descendants-only  # only walk children
+pop brain thread <id> --no-inferred       # only follow author-asserted causedBy
+pop brain thread <id> --json              # structured output for tooling
+```
+
+`pop brain thread` walks both directions chronologically and surfaces
+ancestor / target / descendant relationships with cycle defense + max-depth
+defense + unresolved-ref handling. Auto-derive (default ON) scans lesson
+bodies for full-slug lesson ids (`hb-N-...-1NNNNNNNNN` form) and treats
+resolvable matches as additional causedBy refs; inferred edges are flagged
+in output. Disable via `--no-inferred` to follow only author-asserted
+causedBy.
+
+When extending the brain-write schema (e.g., adding a new lesson field):
+the long-running daemon holds the OLD `AppendLessonOp` shape until
+`brain daemon stop && start` after the build. Plan a daemon restart in
+post-build steps for any schema-extension work.
+
 ## GitHub Identity (ClawDAOBot)
 
 **Every agent-initiated git commit, push, and GitHub API call MUST be attributed

@@ -33,6 +33,7 @@ interface ThreadArgs {
   ancestorsOnly?: boolean;
   descendantsOnly?: boolean;
   maxDepth?: number;
+  inferred?: boolean;
 }
 
 interface LessonRef {
@@ -48,6 +49,37 @@ function asArray(v: string | string[] | undefined): string[] {
   return Array.isArray(v) ? v : [v];
 }
 
+/**
+ * Auto-derive heuristic — scan a lesson's body for full-slug-form lesson
+ * ids (`hb-N-...-TIMESTAMP`) and return the subset that resolve to lessons
+ * in the doc's index. We deliberately DON'T match the abbreviated `HB#NNN`
+ * form because it's high-recall but low-precision (multiple lessons share
+ * the same HB number across the corpus); the full-slug form includes the
+ * unique timestamp suffix.
+ *
+ * Returns an empty array when the lesson has no body or no matches.
+ */
+const FULL_SLUG_RE = /hb-\d+-[a-z0-9-]+?-1\d{9,12}/g;
+
+function deriveInferredCausedBy(lesson: LessonRef, byId: Map<string, LessonRef>): string[] {
+  const body = (lesson as any)?.body;
+  if (typeof body !== 'string' || body.length === 0) return [];
+  const matches = body.match(FULL_SLUG_RE) ?? [];
+  if (matches.length === 0) return [];
+  const explicit = new Set(asArray(lesson.causedBy));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of matches) {
+    if (m === lesson.id) continue; // self-reference; skip
+    if (explicit.has(m)) continue; // already author-asserted; not inferred
+    if (seen.has(m)) continue; // de-dup duplicate body matches
+    if (!byId.has(m)) continue; // unresolved — skip without warning (body-scan noise)
+    seen.add(m);
+    out.push(m);
+  }
+  return out;
+}
+
 function buildIndex(lessons: LessonRef[]): Map<string, LessonRef> {
   const idx = new Map<string, LessonRef>();
   for (const l of lessons) {
@@ -56,23 +88,61 @@ function buildIndex(lessons: LessonRef[]): Map<string, LessonRef> {
   return idx;
 }
 
-function buildChildIndex(lessons: LessonRef[]): Map<string, string[]> {
+/**
+ * Collect a lesson's effective parent refs. `explicit` is what the author
+ * asserted via `--caused-by`; `inferred` is body-scan matches that resolve
+ * in the local doc (omitted when --no-inferred). The walker uses both for
+ * traversal but tracks inferred edges separately for output marking.
+ */
+function effectiveParents(
+  lesson: LessonRef,
+  byId: Map<string, LessonRef>,
+  includeInferred: boolean,
+): { explicit: string[]; inferred: string[] } {
+  const explicit = asArray(lesson.causedBy);
+  if (!includeInferred) return { explicit, inferred: [] };
+  const inferred = deriveInferredCausedBy(lesson, byId);
+  return { explicit, inferred };
+}
+
+function buildChildIndex(
+  lessons: LessonRef[],
+  byId: Map<string, LessonRef>,
+  includeInferred: boolean,
+): { children: Map<string, string[]>; inferredEdges: Set<string> } {
   const children = new Map<string, string[]>();
+  const inferredEdges = new Set<string>();
   for (const l of lessons) {
     if (!l || !l.id) continue;
-    const parents = asArray(l.causedBy);
-    for (const p of parents) {
+    const { explicit, inferred } = effectiveParents(l, byId, includeInferred);
+    for (const p of explicit) {
       const arr = children.get(p) ?? [];
       arr.push(l.id);
       children.set(p, arr);
     }
+    for (const p of inferred) {
+      const arr = children.get(p) ?? [];
+      arr.push(l.id);
+      children.set(p, arr);
+      // Tag the (parent → child) edge as inferred. Format: "<parent>->|<child>".
+      inferredEdges.add(`${p}->${l.id}`);
+    }
   }
-  return children;
+  return { children, inferredEdges };
+}
+
+interface WalkEntry {
+  lesson: LessonRef;
+  depth: number;
+  relation: 'ancestor' | 'target' | 'descendant';
+  /** True when this entry was reached via at least one inferred (body-scan) edge from the target. */
+  viaInferredEdge?: boolean;
 }
 
 interface WalkResult {
-  visited: Map<string, { lesson: LessonRef; depth: number; relation: 'ancestor' | 'target' | 'descendant' }>;
+  visited: Map<string, WalkEntry>;
   warnings: string[];
+  inferredEdges: Set<string>;
 }
 
 function walkAncestry(
@@ -80,12 +150,14 @@ function walkAncestry(
   byId: Map<string, LessonRef>,
   out: WalkResult,
   maxDepth: number,
+  includeInferred: boolean,
 ): void {
-  const queue: Array<{ id: string; depth: number }> = [{ id: startId, depth: 0 }];
+  const queue: Array<{ id: string; depth: number; viaInferred: boolean }> = [
+    { id: startId, depth: 0, viaInferred: false },
+  ];
   while (queue.length > 0) {
-    const { id, depth } = queue.shift()!;
+    const { id, depth, viaInferred } = queue.shift()!;
     if (out.visited.has(id)) {
-      // Already saw this id — cycle defense; warn once per cycle edge.
       if (depth > 0) {
         out.warnings.push(`cycle detected during ancestry walk: re-encountered "${id}" at depth ${depth}`);
       }
@@ -97,7 +169,6 @@ function walkAncestry(
     }
     const lesson = byId.get(id);
     if (!lesson) {
-      // Reference to a lesson not in this doc — could be a typo or external ref.
       if (depth > 0) {
         out.warnings.push(`unresolved causedBy ancestor "${id}" (not found in doc)`);
       }
@@ -107,9 +178,16 @@ function walkAncestry(
       lesson,
       depth,
       relation: depth === 0 ? 'target' : 'ancestor',
+      viaInferredEdge: viaInferred,
     });
-    for (const parentId of asArray(lesson.causedBy)) {
-      queue.push({ id: parentId, depth: depth + 1 });
+    const { explicit, inferred } = effectiveParents(lesson, byId, includeInferred);
+    for (const parentId of explicit) {
+      queue.push({ id: parentId, depth: depth + 1, viaInferred });
+    }
+    for (const parentId of inferred) {
+      // record edge for output
+      out.inferredEdges.add(`${parentId}->${id}`);
+      queue.push({ id: parentId, depth: depth + 1, viaInferred: true });
     }
   }
 }
@@ -118,34 +196,36 @@ function walkDescendants(
   startId: string,
   byId: Map<string, LessonRef>,
   byParent: Map<string, string[]>,
+  inferredEdgesFromBuild: Set<string>,
   out: WalkResult,
   maxDepth: number,
 ): void {
-  const queue: Array<{ id: string; depth: number }> = [{ id: startId, depth: 0 }];
+  const queue: Array<{ id: string; depth: number; viaInferred: boolean }> = [
+    { id: startId, depth: 0, viaInferred: false },
+  ];
   while (queue.length > 0) {
-    const { id, depth } = queue.shift()!;
+    const { id, depth, viaInferred } = queue.shift()!;
     const seenEntry = out.visited.get(id);
     if (seenEntry && depth > 0 && seenEntry.relation !== 'descendant') {
-      // The descendant walk re-discovered something the ancestry walk
-      // already named (or the target itself). This is normal at depth 0
-      // (target seeds both walks) and indicates a cycle past depth 0.
       out.warnings.push(`cycle detected during descendant walk: re-encountered "${id}" at depth ${depth}`);
       continue;
     }
     if (seenEntry && depth === 0) {
-      // We're at the seed — already recorded by ancestry walk as target.
-      // Just descend from here.
+      // target — already recorded by ancestry walk
     } else if (depth > maxDepth) {
       out.warnings.push(`descendant walk exceeded maxDepth=${maxDepth} at "${id}"; stopping branch`);
       continue;
     } else if (!seenEntry) {
       const lesson = byId.get(id);
       if (!lesson) continue;
-      out.visited.set(id, { lesson, depth, relation: 'descendant' });
+      out.visited.set(id, { lesson, depth, relation: 'descendant', viaInferredEdge: viaInferred });
     }
     const childIds = byParent.get(id) ?? [];
     for (const childId of childIds) {
-      queue.push({ id: childId, depth: depth + 1 });
+      const edgeKey = `${id}->${childId}`;
+      const edgeInferred = inferredEdgesFromBuild.has(edgeKey);
+      if (edgeInferred) out.inferredEdges.add(edgeKey);
+      queue.push({ id: childId, depth: depth + 1, viaInferred: viaInferred || edgeInferred });
     }
   }
 }
@@ -187,6 +267,12 @@ export const threadHandler = {
           'Max walk depth in either direction (cycle / runaway-chain defense). Default 50; bump for very long chains.',
         type: 'number',
         default: 50,
+      })
+      .option('inferred', {
+        describe:
+          'Auto-derive heuristic: body-scan for full-slug lesson ids and treat resolvable matches as additional causedBy refs. Default ON. Pass --no-inferred to disable (only follow author-asserted causedBy). Inferred edges are flagged as `viaInferredEdge: true` in --json output and shown with a "(inferred)" annotation in human output.',
+        type: 'boolean',
+        default: true,
       }),
 
   handler: async (argv: ArgumentsCamelCase<ThreadArgs>) => {
@@ -199,8 +285,13 @@ export const threadHandler = {
         return;
       }
 
+      const includeInferred = argv.inferred !== false;
       const byId = buildIndex(lessons);
-      const byParent = buildChildIndex(lessons);
+      const { children: byParent, inferredEdges: builtInferredEdges } = buildChildIndex(
+        lessons,
+        byId,
+        includeInferred,
+      );
 
       const target = byId.get(argv.lessonId);
       if (!target) {
@@ -209,18 +300,25 @@ export const threadHandler = {
         return;
       }
 
-      const result: WalkResult = { visited: new Map(), warnings: [] };
+      const result: WalkResult = {
+        visited: new Map(),
+        warnings: [],
+        inferredEdges: new Set<string>(),
+      };
 
       if (!argv.descendantsOnly) {
-        walkAncestry(argv.lessonId, byId, result, argv.maxDepth ?? 50);
+        walkAncestry(argv.lessonId, byId, result, argv.maxDepth ?? 50, includeInferred);
       } else {
-        // Seed the visited map with the target so the descendant walk
-        // can extend correctly.
-        result.visited.set(argv.lessonId, { lesson: target, depth: 0, relation: 'target' });
+        result.visited.set(argv.lessonId, {
+          lesson: target,
+          depth: 0,
+          relation: 'target',
+          viaInferredEdge: false,
+        });
       }
 
       if (!argv.ancestorsOnly) {
-        walkDescendants(argv.lessonId, byId, byParent, result, argv.maxDepth ?? 50);
+        walkDescendants(argv.lessonId, byId, byParent, builtInferredEdges, result, argv.maxDepth ?? 50);
       }
 
       // Sort all visited lessons chronologically (oldest first).
@@ -243,9 +341,11 @@ export const threadHandler = {
             relation: e.relation,
             depth: e.depth,
             causedBy: e.lesson.causedBy ?? null,
+            viaInferredEdge: e.viaInferredEdge ?? false,
           })),
           ancestorCount: ordered.filter((e) => e.relation === 'ancestor').length,
           descendantCount: ordered.filter((e) => e.relation === 'descendant').length,
+          inferredEdgeCount: result.inferredEdges.size,
           warnings: result.warnings,
         });
         return;
@@ -264,9 +364,10 @@ export const threadHandler = {
       for (const entry of ordered) {
         const marker =
           entry.relation === 'target' ? '*' : entry.relation === 'ancestor' ? '↑' : '↓';
+        const inferredFlag = entry.viaInferredEdge ? ' (inferred)' : '';
         const title = (entry.lesson.title ?? '(no title)').slice(0, 80);
         const author = (entry.lesson.author ?? '?').slice(0, 12);
-        console.log(`  ${marker} [${formatTimestamp(entry.lesson.timestamp)}] ${author}`);
+        console.log(`  ${marker} [${formatTimestamp(entry.lesson.timestamp)}] ${author}${inferredFlag}`);
         console.log(`    ${title}`);
         console.log(`    id: ${entry.lesson.id}`);
         if (entry.lesson.causedBy !== undefined) {
