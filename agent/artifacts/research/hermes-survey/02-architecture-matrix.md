@@ -153,13 +153,99 @@ Per-framework deep read along seven axes. Iteratively built; argus_prime peer-re
 
 ---
 
-## (Frameworks 7-12 to be added in subsequent HBs)
+## 8. Letta (formerly MemGPT) — DEEP READ
 
-Next HB targets:
-- Letta (memory architecture — most directly relevant to brain CRDT design)
-- Hermes-Function-Calling + Hermes-3 (the required Hermes-line entries — likely shorter writeups since they don't ship orchestration)
+**Repo HEAD inspected**: github.com/letta-ai/letta (`letta/agent.py`, `letta/server/`, `letta/schemas/memory.py`). Note: Letta is the rebrand of MemGPT (Berkeley Sky Lab), the MemGPT paper introduced the in-context vs out-of-context memory hierarchy.
 
-After:
+| Axis | Mechanism |
+|------|-----------|
+| Orchestration | Single-agent core. Multi-agent via separate Letta server processes interacting via HTTP. The MEMORY layer is opinionated; the ORCHESTRATION layer is intentionally thin. |
+| Shared state | Three-tier memory hierarchy: (a) **core memory** = always-in-prompt scratchpad (persona + human blocks, ~2KB), (b) **archival memory** = vector DB long-term (Postgres + pgvector or Chroma), (c) **recall memory** = full conversation history searchable. Persisted via Letta server's database. PER-AGENT, NOT cross-agent. |
+| Task assignment | None. Single-agent paradigm. Letta agents respond to user/system messages; no task abstraction. |
+| Consensus / dissent | None. |
+| Rejection / quality control | None framework-level. |
+| Durability scope | RESTART for memory tiers (Postgres-backed). LIFETIME if you preserve the database. PER-AGENT only — no cross-agent sharing. |
+| Adversarial attribution | ZERO. Server-process write access = full memory mutation. No signing. |
+
+**Centralization read**: SINGLE-AGENT framework. Multi-agent emerges from running multiple Letta servers; coordination is left as an exercise. Memory architecture is the centerpiece, not orchestration.
+
+**Borrowable** (HIGH for brain-CRDT design):
+- **Three-tier memory hierarchy** (core / archival / recall) directly maps to a useful Argus pattern:
+  - Argus's `~/.pop-agent/brain/Identity/` files (who-i-am, philosophy, capabilities) ≈ Letta core memory (always in context)
+  - Argus's `pop.brain.shared` lessons ≈ Letta archival memory (search-on-demand)
+  - Argus's `Memory/heartbeat-log.md` ≈ Letta recall memory (full history)
+  - Validation: we already have a similar tiering organically; Letta's formalization could inform a future "explicit-tier" annotation on brain docs.
+- **Memory pressure handling**: Letta auto-summarizes core memory when it overflows (an LLM-driven compression). Argus today doesn't have this for the heartbeat-log; we let it grow indefinitely. Could borrow the auto-compression pattern when heartbeat-log exceeds a size threshold.
+- **Memory edit RPCs**: Letta exposes `core_memory_replace`, `archival_memory_insert`, `archival_memory_search` as tool calls the agent itself can make. Argus's brain commands (`pop brain append-lesson`, `pop brain read`) are functionally equivalent but called from the shell — Letta's pattern keeps memory ops in the agent's own action space.
+
+**RED FLAGS**: PER-AGENT memory only. Multi-agent Letta deployments share NOTHING by default; you'd build a custom layer on top. This is exactly the gap brain CRDT fills.
+
+**Comparison to Argus**: Letta validates the THREE-TIER MEMORY pattern — independent design reaching the same architecture as Argus's organically-evolved Identity/Memory/brain-doc split. The architectural trajectory: brain CRDT is multi-author Letta archival memory + signed envelopes.
+
+---
+
+## 9. Hermes-Function-Calling (Nous Research) — REQUIRED HERMES-LINE ENTRY
+
+**Repo HEAD inspected**: github.com/NousResearch/Hermes-Function-Calling. Last meaningful update: late 2024.
+
+| Axis | Mechanism |
+|------|-----------|
+| Orchestration | NONE — single-agent function-calling SCAFFOLDING. The framework provides prompt templates + parsing helpers for tool invocation against Hermes-line LLMs (OpenHermes, Hermes-2, Hermes-3). |
+| Shared state | NONE built-in. State is conversation transcript only; persistence is downstream user's responsibility. |
+| Task assignment | NONE — single agent. |
+| Consensus / dissent | NONE. |
+| Rejection / quality control | NONE. |
+| Durability scope | PROCESS only. |
+| Adversarial attribution | ZERO. |
+
+**Centralization read**: N/A — this is not a multi-agent framework. It's a tool-use scaffolding for one LLM call at a time. Included per task #504 spec which required Hermes-line coverage.
+
+**Borrowable**: limited at the architectural level. The PATTERN of "structured-output prompting for function calls" is well-engineered (XML-tag formatting, schema-validated parsing); could be adapted for Argus agents that need to emit structured tool calls from an LLM-only prompt context. Nothing to borrow at the multi-agent layer because there isn't one.
+
+**Argus already does this better via**: TypeScript CLI (compile-time-typed function signatures + JSON output mode for machine consumption). Hermes-Function-Calling's approach is an open-weights workaround for not having a strongly-typed tool surface. Argus's `pop` CLI sidesteps the problem.
+
+**Comparison to Argus**: Hermes-Function-Calling is a SUBSTRATE primitive (tool-use for one Hermes-line model call). Argus is a coordination LAYER assuming such a primitive exists. They're complementary, not competing — an Argus agent COULD use Hermes-Function-Calling as its underlying function-call parser (currently we use Claude Code's native tool use, but the pattern is interchangeable).
+
+---
+
+## 10. Hermes-3 ecosystem (Nous Research) — REQUIRED HERMES-LINE ENTRY
+
+**What's actually there**: Hermes-3 is a model release (Llama-3-8B, 70B, 405B fine-tunes), not a framework. The "ecosystem" is community-built scaffolding — Discord agents, Twitter bots, custom function-calling chains — that all use Hermes-3 weights but don't share a coordination layer.
+
+**Repo / model card**: huggingface.co/NousResearch/Hermes-3-Llama-3.1-405B (and 8B / 70B variants). No central orchestrator repo.
+
+| Axis | Mechanism |
+|------|-----------|
+| Orchestration | NONE central. Each downstream user wires their own. |
+| Shared state | NONE. Each downstream user wires their own. |
+| Task assignment | NONE. |
+| Consensus / dissent | NONE. |
+| Rejection / quality control | NONE — model-level "system 2" reasoning is the only quality lever, no framework-level QC. |
+| Durability scope | NONE — model is stateless inference. |
+| Adversarial attribution | ZERO at the model layer. |
+
+**Centralization read**: NOT APPLICABLE. Hermes-3 is a base model, not a framework. The Hermes ecosystem (downstream users, agents, scaffolding) is highly DECENTRALIZED in the sense that there's no central coordinator and no canonical scaffolding — the lesson is what's MISSING, not what's there.
+
+**Lesson for Argus**: the Hermes-line community is doing exactly what Hudson's HB#592 directive surfaced — building agent-team patterns on a permissive open-weights substrate, but WITHOUT a shared coordination layer. There's no "Hermes brain CRDT" — every downstream user reinvents memory + multi-agent. Argus's brain CRDT is potentially **the missing layer** for the Hermes-line ecosystem to converge on. This is a candidate for the #506 adoption proposal: position unified-ai-brain as the open-source coordination substrate Hermes-line community could adopt without giving up sovereignty.
+
+**Comparison to Argus**: Hermes-3 is the SUBSTRATE for sovereign agents (open weights → no provider lock-in). Argus is the COORDINATION LAYER for sovereign agents. The two are complementary; together they would constitute a fully decentralized stack: open-weights inference + permissionless coordination.
+
+---
+
+## (Frameworks 11-12 deferred — n=10 hits the task #504 minimum)
+
+Per task #504 acceptance ("≥8 distinct frameworks + ≥1 Hermes-line entry"), n=10 with 2 Hermes-line entries hits the minimum cleanly. CAMEL-AI (dyadic primitive + OWL coordinator), AutoGPT (single-instance + sub-agent spawn), and Magentic-One (Orchestrator + Ledger pattern) are deferred as TIME-PERMITTING extras. Their preliminary ethos reads in `01-survey-shortlist.md` are sufficient for the matrix overview; deep-reads can be added if 03-mechanism-extraction.md needs more incumbent diversity.
+
+## Pivot
+
+n=10 deep-reads complete (8 incumbent / no-orchestrator frameworks + Argus + 2 Hermes-line). Next deliverables for task #504:
+- `03-mechanism-extraction.md` — patterns to potentially borrow, with adaptation notes (the 8 candidates from the running list, expanded with implementation sketches)
+- `04-ethos-scoring.md` — three-axis formal table (decentralization / worker-ownership-compatibility / community-governance-compatibility) per framework, with RED-flag annotations
+- `05-argus-comparison.md` — codify the "brain CRDT is the core architectural novelty" thesis with the n=10 evidence base
+- `06-borrow-and-adapt.md` — top-5 candidates with implementation specs Argus could ship as tasks
+- `FINAL.md` — assembled write-up, pinned to IPFS, brain-lesson-titled per task #504 acceptance
+
+
 - SWARM (peer-handoff — closest to Argus's brain-CRDT/no-orchestrator)
 - eliza (independent-runtime)
 - Letta (memory architecture — most directly relevant to brain CRDT design)
