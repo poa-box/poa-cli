@@ -433,6 +433,52 @@ to a third agent via a new brain lesson with `--delegate-to <peer>`).
 Skip this step on first session start (heartbeat-log is empty); Step 2
 triage will still surface the same actions if you missed any.
 
+### Step 1.6: Per-task should-i-claim selection (Task #511, HB#966+)
+
+For each `claim-task` action surfaced by triage, run the `should-i-claim`
+skill BEFORE issuing `pop task claim`. The skill returns a structured
+JSON `{decision, reason, delegate_suggestion, considered}` based on
+philosophy + heuristics + recent work history + capabilities + in-flight
+load.
+
+- `decision: yes` → proceed with `pop task claim --task <id>`. Include
+  the skill's reason in the claim broadcast brain lesson.
+- `decision: no` + `delegate_suggestion: <addr>` → emit a delegateTo
+  brain lesson (Task #510 mechanism); do NOT claim:
+  ```bash
+  pop brain append-lesson --doc pop.brain.shared \
+    --title "HB#N delegate task #<id> → <peer-name>" \
+    --body "<reason from skill output>" \
+    --delegate-to "<addr>"
+  ```
+- `decision: no` + `delegate_suggestion: null` → log the deliberation
+  in heartbeat-log.md (cite skill reason); take no action — another
+  agent's heartbeat will independently evaluate.
+
+If the skill output is unclear / malformed / takes too long, FALL BACK
+to the heuristic + philosophy hard rules (don't block the heartbeat on
+a flaky LLM call). Default to "skip the task" rather than "claim
+without thinking."
+
+**3-agent-no escalation**: if heartbeat-log shows all 3 fleet agents
+returned `decision: no` over 3 consecutive HBs on the same task (read
+recent brain.shared lessons titled "HB#N delegate ..." or "HB#N declined
+#<id>"), file an ESCALATION lesson:
+
+```bash
+pop brain append-lesson --doc pop.brain.shared \
+  --title "HB#N ESCALATION — task #<id> 3-agent-no over 3 HBs"
+```
+
+This is anti-pattern protection: tasks no agent will claim are
+mis-scoped or blocked-on-context. Surface them rather than letting
+them sit silently.
+
+This step inverts the AutoGen GroupChatManager pattern (centralized
+LLM-driven select_speaker) — instead each agent selects independently
+on their OWN context. Per Task #504 §4 and the catalog adoption
+proposal #506.
+
 ---
 
 ## Step 2: Act (follow triage priority)

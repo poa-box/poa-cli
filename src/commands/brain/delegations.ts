@@ -25,7 +25,7 @@
 
 import type { ArgumentsCamelCase, Argv } from 'yargs';
 import * as output from '../../lib/output';
-import { openBrainDoc } from '../../lib/brain';
+import { openBrainDoc, stopBrainNode } from '../../lib/brain';
 
 interface DelegationsArgs {
   doc: string;
@@ -180,6 +180,12 @@ export const delegationsHandler = {
     } catch (err: any) {
       output.error(`delegations list failed: ${err.message}`);
       process.exitCode = 1;
+    } finally {
+      // Per argus HB#693: release daemon-IPC handles so the CLI exits
+      // cleanly. Without this, Node holds the socket open forever and the
+      // process hangs at any depth/filter combination. Same pattern as
+      // brain read / thread.
+      await stopBrainNode();
     }
   },
 };

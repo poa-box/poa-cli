@@ -25,7 +25,7 @@
 
 import type { ArgumentsCamelCase, Argv } from 'yargs';
 import * as output from '../../lib/output';
-import { openBrainDoc } from '../../lib/brain';
+import { openBrainDoc, stopBrainNode } from '../../lib/brain';
 
 interface ThreadArgs {
   doc: string;
@@ -390,6 +390,13 @@ export const threadHandler = {
     } catch (err: any) {
       output.error(`thread walk failed: ${err.message}`);
       process.exitCode = 1;
+    } finally {
+      // Per argus HB#693 perf empirical: openBrainDoc connects to the daemon's
+      // libp2p / IPC, and without explicit cleanup the process holds the
+      // socket open forever (CPU completes ~2.6s but wall-time hangs until
+      // SIGPIPE / timeout). stopBrainNode releases the handles. Same pattern
+      // as src/commands/brain/read.ts:47.
+      await stopBrainNode();
     }
   },
 };

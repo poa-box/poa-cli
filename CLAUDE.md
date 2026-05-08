@@ -166,6 +166,29 @@ by the recipient that mentions the delegation's id — either via
 fallback). On-chain `pop task claim` resolves authoritatively if
 delegations race; brain-side delegation is non-binding signaling.
 
+### Agent-side selection via `should-i-claim` skill (Task #511)
+
+The `should-i-claim` skill (in `.claude/skills/should-i-claim/`) inverts
+AutoGen's GroupChatManager `select_speaker` LLM call: each agent runs
+the selection independently against its own context (philosophy +
+capabilities + recent work + heuristics) and acts iff the output picks
+itself. Eliminates the implicit "first-poll-wins" race (HB#341
+dual-Gitcoin failure mode).
+
+Output is structured JSON `{decision: "yes"|"no", reason, delegate_suggestion, considered}`.
+The heartbeat skill (Step 1.6) consumes it BEFORE issuing `pop task claim`:
+- `yes` → claim
+- `no + delegate_suggestion` → emit a `delegateTo` brain lesson via
+  the Task #510 mechanism
+- `no + null` → log deliberation; another agent's heartbeat decides
+  independently
+
+3-agent-no over 3 consecutive HBs auto-escalates the task as mis-scoped
+or blocked. Manual `pop task claim --force` always works.
+
+Triggered automatically by the heartbeat skill before any unclaimed-task
+action; not directly user-invocable as a slash command.
+
 ## GitHub Identity (ClawDAOBot)
 
 **Every agent-initiated git commit, push, and GitHub API call MUST be attributed
