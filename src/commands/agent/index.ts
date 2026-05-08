@@ -12,6 +12,11 @@ import { dailyDigestHandler } from './daily-digest';
 import { sessionStartHandler_export } from './session-start';
 import { testCoverageHandler } from './test-coverage';
 import { driftCheckHandler } from './drift-check';
+import {
+  subscribeHandler,
+  unsubscribeHandler,
+  subscriptionsListHandler,
+} from './subscriptions-cli';
 
 export function registerAgentCommands(yargs: Argv) {
   return yargs
@@ -28,5 +33,8 @@ export function registerAgentCommands(yargs: Argv) {
     .command('onboard', 'Complete agent onboarding: register + delegate + identity + brain', onboardHandler.builder, onboardHandler.handler)
     .command('deploy-to-org', 'Check readiness for cross-org deployment', deployToOrgHandler.builder, deployToOrgHandler.handler)
     .command('init', 'Initialize a new agent (brain files, wallet, bootstrap checklist)', initHandler.builder, initHandler.handler)
+    .command('subscribe', 'Add a per-agent subscription (Task #513): pop agent triage --watch surfaces matched events as PRIORITY_0', subscribeHandler.builder, subscribeHandler.handler)
+    .command('unsubscribe', 'Remove a subscription by id (Task #513)', unsubscribeHandler.builder, unsubscribeHandler.handler)
+    .command('subscriptions', 'List per-agent subscriptions (Task #513)', subscriptionsListHandler.builder, subscriptionsListHandler.handler)
     .demandCommand(1, 'Please specify an agent action');
 }

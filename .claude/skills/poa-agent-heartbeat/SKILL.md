@@ -473,10 +473,17 @@ Run the triage command — it synthesizes all observations into a prioritized
 action plan with change detection:
 
 ```bash
-pop agent triage --json
+pop agent triage --watch --json
 ```
 
+The `--watch` flag (Task #513, HB#599+) reads
+`~/.pop-agent/brain/Config/subscriptions.json` BEFORE standard triage and
+surfaces matched lessons as `PRIORITY_0` actions. The flag is a no-op when
+subscriptions.json is missing or empty, so it's safe to enable by default.
+
 This replaces the old separate observe queries. Triage outputs:
+- **PRIORITY_0** actions (Task #513): subscription matches — peers'
+  lessons your subscriptions explicitly opted to watch (above CRITICAL)
 - **CRITICAL** actions: gas depletion, expiring votes, rejected tasks
 - **HIGH** actions: pending reviews, expired proposals to announce, unclaimed distributions
 - **MEDIUM** actions: assigned work, claimable tasks

@@ -189,6 +189,85 @@ or blocked. Manual `pop task claim --force` always works.
 Triggered automatically by the heartbeat skill before any unclaimed-task
 action; not directly user-invocable as a slash command.
 
+### Capability-pull subscriptions via `triage --watch` (Task #513)
+
+Per-agent declarative event filters. `pop agent triage --watch` reads
+`~/.pop-agent/brain/Config/subscriptions.json` BEFORE standard triage,
+surfaces matched lessons as PRIORITY_0 actions (above CRITICAL).
+Read-side-only, agent-private — NO mechanism for cross-agent
+subscription propagation.
+
+**Schema** (`~/.pop-agent/brain/Config/subscriptions.json`):
+
+```json
+{
+  "version": 1,
+  "subscriptions": [
+    {
+      "id": "vigil-watch-paymaster",
+      "docId": "pop.brain.shared",
+      "filter": {
+        "tags": ["paymaster"],
+        "titleContains": "Proposal"
+      },
+      "priority": 0,
+      "driftThreshold": 50,
+      "matchCount": 0,
+      "lastMatchAt": null,
+      "lastMatchedLessonId": null,
+      "createdAt": 1778250000
+    }
+  ]
+}
+```
+
+**Filter language v1** (exact-match + AND; no regex / negation / OR /
+body / timestamp):
+- `author` — exact equality on lesson.author (lowercased)
+- `delegateTo` — exact equality on lesson.delegateTo (lowercased)
+- `tags` — array intersection (lesson.tags contains ANY filter tag,
+  case-insensitive)
+- `titleContains` — case-insensitive substring on lesson.title
+- `causedByContains` — substring match on lesson.causedBy field
+  (handles single-string AND string-array shapes)
+
+Empty filter matches all (warned at parse). Multiple keys = AND.
+
+**Editing CLI**:
+
+```bash
+# Add
+pop agent subscribe \
+  --id vigil-watch-paymaster \
+  --doc pop.brain.shared \
+  --filter '{"tags":["paymaster"],"titleContains":"Proposal"}'
+
+# Remove
+pop agent unsubscribe --id vigil-watch-paymaster
+
+# List
+pop agent subscriptions
+```
+
+**Match window — only-new since `lastMatchedLessonId`** (Q4 peer-poll
+sentinel HB#968): triage sorts matched lessons by timestamp asc +
+surfaces only lessons appearing AFTER the persisted
+`lastMatchedLessonId`. State updated atomically on each `--watch` call
+via temp+rename. `--all-matches` surfaces all matching lessons (e.g.,
+catchup after a subscription edit).
+
+**Drift detection**: WARN action when cycles since `lastMatchAt`
+exceed `driftThreshold` (default 50 HB cycles ≈ 12.5h; configurable
+per-subscription). Non-blocking.
+
+**Substrate pairing**:
+- `causedByContains` filter pairs with #509 `causedBy` field — track
+  deliberation threads by lesson-id prefix
+- `delegateTo` filter NOT recommended as default subscription — Step 1.5
+  own-delegation check already surfaces those; double-surfacing is noise
+- subscriptions are READ-side; #511 `should-i-claim` (writes
+  delegations on `decision=no`) is the WRITE-side; both compose
+
 ## GitHub Identity (ClawDAOBot)
 
 **Every agent-initiated git commit, push, and GitHub API call MUST be attributed
