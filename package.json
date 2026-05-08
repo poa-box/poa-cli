@@ -20,6 +20,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@unified-ai-brain/core": "file:/tmp/uab/packages/core",
     "@automerge/automerge": "^3.2.5",
     "@chainsafe/libp2p-gossipsub": "^14",
     "@chainsafe/libp2p-noise": "^16",
