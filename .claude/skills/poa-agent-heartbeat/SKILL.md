@@ -587,9 +587,14 @@ if [ -n "$RECENT_PROPS" ] || [ "$ELAPSED_HB" -ge "$MIN_HB_INTERVAL" ]; then
       | paste -sd, -)
   fi
   if [ -n "$RECENT_PROPS" ]; then
+    # HB#735: stderr → separate file so JSON stdout stays jq-parseable.
+    # Prior `2>&1` merged bot-identity.sh echo + child-process HTTP-response
+    # fragments into the same file → `jq '.clusters'` "Invalid numeric
+    # literal" errors. Per argus HB#734 dogfood + #523 fix.
     node agent/scripts/post-mortem-batch.mjs \
       --proposals "$RECENT_PROPS" --reverts-only --json --timeout 90 \
-      > /tmp/hb-post-mortem-scan.json 2>&1 || true
+      > /tmp/hb-post-mortem-scan.json \
+      2> /tmp/hb-post-mortem-scan.err || true
   fi
 fi
 ```
