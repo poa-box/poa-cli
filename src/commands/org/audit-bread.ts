@@ -74,8 +74,24 @@ const VOTES_ABI = [
 
 const YD_ABI = [
   'function getCurrentVotingDistribution() view returns (address[], uint256[])',
+  'function getCurrentVotingPower(address) view returns (uint256)',
   'function maxPoints() view returns (uint256)',
   'function cycleLength() view returns (uint256)',
+  'function owner() view returns (address)',
+];
+
+// ButteredBread (BB) — the LP-stake-derived voting-power token. Discovered in
+// YD storage slot 14 during HB#1017 deep probe. Voting power in BREAD's on-
+// chain governance is the SUM of direct BREAD balance + a multiplier-scaled
+// ButteredBread balance (LP-staked BREAD). A voter with 0 BREAD direct can
+// still have non-trivial voting power via BB.
+const BUTTERED_BREAD = '0x680b581605dc0a6902735a80de35cb0ef6e90865';
+
+const BB_ABI = [
+  'function name() view returns (string)',
+  'function symbol() view returns (string)',
+  'function totalSupply() view returns (uint256)',
+  'function balanceOf(address) view returns (uint256)',
   'function owner() view returns (address)',
 ];
 
@@ -227,9 +243,29 @@ export const auditBreadHandler = {
       const totalDelegationEvents = delegates.size;
       const nonSelfRatio = totalDelegationEvents > 0 ? nonSelfDelegated / totalDelegationEvents : 0;
 
-      // 7. YieldDistributor — current vote distribution across member projects
-      spin && (spin.text = 'Reading YieldDistributor vote distribution...');
+      // 7. YieldDistributor — current vote distribution across member projects.
+      //    Also reads ButteredBread (the LP-stake-derived VP token) state.
+      spin && (spin.text = 'Reading YieldDistributor + ButteredBread state...');
       const risks: string[] = [];
+
+      // ButteredBread state
+      let bb: any = null;
+      try {
+        const bbC = new ethers.Contract(BUTTERED_BREAD, BB_ABI, p);
+        const [bbName, bbSym, bbSupplyRaw, bbOwner] = await Promise.all([
+          bbC.name(),
+          bbC.symbol(),
+          bbC.totalSupply(),
+          bbC.owner(),
+        ]);
+        bb = {
+          address: BUTTERED_BREAD,
+          name: bbName,
+          symbol: bbSym,
+          totalSupply: Number(ethers.utils.formatUnits(bbSupplyRaw, 18)),
+          owner: bbOwner,
+        };
+      } catch {}
       let yd: any = null;
       try {
         const ydC = new ethers.Contract(YIELD_DISTRIBUTOR, YD_ABI, p);
@@ -255,6 +291,24 @@ export const auditBreadHandler = {
           }
           projects.sort((a, b) => b.share - a.share);
         }
+        // For the top-N BREAD holders, also query the YD's getCurrentVotingPower
+        // to compare direct BREAD votes vs effective YD voting power (which
+        // includes the ButteredBread multiplier).
+        const dualVP: Array<{ address: string; breadVotes: number; effectiveVP: number; multiplier: number }> = [];
+        const topAddrs = balances.slice(0, 12).map((b) => b.addr);
+        for (const a of topAddrs) {
+          try {
+            const ev = await ydC.getCurrentVotingPower(a);
+            const evFmt = Number(ethers.utils.formatEther(ev));
+            const bvFmt = balances.find((b) => b.addr.toLowerCase() === a.toLowerCase())?.balance || 0;
+            dualVP.push({
+              address: a,
+              breadVotes: bvFmt,
+              effectiveVP: evFmt,
+              multiplier: bvFmt > 0 ? evFmt / bvFmt : evFmt > 0 ? Infinity : 0,
+            });
+          } catch {}
+        }
         yd = {
           address: YIELD_DISTRIBUTOR,
           owner: ydOwner,
@@ -266,10 +320,33 @@ export const auditBreadHandler = {
               : null,
           projects,
           topProjectShare: projects[0]?.share || 0,
+          dualVP,
+          butteredBread: bb,
         };
         // topProjectShare is already a percent (0-100). Flag when > 30%.
         if (yd.topProjectShare > 30) {
           risks.push(`YieldDistributor concentration: top project gets ${yd.topProjectShare.toFixed(1)}% of vote allocation`);
+        }
+        // Effective-VP concentration risk: LP-stake multipliers skew VP heavily.
+        // Sum top-12 effective VP, then check top-2 share.
+        if (yd.dualVP && yd.dualVP.length >= 2) {
+          const totalEffVP = yd.dualVP.reduce((s: number, x: any) => s + (Number.isFinite(x.effectiveVP) ? x.effectiveVP : 0), 0);
+          const sorted = [...yd.dualVP].sort((a: any, b: any) => b.effectiveVP - a.effectiveVP);
+          const top2 = sorted[0].effectiveVP + sorted[1].effectiveVP;
+          const top2Share = totalEffVP > 0 ? top2 / totalEffVP : 0;
+          if (top2Share > 0.7) {
+            risks.push(
+              `Effective VP concentration via LP-stake multiplier: top-2 holders control ` +
+                `${(top2Share * 100).toFixed(1)}% of effective YD voting power. ` +
+                `BREAD-balance Gini understates true plutocratic risk because ButteredBread multipliers ` +
+                `(observed up to 1.8M×) further skew weight toward LP-stakers.`,
+            );
+          }
+          // Flag holders with 0 effective VP despite holding BREAD (passive holders losing voice)
+          const passive = sorted.filter((x: any) => x.breadVotes > 100 && x.effectiveVP === 0).length;
+          if (passive > 0) {
+            risks.push(`${passive} holder(s) with >100 BREAD have 0 effective YD voting power (passive — no LP stake)`);
+          }
         }
       } catch {}
 
@@ -382,6 +459,21 @@ export const auditBreadHandler = {
           console.log(`  Current vote distribution across ${yd.projects.length} projects:`);
           for (const proj of yd.projects) {
             console.log(`    ${proj.share.toFixed(2).padStart(6)}%  ${proj.address}  ${proj.label}`);
+          }
+          if (yd.butteredBread) {
+            console.log('');
+            console.log(`ButteredBread (LP-stake-derived VP token):`);
+            console.log(`  Address:      ${yd.butteredBread.address}`);
+            console.log(`  Supply:       ${yd.butteredBread.totalSupply.toFixed(2)} BB`);
+            console.log(`  Owner:        ${yd.butteredBread.owner}`);
+          }
+          if (yd.dualVP && yd.dualVP.length > 0) {
+            console.log('');
+            console.log(`Dual VP (direct BREAD votes vs YD effective VP, top 12):`);
+            for (const x of yd.dualVP) {
+              const mult = x.multiplier === Infinity ? '∞ (BB-only)' : x.multiplier.toFixed(2) + 'x';
+              console.log(`  ${x.address}  BREAD=${x.breadVotes.toFixed(2).padStart(12)}  effective=${x.effectiveVP.toFixed(2).padStart(14)}  multiplier=${mult}`);
+            }
           }
           console.log('');
         }
