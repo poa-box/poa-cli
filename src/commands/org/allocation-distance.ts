@@ -39,6 +39,12 @@ interface AllocationDistanceArgs {
   rpc?: string;
   actorsGraph?: string;
   maxSpaces?: number;
+  // HB#1011: filter out yes/no-style proposals where a single option is
+  // selected by every active voter (BIPs / off-chain policy votes). On those
+  // the cos similarity collapses — any two yes-voters score 1.000. Real
+  // gauge-allocation coordination only surfaces on proposals with meaningful
+  // entropy across multiple gauges.
+  minGaugesSelected?: number;
 }
 
 interface ActorLabel {
@@ -565,6 +571,11 @@ export const allocationDistanceHandler = {
       type: 'number',
       default: 10,
       describe: 'Cap on number of --space flags processed in --actors-graph mode (default 10). Prevents runaway scans on a long --space list.',
+    })
+    .option('min-gauges-selected', {
+      type: 'number',
+      default: 2,
+      describe: 'HB#1011 BIP-artifact filter: exclude proposals where the AVERAGE active voter selects fewer than N gauges (i.e. yes/no-style policy votes). Default 2 — collapses pure single-option proposals where the metric trivially scores cos=1.000 on every yes-pair. Set 0 to disable.',
     }),
 
   handler: async (argv: ArgumentsCamelCase<AllocationDistanceArgs>) => {
@@ -585,6 +596,7 @@ export const allocationDistanceHandler = {
     const wantJson = Boolean(argv.json);
     const actorsGraphRaw = (argv.actorsGraph ?? (argv as any)['actors-graph']) as string | undefined;
     const maxSpaces = Number(argv.maxSpaces ?? (argv as any)['max-spaces']) || 10;
+    const minGaugesSelected = Number(argv.minGaugesSelected ?? (argv as any)['min-gauges-selected']) ?? 2;
 
     // HB#637 task #524: --actors-graph branch. Loop over --space inputs,
     // compute hubs per space, project the requested actor list as a cross-DAO
@@ -672,6 +684,8 @@ export const allocationDistanceHandler = {
         { coSum: number; jaSum: number; n: number; deepEq: number; vpSum: number }
       >();
 
+      // HB#1011 BIP-artifact filter: count proposals dropped for low gauge entropy.
+      let dropLowEntropy = 0;
       for (const prop of eligible) {
         const propVotes = allVotes.filter((v) => v.proposalId === prop.id);
         if (propVotes.length < 2) continue;
@@ -691,6 +705,22 @@ export const allocationDistanceHandler = {
             vec: number[];
             canonChoice: string;
           }>;
+
+        // HB#1011 filter: skip proposals where the AVERAGE voter selects fewer
+        // than `minGaugesSelected` gauges. Those are yes/no-style policy votes
+        // (BIPs, OIPs, single-issue proposals) where cos=1.000 collapses to
+        // "both voted yes" — overstates coordination signal.
+        if (minGaugesSelected > 0 && vectors.length > 0) {
+          let sumNonzero = 0;
+          for (const v of vectors) {
+            for (const x of v.vec) if (x > 0) sumNonzero++;
+          }
+          const avgSelected = sumNonzero / vectors.length;
+          if (avgSelected < minGaugesSelected) {
+            dropLowEntropy++;
+            continue;
+          }
+        }
 
         for (let i = 0; i < vectors.length; i++) {
           for (let j = i + 1; j < vectors.length; j++) {
@@ -750,6 +780,8 @@ export const allocationDistanceHandler = {
         console.log(JSON.stringify({
           space: spaceId,
           proposalsAnalyzed: eligible.length,
+          proposalsDroppedLowEntropy: dropLowEntropy,
+          minGaugesSelected,
           proposalTypes: Array.from(new Set(eligible.map((p) => p.type))),
           votersConsidered: new Set(allVotes.map((v) => v.voter)).size,
           pairsScored: pairStats.size,
@@ -761,7 +793,8 @@ export const allocationDistanceHandler = {
             : undefined,
         }, null, 2));
       } else {
-        spin?.succeed(`Analyzed ${eligible.length} multi-option proposals; ${ranked.length} qualifying pairs`);
+        const entropyNote = dropLowEntropy > 0 ? ` (${dropLowEntropy} dropped: avg-selected<${minGaugesSelected})` : '';
+        spin?.succeed(`Analyzed ${eligible.length - dropLowEntropy}/${eligible.length} multi-option proposals${entropyNote}; ${ranked.length} qualifying pairs`);
         if (ranked.length === 0) {
           console.log('\nNo voter pairs shared ≥2 multi-option proposals. Try --limit higher.\n');
           return;
