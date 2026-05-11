@@ -409,7 +409,14 @@ export const postMortemHandler = {
 
     const frames = flattenTrace(raw);
     const rootIdx = findRootCause(frames);
+    // `success` here = "no internal reverts anywhere in the trace".
+    // `outerTxReverted` = "the OUTER tx itself reverted" (receipt.status would be 0).
+    // These differ for the execute-internal-revert pattern (HB#625 finding):
+    // outer announce-winner can succeed while one of its inner batch calls
+    // reverts. post-mortem cluster classification uses success (catches both);
+    // receipt-status equivalent uses outerTxReverted.
     const success = rootIdx === null;
+    const outerTxReverted = frames[0]?.err != null;
     const totalGasUsed = frames[0]?.gasUsed ?? 0;
 
     if (output.isJsonMode()) {
@@ -417,6 +424,7 @@ export const postMortemHandler = {
         proposalId: argv.proposal ?? null,
         txHash,
         success,
+        outerTxReverted,
         totalGasUsed,
         rootCauseDepth: rootIdx !== null ? frames[rootIdx].depth : null,
         rootCauseSelector: rootIdx !== null ? frames[rootIdx].selector : null,
@@ -446,7 +454,11 @@ export const postMortemHandler = {
       console.log('\x1b[32m✓ Transaction succeeded — no failing frames.\x1b[0m');
     } else {
       const root = frames[rootIdx as number];
-      console.log(`\x1b[31m✗ Transaction failed.\x1b[0m`);
+      if (outerTxReverted) {
+        console.log(`\x1b[31m✗ Outer tx reverted.\x1b[0m`);
+      } else {
+        console.log(`\x1b[33m⚠ Outer tx succeeded but inner frame reverted (execute-internal-revert pattern).\x1b[0m`);
+      }
       console.log(`  Root cause depth: d${root.depth}`);
       console.log(`  Root cause selector: ${root.selector} on ${root.to}`);
       console.log(`  Root cause error: ${root.err}${root.revertReason ? ` (${root.revertReason})` : ''}`);
