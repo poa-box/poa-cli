@@ -34,6 +34,7 @@ import { auditDschiefHandler } from './audit-dschief';
 import { auditProxyFactoryHandler } from './audit-proxy-factory';
 import { boundaryScoreHandler } from './boundary-score';
 import { allocationDistanceHandler } from './allocation-distance';
+import { auditBreadHandler } from './audit-bread';
 
 export function registerOrgCommands(yargs: Argv) {
   return yargs
@@ -72,5 +73,6 @@ export function registerOrgCommands(yargs: Argv) {
     .command('audit-vetoken', 'On-chain top-holder probe for veCRV-family VotingEscrow contracts (task #383)', auditVetokenHandler.builder, auditVetokenHandler.handler)
     .command('audit-participation', 'Governance participation metrics for external Governor contracts (task #422)', auditParticipationHandler.builder, auditParticipationHandler.handler)
     .command('allocation-distance', 'Jaccard + cosine on multi-option Snapshot votes — closes HB#680 Frax gauge-allocation gap', allocationDistanceHandler.builder, allocationDistanceHandler.handler)
+    .command('audit-bread', 'Breadchain-specific on-chain audit: BREAD token state + holder concentration + delegation network + Curve/Honeyswap liquidity', auditBreadHandler.builder, auditBreadHandler.handler)
     .demandCommand(1, 'Please specify an org action');
 }
