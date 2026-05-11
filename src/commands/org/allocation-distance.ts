@@ -72,6 +72,11 @@ interface PairScore {
   proposalsShared: number;
   avgCosine: number;
   avgJaccard: number;
+  // HB#1006: deep-equal-choice count (votes where the raw `choice` field is
+  // bit-for-bit identical, not just cosine-normalized identical). Distinguishes
+  // single-entity coordination (deep-equal ≈ shared) from strategy-following
+  // (deep-equal much less than shared).
+  deepEqualCount: number;
   combinedVp: number; // sum across shared proposals
 }
 
@@ -182,6 +187,19 @@ function computeHubs(
   return hubs;
 }
 
+/**
+ * Deterministic JSON serializer for Snapshot `choice` values. Object keys are
+ * sorted alphabetically so `{"1":50,"2":50}` and `{"2":50,"1":50}` map to the
+ * same string. Used for the deep-equal-choice metric.
+ */
+function canonicalJSON(v: any): string {
+  if (v == null) return 'null';
+  if (typeof v !== 'object') return JSON.stringify(v);
+  if (Array.isArray(v)) return '[' + v.map(canonicalJSON).join(',') + ']';
+  const keys = Object.keys(v).sort();
+  return '{' + keys.map((k) => JSON.stringify(k) + ':' + canonicalJSON(v[k])).join(',') + '}';
+}
+
 function jaccardSimilarity(a: number[], b: number[]): number {
   let intersection = 0;
   let union = 0;
@@ -281,17 +299,32 @@ export const allocationDistanceHandler = {
 
       spin && (spin.text = 'Computing pairwise allocation distance...');
 
-      // Step 3: for each proposal, compute pairwise cosine + jaccard
+      // Step 3: for each proposal, compute pairwise cosine + jaccard + deep-equal
       // Aggregate per pair across all eligible proposals
-      const pairStats = new Map<string, { coSum: number; jaSum: number; n: number; vpSum: number }>();
+      const pairStats = new Map<
+        string,
+        { coSum: number; jaSum: number; n: number; deepEq: number; vpSum: number }
+      >();
 
       for (const prop of eligible) {
         const propVotes = allVotes.filter((v) => v.proposalId === prop.id);
         if (propVotes.length < 2) continue;
-        // Build vectors once per voter on this proposal
+        // Build vectors + canonical-JSON-choice once per voter on this proposal.
+        // canonChoice: deterministic JSON string of the raw `choice` field; pair
+        // matches deep-equal only when canonChoice strings are identical.
         const vectors = propVotes
-          .map((v) => ({ voter: v.voter, vp: v.vp, vec: toAllocationVector(v.choice, prop.choicesCount) }))
-          .filter((x) => x.vec !== null) as Array<{ voter: string; vp: number; vec: number[] }>;
+          .map((v) => ({
+            voter: v.voter,
+            vp: v.vp,
+            vec: toAllocationVector(v.choice, prop.choicesCount),
+            canonChoice: canonicalJSON(v.choice),
+          }))
+          .filter((x) => x.vec !== null) as Array<{
+            voter: string;
+            vp: number;
+            vec: number[];
+            canonChoice: string;
+          }>;
 
         for (let i = 0; i < vectors.length; i++) {
           for (let j = i + 1; j < vectors.length; j++) {
@@ -299,10 +332,12 @@ export const allocationDistanceHandler = {
             const b = vectors[j];
             const c = cosineSimilarity(a.vec, b.vec);
             const ja = jaccardSimilarity(a.vec, b.vec);
+            const deepEq = a.canonChoice === b.canonChoice ? 1 : 0;
             const key = a.voter < b.voter ? `${a.voter}__${b.voter}` : `${b.voter}__${a.voter}`;
-            const cur = pairStats.get(key) || { coSum: 0, jaSum: 0, n: 0, vpSum: 0 };
+            const cur = pairStats.get(key) || { coSum: 0, jaSum: 0, n: 0, deepEq: 0, vpSum: 0 };
             cur.coSum += c;
             cur.jaSum += ja;
+            cur.deepEq += deepEq;
             cur.n += 1;
             cur.vpSum += a.vp + b.vp;
             pairStats.set(key, cur);
@@ -321,6 +356,7 @@ export const allocationDistanceHandler = {
             proposalsShared: s.n,
             avgCosine: s.coSum / s.n,
             avgJaccard: s.jaSum / s.n,
+            deepEqualCount: s.deepEq,
             combinedVp: s.vpSum,
           };
         })
@@ -370,7 +406,7 @@ export const allocationDistanceHandler = {
         const fmtAddr = (a: string) => a.slice(0, 6) + '…' + a.slice(-4);
         for (const p of top) {
           console.log(
-            `  cos=${p.avgCosine.toFixed(3)}  jac=${p.avgJaccard.toFixed(3)}  ` +
+            `  cos=${p.avgCosine.toFixed(3)}  jac=${p.avgJaccard.toFixed(3)}  deepEq=${p.deepEqualCount}/${p.proposalsShared}  ` +
               `n=${p.proposalsShared}  vp=${Math.round(p.combinedVp)}  ` +
               `${fmtAddr(p.voterA)} ↔ ${fmtAddr(p.voterB)}`
           );
@@ -381,6 +417,8 @@ export const allocationDistanceHandler = {
         console.log('  cos 0.7-0.95                    : moderate alignment — could be common ideology, not coordination');
         console.log('  jac high + cos lower            : same options funded but with different weights');
         console.log('  cos ≈ 0 + n high                : orthogonal allocations (no shared preference)');
+        console.log('  deepEq ≈ shared (ratio ≥ 0.9)   : single-entity coordination (one wallet or one signer)');
+        console.log('  deepEq much < shared, cos high  : strategy-following (independent voters tracking shared guidance)');
         console.log('');
         console.log(`Closes HB#680 Frax negative finding gap: gauge-allocation DAOs need allocation-vector distance, not just binary co-voting.`);
 
