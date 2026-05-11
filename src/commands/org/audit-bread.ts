@@ -163,19 +163,30 @@ export const auditBreadHandler = {
     const topN = Number(argv.topN ?? (argv as any)['top-n']) || 15;
     const wantJson = Boolean(argv.json);
 
-    // HB#1022: parameterized addresses (default BREAD).
-    const TOKEN = ((argv.token as string) || DEFAULT_TOKEN).trim();
-    const YD = ((argv.yd as string) ?? DEFAULT_YD).trim();
-    const BB = ((argv.bb as string) ?? DEFAULT_BB).trim();
+    // HB#1022: parameterized addresses (default BREAD). Normalize each via
+    // getAddress(lowercase) so mixed-case-incorrect-checksum addresses (e.g.
+    // copy-pasted from older docs) get canonicalized into EIP-55 form before
+    // ethers.Contract construction rejects them downstream.
+    const normAddr = (raw: string, name: string): string => {
+      const trimmed = raw.trim();
+      if (trimmed === '') return '';
+      try {
+        return ethers.utils.getAddress(trimmed.toLowerCase());
+      } catch {
+        throw new Error(`--${name} "${trimmed}" is not a valid address`);
+      }
+    };
+    const TOKEN = normAddr((argv.token as string) || DEFAULT_TOKEN, 'token');
+    if (!TOKEN) throw new Error('--token cannot be empty');
+    const YD = normAddr((argv.yd as string) ?? DEFAULT_YD, 'yd');
+    const BB = normAddr((argv.bb as string) ?? DEFAULT_BB, 'bb');
     const poolsRaw = argv.pool;
-    const POOLS: string[] = Array.isArray(poolsRaw)
+    const poolsList: string[] = Array.isArray(poolsRaw)
       ? (poolsRaw as string[]).map((s) => s.trim()).filter(Boolean)
       : typeof poolsRaw === 'string' && poolsRaw.trim() !== ''
       ? [poolsRaw.trim()]
       : DEFAULT_POOLS;
-    if (!ethers.utils.isAddress(TOKEN)) {
-      throw new Error(`--token "${TOKEN}" is not a valid address`);
-    }
+    const POOLS = poolsList.map((p) => normAddr(p, 'pool'));
 
     const isDefaultToken = TOKEN.toLowerCase() === DEFAULT_TOKEN.toLowerCase();
     const spin = wantJson ? null : output.spinner(
