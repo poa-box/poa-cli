@@ -567,8 +567,11 @@ pop agent triage --watch --json > /tmp/hb-triage.json
 # Extract proposal_executed change events
 RECENT_PROPS=$(jq -r '.changes[] | select(.type=="proposal_executed") | .detail | capture("Proposal #(?<n>[0-9]+)") | .n' /tmp/hb-triage.json | head -10 | paste -sd, -)
 
-# Read state file for fallback-cooldown logic
-LAST_SCAN_TS=$(jq -r '.postMortemScan.lastScanTimestamp // 0' agent/brain/Config/agent-config.json)
+# Per-agent runtime state in ~/.pop-agent/ (parallel to last-audit-scan.json).
+# Static config knobs are in agent/brain/Config/agent-config.json; dynamic
+# timestamp is per-agent so it doesn't churn the tracked config file.
+STATE_FILE="$HOME/.pop-agent/brain/Memory/last-post-mortem-scan.json"
+LAST_SCAN_TS=$([ -f "$STATE_FILE" ] && jq -r '.lastScanTimestamp // 0' "$STATE_FILE" || echo 0)
 MIN_HB_INTERVAL=$(jq -r '.postMortemScan.minHbInterval // 50' agent/brain/Config/agent-config.json)
 NOW_TS=$(date +%s)
 ELAPSED_HB=$(( (NOW_TS - LAST_SCAN_TS) / (15 * 60) ))  # 15-min HB cadence
@@ -605,13 +608,14 @@ fi
   - **Only outerTxRevertedCount > 0 clusters** → silent (receipt-status alerting would
     have caught these; not the gap Step 0.8 exists to close).
   - **No clusters (all succeeded or no scan run)** → silent.
-- Update `agent/brain/Config/agent-config.json` postMortemScan.lastScanTimestamp = NOW_TS on every successful scan.
+- Update per-agent `$HOME/.pop-agent/brain/Memory/last-post-mortem-scan.json` with
+  `{lastScanTimestamp: NOW_TS}` on every successful scan (atomic via temp+rename).
+  Per-agent so it doesn't churn the shared tracked config.
 - Continue to Step 1 regardless (advisory not blocking, matches Step 0.7 pattern).
 
 ### State file shape
 
-`agent/brain/Config/agent-config.json` gains a `postMortemScan` section:
-
+**Static config (shared, tracked)** — `agent/brain/Config/agent-config.json`:
 ```json
 {
   "postMortemScan": {
@@ -622,10 +626,22 @@ fi
 }
 ```
 
-- `lastScanTimestamp` — Unix seconds of the last successful scan. Updated after each
-  Step 0.8 invocation that completed (even with no findings).
+- `lastScanTimestamp` here is the seed/fallback; the dynamic value lives per-agent
+  (next section). Kept in tracked config for discoverability + initial-state seeding.
 - `minHbInterval` — fallback cooldown in HBs (15-min cadence). Default 50 ≈ 12.5h.
+  Agents can collectively change this via brain proposal + brain heuristic.
 - `maxRecentProposals` — cap on per-invocation scan size to bound runtime. Default 10.
+
+**Dynamic per-agent state (untracked, runtime)** — `$HOME/.pop-agent/brain/Memory/last-post-mortem-scan.json`:
+```json
+{
+  "lastScanTimestamp": 1778523144
+}
+```
+
+Parallel pattern to `last-audit-scan.json` in the same directory. Per-agent so the
+ts updates don't churn the shared tracked config every HB. Falls back to the
+static-config value when the per-agent file doesn't exist (first run).
 
 ### Why this exists at Step 0.8
 
