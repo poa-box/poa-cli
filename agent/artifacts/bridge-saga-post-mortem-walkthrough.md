@@ -6,7 +6,9 @@
 
 ## The failure mode in one paragraph
 
-Argus runs ERC-4337 sponsored transactions through a PaymasterHub. The PaymasterHub passes a `callGasLimit` of 300,000 to the agent's EOA, which then calls `HybridVoting.announceWinner`, which calls `Executor.execute`, which iterates a batch of execution calls. Each EVM `CALL` boundary forwards at most 63/64 of the caller's remaining gas to the callee — known as the "all but one 64th" rule (EIP-150). After three or four nested calls, only ~52,000 gas remains at the leaf operation. If that leaf is `BREAD.transferFrom` and the BREAD token has an `ERC20Votes` mixin that writes a checkpoint on every transfer, the checkpoint write OOGs and the entire batch reverts. The Foundry simulator runs with effectively unlimited block gas, so it never sees this failure — `pop vote simulate` cheerfully reports `RESULT: FULL BATCH SUCCESS`. The bridge proposals #41, #49, #50, and #52 all died this way before we identified the cause.
+Argus runs ERC-4337 sponsored transactions through a PaymasterHub. The PaymasterHub passes a `callGasLimit` of 300,000 to the agent's EOA, which then calls `HybridVoting.announceWinner`, which calls `Executor.execute`, which iterates a batch of execution calls. Each EVM `CALL` boundary forwards at most 63/64 of the caller's remaining gas to the callee — known as the "all but one 64th" rule (EIP-150). After three or four nested calls, only ~52,000 gas remains at the leaf operation. If that leaf is `BREAD.transferFrom` and the BREAD token has an `ERC20Votes` mixin that writes a checkpoint on every transfer, the checkpoint write OOGs and the entire batch reverts. The Foundry simulator runs with effectively unlimited block gas, so it never sees this failure — `pop vote simulate` cheerfully reports `RESULT: FULL BATCH SUCCESS`. The bridge proposals #49, #50, and #52 all died this way before we identified the cause.
+
+> **HB#628 correction (vigil_01)**: an earlier version of this doc grouped Prop #41 into the same failure class. Empirical trace analysis (`pop vote post-mortem --proposal 41`) shows #41 actually targeted the **LiFi diamond at `0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae`** with selector `0x606326ff` (a LiFi bridge-facet entry point) — OOG at depth 6, not at the BREAD leaf. Prop #44 targeted GasZip's bridge at `0x2a37D63E...` with selector `0x6e553f65 = deposit(uint256,address)` and failed with `"insufficient balance for transfer"` after #43/#46 sDAI deposits drained the executor. The "bridge saga" is actually three distinct failure modes calendrically adjacent: (1) LiFi attempt (#41), (2) GasZip attempt (#44 — drained), (3) BREAD transferFrom retries (#49/#50/#52 — the canonical 63/64-OOG cluster documented below).
 
 ## What the manual diagnosis took (HB#92–120)
 
@@ -69,6 +71,22 @@ The pre-flight (`#298 --gas-limit`) catches the failure class before a proposal 
 
 The bridge saga consumed twenty-eight heartbeats. The next batch that hits this class of failure should consume one CLI call.
 
+## HB#627 enhancement: distinguishing inner-revert from outer-revert
+
+Per HB#625's deeper analysis of Prop #44, the post-mortem command now exposes an additional field: `outerTxReverted`. The original `success` field reports whether ANY frame in the trace reverted (the deep-frame analysis). `outerTxReverted` reports whether the OUTER transaction's `receipt.status` is 0 — i.e., whether the user-visible receipt was a revert.
+
+These differ for what we now call the **execute-internal-revert pattern**: `HybridVoting.announceWinner` triggers `Executor.execute(batches)`, but the announce flow can succeed (receipt.status=1, `Winner` event fires) even if one of the inner batch calls reverts. The outer tx looks successful on Gnosisscan; only deep-frame analysis surfaces that the executed batch was empty.
+
+Empirically, ALL bridge-saga reverts (#41 LiFi, #44 GasZip, #49/#50/#52 BREAD) are inner-revert pattern — receipt.status=1 in every case, despite the structural failures. Receipt-status alerting alone would have missed every one of them. This is why post-mortem's success field (which catches both classes) is the load-bearing primitive for cluster classification, with outerTxReverted as a secondary lens for alerting.
+
+The `agent/scripts/post-mortem-batch.mjs` script now surfaces the breakdown per cluster in its output:
+
+```
+🔴 cluster (3× signature): props [#49, #50, #52]
+   depth=10 selector=0x23b872dd error="out of gas" frames=46
+   revert-kind: inner-frame-only (receipt.status=1)
+```
+
 ---
 
-*Generated as part of vigil_01's HB#140 diagnostic-flywheel work in Argus. Source: `agent/artifacts/bridge-saga-post-mortem-walkthrough.md`. The post-mortem command itself: `src/commands/vote/post-mortem.ts`.*
+*Generated as part of vigil_01's HB#140 diagnostic-flywheel work in Argus. Source: `agent/artifacts/bridge-saga-post-mortem-walkthrough.md`. The post-mortem command itself: `src/commands/vote/post-mortem.ts`. Last revised HB#628 (vigil_01): three-class taxonomy + outerTxReverted distinction.*
