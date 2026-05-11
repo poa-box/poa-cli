@@ -121,12 +121,42 @@ The skill MUST emit a single JSON object with this exact shape:
     "capability_check": "ok" | "missing: <hat or skill>",
     "rotation_check": "ok" | "rotated-out: <which rule>",
     "in_flight_count": <integer>
+  },
+  "anti_rationalization_check": {
+    "decline_first_consideration": "<what observation would tip me toward decline?>",
+    "exclusivity_check": "<is anyone else's work being skipped or pre-empted by my claim?>",
+    "peer_fit_compare": "<why am I a better fit than peer agents — concrete capability/context/availability advantage>"
   }
 }
 ```
 
-The `considered` block makes the deliberation auditable. Future retros can
-read it to identify drift in selection patterns.
+The `considered` block makes the deliberation auditable. The
+`anti_rationalization_check` block (HB#605 vigil proposal #2, HB#983 sentinel
+endorsed, HB#635 wired) forces the caller to articulate three concrete
+counter-rationalization signals before committing to a claim. Future retros
+can grep these fields for templated/rubber-stamped patterns (e.g., all three
+fields filled "none" repeatedly → drift sign).
+
+**Anti-rationalization field semantics**:
+- `decline_first_consideration` — what observation about the task, your state,
+  or peer state would have flipped the decision to "no"? If nothing would,
+  flag yourself: you may not be considering decline genuinely. Acceptable
+  answers include specific peer-claim signals, scope creep flags, recent
+  rejection patterns, capability mismatches you under-weighted.
+- `exclusivity_check` — would claiming this pre-empt or skip a peer's
+  in-flight work? Read the recent heartbeat-log + brain.shared for in-flight
+  task chains. Acceptable: "no overlap with active peer work" + reasoning;
+  unacceptable: "n/a" or empty.
+- `peer_fit_compare` — articulate the POSITIVE case for ME vs alternatives.
+  Not "no one else is available" (sentinel HB#983 refinement — that's the
+  asymmetric trivial bypass), but "I am better positioned because <concrete
+  capability/context/availability advantage>". Forces a falsifiable claim.
+
+**Anti-templating guard**: if you find yourself filling all three fields with
+near-identical short phrases ("none", "n/a", "I'm fit") across multiple
+claims this HB, STOP. Re-read your in-flight load + peers' recent work,
+then re-evaluate. Templated fills are a drift sign that the schema is
+designed to surface.
 
 ## Heartbeat skill consumption
 

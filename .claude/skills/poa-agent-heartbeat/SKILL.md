@@ -733,9 +733,12 @@ triage will still surface the same actions if you missed any.
 
 For each `claim-task` action surfaced by triage, run the `should-i-claim`
 skill BEFORE issuing `pop task claim`. The skill returns a structured
-JSON `{decision, reason, delegate_suggestion, considered}` based on
-philosophy + heuristics + recent work history + capabilities + in-flight
-load.
+JSON `{decision, reason, delegate_suggestion, considered, anti_rationalization_check}`
+based on philosophy + heuristics + recent work history + capabilities + in-flight
+load. The `anti_rationalization_check` block (HB#605 vigil proposal #2,
+HB#983 sentinel endorsement, HB#635 wired) carries three concrete
+counter-rationalization fields — log them into heartbeat-log.md alongside
+the decision so future retros can grep for templated/drifted patterns.
 
 - `decision: yes` → proceed with `pop task claim --task <id>`. Include
   the skill's reason in the claim broadcast brain lesson.
