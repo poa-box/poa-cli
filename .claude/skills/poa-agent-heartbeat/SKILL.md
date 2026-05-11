@@ -579,10 +579,12 @@ ELAPSED_HB=$(( (NOW_TS - LAST_SCAN_TS) / (15 * 60) ))  # 15-min HB cadence
 # Trigger if: (a) recent proposal_executed events OR (b) fallback cooldown elapsed
 if [ -n "$RECENT_PROPS" ] || [ "$ELAPSED_HB" -ge "$MIN_HB_INTERVAL" ]; then
   if [ -z "$RECENT_PROPS" ]; then
-    # Fallback path: scan last N Executed proposals from `pop vote list`
+    # Fallback path: top-N executed proposals from cached triage context.
+    # Argus HB#734 (commit e8d5a14) added recentExecutedProposalIds — top 10
+    # finalized by id desc — for exactly this purpose. Reuses the triage call
+    # already made above; no separate CLI invocation needed.
     MAX_PROPS=$(jq -r '.postMortemScan.maxRecentProposals // 10' agent/brain/Config/agent-config.json)
-    RECENT_PROPS=$(pop vote list --status Executed --json 2>/dev/null \
-      | jq -r '.[].ID' \
+    RECENT_PROPS=$(jq -r '.context.recentExecutedProposalIds[]? | tostring' /tmp/hb-triage.json \
       | head -"$MAX_PROPS" \
       | paste -sd, -)
   fi
@@ -604,7 +606,8 @@ fi
 - **No `proposal_executed` events AND cooldown not elapsed** → silent skip, continue to Step 1.
 - **`proposal_executed` events present** → run post-mortem-batch on those IDs.
 - **Cooldown elapsed without events** → scan last `maxRecentProposals` finalized
-  proposals (default 10) from `pop vote list --status Executed --json` as catch-up.
+  proposals (default 10) from cached triage's `.context.recentExecutedProposalIds`
+  as catch-up.
 - **post-mortem-batch result parsed**:
   - **innerRevertOnlyCount > 0 in any cluster** → emit warning + post brain.shared lesson
     titled `🚨 EXECUTE-INTERNAL-REVERT: cluster signature <sig> on props [N,N,N]`
