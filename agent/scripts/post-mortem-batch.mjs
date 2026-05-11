@@ -70,7 +70,7 @@ function runPostMortem(proposalId) {
   try {
     const out = execSync(
       `pop vote post-mortem --proposal ${proposalId} --json`,
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 },
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 },
     );
     return JSON.parse(out);
   } catch (err) {
