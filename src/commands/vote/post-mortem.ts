@@ -227,13 +227,31 @@ export async function findBlockByTimestamp(
   provider: ethers.providers.JsonRpcProvider,
   targetTs: number,
 ): Promise<number> {
-  const latest = await provider.getBlock('latest');
+  // HB#623 vigil: defensive null-checks. provider.getBlock() can return null
+  // under certain RPC conditions (post-mortem-batch.mjs reproduced
+  // "Cannot read properties of null (reading 'timestamp')" on rapid
+  // consecutive invocations). Retry once on null before throwing — the
+  // common case is a transient RPC hiccup.
+  let latest = await provider.getBlock('latest');
+  if (latest == null) {
+    latest = await provider.getBlock('latest');
+    if (latest == null) {
+      throw new Error('RPC returned null for latest block (try again or check RPC health)');
+    }
+  }
   if (latest.timestamp <= targetTs) return latest.number;
   let lo = 0;
   let hi = latest.number;
   while (lo < hi) {
     const mid = Math.floor((lo + hi + 1) / 2);
-    const block = await provider.getBlock(mid);
+    let block = await provider.getBlock(mid);
+    if (block == null) {
+      // Retry once before bailing — same RPC-flake mitigation as above.
+      block = await provider.getBlock(mid);
+      if (block == null) {
+        throw new Error(`RPC returned null for block ${mid} (try again or check RPC health)`);
+      }
+    }
     if (block.timestamp <= targetTs) {
       lo = mid;
     } else {
