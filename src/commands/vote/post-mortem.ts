@@ -134,6 +134,26 @@ export function findRootCause(frames: FlatFrame[]): number | null {
   return bestIdx;
 }
 
+// HB#629 vigil: recognize common targets that show up in the bridge-saga +
+// treasury traces so the rendered tree labels them inline. Lower-cased keys.
+// Extend as new addresses become diagnostically relevant.
+const KNOWN_TARGETS: Record<string, string> = {
+  '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae': 'LiFi diamond',
+  '0x2a37d63eadfe4b4682a3c28c1c2cd4f109cc2762': 'GasZip bridge',
+  '0xa555d5344f6fb6c65da19e403cb4c1ec4a1a5ee3': 'BREAD proxy',
+  '0x3146b62466b76642127b9f4fe34fa7cd9968bf96': 'BREAD impl',
+  '0xaf204776c7245bf4147c2612bf6e5972ee483701': 'sDAI vault',
+  '0x9116bb47ef766cd867151fee8823e662da3bdad9': 'Executor proxy',
+  '0x06debc1eed238b78168394fd47932f00beedcac2': 'Executor impl',
+  '0x0000000071727de22e5e9d8baf0edac6f37da032': 'EntryPoint v0.7',
+};
+
+export function labelTarget(addr: string | undefined): string {
+  if (!addr) return '(none)';
+  const label = KNOWN_TARGETS[addr.toLowerCase()];
+  return label ? `${addr.slice(0, 10)}…[${label}]` : addr.slice(0, 10);
+}
+
 /**
  * Render the call tree as ANSI text. Indents by depth, shows a gas meter
  * (gas allotted -> gas used + percentage of allotted), highlights the
@@ -145,7 +165,7 @@ function renderTree(frames: FlatFrame[], rootCauseIdx: number | null): string {
   for (let i = 0; i < frames.length; i++) {
     const f = frames[i];
     const indent = '  '.repeat(f.depth);
-    const target = f.to.slice(0, 10);
+    const target = labelTarget(f.to);
     const meter = f.gas > 0 ? `${f.gasUsed.toLocaleString()}/${f.gas.toLocaleString()}` : `${f.gasUsed.toLocaleString()}`;
     const pct = f.gas > 0 ? Math.round((f.gasUsed / f.gas) * 100) : 0;
     const nearBudget = f.gas > 0 && pct >= 99;
@@ -460,7 +480,7 @@ export const postMortemHandler = {
         console.log(`\x1b[33m⚠ Outer tx succeeded but inner frame reverted (execute-internal-revert pattern).\x1b[0m`);
       }
       console.log(`  Root cause depth: d${root.depth}`);
-      console.log(`  Root cause selector: ${root.selector} on ${root.to}`);
+      console.log(`  Root cause selector: ${root.selector} on ${labelTarget(root.to)}`);
       console.log(`  Root cause error: ${root.err}${root.revertReason ? ` (${root.revertReason})` : ''}`);
     }
     console.log('');
