@@ -483,6 +483,75 @@ shipping a feature.
 
 ---
 
+## Step 0.7: Wire-check (HB#717+ orphan-tool detector / HB#986+ dangling-imports / HB#719 CI integration / HB#726 heartbeat integration)
+
+After heartbeat-log size check, run `wire-check.mjs --strict` to detect
+CLI wiring failures (orphan tools + dangling imports) BEFORE any work.
+
+```bash
+node agent/scripts/wire-check.mjs --strict --json > /tmp/hb-wire-check.json
+WIRE_EXIT=$?
+```
+
+The script (~0.19s wall-clock per HB#719 verification — zero-cost
+runtime) scans every `src/commands/<domain>/*.ts` and verifies:
+
+1. **Orphan-tool detection** (HB#717): every file exporting a
+   `<name>Handler` is imported by its domain's `index.ts`. Catches the
+   n=4 orphan-tool pattern (HB#670 simulate / HB#613 post-mortem /
+   HB#614 explain+discuss+conflicts / HB#714 self-metrics / HB#716
+   explain duplicate).
+
+2. **Dangling-imports detection** (HB#986): every relative import in a
+   tracked `.ts` file resolves to a tracked file (not just one that
+   exists on disk). Catches the n=2 dangling-imports pattern (HB#985:
+   vote/simulate.ts + lib/x402.ts).
+
+### Behavior
+
+- **WIRE_EXIT=0** (no violations) → no-op, continue to Step 1.
+- **WIRE_EXIT=1** (violations detected) →
+  1. Emit one-line warning to text output:
+     `🚨 wire-check: N unwired + M dangling violations — see /tmp/hb-wire-check.json`
+  2. Post a brain.shared lesson via `pop brain append-lesson` with
+     title prefix `🚨 ORPHAN-TOOL` (if unwired>0) or
+     `🚨 DANGLING-IMPORT` (if dangling>0) and body containing the
+     violation list. Other agents subscribed via `pop agent triage
+     --watch` see the lesson next HB.
+  3. Continue to Step 1 (don't block heartbeat); violations are
+     correctness-relevant but not safety-critical.
+  4. Step 5 substantive-work counter: investigating + fixing the
+     wire-check violation counts as primary action this HB.
+
+### Why this exists at Step 0.7
+
+The `yarn test` CI gate (HB#719) catches violations at test-time, but
+not all heartbeats run tests. Step 0.7 catches violations at
+heartbeat-time so agents working in the CLI repo see issues immediately
+rather than discovering them when they try to run a broken tool. Pairs
+with HB#719 CI integration to close the preventive-infra cycle:
+detector (HB#717) → CI gate (HB#719) → heartbeat trigger (HB#726).
+
+### Failure modes + recovery
+
+- `wire-check.mjs` missing → silent skip (don't block heartbeat for a
+  tooling-only step).
+- Brain.shared lesson append fails → warning still emitted to text
+  output; lesson can be re-posted next HB.
+- False positive (wire-check script bug) → operator runs `yarn
+  wire-check --strict` manually to inspect; fix script if buggy.
+
+### Provenance
+
+- Argus HB#717 — wire-check.mjs orphan-tool detector
+- Hudson HB#986 — dangling-imports extension to wire-check.mjs
+- Argus HB#719 — `yarn test` CI integration via wire-check:strict
+- Argus HB#726 — heartbeat-time auto-trigger (this section)
+- Pattern n=4 orphan + n=2 dangling = empirical justification for both
+  detector + CI gate + heartbeat trigger
+
+---
+
 ## Step 1: Triage
 
 Run the triage command — it synthesizes all observations into a prioritized
