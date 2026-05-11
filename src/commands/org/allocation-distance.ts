@@ -779,10 +779,29 @@ export const allocationDistanceHandler = {
 
       if (eligible.length === 0) {
         const msg = `No multi-option proposals found for "${spaceId}"${typeFilter ? ` (type=${typeFilter})` : ''}`;
+        // HB#652 vigil (sentinel HB#1020 follow-up): emit meta banner even on
+        // early-exit so downstream consumers always see filter-state + tooling
+        // version. Without this, early-exit JSON output was missing the
+        // contract that task #527 promised.
+        const earlyExitMeta = buildFilterMeta({
+          minGaugesSelected,
+          hubMinDegree: wantHubs ? hubMinDegree : undefined,
+          hubMinCos: wantHubs ? hubMinCos : undefined,
+          hubScanTopN: wantHubs ? hubScanTopN : undefined,
+          minVp,
+          proposalType: typeFilter,
+          limit,
+          topN,
+        });
         if (wantJson) {
-          console.log(JSON.stringify({ space: spaceId, proposals: 0, pairs: [], reason: msg }, null, 2));
+          console.log(JSON.stringify({ meta: earlyExitMeta, space: spaceId, proposals: 0, pairs: [], reason: msg }, null, 2));
         } else {
           spin?.fail(msg);
+          console.log('');
+          console.log(renderFilterBanner(earlyExitMeta));
+          for (const w of earlyExitMeta.warnings) {
+            console.log(`  ⚠ ${w}`);
+          }
         }
         return;
       }
