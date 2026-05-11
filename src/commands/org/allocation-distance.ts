@@ -30,6 +30,16 @@ interface AllocationDistanceArgs {
   minVp?: number;
   json?: boolean;
   proposalType?: string;
+  hubDetection?: boolean;
+  hubMinDegree?: number;
+  hubMinCos?: number;
+  hubScanTopN?: number;
+}
+
+interface HubVoter {
+  voter: string;
+  hubDegree: number;
+  spokes: Array<{ voter: string; avgCosine: number; proposalsShared: number }>;
 }
 
 interface Vote {
@@ -104,6 +114,32 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dot / (Math.sqrt(magA) * Math.sqrt(magB));
 }
 
+function computeHubs(
+  ranked: PairScore[],
+  scanTopN: number,
+  minCos: number,
+  minDegree: number,
+): HubVoter[] {
+  const scanned = ranked.slice(0, scanTopN).filter((p) => p.avgCosine >= minCos);
+  const adjacency = new Map<string, Array<{ voter: string; avgCosine: number; proposalsShared: number }>>();
+  for (const p of scanned) {
+    const a = adjacency.get(p.voterA) || [];
+    a.push({ voter: p.voterB, avgCosine: p.avgCosine, proposalsShared: p.proposalsShared });
+    adjacency.set(p.voterA, a);
+    const b = adjacency.get(p.voterB) || [];
+    b.push({ voter: p.voterA, avgCosine: p.avgCosine, proposalsShared: p.proposalsShared });
+    adjacency.set(p.voterB, b);
+  }
+  const hubs: HubVoter[] = [];
+  for (const [voter, spokes] of adjacency) {
+    if (spokes.length < minDegree) continue;
+    spokes.sort((a, b) => b.avgCosine - a.avgCosine);
+    hubs.push({ voter, hubDegree: spokes.length, spokes });
+  }
+  hubs.sort((a, b) => b.hubDegree - a.hubDegree);
+  return hubs;
+}
+
 function jaccardSimilarity(a: number[], b: number[]): number {
   let intersection = 0;
   let union = 0;
@@ -123,6 +159,10 @@ export const allocationDistanceHandler = {
     .option('top-n', { type: 'number', default: 10, describe: 'Top-N pairs to surface in human output' })
     .option('min-vp', { type: 'number', default: 1, describe: 'Minimum vp threshold for voters considered' })
     .option('proposal-type', { type: 'string', describe: 'Filter to a specific Snapshot proposal type (weighted/quadratic/approval). Default: all multi-option types.' })
+    .option('hub-detection', { type: 'boolean', default: false, describe: 'Surface hub-and-spoke coordination patterns (voters appearing in 2+ high-cos pairs). Strongest signal on gauge-allocation DAOs.' })
+    .option('hub-min-degree', { type: 'number', default: 2, describe: 'Minimum number of cos-similar spokes for a voter to qualify as a hub (default 2)' })
+    .option('hub-min-cos', { type: 'number', default: 0.99, describe: 'Minimum avg cosine for a pair to count toward hub-degree (default 0.99)' })
+    .option('hub-scan-top-n', { type: 'number', default: 200, describe: 'Number of top pairs to scan when computing hub-degrees (default 200; larger catches looser hubs)' })
     .option('json', { type: 'boolean', default: false, describe: 'Machine-readable JSON output' }),
 
   handler: async (argv: ArgumentsCamelCase<AllocationDistanceArgs>) => {
@@ -131,6 +171,10 @@ export const allocationDistanceHandler = {
     const topN = Number(argv.topN ?? (argv as any)['top-n']) || 10;
     const minVp = Number(argv.minVp ?? (argv as any)['min-vp']) || 1;
     const typeFilter = (argv.proposalType ?? (argv as any)['proposal-type']) as string | undefined;
+    const wantHubs = Boolean(argv.hubDetection ?? (argv as any)['hub-detection']);
+    const hubMinDegree = Number(argv.hubMinDegree ?? (argv as any)['hub-min-degree']) || 2;
+    const hubMinCos = Number(argv.hubMinCos ?? (argv as any)['hub-min-cos']) || 0.99;
+    const hubScanTopN = Number(argv.hubScanTopN ?? (argv as any)['hub-scan-top-n']) || 200;
     const wantJson = Boolean(argv.json);
 
     const spin = wantJson ? null : output.spinner(`Fetching multi-option proposals for ${spaceId}...`);
@@ -238,6 +282,9 @@ export const allocationDistanceHandler = {
 
       const top = ranked.slice(0, topN);
 
+      // Hub detection: aggregate voter appearances across high-cos pairs (scan top-N).
+      const hubs: HubVoter[] = wantHubs ? computeHubs(ranked, hubScanTopN, hubMinCos, hubMinDegree) : [];
+
       if (wantJson) {
         console.log(JSON.stringify({
           space: spaceId,
@@ -247,6 +294,10 @@ export const allocationDistanceHandler = {
           pairsScored: pairStats.size,
           pairsAboveMinShared: ranked.length,
           top,
+          hubs: wantHubs ? hubs : undefined,
+          hubConfig: wantHubs
+            ? { minDegree: hubMinDegree, minCos: hubMinCos, scanTopN: hubScanTopN }
+            : undefined,
         }, null, 2));
       } else {
         spin?.succeed(`Analyzed ${eligible.length} multi-option proposals; ${ranked.length} qualifying pairs`);
@@ -273,6 +324,31 @@ export const allocationDistanceHandler = {
         console.log('  cos ≈ 0 + n high                : orthogonal allocations (no shared preference)');
         console.log('');
         console.log(`Closes HB#680 Frax negative finding gap: gauge-allocation DAOs need allocation-vector distance, not just binary co-voting.`);
+
+        if (wantHubs) {
+          console.log('');
+          if (hubs.length === 0) {
+            console.log(`Hub-detection (min-degree ${hubMinDegree}, min-cos ${hubMinCos}): no hubs found.`);
+          } else {
+            const fmtAddr = (a: string) => a.slice(0, 6) + '…' + a.slice(-4);
+            console.log(`Hub-detection (min-degree ${hubMinDegree}, min-cos ${hubMinCos}, scan top ${hubScanTopN} pairs):`);
+            console.log('');
+            for (const h of hubs) {
+              console.log(`  ${fmtAddr(h.voter)}  hub-degree=${h.hubDegree}`);
+              for (const s of h.spokes.slice(0, 5)) {
+                console.log(`    ↔ ${fmtAddr(s.voter)}  cos=${s.avgCosine.toFixed(3)}  n=${s.proposalsShared}`);
+              }
+              if (h.spokes.length > 5) {
+                console.log(`    ... ${h.spokes.length - 5} more spokes`);
+              }
+            }
+            console.log('');
+            console.log('Hub-degree interpretation:');
+            console.log('  degree ≥ 5  : strong coordination operator (likely bribery client / strategy vault)');
+            console.log('  degree 2-4  : possible smaller coordination cell or natural-alignment cluster');
+            console.log('  degree 1    : independent pair (not a hub); see top-N pairs output above');
+          }
+        }
       }
     } catch (err) {
       spin?.fail((err as Error).message);
