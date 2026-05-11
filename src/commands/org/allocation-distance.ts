@@ -91,6 +91,94 @@ interface PairScore {
 const SNAPSHOT_API = 'https://hub.snapshot.org/graphql';
 
 /**
+ * HB#648 task #527: tooling-version + filter-state banner emitted as the
+ * FIRST key of every --json output. Lets downstream consumers short-circuit
+ * on toolingVersion mismatch + see active filter state without reading the
+ * whole result body. Documents argus HB#749 retraction class: when an
+ * agent runs the tool with a non-default filter, they should see a WARN
+ * in the meta block explaining the BIP-artifact implications.
+ *
+ * Increment ALLOCATION_DISTANCE_TOOLING_VERSION when:
+ * - Default filter values change (e.g. min-gauges-selected default 2 → 3)
+ * - New filter dimensions are added (e.g. a hypothetical --min-voter-vp)
+ * - Cluster-classification semantics shift
+ *
+ * NOT incremented for: new flags with backward-compat defaults, refactors,
+ * test-only changes.
+ */
+const ALLOCATION_DISTANCE_TOOLING_VERSION = 'HB#648-1 (HB#1011+1012 BIP-artifact filter, P75 ≥N gauges)';
+
+interface FilterMeta {
+  toolingVersion: string;
+  filters: {
+    minGaugesSelected: number;
+    hubMinDegree?: number;
+    hubMinCos?: number;
+    hubScanTopN?: number;
+    minVp: number;
+    proposalType?: string;
+    limit: number;
+    topN?: number;
+  };
+  warnings: string[];
+}
+
+function buildFilterMeta(opts: {
+  minGaugesSelected: number;
+  hubMinDegree?: number;
+  hubMinCos?: number;
+  hubScanTopN?: number;
+  minVp: number;
+  proposalType?: string;
+  limit: number;
+  topN?: number;
+}): FilterMeta {
+  const warnings: string[] = [];
+  if (opts.minGaugesSelected === 0) {
+    warnings.push(
+      'min-gauges-selected=0 disables the HB#1011+1012 BIP-artifact filter. ' +
+        'Yes/no policy votes produce trivial cosine=1.0 hub-matches that look like coordination but are not. ' +
+        'See argus HB#749 retraction for context.',
+    );
+  } else if (opts.minGaugesSelected !== 2) {
+    warnings.push(
+      `min-gauges-selected=${opts.minGaugesSelected} differs from the default (2). ` +
+        `Higher values are stricter (require more gauges per voter); lower values include more BIP-style proposals.`,
+    );
+  }
+  if (opts.hubMinCos !== undefined && opts.hubMinCos < 0.95) {
+    warnings.push(
+      `hub-min-cos=${opts.hubMinCos} is below 0.95 (default 0.99). ` +
+        `Lower thresholds catch looser alignment but may include non-coordinated common-strategy followers.`,
+    );
+  }
+  return {
+    toolingVersion: ALLOCATION_DISTANCE_TOOLING_VERSION,
+    filters: {
+      minGaugesSelected: opts.minGaugesSelected,
+      hubMinDegree: opts.hubMinDegree,
+      hubMinCos: opts.hubMinCos,
+      hubScanTopN: opts.hubScanTopN,
+      minVp: opts.minVp,
+      proposalType: opts.proposalType,
+      limit: opts.limit,
+      topN: opts.topN,
+    },
+    warnings,
+  };
+}
+
+function renderFilterBanner(meta: FilterMeta): string {
+  const flags: string[] = [];
+  flags.push(`min-gauges=${meta.filters.minGaugesSelected}`);
+  if (meta.filters.hubMinDegree !== undefined) flags.push(`hub-degree=${meta.filters.hubMinDegree}`);
+  if (meta.filters.hubMinCos !== undefined) flags.push(`hub-cos=${meta.filters.hubMinCos}`);
+  if (meta.filters.minVp !== 1) flags.push(`min-vp=${meta.filters.minVp}`);
+  const warn = meta.warnings.length > 0 ? '  [⚠ ' + meta.warnings.length + ' WARN]' : '';
+  return `  filters: ${flags.join(' ')}${warn}  · ${meta.toolingVersion}`;
+}
+
+/**
  * Normalize a Snapshot `choice` field for a weighted/quadratic vote into a
  * dense numeric vector of length `choicesCount`. Snapshot stores weighted/
  * quadratic choices as { "1": share1, "2": share2, ... } where keys are 1-
@@ -510,10 +598,22 @@ async function runActorsGraph(opts: {
 
   spin?.succeed(`Scanned ${spaces.length} space(s) × ${actors.length} actor(s) → ${actorsAcrossMultiple} cross-DAO actor(s)`);
 
+  // HB#648 task #527: meta banner for --actors-graph too
+  const filterMetaGraph = buildFilterMeta({
+    minGaugesSelected: opts.minGaugesSelected,
+    hubMinDegree: opts.hubMinDegree,
+    hubMinCos: opts.hubMinCos,
+    hubScanTopN: opts.hubScanTopN,
+    minVp: opts.minVp,
+    proposalType: opts.typeFilter,
+    limit: opts.limit,
+  });
+
   if (opts.wantJson) {
     console.log(
       JSON.stringify(
         {
+          meta: filterMetaGraph, // HB#648: FIRST key
           actors: actorRows,
           spaces: perSpace.map((s) => ({
             space: s.spaceId,
@@ -537,6 +637,11 @@ async function runActorsGraph(opts: {
   }
 
   // Human-readable table: actors × spaces with hub-degree cells.
+  console.log('');
+  console.log(renderFilterBanner(filterMetaGraph));
+  for (const w of filterMetaGraph.warnings) {
+    console.log(`  ⚠ ${w}`);
+  }
   console.log('');
   console.log(`Cross-DAO actor presence (hub-degree per space; "-" = not a hub):`);
   console.log('');
@@ -813,8 +918,21 @@ export const allocationDistanceHandler = {
         }
       }
 
+      // HB#648 task #527: meta banner FIRST in JSON; visible in human mode too
+      const filterMeta = buildFilterMeta({
+        minGaugesSelected,
+        hubMinDegree: wantHubs ? hubMinDegree : undefined,
+        hubMinCos: wantHubs ? hubMinCos : undefined,
+        hubScanTopN: wantHubs ? hubScanTopN : undefined,
+        minVp,
+        proposalType: typeFilter,
+        limit,
+        topN,
+      });
+
       if (wantJson) {
         console.log(JSON.stringify({
+          meta: filterMeta, // HB#648: FIRST key per task #527 acceptance criteria
           space: spaceId,
           proposalsAnalyzed: eligible.length,
           proposalsDroppedLowEntropy: dropLowEntropy,
@@ -832,6 +950,12 @@ export const allocationDistanceHandler = {
       } else {
         const entropyNote = dropLowEntropy > 0 ? ` (${dropLowEntropy} dropped: <3 voters with ≥${minGaugesSelected} gauges)` : '';
         spin?.succeed(`Analyzed ${eligible.length - dropLowEntropy}/${eligible.length} multi-option proposals${entropyNote}; ${ranked.length} qualifying pairs`);
+        // HB#648 task #527: filter-state banner at top of human output
+        console.log('');
+        console.log(renderFilterBanner(filterMeta));
+        for (const w of filterMeta.warnings) {
+          console.log(`  ⚠ ${w}`);
+        }
         if (ranked.length === 0) {
           console.log('\nNo voter pairs shared ≥2 multi-option proposals. Try --limit higher.\n');
           return;
