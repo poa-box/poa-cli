@@ -636,6 +636,16 @@ export const triageHandler = {
       spin.stop();
 
       // --- Output ---
+      // HB#734: recentExecutedProposalIds enables Step 0.8 post-mortem-scan
+      // fallback path when no fresh proposal_executed events exist. Top 10
+      // most-recent finalized proposals by ID descending. Empty array means
+      // org has never finalized anything (new org).
+      const recentExecutedProposalIds = executedProposals
+        .slice()
+        .sort((a: any, b: any) => Number(b.proposalId) - Number(a.proposalId))
+        .slice(0, 10)
+        .map((p: any) => Number(p.proposalId));
+
       const context = {
         gas: `${gasEther.toFixed(3)} ${networkConfig.nativeCurrency.symbol}`,
         gasStatus: gasEther < 0.01 ? 'CRITICAL' : gasEther < 0.1 ? 'LOW' : 'HEALTHY',
@@ -647,6 +657,7 @@ export const triageHandler = {
         openTasks: openTasks.length,
         assignedTasks: myAssigned.length,
         boardState: hasWork ? 'has-work' : 'empty',
+        recentExecutedProposalIds,
       };
 
       if (output.isJsonMode()) {
