@@ -148,10 +148,18 @@ function main() {
             signature: sig,
             count: items.length,
             proposalIds: items.map((i) => i.id),
+            // HB#627 vigil: per-cluster outerTxReverted breakdown distinguishes
+            // execute-internal-revert pattern (outer announce-tx succeeded but
+            // inner Executor.execute() reverted) from true outer-tx reverts.
+            // All bridge-saga props (#41/#44/#49/#50/#52) are inner-revert
+            // pattern; receipt-status alerting alone misses them.
+            outerTxRevertedCount: items.filter((i) => i.outerTxReverted === true).length,
+            innerRevertOnlyCount: items.filter((i) => i.outerTxReverted === false).length,
             example: {
               rootCauseDepth: items[0].rootCauseDepth,
               rootCauseSelector: items[0].rootCauseSelector,
               rootCauseError: items[0].rootCauseError,
+              outerTxReverted: items[0].outerTxReverted,
               frames: items[0].frames?.length,
               totalGasUsed: items[0].totalGasUsed,
             },
@@ -184,12 +192,22 @@ function main() {
     console.log(`  Revert clusters (${clusters.size}):`);
     for (const [sig, items] of clusters.entries()) {
       const ex = items[0];
+      const outerCnt = items.filter((i) => i.outerTxReverted === true).length;
+      const innerCnt = items.filter((i) => i.outerTxReverted === false).length;
+      // HB#627: outer-tx vs inner-frame revert breakdown per cluster
+      const revertKind =
+        outerCnt > 0 && innerCnt > 0
+          ? `mixed (outer=${outerCnt} inner-only=${innerCnt})`
+          : outerCnt > 0
+            ? `outer-tx-reverted`
+            : `inner-frame-only (receipt.status=1)`;
       console.log(
         `    🔴 cluster (${items.length}× signature): props [${items.map((i) => '#' + i.id).join(', ')}]`,
       );
       console.log(
         `       depth=${ex.rootCauseDepth} selector=${ex.rootCauseSelector} error="${ex.rootCauseError}" frames=${ex.frames?.length}`,
       );
+      console.log(`       revert-kind: ${revertKind}`);
     }
     console.log('');
   }
