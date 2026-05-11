@@ -25,7 +25,7 @@ import { snapshotGraphQL } from '../../lib/snapshot';
 import * as output from '../../lib/output';
 
 interface AllocationDistanceArgs {
-  space: string;
+  space: string | string[];
   limit?: number;
   topN?: number;
   minVp?: number;
@@ -37,6 +37,8 @@ interface AllocationDistanceArgs {
   hubScanTopN?: number;
   labelActors?: boolean;
   rpc?: string;
+  actorsGraph?: string;
+  maxSpaces?: number;
 }
 
 interface ActorLabel {
@@ -212,9 +214,337 @@ function jaccardSimilarity(a: number[], b: number[]): number {
   return union === 0 ? 0 : intersection / union;
 }
 
+/**
+ * HB#637 (vigil) task #524: pure data-fetch + hub-detection for one space.
+ * Used by both the original single-space handler and the new --actors-graph
+ * multi-space driver. Returns the computed hubs + counts; rendering is
+ * caller-side. Does NOT do label resolution — callers handle that to allow
+ * cross-space label cache.
+ */
+interface OneSpaceOpts {
+  spaceId: string;
+  limit: number;
+  minVp: number;
+  typeFilter: string | undefined;
+  hubMinDegree: number;
+  hubMinCos: number;
+  hubScanTopN: number;
+}
+interface OneSpaceResult {
+  spaceId: string;
+  proposalsAnalyzed: number;
+  votersConsidered: number;
+  pairsScored: number;
+  ranked: PairScore[];
+  hubs: HubVoter[];
+  error?: string;
+}
+
+async function runOneSpace(opts: OneSpaceOpts): Promise<OneSpaceResult> {
+  const { spaceId, limit, minVp, typeFilter, hubMinDegree, hubMinCos, hubScanTopN } = opts;
+  const empty: OneSpaceResult = {
+    spaceId,
+    proposalsAnalyzed: 0,
+    votersConsidered: 0,
+    pairsScored: 0,
+    ranked: [],
+    hubs: [],
+  };
+  try {
+    const proposalData = await snapshotGraphQL<any>(
+      `query($space: String!, $first: Int!) {
+        proposals(where: {space: $space}, first: $first, orderBy: "created", orderDirection: desc) {
+          id title type choices
+        }
+      }`,
+      { space: spaceId, first: limit },
+      { endpoint: SNAPSHOT_API },
+    );
+    const eligible: ProposalInfo[] = (proposalData.proposals || [])
+      .filter((p: any) => {
+        if (!p || !p.type) return false;
+        if (typeFilter) return p.type === typeFilter;
+        return p.type === 'weighted' || p.type === 'quadratic' || p.type === 'approval';
+      })
+      .map((p: any) => ({ id: p.id, title: p.title, type: p.type, choicesCount: (p.choices || []).length }));
+    if (eligible.length === 0) return empty;
+    const proposalIds = eligible.map((p) => p.id);
+    const voteData = await snapshotGraphQL<any>(
+      `query($proposals: [String!]!) {
+        votes(where: {proposal_in: $proposals}, first: 1000, orderBy: "vp", orderDirection: desc) {
+          voter vp choice proposal { id }
+        }
+      }`,
+      { proposals: proposalIds },
+      { endpoint: SNAPSHOT_API },
+    );
+    const allVotes: Vote[] = (voteData.votes || [])
+      .filter((v: any) => (v.vp || 0) >= minVp)
+      .map((v: any) => ({
+        voter: v.voter,
+        vp: v.vp,
+        proposalId: v.proposal?.id || '',
+        choice: v.choice,
+      }));
+
+    const pairStats = new Map<
+      string,
+      { coSum: number; jaSum: number; n: number; deepEq: number; vpSum: number }
+    >();
+    for (const prop of eligible) {
+      const propVotes = allVotes.filter((v) => v.proposalId === prop.id);
+      const vectors = propVotes
+        .map((v) => ({
+          voter: v.voter,
+          vp: v.vp,
+          vec: toAllocationVector(v.choice, prop.choicesCount),
+          canonChoice: canonicalJSON(v.choice),
+        }))
+        .filter((v) => v.vec !== null) as Array<{
+          voter: string;
+          vp: number;
+          vec: number[];
+          canonChoice: string;
+        }>;
+      for (let i = 0; i < vectors.length; i++) {
+        for (let j = i + 1; j < vectors.length; j++) {
+          const a = vectors[i];
+          const b = vectors[j];
+          const c = cosineSimilarity(a.vec, b.vec);
+          const ja = jaccardSimilarity(a.vec, b.vec);
+          const deepEq = a.canonChoice === b.canonChoice ? 1 : 0;
+          const key = a.voter < b.voter ? `${a.voter}__${b.voter}` : `${b.voter}__${a.voter}`;
+          const cur = pairStats.get(key) || { coSum: 0, jaSum: 0, n: 0, deepEq: 0, vpSum: 0 };
+          cur.coSum += c;
+          cur.jaSum += ja;
+          cur.deepEq += deepEq;
+          cur.n += 1;
+          cur.vpSum += a.vp + b.vp;
+          pairStats.set(key, cur);
+        }
+      }
+    }
+    const ranked: PairScore[] = Array.from(pairStats.entries())
+      .filter(([, s]) => s.n >= 2)
+      .map(([key, s]) => {
+        const [voterA, voterB] = key.split('__');
+        return {
+          voterA,
+          voterB,
+          proposalsShared: s.n,
+          avgCosine: s.coSum / s.n,
+          avgJaccard: s.jaSum / s.n,
+          deepEqualCount: s.deepEq,
+          combinedVp: s.vpSum,
+        };
+      })
+      .sort((a, b) => b.avgCosine - a.avgCosine);
+    const hubs = computeHubs(ranked, hubScanTopN, hubMinCos, hubMinDegree);
+    return {
+      spaceId,
+      proposalsAnalyzed: eligible.length,
+      votersConsidered: new Set(allVotes.map((v) => v.voter)).size,
+      pairsScored: pairStats.size,
+      ranked,
+      hubs,
+    };
+  } catch (err) {
+    return { ...empty, error: (err as Error).message };
+  }
+}
+
+/**
+ * HB#637 task #524 driver: scan a set of actor addresses across a set of
+ * Snapshot spaces, surface the cross-DAO hub-degree matrix. Reuses
+ * runOneSpace() per space + computeHubs() pipeline. Label resolution runs
+ * ONCE per unique actor (cached across spaces).
+ */
+async function runActorsGraph(opts: {
+  actorsCsv: string;
+  spaces: string[];
+  maxSpaces: number;
+  limit: number;
+  minVp: number;
+  typeFilter: string | undefined;
+  hubMinDegree: number;
+  hubMinCos: number;
+  hubScanTopN: number;
+  wantLabels: boolean;
+  rpcUrl: string;
+  wantJson: boolean;
+}): Promise<void> {
+  const actors = opts.actorsCsv
+    .split(',')
+    .map((a) => a.trim().toLowerCase())
+    .filter((a) => /^0x[0-9a-f]{40}$/.test(a));
+  if (actors.length === 0) {
+    output.error('--actors-graph: no valid 0x-prefixed 40-hex addresses parsed from input.');
+    process.exit(1);
+  }
+  const spaces = opts.spaces.slice(0, opts.maxSpaces);
+  if (opts.spaces.length > opts.maxSpaces) {
+    if (!opts.wantJson) {
+      console.warn(
+        `[--actors-graph] --space list capped at ${opts.maxSpaces} (--max-spaces). Skipped: ${opts.spaces
+          .slice(opts.maxSpaces)
+          .join(', ')}`,
+      );
+    }
+  }
+  const spin = opts.wantJson
+    ? null
+    : output.spinner(`Scanning ${spaces.length} space(s) × ${actors.length} actor(s)...`);
+  spin?.start();
+
+  // Per-space analysis (sequential — Snapshot rate-limits aggressively).
+  const perSpace: OneSpaceResult[] = [];
+  for (const spaceId of spaces) {
+    spin && (spin.text = `Analyzing ${spaceId} (${perSpace.length + 1}/${spaces.length})...`);
+    const r = await runOneSpace({
+      spaceId,
+      limit: opts.limit,
+      minVp: opts.minVp,
+      typeFilter: opts.typeFilter,
+      hubMinDegree: opts.hubMinDegree,
+      hubMinCos: opts.hubMinCos,
+      hubScanTopN: opts.hubScanTopN,
+    });
+    perSpace.push(r);
+  }
+
+  // Per-actor projection: for each actor, find their hub entry in each space.
+  interface ActorRow {
+    address: string;
+    label?: ActorLabel;
+    spaces: Array<{
+      space: string;
+      hubDegree: number;
+      perfectCosinePairs: number;
+      error?: string;
+    }>;
+  }
+  const actorRows: ActorRow[] = actors.map((address) => {
+    const spaceCells = perSpace.map((s) => {
+      if (s.error) return { space: s.spaceId, hubDegree: 0, perfectCosinePairs: 0, error: s.error };
+      const hub = s.hubs.find((h) => h.voter.toLowerCase() === address);
+      if (!hub) return { space: s.spaceId, hubDegree: 0, perfectCosinePairs: 0 };
+      const perfect = hub.spokes.filter((sp) => sp.avgCosine >= 0.999).length;
+      return { space: s.spaceId, hubDegree: hub.hubDegree, perfectCosinePairs: perfect };
+    });
+    return { address, spaces: spaceCells };
+  });
+
+  // Label cache: one ENS/contract lookup per unique actor that appears as a hub anywhere.
+  if (opts.wantLabels) {
+    spin && (spin.text = `Labeling ${actors.length} actor(s) via ENS + isContract (one-shot)...`);
+    try {
+      const provider = new ethers.providers.StaticJsonRpcProvider(opts.rpcUrl);
+      // Reuse labelHubs by wrapping each actor as a single-element pseudo-hub
+      // input. This keeps the bounded-concurrency pattern + timeout behavior
+      // consistent with the existing label path.
+      const pseudoHubs: HubVoter[] = actors.map((address) => ({
+        voter: address,
+        hubDegree: 0,
+        spokes: [],
+      }));
+      await labelHubs(pseudoHubs, provider);
+      for (let i = 0; i < actors.length; i++) {
+        if (pseudoHubs[i].label) actorRows[i].label = pseudoHubs[i].label;
+      }
+    } catch (e) {
+      if (!opts.wantJson) {
+        console.warn(`\n[--actors-graph label-actors] failed: ${(e as Error).message}. Continuing without labels.`);
+      }
+    }
+  }
+
+  // Aggregate summary.
+  const actorsAcrossMultiple = actorRows.filter(
+    (a) => a.spaces.filter((s) => s.hubDegree > 0).length >= 2,
+  ).length;
+  const maxHubDegree = actorRows.reduce(
+    (m, a) => Math.max(m, ...a.spaces.map((s) => s.hubDegree)),
+    0,
+  );
+  // crossDaoLinks: count of (actor, space) cells with hubDegree > 0 minus
+  // the per-actor-first-space (so it counts "additional" presence).
+  let crossDaoLinks = 0;
+  for (const a of actorRows) {
+    const hubsCount = a.spaces.filter((s) => s.hubDegree > 0).length;
+    if (hubsCount > 1) crossDaoLinks += hubsCount - 1;
+  }
+
+  spin?.succeed(`Scanned ${spaces.length} space(s) × ${actors.length} actor(s) → ${actorsAcrossMultiple} cross-DAO actor(s)`);
+
+  if (opts.wantJson) {
+    console.log(
+      JSON.stringify(
+        {
+          actors: actorRows,
+          spaces: perSpace.map((s) => ({
+            space: s.spaceId,
+            proposalsAnalyzed: s.proposalsAnalyzed,
+            votersConsidered: s.votersConsidered,
+            pairsScored: s.pairsScored,
+            error: s.error,
+          })),
+          summary: {
+            actorsAcrossMultiple,
+            maxHubDegree,
+            crossDaoLinks,
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
+  // Human-readable table: actors × spaces with hub-degree cells.
+  console.log('');
+  console.log(`Cross-DAO actor presence (hub-degree per space; "-" = not a hub):`);
+  console.log('');
+  const fmtAddr = (a: string) => a.slice(0, 6) + '…' + a.slice(-4);
+  const spaceCols = spaces;
+  const header = ['Actor'.padEnd(28), ...spaceCols.map((s) => s.padEnd(18))].join('');
+  console.log(header);
+  console.log('-'.repeat(header.length));
+  for (const a of actorRows) {
+    const labelStr = a.label
+      ? a.label.ens
+        ? ` (${a.label.ens})`
+        : a.label.isContract
+          ? ' [CONTRACT]'
+          : ''
+      : '';
+    const row = [(fmtAddr(a.address) + labelStr).padEnd(28)];
+    for (const cell of a.spaces) {
+      if (cell.error) row.push('ERR'.padEnd(18));
+      else if (cell.hubDegree === 0) row.push('-'.padEnd(18));
+      else
+        row.push(
+          `${cell.hubDegree}${cell.perfectCosinePairs > 0 ? `(${cell.perfectCosinePairs}@1.0)` : ''}`.padEnd(18),
+        );
+    }
+    console.log(row.join(''));
+  }
+  console.log('');
+  console.log(`Summary: ${actorsAcrossMultiple} actor(s) present in ≥2 spaces; max hub-degree ${maxHubDegree}; ${crossDaoLinks} cross-DAO link(s).`);
+  console.log('Interpretation:');
+  console.log('  Cell = hub-degree (count of high-cos spokes for this actor in this space).');
+  console.log('  N(K@1.0) = K of N spokes are perfect-cosine matches (1.0).');
+  console.log('  Actor present in ≥2 spaces with hub-degree > 0 = cross-DAO coordination signal.');
+}
+
 export const allocationDistanceHandler = {
   builder: (yargs: Argv) => yargs
-    .option('space', { type: 'string', demandOption: true, describe: 'Snapshot space ID (e.g. fraxfinance.eth)' })
+    .option('space', {
+      type: 'string',
+      array: true,
+      demandOption: true,
+      describe: 'Snapshot space ID (e.g. fraxfinance.eth). Pass multiple times for multi-space scan with --actors-graph (HB#637 vigil HB#738/#739 kappa-H finding).',
+    })
     .option('limit', { type: 'number', default: 30, describe: 'Max recent proposals to analyze' })
     .option('top-n', { type: 'number', default: 10, describe: 'Top-N pairs to surface in human output' })
     .option('min-vp', { type: 'number', default: 1, describe: 'Minimum vp threshold for voters considered' })
@@ -225,10 +555,23 @@ export const allocationDistanceHandler = {
     .option('hub-scan-top-n', { type: 'number', default: 200, describe: 'Number of top pairs to scan when computing hub-degrees (default 200; larger catches looser hubs)' })
     .option('label-actors', { type: 'boolean', default: false, describe: 'Resolve ENS + isContract for each hub address. Surfaces protocol-level coordinators (e.g. Karpatkey) vs individual delegates.' })
     .option('rpc', { type: 'string', default: 'https://ethereum.publicnode.com', describe: 'Ethereum mainnet RPC for ENS + isContract lookups (only used with --label-actors)' })
-    .option('json', { type: 'boolean', default: false, describe: 'Machine-readable JSON output' }),
+    .option('json', { type: 'boolean', default: false, describe: 'Machine-readable JSON output' })
+    .option('actors-graph', {
+      type: 'string',
+      describe:
+        'HB#637 task #524 (vigil HB#738/#739 kappa-H finding): comma-separated actor addresses to track across multiple --space flags. Outputs a structured cross-DAO graph: which addresses appear as hubs in which spaces + their hub-degree per space.',
+    })
+    .option('max-spaces', {
+      type: 'number',
+      default: 10,
+      describe: 'Cap on number of --space flags processed in --actors-graph mode (default 10). Prevents runaway scans on a long --space list.',
+    }),
 
   handler: async (argv: ArgumentsCamelCase<AllocationDistanceArgs>) => {
-    const spaceId = argv.space as string;
+    // --space is now `array: true` so yargs gives us string[]. Normalize.
+    const spacesRaw = argv.space as string | string[];
+    const spaces = Array.isArray(spacesRaw) ? spacesRaw : [spacesRaw];
+    const spaceId = spaces[0];
     const limit = Number(argv.limit) || 30;
     const topN = Number(argv.topN ?? (argv as any)['top-n']) || 10;
     const minVp = Number(argv.minVp ?? (argv as any)['min-vp']) || 1;
@@ -240,6 +583,29 @@ export const allocationDistanceHandler = {
     const wantLabels = Boolean(argv.labelActors ?? (argv as any)['label-actors']);
     const rpcUrl = (argv.rpc as string) || 'https://ethereum.publicnode.com';
     const wantJson = Boolean(argv.json);
+    const actorsGraphRaw = (argv.actorsGraph ?? (argv as any)['actors-graph']) as string | undefined;
+    const maxSpaces = Number(argv.maxSpaces ?? (argv as any)['max-spaces']) || 10;
+
+    // HB#637 task #524: --actors-graph branch. Loop over --space inputs,
+    // compute hubs per space, project the requested actor list as a cross-DAO
+    // matrix. Reuses the existing single-space analysis via runOneSpace().
+    if (actorsGraphRaw) {
+      await runActorsGraph({
+        actorsCsv: actorsGraphRaw,
+        spaces,
+        maxSpaces,
+        limit,
+        minVp,
+        typeFilter,
+        hubMinDegree,
+        hubMinCos,
+        hubScanTopN,
+        wantLabels,
+        rpcUrl,
+        wantJson,
+      });
+      return;
+    }
 
     const spin = wantJson ? null : output.spinner(`Fetching multi-option proposals for ${spaceId}...`);
     spin?.start();
