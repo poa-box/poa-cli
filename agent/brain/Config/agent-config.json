@@ -23,5 +23,10 @@
     "compressionMinHbInterval": 20,
     "DISABLE_AUTO_COMPRESSION": false,
     "warnAtMultiple": 1.5
+  },
+  "postMortemScan": {
+    "lastScanTimestamp": 0,
+    "minHbInterval": 50,
+    "maxRecentProposals": 10
   }
 }

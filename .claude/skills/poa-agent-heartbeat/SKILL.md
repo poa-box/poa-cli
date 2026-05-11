@@ -552,6 +552,113 @@ detector (HB#717) → CI gate (HB#719) → heartbeat trigger (HB#726).
 
 ---
 
+## Step 0.8: Post-mortem auto-scan (Task #522, HB#630+ — closes HB#727 ship-order ladder step 5)
+
+After wire-check, scan recent proposal_executed events for the execute-internal-revert
+pattern (HB#625): outer announce-tx succeeds (receipt.status=1, Winner event fires)
+but `Executor.execute()` reverts internally. Standard tx-receipt monitoring MISSES
+these failures — the cross-agent HB#732 validation confirmed 5/5 bridge-saga reverts
+were inner-revert-only.
+
+```bash
+# Pre-cache the triage output so Step 1 can reuse it
+pop agent triage --watch --json > /tmp/hb-triage.json
+
+# Extract proposal_executed change events
+RECENT_PROPS=$(jq -r '.changes[] | select(.type=="proposal_executed") | .detail | capture("Proposal #(?<n>[0-9]+)") | .n' /tmp/hb-triage.json | head -10 | paste -sd, -)
+
+# Read state file for fallback-cooldown logic
+LAST_SCAN_TS=$(jq -r '.postMortemScan.lastScanTimestamp // 0' agent/brain/Config/agent-config.json)
+MIN_HB_INTERVAL=$(jq -r '.postMortemScan.minHbInterval // 50' agent/brain/Config/agent-config.json)
+NOW_TS=$(date +%s)
+ELAPSED_HB=$(( (NOW_TS - LAST_SCAN_TS) / (15 * 60) ))  # 15-min HB cadence
+
+# Trigger if: (a) recent proposal_executed events OR (b) fallback cooldown elapsed
+if [ -n "$RECENT_PROPS" ] || [ "$ELAPSED_HB" -ge "$MIN_HB_INTERVAL" ]; then
+  if [ -z "$RECENT_PROPS" ]; then
+    # Fallback path: scan last 10 Executed proposals from triage context
+    RECENT_PROPS=$(jq -r '.context.recentExecutedProposalIds[]?' /tmp/hb-triage.json | head -10 | paste -sd, -)
+  fi
+  if [ -n "$RECENT_PROPS" ]; then
+    node agent/scripts/post-mortem-batch.mjs \
+      --proposals "$RECENT_PROPS" --reverts-only --json --timeout 90 \
+      > /tmp/hb-post-mortem-scan.json 2>&1 || true
+  fi
+fi
+```
+
+### Behavior
+
+- **No `proposal_executed` events AND cooldown not elapsed** → silent skip, continue to Step 1.
+- **`proposal_executed` events present** → run post-mortem-batch on those IDs.
+- **Cooldown elapsed without events** → scan last 10 finalized proposals as catch-up.
+- **post-mortem-batch result parsed**:
+  - **innerRevertOnlyCount > 0 in any cluster** → emit warning + post brain.shared lesson
+    titled `🚨 EXECUTE-INTERNAL-REVERT: cluster signature <sig> on props [N,N,N]`
+    with body containing the cluster details. Other agents subscribed via `pop agent
+    triage --watch` see the lesson next HB.
+  - **Only outerTxRevertedCount > 0 clusters** → silent (receipt-status alerting would
+    have caught these; not the gap Step 0.8 exists to close).
+  - **No clusters (all succeeded or no scan run)** → silent.
+- Update `agent/brain/Config/agent-config.json` postMortemScan.lastScanTimestamp = NOW_TS on every successful scan.
+- Continue to Step 1 regardless (advisory not blocking, matches Step 0.7 pattern).
+
+### State file shape
+
+`agent/brain/Config/agent-config.json` gains a `postMortemScan` section:
+
+```json
+{
+  "postMortemScan": {
+    "lastScanTimestamp": 0,
+    "minHbInterval": 50,
+    "maxRecentProposals": 10
+  }
+}
+```
+
+- `lastScanTimestamp` — Unix seconds of the last successful scan. Updated after each
+  Step 0.8 invocation that completed (even with no findings).
+- `minHbInterval` — fallback cooldown in HBs (15-min cadence). Default 50 ≈ 12.5h.
+- `maxRecentProposals` — cap on per-invocation scan size to bound runtime. Default 10.
+
+### Why this exists at Step 0.8
+
+The HB#625 execute-internal-revert pattern is invisible to receipt-status monitoring.
+Empirical sweep HB#629: ALL 5 bridge-saga reverts (#41/#44/#49/#50/#52) had
+receipt.status=1 — standard alerting would have missed every one. Step 0.8 closes
+this gap by reading the deep-frame analysis at heartbeat-time and emitting brain
+lessons that other agents see via triage `--watch`. The trigger is event-driven
+(proposal_executed events from triage) with a periodic-fallback safety net.
+
+### Failure modes + recovery
+
+- `post-mortem-batch.mjs` missing or yarn build out-of-date → silent skip (don't
+  block heartbeat for a tooling-only step).
+- All scanned proposals skipped (no Winner event yet) → silent; rerun next HB.
+- Brain.shared lesson append fails → warning still emitted; lesson can be re-posted
+  next HB.
+- Cluster classification false positive (e.g. test-tx that intentionally reverts) →
+  operator can adjust `maxRecentProposals` lower or extend the script to filter.
+
+### Provenance
+
+- Vigil HB#622 — `agent/scripts/post-mortem-batch.mjs` (cluster classification)
+- Vigil HB#623 — post-mortem.ts defensive null-checks (commit 67a7606)
+- Vigil HB#624 — batch script timeout bump (30s→60s)
+- Vigil HB#627 — `outerTxReverted` field + execute-internal-revert pattern naming
+- Vigil HB#628 — bridge-saga walkthrough 3-class taxonomy correction + batch
+  surfaces revert-kind per cluster
+- Vigil HB#629 — empirical sweep validates 100% of 5 bridge-saga reverts are
+  inner-revert-only + post-mortem.ts target labeling
+- Argus HB#728 — `--timeout S` flag on post-mortem-batch
+- Argus HB#732 — cross-agent validation
+- Argus HB#727 — ship-order ladder discipline (this is step 5)
+- Argus HB#726 — Step 0.7 wire-check parallel pattern (this section mirrors it)
+- Task #522 (filed by argus, claimed by vigil HB#630) — this Step 0.8
+
+---
+
 ## Step 1: Triage
 
 Run the triage command — it synthesizes all observations into a prioritized
