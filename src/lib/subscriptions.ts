@@ -218,9 +218,26 @@ export function validateFilter(
       canonical.delegateTo = filter.delegateTo.toLowerCase();
     }
   }
+  // HB#636 GAP 2 (vigil HB#605 #513): defensive input bounds on the filter
+  // side, parallel to MATCH_LIMITS on the matcher side. Filters live in
+  // ~/.pop-agent/brain/Config/subscriptions.json; misconfiguration or
+  // accidental copy-paste of a huge string shouldn't slow every heartbeat
+  // cycle. Caps calibrated for typical filter content (short tag names,
+  // human-authored substring patterns).
+  const FILTER_LIMITS = {
+    MAX_TAGS: 20,
+    MAX_TAG_CHARS: 64,
+    MAX_SUBSTRING_CHARS: 256,
+  } as const;
   if (filter.tags !== undefined) {
     if (!Array.isArray(filter.tags) || !filter.tags.every((t: any) => typeof t === 'string')) {
       errors.push(`${ctx}.tags: must be an array of strings`);
+    } else if (filter.tags.length > FILTER_LIMITS.MAX_TAGS) {
+      errors.push(`${ctx}.tags: max ${FILTER_LIMITS.MAX_TAGS} tags per filter (got ${filter.tags.length})`);
+    } else if (filter.tags.some((t: string) => t.length > FILTER_LIMITS.MAX_TAG_CHARS)) {
+      errors.push(`${ctx}.tags: each tag max ${FILTER_LIMITS.MAX_TAG_CHARS} chars`);
+    } else if (filter.tags.some((t: string) => t.length === 0)) {
+      errors.push(`${ctx}.tags: tags must be non-empty strings`);
     } else {
       canonical.tags = filter.tags.map((t: string) => t.toLowerCase());
     }
@@ -228,6 +245,8 @@ export function validateFilter(
   if (filter.titleContains !== undefined) {
     if (typeof filter.titleContains !== 'string' || filter.titleContains.length === 0) {
       errors.push(`${ctx}.titleContains: must be a non-empty string`);
+    } else if (filter.titleContains.length > FILTER_LIMITS.MAX_SUBSTRING_CHARS) {
+      errors.push(`${ctx}.titleContains: max ${FILTER_LIMITS.MAX_SUBSTRING_CHARS} chars (got ${filter.titleContains.length})`);
     } else {
       canonical.titleContains = filter.titleContains;
     }
@@ -235,6 +254,8 @@ export function validateFilter(
   if (filter.causedByContains !== undefined) {
     if (typeof filter.causedByContains !== 'string' || filter.causedByContains.length === 0) {
       errors.push(`${ctx}.causedByContains: must be a non-empty string`);
+    } else if (filter.causedByContains.length > FILTER_LIMITS.MAX_SUBSTRING_CHARS) {
+      errors.push(`${ctx}.causedByContains: max ${FILTER_LIMITS.MAX_SUBSTRING_CHARS} chars (got ${filter.causedByContains.length})`);
     } else {
       canonical.causedByContains = filter.causedByContains;
     }

@@ -231,4 +231,50 @@ describe('validateFilter — Task #513 v1 filter language', () => {
     expect(r.canonical.tags).toEqual(['paymaster']);
     expect(r.canonical.titleContains).toBe('Proposal');
   });
+
+  // HB#636 GAP 2 (vigil HB#605 #513) — defensive input bounds on the filter
+  // configuration side. Filters live in subscriptions.json; the user can
+  // accidentally paste large content. Bounds prevent that from slowing
+  // every triage cycle.
+  it('rejects tags array longer than 20 entries', () => {
+    const tags = Array(21).fill('t');
+    const r = validateFilter({ tags }, 'f');
+    expect(r.errors.length).toBe(1);
+    expect(r.errors[0]).toMatch(/max 20 tags/);
+  });
+
+  it('accepts tags array at the 20-entry boundary', () => {
+    const tags = Array(20).fill('t');
+    const r = validateFilter({ tags }, 'f');
+    expect(r.errors).toEqual([]);
+  });
+
+  it('rejects individual tag longer than 64 chars', () => {
+    const r = validateFilter({ tags: ['a'.repeat(65)] }, 'f');
+    expect(r.errors.length).toBe(1);
+    expect(r.errors[0]).toMatch(/each tag max 64 chars/);
+  });
+
+  it('rejects empty-string tag entry', () => {
+    const r = validateFilter({ tags: ['valid', ''] }, 'f');
+    expect(r.errors.length).toBe(1);
+    expect(r.errors[0]).toMatch(/non-empty/);
+  });
+
+  it('rejects titleContains longer than 256 chars', () => {
+    const r = validateFilter({ titleContains: 'x'.repeat(257) }, 'f');
+    expect(r.errors.length).toBe(1);
+    expect(r.errors[0]).toMatch(/titleContains: max 256/);
+  });
+
+  it('accepts titleContains at the 256-char boundary', () => {
+    const r = validateFilter({ titleContains: 'x'.repeat(256) }, 'f');
+    expect(r.errors).toEqual([]);
+  });
+
+  it('rejects causedByContains longer than 256 chars', () => {
+    const r = validateFilter({ causedByContains: 'y'.repeat(300) }, 'f');
+    expect(r.errors.length).toBe(1);
+    expect(r.errors[0]).toMatch(/causedByContains: max 256/);
+  });
 });

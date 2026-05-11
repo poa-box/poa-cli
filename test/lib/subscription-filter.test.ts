@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { matchesFilter, filterLessons } from '../../src/lib/subscription-filter';
+import { matchesFilter, filterLessons, MATCH_LIMITS } from '../../src/lib/subscription-filter';
 
 /**
  * Task #513 (HB#596 vigil_01) — pure-function filter evaluator.
@@ -151,5 +151,92 @@ describe('filterLessons — Task #513 convenience wrapper', () => {
       { id: '2', author: vigilAddr, title: 'B' },
     ];
     expect(filterLessons({}, lessons)).toHaveLength(2);
+  });
+});
+
+describe('matchesFilter — HB#636 GAP 2 defensive bounds against adversarial lessons', () => {
+  it('truncates adversarially-large lesson.title for substring scan', () => {
+    // Adversarial title 10x the cap. The substring "needle" is planted past
+    // the cap so a correct truncating matcher returns false; a naive matcher
+    // would slow-search the entire title and return true.
+    const filler = 'x'.repeat(MATCH_LIMITS.MAX_TITLE_SCAN);
+    const lesson = { id: '1', author: argusAddr, title: filler + 'needle' };
+    expect(matchesFilter({ titleContains: 'needle' }, lesson)).toBe(false);
+
+    // Sanity: when needle is in the first MAX_TITLE_SCAN chars, match.
+    const lessonOK = { id: '2', author: argusAddr, title: 'needle' + filler };
+    expect(matchesFilter({ titleContains: 'needle' }, lessonOK)).toBe(true);
+  });
+
+  it('caps lesson.tags iteration at MAX_TAGS_SCAN entries', () => {
+    // Build a tag list past the cap with the matching tag at the END.
+    const filler: string[] = [];
+    for (let i = 0; i < MATCH_LIMITS.MAX_TAGS_SCAN; i++) filler.push(`junk-${i}`);
+    filler.push('targeted-tag');
+    const lesson = { id: '1', author: argusAddr, title: 'A', tags: filler };
+    expect(matchesFilter({ tags: ['targeted-tag'] }, lesson)).toBe(false);
+
+    // Sanity: when the targeted-tag is within the first MAX_TAGS_SCAN, match.
+    const lessonOK = { id: '2', author: argusAddr, title: 'B', tags: ['targeted-tag', ...filler] };
+    expect(matchesFilter({ tags: ['targeted-tag'] }, lessonOK)).toBe(true);
+  });
+
+  it('truncates oversized individual tag entry to MAX_TAG_CHARS', () => {
+    // Tag is too long to fit MAX_TAG_CHARS — gets sliced. Filter looking
+    // for the truncated prefix MATCHES; filter for chars-past-the-cap MISSES.
+    const tagBase = 'a'.repeat(MATCH_LIMITS.MAX_TAG_CHARS);
+    const oversized = tagBase + 'TAIL';
+    const lesson = { id: '1', author: argusAddr, title: 'X', tags: [oversized] };
+
+    expect(matchesFilter({ tags: [tagBase.toLowerCase()] }, lesson)).toBe(true);
+    expect(matchesFilter({ tags: ['tail'] }, lesson)).toBe(false);
+  });
+
+  it('caps causedBy array scan at MAX_CAUSED_BY_SCAN', () => {
+    const filler: string[] = [];
+    for (let i = 0; i < MATCH_LIMITS.MAX_CAUSED_BY_SCAN; i++) filler.push(`junk-${i}`);
+    filler.push('lesson-NEEDLE-1234567890');
+    const lesson = { id: '1', author: argusAddr, title: 'X', causedBy: filler };
+    expect(matchesFilter({ causedByContains: 'NEEDLE' }, lesson)).toBe(false);
+
+    const lessonOK = {
+      id: '2',
+      author: argusAddr,
+      title: 'X',
+      causedBy: ['lesson-NEEDLE-1234567890', ...filler],
+    };
+    expect(matchesFilter({ causedByContains: 'NEEDLE' }, lessonOK)).toBe(true);
+  });
+
+  it('truncates oversized single-string causedBy past MAX_CAUSED_BY_CHARS', () => {
+    const filler = 'x'.repeat(MATCH_LIMITS.MAX_CAUSED_BY_CHARS);
+    const lessonHidden = { id: '1', author: argusAddr, title: 'X', causedBy: filler + 'NEEDLE' };
+    expect(matchesFilter({ causedByContains: 'NEEDLE' }, lessonHidden)).toBe(false);
+
+    const lessonVisible = { id: '2', author: argusAddr, title: 'X', causedBy: 'NEEDLE' + filler };
+    expect(matchesFilter({ causedByContains: 'NEEDLE' }, lessonVisible)).toBe(true);
+  });
+
+  it('runs in bounded time against pathological adversarial lesson', () => {
+    // Lesson with 1MB title + 1000-entry tag list + 1000-entry causedBy.
+    // Before HB#636 caps, this would take milliseconds per match call;
+    // post-caps it stays under a small constant.
+    const adversarial = {
+      id: '1',
+      author: argusAddr,
+      title: 'z'.repeat(1024 * 1024),
+      tags: Array(1000).fill('y'.repeat(2048)),
+      causedBy: Array(1000).fill('w'.repeat(2048)),
+    };
+    const filter = {
+      titleContains: 'needle',
+      tags: ['targeted'],
+      causedByContains: 'lesson-x',
+    };
+    const start = Date.now();
+    const result = matchesFilter(filter, adversarial);
+    const elapsed = Date.now() - start;
+    expect(result).toBe(false); // none of the filters match
+    expect(elapsed).toBeLessThan(50); // O(constant), not O(adversarial size)
   });
 });
