@@ -20,6 +20,7 @@
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
+import { ethers } from 'ethers';
 import { snapshotGraphQL } from '../../lib/snapshot';
 import * as output from '../../lib/output';
 
@@ -34,12 +35,21 @@ interface AllocationDistanceArgs {
   hubMinDegree?: number;
   hubMinCos?: number;
   hubScanTopN?: number;
+  labelActors?: boolean;
+  rpc?: string;
+}
+
+interface ActorLabel {
+  ens: string | null;
+  isContract: boolean;
+  codeBytes: number;
 }
 
 interface HubVoter {
   voter: string;
   hubDegree: number;
   spokes: Array<{ voter: string; avgCosine: number; proposalsShared: number }>;
+  label?: ActorLabel;
 }
 
 interface Vote {
@@ -114,6 +124,38 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dot / (Math.sqrt(magA) * Math.sqrt(magB));
 }
 
+/**
+ * Annotate each hub with ENS reverse-resolution + isContract flag.
+ * Runs in parallel with bounded concurrency to be polite to public RPCs.
+ * Failures-per-address are silent (label stays undefined on that hub).
+ */
+async function labelHubs(hubs: HubVoter[], provider: ethers.providers.Provider, concurrency = 4): Promise<void> {
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    while (cursor < hubs.length) {
+      const i = cursor++;
+      const h = hubs[i];
+      try {
+        const [code, ens] = await Promise.all([
+          provider.getCode(h.voter).catch(() => '0x'),
+          Promise.race([
+            provider.lookupAddress(h.voter).catch(() => null),
+            new Promise<null>((res) => setTimeout(() => res(null), 8000)),
+          ]),
+        ]);
+        h.label = {
+          ens: ens || null,
+          isContract: code !== '0x',
+          codeBytes: code === '0x' ? 0 : (code.length - 2) / 2,
+        };
+      } catch {
+        // best-effort; leave label undefined
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, hubs.length) }, () => worker()));
+}
+
 function computeHubs(
   ranked: PairScore[],
   scanTopN: number,
@@ -163,6 +205,8 @@ export const allocationDistanceHandler = {
     .option('hub-min-degree', { type: 'number', default: 2, describe: 'Minimum number of cos-similar spokes for a voter to qualify as a hub (default 2)' })
     .option('hub-min-cos', { type: 'number', default: 0.99, describe: 'Minimum avg cosine for a pair to count toward hub-degree (default 0.99)' })
     .option('hub-scan-top-n', { type: 'number', default: 200, describe: 'Number of top pairs to scan when computing hub-degrees (default 200; larger catches looser hubs)' })
+    .option('label-actors', { type: 'boolean', default: false, describe: 'Resolve ENS + isContract for each hub address. Surfaces protocol-level coordinators (e.g. Karpatkey) vs individual delegates.' })
+    .option('rpc', { type: 'string', default: 'https://ethereum.publicnode.com', describe: 'Ethereum mainnet RPC for ENS + isContract lookups (only used with --label-actors)' })
     .option('json', { type: 'boolean', default: false, describe: 'Machine-readable JSON output' }),
 
   handler: async (argv: ArgumentsCamelCase<AllocationDistanceArgs>) => {
@@ -175,6 +219,8 @@ export const allocationDistanceHandler = {
     const hubMinDegree = Number(argv.hubMinDegree ?? (argv as any)['hub-min-degree']) || 2;
     const hubMinCos = Number(argv.hubMinCos ?? (argv as any)['hub-min-cos']) || 0.99;
     const hubScanTopN = Number(argv.hubScanTopN ?? (argv as any)['hub-scan-top-n']) || 200;
+    const wantLabels = Boolean(argv.labelActors ?? (argv as any)['label-actors']);
+    const rpcUrl = (argv.rpc as string) || 'https://ethereum.publicnode.com';
     const wantJson = Boolean(argv.json);
 
     const spin = wantJson ? null : output.spinner(`Fetching multi-option proposals for ${spaceId}...`);
@@ -285,6 +331,19 @@ export const allocationDistanceHandler = {
       // Hub detection: aggregate voter appearances across high-cos pairs (scan top-N).
       const hubs: HubVoter[] = wantHubs ? computeHubs(ranked, hubScanTopN, hubMinCos, hubMinDegree) : [];
 
+      // Optional: ENS + isContract labeling per hub address.
+      if (wantLabels && hubs.length > 0) {
+        spin && (spin.text = `Labeling ${hubs.length} hub actors via ENS + isContract...`);
+        try {
+          const provider = new ethers.providers.StaticJsonRpcProvider(rpcUrl);
+          await labelHubs(hubs, provider);
+        } catch (e) {
+          if (!wantJson) {
+            console.warn(`\n[label-actors] failed: ${(e as Error).message}. Continuing without labels.`);
+          }
+        }
+      }
+
       if (wantJson) {
         console.log(JSON.stringify({
           space: spaceId,
@@ -296,7 +355,7 @@ export const allocationDistanceHandler = {
           top,
           hubs: wantHubs ? hubs : undefined,
           hubConfig: wantHubs
-            ? { minDegree: hubMinDegree, minCos: hubMinCos, scanTopN: hubScanTopN }
+            ? { minDegree: hubMinDegree, minCos: hubMinCos, scanTopN: hubScanTopN, labeled: wantLabels }
             : undefined,
         }, null, 2));
       } else {
@@ -334,7 +393,10 @@ export const allocationDistanceHandler = {
             console.log(`Hub-detection (min-degree ${hubMinDegree}, min-cos ${hubMinCos}, scan top ${hubScanTopN} pairs):`);
             console.log('');
             for (const h of hubs) {
-              console.log(`  ${fmtAddr(h.voter)}  hub-degree=${h.hubDegree}`);
+              const lbl = h.label
+                ? `  [${h.label.isContract ? `CONTRACT/${h.label.codeBytes}B` : 'EOA'}${h.label.ens ? `, ENS: ${h.label.ens}` : ''}]`
+                : '';
+              console.log(`  ${fmtAddr(h.voter)}  hub-degree=${h.hubDegree}${lbl}`);
               for (const s of h.spokes.slice(0, 5)) {
                 console.log(`    ↔ ${fmtAddr(s.voter)}  cos=${s.avgCosine.toFixed(3)}  n=${s.proposalsShared}`);
               }
