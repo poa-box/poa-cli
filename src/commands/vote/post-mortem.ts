@@ -154,6 +154,43 @@ export function labelTarget(addr: string | undefined): string {
   return label ? `${addr.slice(0, 10)}…[${label}]` : addr.slice(0, 10);
 }
 
+// HB#632 vigil: 4-byte selector labels for high-traffic functions in our
+// traces. Keeps the common ERC20/ERC4626/POP-protocol selectors readable
+// at-a-glance. Extend as new selectors become diagnostically relevant.
+const KNOWN_SELECTORS: Record<string, string> = {
+  '0x23b872dd': 'transferFrom',
+  '0xa9059cbb': 'transfer',
+  '0x70a08231': 'balanceOf',
+  '0x095ea7b3': 'approve',
+  '0x587cde1e': 'delegates',
+  '0x5c19a95c': 'delegate',
+  '0x18160ddd': 'totalSupply',
+  '0x06fdde03': 'name',
+  '0x95d89b41': 'symbol',
+  '0x313ce567': 'decimals',
+  '0x5c60da1b': 'implementation',
+  '0xb61d27f6': 'execute',
+  '0x2b40c480': 'execute(batches)',
+  '0x6e553f65': 'deposit(uint256,address)',
+  '0xb6b55f25': 'deposit(uint256)',
+  '0xba087652': 'redeem',
+  '0x3a6e157b': 'announceWinner',
+  '0x765e827f': 'handleOps',
+  '0x0042dc53': 'innerHandleOp',
+  '0x19822f7c': 'validateUserOp',
+  '0x96208f7a': 'voteWeight',
+  '0xd80a8434': 'votingState',
+  '0xbd683872': 'getProposal',
+  '0xd395acf8': 'tallyVotes',
+  '0x606326ff': 'LiFi-facet',
+};
+
+export function labelSelector(sel: string | undefined): string {
+  if (!sel || sel === '(none)') return sel ?? '(none)';
+  const label = KNOWN_SELECTORS[sel.toLowerCase()];
+  return label ? `${sel}…[${label}]` : sel;
+}
+
 /**
  * Render the call tree as ANSI text. Indents by depth, shows a gas meter
  * (gas allotted -> gas used + percentage of allotted), highlights the
@@ -181,7 +218,7 @@ function renderTree(frames: FlatFrame[], rootCauseIdx: number | null): string {
       status = `\x1b[32m✓\x1b[0m`;
     }
 
-    let line = `${indent}[d${f.depth}] ${f.type} ${target} ${f.selector} gas=${meter} ${status}`;
+    let line = `${indent}[d${f.depth}] ${f.type} ${target} ${labelSelector(f.selector)} gas=${meter} ${status}`;
     if (i === rootCauseIdx) {
       // Red-bold the whole line for the root-cause frame.
       line = `\x1b[31;1m>> ROOT CAUSE >>\x1b[0m ${line}`;
@@ -480,7 +517,7 @@ export const postMortemHandler = {
         console.log(`\x1b[33m⚠ Outer tx succeeded but inner frame reverted (execute-internal-revert pattern).\x1b[0m`);
       }
       console.log(`  Root cause depth: d${root.depth}`);
-      console.log(`  Root cause selector: ${root.selector} on ${labelTarget(root.to)}`);
+      console.log(`  Root cause selector: ${labelSelector(root.selector)} on ${labelTarget(root.to)}`);
       console.log(`  Root cause error: ${root.err}${root.revertReason ? ` (${root.revertReason})` : ''}`);
     }
     console.log('');
