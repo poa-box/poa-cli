@@ -99,6 +99,15 @@ export interface AppendLessonOp {
    * this brain-side delegation is signaling, not binding.
    */
   delegateTo?: string;
+  /**
+   * HB#634 vigil: optional string tags. Powers tag-filter searches
+   * (`pop brain search --tag <tag>`) + tag-based detectors like the
+   * 3-agent-no escalation check in heartbeat Step 1.6. Schema already
+   * supports `lesson.tags: string[]` (Task #347); this op-field surfaces
+   * a write path from the CLI without requiring callers to use
+   * `addTagsToLesson`/`removeTagsFromLesson` post-write.
+   */
+  tags?: string[];
   /** Task #346: bypass write-time schema validation. Default false (strict). */
   allowInvalidShape?: boolean;
 }
@@ -357,6 +366,10 @@ export async function dispatchOp(op: BrainOp): Promise<DispatchResult> {
           // Task #510: include delegateTo only when asserted; keeps legacy
           // lessons backward-compatible.
           if (op.delegateTo !== undefined) lesson.delegateTo = op.delegateTo;
+          // HB#634 vigil: include tags only when asserted; legacy lessons
+          // without tags stay byte-identical. Schema already supports
+          // lesson.tags (Task #347).
+          if (op.tags !== undefined && op.tags.length > 0) lesson.tags = op.tags;
           doc.lessons.push(lesson);
         },
         { allowInvalidShape: op.allowInvalidShape },

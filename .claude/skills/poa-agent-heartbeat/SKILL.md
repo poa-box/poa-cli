@@ -740,35 +740,75 @@ load.
 - `decision: yes` → proceed with `pop task claim --task <id>`. Include
   the skill's reason in the claim broadcast brain lesson.
 - `decision: no` + `delegate_suggestion: <addr>` → emit a delegateTo
-  brain lesson (Task #510 mechanism); do NOT claim:
+  brain lesson (Task #510 mechanism); do NOT claim. Tag with
+  `["should-i-claim:no", "task-<id>"]` so the 3-agent-no escalation
+  detector (below) can count it:
   ```bash
   pop brain append-lesson --doc pop.brain.shared \
     --title "HB#N delegate task #<id> → <peer-name>" \
     --body "<reason from skill output>" \
-    --delegate-to "<addr>"
+    --delegate-to "<addr>" \
+    --tag should-i-claim:no --tag task-<id>
   ```
-- `decision: no` + `delegate_suggestion: null` → log the deliberation
-  in heartbeat-log.md (cite skill reason); take no action — another
-  agent's heartbeat will independently evaluate.
+- `decision: no` + `delegate_suggestion: null` → emit a declined-claim
+  brain lesson + log in heartbeat-log.md. Tagged identically so the
+  detector counts it:
+  ```bash
+  pop brain append-lesson --doc pop.brain.shared \
+    --title "HB#N declined #<id> — <one-line-reason>" \
+    --body "<reason from skill output>" \
+    --tag should-i-claim:no --tag task-<id>
+  ```
 
 If the skill output is unclear / malformed / takes too long, FALL BACK
 to the heuristic + philosophy hard rules (don't block the heartbeat on
 a flaky LLM call). Default to "skip the task" rather than "claim
 without thinking."
 
-**3-agent-no escalation**: if heartbeat-log shows all 3 fleet agents
-returned `decision: no` over 3 consecutive HBs on the same task (read
-recent brain.shared lessons titled "HB#N delegate ..." or "HB#N declined
-#<id>"), file an ESCALATION lesson:
+#### 3-agent-no escalation detection (HB#605 BLIND-SPOT 1, HB#609 TDD, HB#634 impl)
+
+BEFORE running should-i-claim on an unclaimed task, scan pop.brain.shared
+for prior `should-i-claim:no` lessons tagged with the same `task-<id>`.
+If ≥3 unique fleet agents have declined within the last 3 HB cycles
+(2700s) AND no prior escalation lesson exists for the task, file an
+ESCALATION lesson and skip evaluating this task:
 
 ```bash
-pop brain append-lesson --doc pop.brain.shared \
-  --title "HB#N ESCALATION — task #<id> 3-agent-no over 3 HBs"
+# Detection (pseudocode — paste into your shell or driver script):
+NOW=$(date +%s)
+WINDOW=2700  # 3 HBs at 15-min cadence
+TASK_ID=<id>
+
+# Get all brain.shared lessons matching the no-decision pattern
+NO_LESSONS_JSON=$(pop brain search --doc pop.brain.shared \
+  --tag should-i-claim:no --tag "task-${TASK_ID}" --json \
+  | jq --argjson now "$NOW" --argjson w "$WINDOW" \
+       '[.lessons[] | select((.timestamp // 0) > ($now - $w))]')
+
+UNIQUE_AGENTS=$(echo "$NO_LESSONS_JSON" | jq '[.[].author] | unique | length')
+
+# Check for existing escalation lesson
+ESCALATED=$(pop brain search --doc pop.brain.shared \
+  --tag escalation:3-agent-no --tag "task-${TASK_ID}" --json \
+  | jq '.lessons | length')
+
+if [ "$UNIQUE_AGENTS" -ge 3 ] && [ "$ESCALATED" -eq 0 ]; then
+  pop brain append-lesson --doc pop.brain.shared \
+    --title "HB#N ESCALATION — task #${TASK_ID} 3-agent-no over 3 HBs" \
+    --body "Three fleet agents declined this task within ${WINDOW}s. Likely mis-scoped or blocked-on-context. Surfacing for operator decision: cancel, refine scope, or unblock dependency." \
+    --tag escalation:3-agent-no --tag "task-${TASK_ID}"
+  # Skip evaluation; escalation is the action
+  continue
+fi
 ```
 
 This is anti-pattern protection: tasks no agent will claim are
 mis-scoped or blocked-on-context. Surface them rather than letting
 them sit silently.
+
+Reference implementation: see `test/lib/should-i-claim-escalation.test.ts`
+`detect3AgentNoEscalation()` for the exact filter semantics (window,
+tag-match, fleet-membership, already-escalated guard).
 
 This step inverts the AutoGen GroupChatManager pattern (centralized
 LLM-driven select_speaker) — instead each agent selects independently

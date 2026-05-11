@@ -104,6 +104,12 @@ export const appendLessonHandler = {
           'Task #510: claim-signaling subtype — name a peer wallet address to delegate the claim to. The receiving agent\'s heartbeat surfaces unanswered own-delegations as priority-0 actions before checking pop agent triage. On-chain claim resolves authoritatively if delegations race; this brain-side signal is non-binding.',
         type: 'string',
       })
+      .option('tag', {
+        describe:
+          'HB#634 vigil: tag the lesson with one or more string tags. Pass once per tag (e.g. --tag should-i-claim:no --tag task-480). Powers tag-filter searches via `pop brain search --tag <tag>` + tag-based detectors like the 3-agent-no escalation check in heartbeat Step 1.6.',
+        type: 'string',
+        array: true,
+      })
       .option('idempotency-key', {
         type: 'string',
         describe:
@@ -210,6 +216,16 @@ export const appendLessonHandler = {
         delegateTo = dtRaw.trim().toLowerCase();
       }
 
+      // HB#634 vigil: tags — yargs always hands us an array when `array: true`
+      // is set, even for a single value. Trim + dedupe + drop empties.
+      let tags: string[] | undefined;
+      const tagRaw = (argv as any).tag;
+      if (Array.isArray(tagRaw) && tagRaw.length > 0) {
+        const trimmed = tagRaw.map((s: string) => String(s).trim()).filter(Boolean);
+        const dedup = Array.from(new Set(trimmed));
+        if (dedup.length > 0) tags = dedup;
+      }
+
       // Route through the unified dispatcher (HB#324 ship-2). When a
       // brain daemon is running, this sends the op via IPC so the
       // daemon's long-lived gossipsub mesh handles the publish. When
@@ -225,6 +241,7 @@ export const appendLessonHandler = {
         timestamp: now,
         ...(causedBy !== undefined ? { causedBy } : {}),
         ...(delegateTo !== undefined ? { delegateTo } : {}),
+        ...(tags !== undefined ? { tags } : {}),
         allowInvalidShape: argv.allowInvalidShape,
       });
 
