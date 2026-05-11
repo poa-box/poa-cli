@@ -235,6 +235,11 @@ interface OneSpaceOpts {
   hubMinDegree: number;
   hubMinCos: number;
   hubScanTopN: number;
+  // HB#641 vigil: propagate sentinel HB#1011 BIP-artifact filter into the
+  // --actors-graph driver path. Without this, multi-space scans include
+  // yes/no policy votes that overstate coordination signal (cos=1.0 collapses
+  // to "both voted yes"). Default 0 disables filter (back-compat with HB#637).
+  minGaugesSelected: number;
 }
 interface OneSpaceResult {
   spaceId: string;
@@ -243,11 +248,14 @@ interface OneSpaceResult {
   pairsScored: number;
   ranked: PairScore[];
   hubs: HubVoter[];
+  // HB#641 vigil: count of proposals dropped by minGaugesSelected filter.
+  // Surfaced to callers so they can report "ignored N BIP-style props".
+  proposalsDroppedLowEntropy: number;
   error?: string;
 }
 
 async function runOneSpace(opts: OneSpaceOpts): Promise<OneSpaceResult> {
-  const { spaceId, limit, minVp, typeFilter, hubMinDegree, hubMinCos, hubScanTopN } = opts;
+  const { spaceId, limit, minVp, typeFilter, hubMinDegree, hubMinCos, hubScanTopN, minGaugesSelected } = opts;
   const empty: OneSpaceResult = {
     spaceId,
     proposalsAnalyzed: 0,
@@ -255,6 +263,7 @@ async function runOneSpace(opts: OneSpaceOpts): Promise<OneSpaceResult> {
     pairsScored: 0,
     ranked: [],
     hubs: [],
+    proposalsDroppedLowEntropy: 0,
   };
   try {
     const proposalData = await snapshotGraphQL<any>(
@@ -297,6 +306,10 @@ async function runOneSpace(opts: OneSpaceOpts): Promise<OneSpaceResult> {
       string,
       { coSum: number; jaSum: number; n: number; deepEq: number; vpSum: number }
     >();
+    // HB#641 vigil: parallel to sentinel HB#1011 filter in the regular handler.
+    // Drop proposals where avg voter selected fewer than `minGaugesSelected`
+    // gauges (BIP-artifact suppression).
+    let proposalsDroppedLowEntropy = 0;
     for (const prop of eligible) {
       const propVotes = allVotes.filter((v) => v.proposalId === prop.id);
       const vectors = propVotes
@@ -312,6 +325,18 @@ async function runOneSpace(opts: OneSpaceOpts): Promise<OneSpaceResult> {
           vec: number[];
           canonChoice: string;
         }>;
+      // HB#641: BIP-artifact filter — skip if avg-selected < minGaugesSelected.
+      if (minGaugesSelected > 0 && vectors.length > 0) {
+        let sumNonzero = 0;
+        for (const v of vectors) {
+          for (const x of v.vec) if (x > 0) sumNonzero++;
+        }
+        const avgSelected = sumNonzero / vectors.length;
+        if (avgSelected < minGaugesSelected) {
+          proposalsDroppedLowEntropy++;
+          continue;
+        }
+      }
       for (let i = 0; i < vectors.length; i++) {
         for (let j = i + 1; j < vectors.length; j++) {
           const a = vectors[i];
@@ -353,6 +378,7 @@ async function runOneSpace(opts: OneSpaceOpts): Promise<OneSpaceResult> {
       pairsScored: pairStats.size,
       ranked,
       hubs,
+      proposalsDroppedLowEntropy,
     };
   } catch (err) {
     return { ...empty, error: (err as Error).message };
@@ -375,6 +401,7 @@ async function runActorsGraph(opts: {
   hubMinDegree: number;
   hubMinCos: number;
   hubScanTopN: number;
+  minGaugesSelected: number;
   wantLabels: boolean;
   rpcUrl: string;
   wantJson: boolean;
@@ -414,6 +441,7 @@ async function runActorsGraph(opts: {
       hubMinDegree: opts.hubMinDegree,
       hubMinCos: opts.hubMinCos,
       hubScanTopN: opts.hubScanTopN,
+      minGaugesSelected: opts.minGaugesSelected,
     });
     perSpace.push(r);
   }
@@ -490,6 +518,7 @@ async function runActorsGraph(opts: {
           spaces: perSpace.map((s) => ({
             space: s.spaceId,
             proposalsAnalyzed: s.proposalsAnalyzed,
+            proposalsDroppedLowEntropy: s.proposalsDroppedLowEntropy,
             votersConsidered: s.votersConsidered,
             pairsScored: s.pairsScored,
             error: s.error,
@@ -575,7 +604,7 @@ export const allocationDistanceHandler = {
     .option('min-gauges-selected', {
       type: 'number',
       default: 2,
-      describe: 'HB#1011 BIP-artifact filter: exclude proposals where the AVERAGE active voter selects fewer than N gauges (i.e. yes/no-style policy votes). Default 2 — collapses pure single-option proposals where the metric trivially scores cos=1.000 on every yes-pair. Set 0 to disable.',
+      describe: 'HB#1011+1012 BIP-artifact filter: exclude proposals where the P75 voter selects fewer than N gauges (i.e. yes/no-style policy votes). Default 2 — collapses pure single-option proposals where the metric trivially scores cos=1.000 on every yes-pair. P75 keeps whale-allocation gauge-week proposals where some voters pick 1 gauge but the top quartile makes real multi-gauge allocations. Set 0 to disable.',
     }),
 
   handler: async (argv: ArgumentsCamelCase<AllocationDistanceArgs>) => {
@@ -612,6 +641,7 @@ export const allocationDistanceHandler = {
         hubMinDegree,
         hubMinCos,
         hubScanTopN,
+        minGaugesSelected,
         wantLabels,
         rpcUrl,
         wantJson,
@@ -706,17 +736,24 @@ export const allocationDistanceHandler = {
             canonChoice: string;
           }>;
 
-        // HB#1011 filter: skip proposals where the AVERAGE voter selects fewer
-        // than `minGaugesSelected` gauges. Those are yes/no-style policy votes
-        // (BIPs, OIPs, single-issue proposals) where cos=1.000 collapses to
-        // "both voted yes" — overstates coordination signal.
+        // HB#1011/#1012 filter: count voters who selected ≥`minGaugesSelected`
+        // gauges. If at least MIN_VOTERS_WITH_ENTROPY (3) such voters exist,
+        // the proposal has meaningful allocation entropy — keep it. Otherwise
+        // it's BIP/yes-no style — drop. This filter:
+        //   - drops balancer.eth BIPs cleanly (0 voters select ≥2 gauges)
+        //   - keeps cvx.eth 673-option Curve-gauge weeks (whales select 20+)
+        //   - keeps Frax weekly gauge votes (active voters spread weight)
+        //   - tolerant of long-tail minnows that pick 1 gauge each
+        const MIN_VOTERS_WITH_ENTROPY = 3;
         if (minGaugesSelected > 0 && vectors.length > 0) {
-          let sumNonzero = 0;
+          let votersWithEntropy = 0;
           for (const v of vectors) {
-            for (const x of v.vec) if (x > 0) sumNonzero++;
+            let n = 0;
+            for (const x of v.vec) if (x > 0) n++;
+            if (n >= minGaugesSelected) votersWithEntropy++;
+            if (votersWithEntropy >= MIN_VOTERS_WITH_ENTROPY) break;
           }
-          const avgSelected = sumNonzero / vectors.length;
-          if (avgSelected < minGaugesSelected) {
+          if (votersWithEntropy < MIN_VOTERS_WITH_ENTROPY) {
             dropLowEntropy++;
             continue;
           }
@@ -793,7 +830,7 @@ export const allocationDistanceHandler = {
             : undefined,
         }, null, 2));
       } else {
-        const entropyNote = dropLowEntropy > 0 ? ` (${dropLowEntropy} dropped: avg-selected<${minGaugesSelected})` : '';
+        const entropyNote = dropLowEntropy > 0 ? ` (${dropLowEntropy} dropped: <3 voters with ≥${minGaugesSelected} gauges)` : '';
         spin?.succeed(`Analyzed ${eligible.length - dropLowEntropy}/${eligible.length} multi-option proposals${entropyNote}; ${ranked.length} qualifying pairs`);
         if (ranked.length === 0) {
           console.log('\nNo voter pairs shared ≥2 multi-option proposals. Try --limit higher.\n');
