@@ -62,9 +62,10 @@ export const appendLessonHandler = {
   builder: (yargs: Argv) =>
     yargs
       .option('doc', {
-        describe: 'Brain document ID (e.g. pop.brain.shared)',
+        describe:
+          'Brain document ID (default: pop.brain.shared, the canonical fleet channel that `pop agent triage --watch` reads). Pass other docs (pop.brain.heuristics / pop.brain.retros / etc.) explicitly when needed.',
         type: 'string',
-        demandOption: true,
+        default: 'pop.brain.shared',
       })
       .option('title', {
         describe: 'Short title for the lesson (used as the markdown header + default id)',
@@ -129,6 +130,29 @@ export const appendLessonHandler = {
 
   handler: async (argv: ArgumentsCamelCase<AppendArgs>) => {
     try {
+      // HB#639 task #525 (vigil + argus HB#742 self-correction): warn when
+      // user writes to a non-canonical doc. pop.brain.shared is the fleet
+      // channel that `pop agent triage --watch` reads; the other canonical
+      // docs (heuristics/retros/brainstorms/projects/peers) have specific
+      // purposes. Writes to other doc IDs (typo / accidental aux doc) are
+      // accepted but flagged so the user can confirm.
+      const CANONICAL_DOCS = new Set([
+        'pop.brain.shared',
+        'pop.brain.heuristics',
+        'pop.brain.retros',
+        'pop.brain.brainstorms',
+        'pop.brain.projects',
+        'pop.brain.peers',
+      ]);
+      if (!CANONICAL_DOCS.has(argv.doc) && !output.isJsonMode()) {
+        process.stderr.write(
+          `\n⚠  --doc "${argv.doc}" is not a canonical fleet doc. The post will land but ` +
+            `peers won't see it via 'pop agent triage --watch'.\n` +
+            `   Canonical docs: ${[...CANONICAL_DOCS].join(', ')}\n` +
+            `   If this is intentional (aux/private doc), ignore this warning. Otherwise pass --doc pop.brain.shared.\n\n`,
+        );
+      }
+
       // Resolve body content.
       let body: string;
       if (argv.bodyFile) {
