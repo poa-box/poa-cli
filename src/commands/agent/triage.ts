@@ -408,6 +408,7 @@ export const triageHandler = {
                 ? brainstormsDoc.brainstorms
                 : [];
               const freshThresholdSecs = 75 * 60; // same as retro cadence
+              const HB_INTERVAL_SECS = 15 * 60; // matches agent-config heartbeatIntervalMinutes
               const nowSecs = Math.floor(Date.now() / 1000);
               for (const b of brainstorms) {
                 if (!b || b.removed) continue;
@@ -417,7 +418,20 @@ export const triageHandler = {
                 const author = (b.author ?? '').toLowerCase();
                 if (!author || author === myAddr) continue;
                 const age = b.openedAt ? nowSecs - b.openedAt : Infinity;
-                if (age > freshThresholdSecs) continue;
+                // HB#647 vigil: brainstorms with an explicit window (e.g.
+                // direction-setting brainstorms running 3+ hours) should
+                // remain in triage's HIGH actions until the window closes,
+                // not just for 75 min. Compute window-derived end time and
+                // surface if EITHER the 75-min default OR the window is
+                // still open. Closes a coordination gap where Sprint-direction
+                // brainstorms expired from peer triage after 75 min while
+                // their 12-HB voting window had 2+ more hours.
+                const windowFrom = (b.window && typeof b.window.from === 'number') ? b.window.from : null;
+                const windowTo = (b.window && typeof b.window.to === 'number') ? b.window.to : null;
+                const withinWindow = windowFrom != null && windowTo != null && b.openedAt
+                  ? nowSecs < b.openedAt + (windowTo - windowFrom) * HB_INTERVAL_SECS
+                  : false;
+                if (age > freshThresholdSecs && !withinWindow) continue;
                 // Have I already engaged with this brainstorm? Check both
                 // the discussion array (for --message posts) and any idea's
                 // votes map (for --vote casts)
