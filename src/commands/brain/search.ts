@@ -57,8 +57,10 @@ export const searchHandler = {
         type: 'string',
       })
       .option('tag', {
-        describe: 'Filter to lessons whose tags include this exact string',
+        describe:
+          'Filter to lessons whose tags include this exact string. HB#640: pass --tag once for single-tag filter, or repeat (--tag a --tag b) for AND semantics — lesson must contain ALL named tags.',
         type: 'string',
+        array: true,
       })
       .option('author', {
         describe: 'Filter to lessons by this author address (0x lowercase)',
@@ -80,7 +82,18 @@ export const searchHandler = {
       const lessons: any[] = Array.isArray(currentDoc?.lessons) ? currentDoc.lessons : [];
 
       const queryLower = argv.query ? argv.query.toLowerCase() : null;
-      const wantTag = argv.tag ?? null;
+      // HB#640 vigil: --tag is now array (was scalar). Normalize: scalar →
+      // [scalar]; array → array; absent → null. AND semantics across tags:
+      // lesson must contain ALL named tags. Previous behavior: passing
+      // --tag X --tag Y silently returned 0 results because the scalar
+      // handler compared tags.some(t === ["X","Y"]) which never matches.
+      const tagRaw = (argv as any).tag;
+      const wantTags: string[] | null = (() => {
+        if (tagRaw == null) return null;
+        const arr = Array.isArray(tagRaw) ? tagRaw : [tagRaw];
+        const trimmed = arr.map((t: any) => (typeof t === 'string' ? t : '')).filter((s) => s.length > 0);
+        return trimmed.length > 0 ? trimmed : null;
+      })();
       const wantAuthor = argv.author ? argv.author.toLowerCase() : null;
       const sinceTs = typeof argv.sinceTs === 'number' ? argv.sinceTs : null;
 
@@ -90,9 +103,12 @@ export const searchHandler = {
           const haystack = `${lesson.title ?? ''}\n${lesson.body ?? lesson.text ?? ''}`.toLowerCase();
           if (!haystack.includes(queryLower)) return false;
         }
-        if (wantTag) {
+        if (wantTags) {
           const tags: any[] = Array.isArray(lesson.tags) ? lesson.tags : [];
-          if (!tags.some((t) => t === wantTag)) return false;
+          // AND semantics: lesson must contain EVERY filter tag.
+          for (const want of wantTags) {
+            if (!tags.includes(want)) return false;
+          }
         }
         if (wantAuthor) {
           const author = typeof lesson.author === 'string' ? lesson.author.toLowerCase() : '';
@@ -119,7 +135,7 @@ export const searchHandler = {
           docId: argv.doc,
           filters: {
             query: argv.query ?? null,
-            tag: argv.tag ?? null,
+            tag: wantTags,
             author: argv.author ?? null,
             sinceTs: sinceTs,
           },
