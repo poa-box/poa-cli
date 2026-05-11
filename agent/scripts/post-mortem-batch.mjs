@@ -28,7 +28,10 @@
 
 import { execSync } from 'node:child_process';
 
-function parseArgs(argv) {
+// HB#643 vigil task #526: pure functions exported so test/scripts/post-mortem-batch.test.mjs
+// can unit-test the clustering + classification logic hermetically (no RPC).
+// Behavior unchanged; just structural exports for testability.
+export function parseArgs(argv) {
   const args = { json: false, revertsOnly: false, timeoutMs: 60000 };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -90,9 +93,41 @@ function runPostMortem(proposalId, timeoutMs = 60000) {
   }
 }
 
-function clusterKey(r) {
+export function clusterKey(r) {
   if (r.success) return null; // successes don't cluster
   return `depth=${r.rootCauseDepth}|sel=${r.rootCauseSelector}|err=${r.rootCauseError}`;
+}
+
+/**
+ * HB#643 vigil task #526: pure aggregation extracted from main() for hermetic
+ * testing. Given an array of post-mortem result objects (each shaped like
+ * `{ id, success, error, outerTxReverted, rootCauseDepth, rootCauseSelector,
+ *    rootCauseError, frames, totalGasUsed }`), produce:
+ *   - clusters: Map<signature, items[]> by clusterKey()
+ *   - successes: results where success=true
+ *   - skipped: results with error field (non-finalized prop / RPC error)
+ *
+ * Behavior is identical to the inline loop in main(); just extracted so
+ * tests don't need to spawn a subprocess.
+ */
+export function aggregateResults(results) {
+  const clusters = new Map();
+  const successes = [];
+  const skipped = [];
+  for (const r of results) {
+    if (r.error) {
+      skipped.push(r);
+      continue;
+    }
+    if (r.success) {
+      successes.push(r);
+      continue;
+    }
+    const key = clusterKey(r);
+    if (!clusters.has(key)) clusters.set(key, []);
+    clusters.get(key).push(r);
+  }
+  return { clusters, successes, skipped };
 }
 
 function main() {
@@ -118,23 +153,9 @@ function main() {
     }
   }
 
-  // Cluster reverts by signature
-  const clusters = new Map();
-  const successes = [];
-  const skipped = [];
-  for (const r of results) {
-    if (r.error) {
-      skipped.push(r);
-      continue;
-    }
-    if (r.success) {
-      successes.push(r);
-      continue;
-    }
-    const key = clusterKey(r);
-    if (!clusters.has(key)) clusters.set(key, []);
-    clusters.get(key).push(r);
-  }
+  // Cluster reverts by signature (HB#643 vigil task #526: extracted to
+  // aggregateResults for hermetic test coverage; identical behavior).
+  const { clusters, successes, skipped } = aggregateResults(results);
 
   if (args.json) {
     console.log(
@@ -218,4 +239,9 @@ function main() {
   }
 }
 
-main();
+// HB#643 vigil task #526: guard so vitest tests can `import` the exported
+// pure functions (parseArgs/clusterKey/aggregateResults) without
+// auto-executing main(). Direct invocation (`node post-mortem-batch.mjs`)
+// continues to work identically.
+const isDirect = import.meta.url === `file://${process.argv[1]}`;
+if (isDirect) main();
