@@ -30,18 +30,26 @@ interface AuditBreadArgs {
   blocks?: number;
   topN?: number;
   json?: boolean;
+  // HB#1022 generalization — make BREAD-specific addresses overridable so the
+  // same audit harness applies to any ERC20Votes DAO. Default values keep the
+  // BREAD-targeted behavior unchanged for existing users.
+  token?: string;
+  yd?: string;
+  bb?: string;
+  pool?: string | string[];
 }
 
-const BREAD_ADDR = '0xa555d5344f6FB6c65da19e403Cb4c1eC4a1a5Ee3';
-const CURVE_POOL = '0xf3d8f3de71657d342db60dd714c8a2ae37eac6b4'; // BUTTER LP BREAD/WXDAI
-const HNY_POOL = '0x8d374ab634a5a5396fce288d50cbe394a2018812'; // BREAD/HNY Honeyswap
-const WXDAI = '0xe91d153e0b41518a2ce8dd3d7944fa863463a97d';
+// HB#1022 generalization: these constants are the BREAD defaults. CLI flags
+// --token / --yd / --bb / --pool override them, allowing the audit harness to
+// run on any ERC20Votes-based DAO.
+const DEFAULT_TOKEN = '0xa555d5344f6FB6c65da19e403Cb4c1eC4a1a5Ee3'; // BREAD on Gnosis
+const DEFAULT_YD = '0xeE95A62b749d8a2520E0128D9b3aCa241269024b'; // BREAD YieldDistributor
+const DEFAULT_BB = '0x680b581605dc0a6902735a80de35cb0ef6e90865'; // BREAD ButteredBread
+const DEFAULT_POOLS = [
+  '0xf3d8f3de71657d342db60dd714c8a2ae37eac6b4', // BUTTER LP BREAD/WXDAI
+  '0x8d374ab634a5a5396fce288d50cbe394a2018812', // BREAD/HNY Honeyswap
+];
 const IMPL_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
-
-// YieldDistributor: monthly on-chain voting contract that allocates sDAI yield
-// to member projects. Owner is the same governance multisig as BREAD itself.
-// Discovered via BreadchainCoop/subgraph constants.ts (HB#1016).
-const YIELD_DISTRIBUTOR = '0xeE95A62b749d8a2520E0128D9b3aCa241269024b';
 
 // Known project labels (from BreadchainCoop/subgraph/src/constants.ts). Update
 // as projects rotate. Unrecognized addresses get a "(unknown)" label.
@@ -80,12 +88,7 @@ const YD_ABI = [
   'function owner() view returns (address)',
 ];
 
-// ButteredBread (BB) — the LP-stake-derived voting-power token. Discovered in
-// YD storage slot 14 during HB#1017 deep probe. Voting power in BREAD's on-
-// chain governance is the SUM of direct BREAD balance + a multiplier-scaled
-// ButteredBread balance (LP-staked BREAD). A voter with 0 BREAD direct can
-// still have non-trivial voting power via BB.
-const BUTTERED_BREAD = '0x680b581605dc0a6902735a80de35cb0ef6e90865';
+// (BB constant moved to DEFAULT_BB above per HB#1022 generalization)
 
 const BB_ABI = [
   'function name() view returns (string)',
@@ -128,9 +131,30 @@ function nakamoto(values: number[], threshold = 0.5): number {
 export const auditBreadHandler = {
   builder: (yargs: Argv) =>
     yargs
-      .option('rpc', { type: 'string', default: 'https://rpc.gnosischain.com', describe: 'Gnosis Chain RPC URL' })
+      .option('rpc', { type: 'string', default: 'https://rpc.gnosischain.com', describe: 'RPC URL (default Gnosis Chain — override for other networks)' })
       .option('blocks', { type: 'number', default: 200_000, describe: 'How many recent blocks to scan for Transfer + Delegate events (default 200,000 ≈ 12 days on Gnosis)' })
       .option('top-n', { type: 'number', default: 15, describe: 'Top-N holders to display' })
+      .option('token', {
+        type: 'string',
+        default: DEFAULT_TOKEN,
+        describe: 'ERC20Votes token address to audit (default: BREAD on Gnosis). Override to audit other ERC20Votes DAOs.',
+      })
+      .option('yd', {
+        type: 'string',
+        default: DEFAULT_YD,
+        describe: 'Yield/vote distribution contract with getCurrentVotingDistribution() (default: BREAD YieldDistributor). Pass empty string to skip the YD section.',
+      })
+      .option('bb', {
+        type: 'string',
+        default: DEFAULT_BB,
+        describe: 'LP-stake-derived VP token (default: BREAD ButteredBread). Pass empty string to skip the BB section.',
+      })
+      .option('pool', {
+        type: 'string',
+        array: true,
+        default: DEFAULT_POOLS,
+        describe: 'AMM pool addresses to read reserves for + exclude from holder ranking. Pass multiple times. Default: BREAD/WXDAI Curve + BREAD/HNY Honeyswap.',
+      })
       .option('json', { type: 'boolean', default: false, describe: 'Machine-readable JSON output' }),
 
   handler: async (argv: ArgumentsCamelCase<AuditBreadArgs>) => {
@@ -139,7 +163,24 @@ export const auditBreadHandler = {
     const topN = Number(argv.topN ?? (argv as any)['top-n']) || 15;
     const wantJson = Boolean(argv.json);
 
-    const spin = wantJson ? null : output.spinner('Auditing Breadchain on Gnosis Chain...');
+    // HB#1022: parameterized addresses (default BREAD).
+    const TOKEN = ((argv.token as string) || DEFAULT_TOKEN).trim();
+    const YD = ((argv.yd as string) ?? DEFAULT_YD).trim();
+    const BB = ((argv.bb as string) ?? DEFAULT_BB).trim();
+    const poolsRaw = argv.pool;
+    const POOLS: string[] = Array.isArray(poolsRaw)
+      ? (poolsRaw as string[]).map((s) => s.trim()).filter(Boolean)
+      : typeof poolsRaw === 'string' && poolsRaw.trim() !== ''
+      ? [poolsRaw.trim()]
+      : DEFAULT_POOLS;
+    if (!ethers.utils.isAddress(TOKEN)) {
+      throw new Error(`--token "${TOKEN}" is not a valid address`);
+    }
+
+    const isDefaultToken = TOKEN.toLowerCase() === DEFAULT_TOKEN.toLowerCase();
+    const spin = wantJson ? null : output.spinner(
+      isDefaultToken ? 'Auditing Breadchain on Gnosis Chain...' : `Auditing ERC20Votes token ${TOKEN.slice(0,6)}…${TOKEN.slice(-4)}...`,
+    );
     spin?.start();
 
     try {
@@ -147,7 +188,7 @@ export const auditBreadHandler = {
 
       // 1. Token state
       spin && (spin.text = 'Reading BREAD token state...');
-      const bread = new ethers.Contract(BREAD_ADDR, [...ERC20_ABI, ...VOTES_ABI], p);
+      const bread = new ethers.Contract(TOKEN, [...ERC20_ABI, ...VOTES_ABI], p);
       const [name, symbol, decimals, supplyRaw, clockMode, clockNow] = await Promise.all([
         bread.name(),
         bread.symbol(),
@@ -159,7 +200,7 @@ export const auditBreadHandler = {
       const supply = Number(ethers.utils.formatUnits(supplyRaw, decimals));
 
       // 2. UUPS proxy verification
-      const implRaw = await p.getStorageAt(BREAD_ADDR, IMPL_SLOT);
+      const implRaw = await p.getStorageAt(TOKEN, IMPL_SLOT);
       const impl = '0x' + implRaw.slice(-40);
       const implCode = await p.getCode(impl);
 
@@ -180,8 +221,8 @@ export const auditBreadHandler = {
         const to = Math.min(b + CHUNK - 1, latest);
         try {
           const [tlogs, dlogs] = await Promise.all([
-            p.getLogs({ address: BREAD_ADDR, fromBlock: b, toBlock: to, topics: [Transfer] }),
-            p.getLogs({ address: BREAD_ADDR, fromBlock: b, toBlock: to, topics: [DelegateChanged] }),
+            p.getLogs({ address: TOKEN, fromBlock: b, toBlock: to, topics: [Transfer] }),
+            p.getLogs({ address: TOKEN, fromBlock: b, toBlock: to, topics: [DelegateChanged] }),
           ]);
           for (const l of tlogs) {
             holders.add('0x' + l.topics[1].slice(-40));
@@ -201,9 +242,8 @@ export const auditBreadHandler = {
       // Exclude known pool/AMM contracts from the holder ranking — they hold
       // BREAD as inventory, not as voters. Their balance shows up in totalSupply
       // but they're not governance participants.
-      const POOL_ADDRS = new Set([
-        CURVE_POOL.toLowerCase(),
-        HNY_POOL.toLowerCase(),
+      const POOL_ADDRS = new Set<string>([
+        ...POOLS.map((p) => p.toLowerCase()),
         '0xba1333333333a1ba1108e8412f11850a5c319ba9', // Balancer V3 vault
       ]);
 
@@ -212,7 +252,7 @@ export const auditBreadHandler = {
       const holderArr = [...holders].filter((a) => !POOL_ADDRS.has(a.toLowerCase())).slice(0, 1500);
       spin && (spin.text = `Sampling balances for ${holderArr.length} non-pool holders...`);
       const balances: Array<{ addr: string; balance: number }> = [];
-      const erc20 = new ethers.Contract(BREAD_ADDR, ERC20_ABI, p);
+      const erc20 = new ethers.Contract(TOKEN, ERC20_ABI, p);
       for (let i = 0; i < holderArr.length; i += 30) {
         const batch = holderArr.slice(i, i + 30);
         const results = await Promise.all(batch.map((a) => erc20.balanceOf(a).catch(() => null)));
@@ -248,10 +288,10 @@ export const auditBreadHandler = {
       spin && (spin.text = 'Reading YieldDistributor + ButteredBread state...');
       const risks: string[] = [];
 
-      // ButteredBread state
+      // ButteredBread state (skip if --bb is empty)
       let bb: any = null;
-      try {
-        const bbC = new ethers.Contract(BUTTERED_BREAD, BB_ABI, p);
+      if (BB && ethers.utils.isAddress(BB)) try {
+        const bbC = new ethers.Contract(BB, BB_ABI, p);
         const [bbName, bbSym, bbSupplyRaw, bbOwner] = await Promise.all([
           bbC.name(),
           bbC.symbol(),
@@ -259,7 +299,7 @@ export const auditBreadHandler = {
           bbC.owner(),
         ]);
         bb = {
-          address: BUTTERED_BREAD,
+          address: BB,
           name: bbName,
           symbol: bbSym,
           totalSupply: Number(ethers.utils.formatUnits(bbSupplyRaw, 18)),
@@ -267,8 +307,8 @@ export const auditBreadHandler = {
         };
       } catch {}
       let yd: any = null;
-      try {
-        const ydC = new ethers.Contract(YIELD_DISTRIBUTOR, YD_ABI, p);
+      if (YD && ethers.utils.isAddress(YD)) try {
+        const ydC = new ethers.Contract(YD, YD_ABI, p);
         const [maxPoints, cycleLengthRaw, ydOwner, distRaw] = await Promise.all([
           ydC.maxPoints().catch(() => null),
           ydC.cycleLength().catch(() => null),
@@ -310,7 +350,7 @@ export const auditBreadHandler = {
           } catch {}
         }
         yd = {
-          address: YIELD_DISTRIBUTOR,
+          address: YD,
           owner: ydOwner,
           maxPoints: maxPoints ? Number(maxPoints) : null,
           cycleLength: cycleLengthRaw ? Number(cycleLengthRaw) : null,
@@ -350,41 +390,50 @@ export const auditBreadHandler = {
         }
       } catch {}
 
-      // 8. Liquidity pools
-      spin && (spin.text = 'Reading Curve + Honeyswap pool reserves...');
-      let poolWXDAI: any = null;
-      let poolHNY: any = null;
-      try {
-        const cp = new ethers.Contract(CURVE_POOL, PAIR_ABI, p);
-        const [r0, r1] = await cp.getReserves();
-        const [t0, t1] = await Promise.all([cp.token0(), cp.token1()]);
-        const breadIsT0 = t0.toLowerCase() === BREAD_ADDR.toLowerCase();
-        const breadReserve = Number(ethers.utils.formatUnits(breadIsT0 ? r0 : r1, 18));
-        const counter = Number(ethers.utils.formatUnits(breadIsT0 ? r1 : r0, 18));
-        poolWXDAI = {
-          address: CURVE_POOL,
-          name: 'BUTTER (Curve BREAD/WXDAI)',
-          breadReserve,
-          wxdaiReserve: counter,
-          ratio: counter > 0 ? breadReserve / counter : null,
-          pegDeviation: counter > 0 ? Math.abs(breadReserve / counter - 1) : null,
-        };
-      } catch {}
-      try {
-        const hp = new ethers.Contract(HNY_POOL, PAIR_ABI, p);
-        const [r0, r1] = await hp.getReserves();
-        const [t0] = await Promise.all([hp.token0()]);
-        const breadIsT0 = t0.toLowerCase() === BREAD_ADDR.toLowerCase();
-        const breadReserve = Number(ethers.utils.formatUnits(breadIsT0 ? r0 : r1, 18));
-        const counter = Number(ethers.utils.formatUnits(breadIsT0 ? r1 : r0, 18));
-        poolHNY = {
-          address: HNY_POOL,
-          name: 'BREAD/HNY (Honeyswap)',
-          breadReserve,
-          hnyReserve: counter,
-          ratio: counter > 0 ? breadReserve / counter : null,
-        };
-      } catch {}
+      // 8. Liquidity pools — generic Uniswap-V2-style getReserves loop over
+      //    all configured POOLS (HB#1022). First pool is treated as "primary"
+      //    for peg-deviation analysis.
+      spin && (spin.text = `Reading ${POOLS.length} liquidity pool reserve${POOLS.length > 1 ? 's' : ''}...`);
+      const poolStates: Array<any> = [];
+      for (const poolAddr of POOLS) {
+        try {
+          const pc = new ethers.Contract(poolAddr, PAIR_ABI, p);
+          const [r0, r1] = await pc.getReserves();
+          const t0 = await pc.token0();
+          const tokenIsT0 = t0.toLowerCase() === TOKEN.toLowerCase();
+          const tokenReserve = Number(ethers.utils.formatUnits(tokenIsT0 ? r0 : r1, 18));
+          const counter = Number(ethers.utils.formatUnits(tokenIsT0 ? r1 : r0, 18));
+          poolStates.push({
+            address: poolAddr,
+            tokenReserve,
+            counterReserve: counter,
+            ratio: counter > 0 ? tokenReserve / counter : null,
+            pegDeviation: counter > 0 ? Math.abs(tokenReserve / counter - 1) : null,
+          });
+        } catch {
+          poolStates.push({ address: poolAddr, error: 'read-failed (not a UniV2-style pool?)' });
+        }
+      }
+      // Backwards-compat with the prior poolWXDAI/poolHNY fields in the result.
+      const poolWXDAI = poolStates[0]?.tokenReserve !== undefined
+        ? {
+            address: poolStates[0].address,
+            name: 'Primary pool',
+            breadReserve: poolStates[0].tokenReserve,
+            wxdaiReserve: poolStates[0].counterReserve,
+            ratio: poolStates[0].ratio,
+            pegDeviation: poolStates[0].pegDeviation,
+          }
+        : null;
+      const poolHNY = poolStates[1]?.tokenReserve !== undefined
+        ? {
+            address: poolStates[1].address,
+            name: 'Secondary pool',
+            breadReserve: poolStates[1].tokenReserve,
+            hnyReserve: poolStates[1].counterReserve,
+            ratio: poolStates[1].ratio,
+          }
+        : null;
 
       // 9. Risk flags (additional)
       if (giniVal > 0.85) risks.push(`HIGH concentration (Gini=${giniVal.toFixed(3)})`);
@@ -402,7 +451,7 @@ export const auditBreadHandler = {
 
       const result = {
         chain: 'gnosis',
-        breadAddr: BREAD_ADDR,
+        breadAddr: TOKEN,
         token: { name, symbol, decimals: Number(decimals), totalSupply: supply },
         proxy: { impl, implCodeBytes: (implCode.length - 2) / 2, clockMode, clockNow: clockNow ? Number(clockNow) : null },
         scan: { fromBlock, latest, blockWindow, scanErrors },
@@ -432,11 +481,15 @@ export const auditBreadHandler = {
       if (wantJson) {
         console.log(JSON.stringify(result, null, 2));
       } else {
-        spin?.succeed(`Breadchain audit complete (${result.holders.observed} holders observed; ${result.holders.sampled} sampled)`);
+        spin?.succeed(`${isDefaultToken ? 'Breadchain' : result.token.symbol} audit complete (${result.holders.observed} holders observed; ${result.holders.sampled} sampled)`);
         console.log('');
-        console.log(`BREAD: ${result.token.name} (${result.token.symbol}) on Gnosis Chain`);
-        console.log(`  Total supply: ${result.token.totalSupply.toLocaleString()} BREAD`);
-        console.log(`  Proxy: UUPS @ ${result.proxy.impl} (${result.proxy.implCodeBytes.toLocaleString()} bytes)`);
+        console.log(`Token: ${result.token.name} (${result.token.symbol})`);
+        console.log(`  Total supply: ${result.token.totalSupply.toLocaleString()} ${result.token.symbol}`);
+        if (result.proxy.implCodeBytes > 0) {
+          console.log(`  Proxy: UUPS @ ${result.proxy.impl} (${result.proxy.implCodeBytes.toLocaleString()} bytes)`);
+        } else {
+          console.log(`  Non-proxy (no EIP-1967 impl in storage slot)`);
+        }
         console.log(`  Clock mode: ${result.proxy.clockMode}  at block ${result.proxy.clockNow}`);
         console.log('');
         console.log(`Concentration metrics:`);
@@ -491,7 +544,7 @@ export const auditBreadHandler = {
         console.log('');
         console.log(`Top ${topN} holders:`);
         for (const h of result.topHolders) {
-          console.log(`  ${h.address}  ${h.balance.toFixed(2).padStart(14)} BREAD  ${h.pctOfSupply.toFixed(2).padStart(6)}%`);
+          console.log(`  ${h.address}  ${h.balance.toFixed(2).padStart(14)} ${result.token.symbol}  ${h.pctOfSupply.toFixed(2).padStart(6)}%`);
         }
         if (risks.length > 0) {
           console.log('');
