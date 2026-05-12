@@ -21,9 +21,41 @@
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
+import { ethers } from 'ethers';
+import { request } from 'https';
 import * as output from '../../lib/output';
 
-const AUDIT_GOVERNANCE_STACK_TOOLING_VERSION = 'audit-governance-stack-v0.1-scaffold-hb800';
+const AUDIT_GOVERNANCE_STACK_TOOLING_VERSION = 'audit-governance-stack-v0.2-governor-snapshot-hb801';
+
+// Reuse same RPC defaults pattern as lockstep-analyzer.js (HB#792 task #540).
+// Override per-chain via AUDIT_GS_RPC_<chainId> env vars for paid endpoints.
+const DEFAULT_RPC: Record<number, string> = {
+  1: 'https://cloudflare-eth.com',
+  10: 'https://mainnet.optimism.io',
+  137: 'https://polygon-rpc.com',
+  8453: 'https://mainnet.base.org',
+  42161: 'https://arb1.arbitrum.io/rpc',
+  100: 'https://rpc.gnosischain.com',
+};
+
+function resolveRpc(chainId: number, override?: string): string | undefined {
+  if (override) return override;
+  return process.env[`AUDIT_GS_RPC_${chainId}`] || DEFAULT_RPC[chainId];
+}
+
+const SNAPSHOT_URL = 'https://hub.snapshot.org/graphql';
+
+// Standard Governor ABI fragment — covers GovernorBravo + OpenZeppelin Governor.
+// proposalCount() is GovernorBravo-only; OZ Governor exposes hashProposal() + proposalSnapshot()
+// but no count. We try proposalCount first; on failure fall back to ProposalCreated event scan.
+const GOVERNOR_VIEW_ABI = [
+  'function proposalCount() view returns (uint256)',
+  'function votingDelay() view returns (uint256)',
+  'function votingPeriod() view returns (uint256)',
+  'function name() view returns (string)',
+  'function quorumNumerator() view returns (uint256)',
+  'event ProposalCreated(uint256 proposalId, address proposer, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 startBlock, uint256 endBlock, string description)',
+];
 
 export type ProbeStatus = 'succeeded' | 'failed' | 'skipped' | 'not-implemented';
 
@@ -118,12 +150,156 @@ function classify(probes: AuditGovernanceStackResult['probes']): AuditGovernance
   return { hasOnChainGovernor, hasSnapshotSpace, effectiveGovMechanism };
 }
 
-async function probeGovernor(_address: string, _chainId: number, _rpc?: string): Promise<ProbeResult> {
-  return { status: 'not-implemented', reason: 'HB#801 will wire pop org audit-governor composition' };
+async function probeGovernor(address: string, chainId: number, rpcOverride?: string): Promise<ProbeResult> {
+  const rpcUrl = resolveRpc(chainId, rpcOverride);
+  if (!rpcUrl) {
+    return { status: 'failed', reason: `no RPC URL for chain ${chainId} (set AUDIT_GS_RPC_${chainId} env var)` };
+  }
+  try {
+    const provider = new ethers.providers.JsonRpcProvider(rpcUrl, { name: `chain-${chainId}`, chainId });
+    const code = await provider.getCode(address);
+    if (code === '0x') {
+      return { status: 'succeeded', data: { isContract: false, hasProposals: false, reason: 'address is EOA, not a Governor contract' } };
+    }
+    const governor = new ethers.Contract(address, GOVERNOR_VIEW_ABI, provider);
+    const data: Record<string, unknown> = { isContract: true, codeBytes: (code.length - 2) / 2 };
+    // Try GovernorBravo proposalCount() — definitive
+    try {
+      const count = await governor.proposalCount();
+      data.proposalCount = count.toNumber();
+      data.governorVariant = 'GovernorBravo (proposalCount() succeeded)';
+      data.hasProposals = count.toNumber() > 0;
+    } catch {
+      // Fallback: scan recent ProposalCreated events (covers OZ Governor)
+      try {
+        const currentBlock = await provider.getBlockNumber();
+        const SCAN = 100_000;
+        const fromBlock = Math.max(0, currentBlock - SCAN);
+        const events = await governor.queryFilter(governor.filters.ProposalCreated(), fromBlock, currentBlock);
+        data.recentProposalCount = events.length;
+        data.scanWindowBlocks = SCAN;
+        data.governorVariant = events.length > 0 ? 'OZ-Governor or compatible (ProposalCreated events found)' : 'unknown (no proposalCount + no ProposalCreated events in last 100K blocks)';
+        data.hasProposals = events.length > 0;
+      } catch (innerErr: unknown) {
+        const msg = innerErr instanceof Error ? innerErr.message : String(innerErr);
+        data.eventScanError = msg.slice(0, 120);
+        data.governorVariant = 'not-a-Governor (no Governor methods + no ProposalCreated events)';
+        data.hasProposals = false;
+      }
+    }
+    // Optional metadata
+    try { data.governorName = await governor.name(); } catch { /* not required */ }
+    try { data.votingPeriodBlocks = (await governor.votingPeriod()).toString(); } catch { /* not required */ }
+    return { status: 'succeeded', data };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { status: 'failed', reason: msg.slice(0, 200) };
+  }
 }
 
-async function probeSnapshot(_address: string, _snapshotSpace?: string): Promise<ProbeResult> {
-  return { status: 'not-implemented', reason: 'HB#801 will wire Snapshot space discovery + audit-snapshot composition' };
+function snapshotGql(query: string, variables: Record<string, unknown> = {}): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ query, variables });
+    const req = request(
+      SNAPSHOT_URL,
+      { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
+      (res) => {
+        let out = '';
+        res.on('data', (c) => (out += c));
+        res.on('end', () => {
+          let parsed;
+          try { parsed = JSON.parse(out); } catch { return reject(new Error(`Snapshot non-JSON response: ${out.slice(0, 200)}`)); }
+          if (parsed && parsed.error) return reject(new Error(`Snapshot ${parsed.error}: ${parsed.error_description || ''}`));
+          if (parsed && Array.isArray(parsed.errors) && parsed.errors.length) return reject(new Error(`Snapshot GraphQL error: ${parsed.errors[0].message || JSON.stringify(parsed.errors[0])}`));
+          if (!parsed || parsed.data === undefined) return reject(new Error(`Snapshot empty response: ${out.slice(0, 200)}`));
+          resolve(parsed.data);
+        });
+      }
+    );
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+async function probeSnapshot(address: string, spaceHint?: string): Promise<ProbeResult> {
+  // Strategy: if --snapshot-space provided, query directly. Otherwise check the
+  // Snapshot space registry for any space whose `id` OR `treasuries[].address`
+  // matches the target address. (Snapshot exposes spaces in its GraphQL
+  // schema; we can also try the Snapshot search endpoint.) Discovery without
+  // a hint is heuristic; HB#802+ may extend with ENS-based name lookup.
+  const lcAddr = address.toLowerCase();
+  if (spaceHint) {
+    try {
+      const data = await snapshotGql(
+        `query($space: String!) {
+          space(id: $space) { id name members admins network }
+          proposals(first: 5, where: {space: $space, state: "closed"}, orderBy: "created", orderDirection: desc) {
+            id title created
+          }
+        }`,
+        { space: spaceHint },
+      );
+      const d = data as { space?: { id?: string; name?: string; admins?: string[]; members?: string[]; network?: string } | null; proposals?: { id: string; title: string; created: number }[] };
+      if (!d.space) {
+        return { status: 'succeeded', data: { spaceExists: false, spaceHint, reason: `Snapshot space '${spaceHint}' not found` } };
+      }
+      return {
+        status: 'succeeded',
+        data: {
+          spaceExists: true,
+          spaceId: d.space.id,
+          spaceName: d.space.name,
+          network: d.space.network,
+          adminCount: d.space.admins?.length || 0,
+          memberCount: d.space.members?.length || 0,
+          recentClosedProposals: d.proposals?.length || 0,
+          isActive: (d.proposals?.length || 0) > 0,
+          // Note: address-to-space match is implicit (caller passed the hint)
+          addressMatchedAdmin: d.space.admins?.map((a) => a.toLowerCase()).includes(lcAddr) || false,
+          addressMatchedMember: d.space.members?.map((a) => a.toLowerCase()).includes(lcAddr) || false,
+        },
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { status: 'failed', reason: `Snapshot lookup failed for space '${spaceHint}': ${msg.slice(0, 200)}` };
+    }
+  }
+  // Discovery without hint: search any spaces where `address` is admin or member.
+  // Snapshot's `spaces` query supports `where` on admins/members.
+  try {
+    const data = await snapshotGql(
+      `query($addr: [String!]) {
+        spaces(first: 10, where: {admins_in: $addr}) { id name network admins }
+      }`,
+      { addr: [lcAddr] },
+    );
+    const d = data as { spaces?: { id: string; name?: string; network?: string }[] };
+    const matched = d.spaces || [];
+    if (matched.length === 0) {
+      return {
+        status: 'succeeded',
+        data: {
+          spaceExists: false,
+          discoveryAttempted: 'admins-in',
+          reason: `no Snapshot space found where ${address} is admin (try --snapshot-space <id> for direct lookup)`,
+        },
+      };
+    }
+    return {
+      status: 'succeeded',
+      data: {
+        spaceExists: true,
+        discoveryAttempted: 'admins-in',
+        matchedSpaces: matched.map((s) => ({ id: s.id, name: s.name, network: s.network })),
+        primarySpaceId: matched[0].id,
+        isActive: null, // not probed in discovery mode
+      },
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { status: 'failed', reason: `Snapshot discovery failed: ${msg.slice(0, 200)}` };
+  }
 }
 
 async function probeSafe(_address: string, _chainId: number, _rpc?: string): Promise<ProbeResult> {
