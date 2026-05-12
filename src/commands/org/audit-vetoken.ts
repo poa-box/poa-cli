@@ -79,8 +79,10 @@ const DEFAULT_ENUMERATE_CHUNK_BLOCKS = 10_000;
 interface AuditVetokenArgs {
   escrow: string;
   holders?: string;
+  'known-actors-seed'?: string;
   enumerate?: boolean;
   'enumerate-transfers'?: boolean;
+  'multi-window'?: string;
   'verify-top-holder'?: boolean;
   underlying?: string;
   'from-block'?: number;
@@ -326,6 +328,26 @@ export const auditVetokenHandler = {
         'Optional when --enumerate is passed. The two modes can be combined ' +
         '— enumerated addresses are union-ed with the explicit list.',
     })
+    .option('known-actors-seed', {
+      type: 'string',
+      describe:
+        'Task #545 (HB#1051): path to a newline-delimited file of known actor ' +
+        'addresses. Merged into the holder candidate list before ranking. ' +
+        'Closes the window-bias trap from HB#1047/#1049 (e.g. ' +
+        'Convex VoterProxy missing from veCRV --enumerate-transfers in a 50K ' +
+        'block window because their lock predates the scan).',
+    })
+    .option('multi-window', {
+      type: 'string',
+      describe:
+        'Task #545 (HB#1051): run enumeration across N windows and union ' +
+        'results. Accepts either an integer (auto-split into N equal-size ' +
+        'windows over `latest - --from-block` blocks; defaults to last 6 ' +
+        'months on Ethereum) OR a comma-separated "from-to" pair list ' +
+        '(e.g. "20000000-20500000,21000000-21500000"). Composes with both ' +
+        '--enumerate and --enumerate-transfers; the union catches dormant ' +
+        'lockers without forcing one massive scan.',
+    })
     .option('enumerate', {
       type: 'boolean',
       default: false,
@@ -397,6 +419,29 @@ export const auditVetokenHandler = {
             .filter(a => a.length > 0)
         : [];
 
+      // Task #545: merge --known-actors-seed file contents into the holder list.
+      // One address per line; '#' comments and blank lines skipped. Composes
+      // with --holders (union, lowercase-deduped) — surfaces dormant whales
+      // that the enumerate window-scan would miss (HB#1047/#1049 window-bias
+      // empirical finding: even Convex 53% veCRV holder was invisible from a
+      // 50K-block --enumerate-transfers scan because their lock predates it).
+      if (argv['known-actors-seed']) {
+        const fs = require('fs');
+        const path = argv['known-actors-seed'] as string;
+        if (!fs.existsSync(path)) {
+          spin.stop();
+          output.error(`--known-actors-seed file not found: ${path}`);
+          process.exit(1);
+          return;
+        }
+        const seedAddrs = fs
+          .readFileSync(path, 'utf8')
+          .split('\n')
+          .map((l: string) => l.replace(/#.*$/, '').trim().toLowerCase())
+          .filter((l: string) => l.length > 0);
+        explicitHolders.push(...seedAddrs);
+      }
+
       for (const h of explicitHolders) {
         if (!ethers.utils.isAddress(h)) {
           spin.stop();
@@ -450,41 +495,88 @@ export const auditVetokenHandler = {
       //   - --enumerate-transfers  scan underlying ERC20 Transfer events
       //                            filtered to (to == escrow). Contract-
       //                            agnostic, catches dormant lockers.
-      let enumerationMeta: { windowFrom: number; windowTo: number; chunksScanned: number; enumerated: number; method: string } | null = null;
+      //
+      // Task #545 (HB#1051): --multi-window mode runs the same scan against
+      // N windows + unions results, closing the window-bias trap from HB#1047
+      // empirically validated HB#1049 (Convex VoterProxy missing from a 50K-
+      // block veCRV scan because their lock predates it).
+      let enumerationMeta: { windowFrom: number; windowTo: number; chunksScanned: number; enumerated: number; method: string; windowsScanned?: number } | null = null;
       let discoveredHolders: string[] = [];
+
+      // Parse --multi-window into a list of {from, to} pairs.
+      // Accepts:
+      //   - integer N → split (latest - DEFAULT_LOOKBACK*4) to latest into N windows
+      //   - "from1-to1,from2-to2,..." → explicit window list
+      const multiWindowRanges: Array<{ from: number; to: number }> = [];
+      if (argv['multi-window']) {
+        const latestBlock = await provider.getBlockNumber();
+        const raw = (argv['multi-window'] as string).trim();
+        const intMatch = raw.match(/^\d+$/);
+        if (intMatch) {
+          const n = Math.max(1, Math.min(24, parseInt(raw, 10)));
+          // Default span: 4× the single-window lookback (~ 200K blocks ≈ 28 days)
+          // Override via --from-block to anchor the span start; --to-block for end.
+          const spanEnd = argv['to-block'] ?? latestBlock;
+          const spanStart = argv['from-block'] ?? Math.max(0, spanEnd - DEFAULT_ENUMERATE_LOOKBACK_BLOCKS * 4);
+          const step = Math.floor((spanEnd - spanStart) / n);
+          for (let i = 0; i < n; i++) {
+            multiWindowRanges.push({
+              from: spanStart + i * step,
+              to: i === n - 1 ? spanEnd : spanStart + (i + 1) * step - 1,
+            });
+          }
+        } else {
+          for (const pair of raw.split(',')) {
+            const [a, b] = pair.split('-').map(s => parseInt(s.trim(), 10));
+            if (isNaN(a) || isNaN(b) || a >= b) {
+              spin.stop();
+              output.error(`Invalid --multi-window pair "${pair}". Expected "from-to" with from<to.`);
+              process.exit(1);
+              return;
+            }
+            multiWindowRanges.push({ from: a, to: b });
+          }
+        }
+      }
+
       if (argv.enumerate) {
         const latestBlock = await provider.getBlockNumber();
-        const toBlock = argv['to-block'] ?? latestBlock;
-        const fromBlock =
-          argv['from-block'] ?? Math.max(0, latestBlock - DEFAULT_ENUMERATE_LOOKBACK_BLOCKS);
         const chunk = argv.chunk ?? chainDefaultChunk;
 
-        spin.stop();
-        output.info(
-          `  Enumerating Deposit events ${fromBlock}..${toBlock} in ${chunk}-block chunks...`,
-        );
-        spin.start();
+        // If --multi-window passed, iterate; else single-window legacy behavior.
+        const windows = multiWindowRanges.length > 0
+          ? multiWindowRanges
+          : [{
+              from: argv['from-block'] ?? Math.max(0, latestBlock - DEFAULT_ENUMERATE_LOOKBACK_BLOCKS),
+              to: argv['to-block'] ?? latestBlock,
+            }];
 
-        const enumResult = await enumerateDepositors(ve, provider, fromBlock, toBlock, chunk);
-        discoveredHolders = [...discoveredHolders, ...enumResult.holders];
+        let chunksAcc = 0;
+        for (const w of windows) {
+          spin.stop();
+          output.info(
+            `  Enumerating Deposit events ${w.from}..${w.to} (${chunk}-block chunks)${windows.length > 1 ? ` [window ${windows.indexOf(w) + 1}/${windows.length}]` : ''}...`,
+          );
+          spin.start();
+          const enumResult = await enumerateDepositors(ve, provider, w.from, w.to, chunk);
+          discoveredHolders = [...discoveredHolders, ...enumResult.holders];
+          chunksAcc += enumResult.chunksScanned;
+        }
+
         enumerationMeta = {
-          windowFrom: enumResult.windowFrom,
-          windowTo: enumResult.windowTo,
-          chunksScanned: enumResult.chunksScanned,
-          enumerated: enumResult.holders.length,
-          method: 'deposit-events',
+          windowFrom: windows[0].from,
+          windowTo: windows[windows.length - 1].to,
+          chunksScanned: chunksAcc,
+          enumerated: discoveredHolders.length,
+          method: windows.length > 1 ? `multi-window:deposit-events(x${windows.length})` : 'deposit-events',
+          windowsScanned: windows.length,
         };
       }
 
       if (argv['enumerate-transfers']) {
         const latestBlock = await provider.getBlockNumber();
-        const toBlock = argv['to-block'] ?? latestBlock;
-        const fromBlock =
-          argv['from-block'] ?? Math.max(0, latestBlock - DEFAULT_ENUMERATE_LOOKBACK_BLOCKS);
         const chunk = argv.chunk ?? chainDefaultChunk;
 
-        // Resolve underlying token address: explicit --underlying flag wins,
-        // else fall back to VotingEscrow.token() which we already read above.
         let underlyingAddr = argv.underlying?.trim().toLowerCase() || veTokenAddr;
         if (!underlyingAddr || underlyingAddr === '0x0' || underlyingAddr === '0x0000000000000000000000000000000000000000') {
           spin.stop();
@@ -495,35 +587,45 @@ export const auditVetokenHandler = {
           return;
         }
 
-        spin.stop();
-        output.info(
-          `  Enumerating underlying Transfer events to ${escrow} ${fromBlock}..${toBlock} (${chunk}-block chunks, underlying=${underlyingAddr})...`,
-        );
-        spin.start();
+        // Task #545 (HB#1051): multi-window support for the Transfer-events path too.
+        const windows = multiWindowRanges.length > 0
+          ? multiWindowRanges
+          : [{
+              from: argv['from-block'] ?? Math.max(0, latestBlock - DEFAULT_ENUMERATE_LOOKBACK_BLOCKS),
+              to: argv['to-block'] ?? latestBlock,
+            }];
 
-        const enumResult = await enumerateHoldersViaUnderlyingTransfers(
-          underlyingAddr,
-          escrow,
-          provider,
-          fromBlock,
-          toBlock,
-          chunk,
-        );
-        discoveredHolders = [...discoveredHolders, ...enumResult.holders];
+        let chunksAcc = 0;
+        let foundAcc = 0;
+        for (const w of windows) {
+          spin.stop();
+          output.info(
+            `  Enumerating underlying Transfer events to ${escrow} ${w.from}..${w.to} (${chunk}-block chunks, underlying=${underlyingAddr})${windows.length > 1 ? ` [window ${windows.indexOf(w) + 1}/${windows.length}]` : ''}...`,
+          );
+          spin.start();
+          const enumResult = await enumerateHoldersViaUnderlyingTransfers(
+            underlyingAddr, escrow, provider, w.from, w.to, chunk,
+          );
+          discoveredHolders = [...discoveredHolders, ...enumResult.holders];
+          chunksAcc += enumResult.chunksScanned;
+          foundAcc += enumResult.holders.length;
+        }
+
         if (!enumerationMeta) {
           enumerationMeta = {
-            windowFrom: enumResult.windowFrom,
-            windowTo: enumResult.windowTo,
-            chunksScanned: enumResult.chunksScanned,
-            enumerated: enumResult.holders.length,
-            method: 'underlying-transfers',
+            windowFrom: windows[0].from,
+            windowTo: windows[windows.length - 1].to,
+            chunksScanned: chunksAcc,
+            enumerated: foundAcc,
+            method: windows.length > 1 ? `multi-window:underlying-transfers(x${windows.length})` : 'underlying-transfers',
+            windowsScanned: windows.length,
           };
         } else {
-          // Both --enumerate and --enumerate-transfers were passed. Record
-          // as union.
-          enumerationMeta.enumerated += enumResult.holders.length;
-          enumerationMeta.chunksScanned += enumResult.chunksScanned;
-          enumerationMeta.method = 'union(deposit-events,underlying-transfers)';
+          enumerationMeta.enumerated += foundAcc;
+          enumerationMeta.chunksScanned += chunksAcc;
+          enumerationMeta.method = windows.length > 1
+            ? `multi-window:union(deposit-events+underlying-transfers,x${windows.length})`
+            : 'union(deposit-events,underlying-transfers)';
         }
       }
 
