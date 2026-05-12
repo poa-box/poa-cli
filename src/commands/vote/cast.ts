@@ -106,6 +106,25 @@ export const castHandler = {
         argv.chain,
         { preferActive: true }
       );
+      // HB#1033: resolve labels BEFORE tx so users see what they're about to cast,
+      // not just after. Catches the 0-indexed-input vs 1-indexed-display trap
+      // (`pop vote results` shows "#1 ApproveX / #2 Reject" but --options is
+      // 0-indexed, so --options 1 selects "Reject" not "ApproveX"). Preview
+      // goes to stderr so --json automation stays parseable.
+      let optionMap = '';
+      try {
+        const modules = await resolveOrgModules(argv.org, argv.chain);
+        const pq = `{ organization(id: "${modules.orgId}") { hybridVoting { proposals(where: {proposalId: ${proposalId}}) { metadata { optionNames } } } } }`;
+        const pResult = await query<any>(pq, {}, argv.chain);
+        const names = pResult.organization?.hybridVoting?.proposals?.[0]?.metadata?.optionNames || [];
+        if (names.length > 0) {
+          optionMap = optionIndices.map((idx: number, i: number) => `${names[idx] || 'Option ' + idx}: ${weights[i]}%`).join(', ');
+          spin.stop();
+          process.stderr.write(`About to cast: ${optionMap}  (--options is 0-indexed)\n`);
+          spin.start();
+        }
+      } catch { /* non-critical — label preview is best-effort */ }
+
       spin.text = 'Casting vote...';
 
       const result = await executeTx(
@@ -118,17 +137,6 @@ export const castHandler = {
       spin.stop();
 
       if (result.success) {
-        // Resolve option names for clarity
-        let optionMap = '';
-        try {
-          const modules = await resolveOrgModules(argv.org, argv.chain);
-          const pq = `{ organization(id: "${modules.orgId}") { hybridVoting { proposals(where: {proposalId: ${proposalId}}) { metadata { optionNames } } } } }`;
-          const pResult = await query<any>(pq, {}, argv.chain);
-          const names = pResult.organization?.hybridVoting?.proposals?.[0]?.metadata?.optionNames || [];
-          if (names.length > 0) {
-            optionMap = optionIndices.map((idx: number, i: number) => `${names[idx] || 'Option ' + idx}: ${weights[i]}%`).join(', ');
-          }
-        } catch { /* non-critical */ }
 
         // Task #370: record idempotent result
         if (!argv.noIdempotency) {
