@@ -333,20 +333,29 @@ export const auditVetokenHandler = {
       describe:
         'Task #545 (HB#1051): path to a newline-delimited file of known actor ' +
         'addresses. Merged into the holder candidate list before ranking. ' +
-        'Closes the window-bias trap from HB#1047/#1049 (e.g. ' +
-        'Convex VoterProxy missing from veCRV --enumerate-transfers in a 50K ' +
-        'block window because their lock predates the scan).',
+        '"#" comments and blank lines skipped. Closes the window-bias trap ' +
+        'from HB#1047/#1049 (e.g. Convex VoterProxy missing from veCRV ' +
+        '--enumerate-transfers in a 50K block window because their lock ' +
+        'predates the scan). COMPOSITION (HB#1053): pair with --multi-window ' +
+        'for full coverage — multi-window finds UNKNOWN dormant lockers; ' +
+        'known-actors-seed verifies KNOWN whales rank correctly. Both ' +
+        'compose without conflict.',
     })
     .option('multi-window', {
       type: 'string',
       describe:
         'Task #545 (HB#1051): run enumeration across N windows and union ' +
         'results. Accepts either an integer (auto-split into N equal-size ' +
-        'windows over `latest - --from-block` blocks; defaults to last 6 ' +
-        'months on Ethereum) OR a comma-separated "from-to" pair list ' +
-        '(e.g. "20000000-20500000,21000000-21500000"). Composes with both ' +
-        '--enumerate and --enumerate-transfers; the union catches dormant ' +
-        'lockers without forcing one massive scan.',
+        'windows between --from-block and --to-block) OR a comma-separated ' +
+        '"from-to" pair list (e.g. "20000000-20500000,21000000-21500000"). ' +
+        'Composes with both --enumerate and --enumerate-transfers. ' +
+        'IMPORTANT (HB#1053 methodology refinement): pair with WIDE ' +
+        '--from-block/--to-block range covering the target locker\'s ' +
+        'deposit period (e.g. --from-block 18000000 for Ethereum-mainnet ' +
+        've-tokens with 2021+ deposits). Default-window 3-split produces ' +
+        'sparse results; 1M+ blocks across 3-6 windows is the empirical ' +
+        'sweet spot for catching dormant whales like the 117M veCRV holder ' +
+        '(HB#1052) or humpy.eth on veBAL (HB#1047).',
     })
     .option('enumerate', {
       type: 'boolean',
