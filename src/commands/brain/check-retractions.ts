@@ -94,6 +94,104 @@ function isRetractionLesson(l: LessonRef): boolean {
   return false;
 }
 
+const FULL_SLUG_RE = /hb-\d+-[a-z0-9-]+-1\d{9,12}/g;
+
+/**
+ * v0.2 (task #544): for a retraction lesson, parse out the explicit retracted-target
+ * lesson IDs via PATTERN-based scanning ONLY.
+ *
+ * Why pattern-based (not causedBy-based):
+ *   causedBy refs indicate "this lesson responds-to / builds-on prior" — they
+ *   include both subsuming + retracting + integrating + ack relationships.
+ *   Using causedBy as a retraction-target signal produces v0.1-style
+ *   false positives (HB#796 had causedBy = HB#677 but RETRACTED its own
+ *   RULE #33 candidate, not HB#677).
+ *
+ * Strategy: scan title + body for explicit retraction patterns naming a
+ * specific lesson slug:
+ *   - "RETRACTING <slug>" / "RETRACTS <slug>" / "RETRACTION OF <slug>"
+ *   - "RULE #24 RETRACTION: <slug-portion>" (title prefix pattern)
+ *   - "retracted: <slug>" / "retracted <slug>"
+ *
+ * If no pattern matches, returns empty set. Caller treats empty-target as
+ * "retraction-marker-but-no-specific-target → don't cascade-flag descendants."
+ */
+// Strong signal: full-slug after retraction keyword (e.g., "RETRACTING hb-672-...")
+const RETRACTION_FULL_SLUG_RE = /(?:retract(?:ing|ion of|ion:|s|ed)|self-correction)[:\s\-]+(hb-\d+-[a-z0-9-]+-1\d{9,12})/gi;
+
+// Secondary signal: HB#NNN immediately after retraction keyword (resolved via title-prefix lookup)
+const RETRACTION_HB_NUM_RE = /(?:retract(?:ing|ion of|ion:|s|ed)|self-correction)[:\s\-]*hb#(\d+)\b/gi;
+
+/**
+ * Build a HB-number → lesson-id index by parsing title prefixes "HB#NNN ...".
+ * Stores all matches keyed by the integer HB number. Multiple lessons can
+ * share a number across the corpus (e.g. HB#1043 has 2 lessons by sentinel);
+ * the lookup returns ALL candidates and v0.2 only treats unambiguous (n=1)
+ * matches as a retraction target.
+ */
+function buildHbNumberIndex(lessons: LessonRef[]): Map<string, string[]> {
+  const idx = new Map<string, string[]>();
+  for (const l of lessons) {
+    const t = l.title ?? '';
+    const m = t.match(/^HB#(\d+)\b/);
+    if (m && l.id) {
+      const num = m[1];
+      const arr = idx.get(num) ?? [];
+      arr.push(l.id);
+      idx.set(num, arr);
+    }
+  }
+  return idx;
+}
+
+/**
+ * v0.2 (task #544): for a retraction lesson, parse explicit retracted-target
+ * lesson IDs via PATTERN-based scanning. Two signals (in order of strength):
+ *   1. Full-slug reference after retraction keyword (highest confidence)
+ *   2. HB#NNN reference after retraction keyword, resolved via title-prefix
+ *      lookup (only when EXACTLY ONE lesson matches that HB number — multi-
+ *      match HB#NNN refs are ambiguous and left unresolved)
+ *
+ * Why pattern-based (not causedBy-based):
+ *   causedBy indicates response chain (subsumes / integrates / acks / retracts)
+ *   without disambiguating. v0.1 used causedBy → false positives (HB#796
+ *   had causedBy = HB#677 but RETRACTED its own RULE #33 candidate).
+ *
+ * Empirical anchors:
+ *   - HB#673 title "RULE #24 RETRACTION: HB#672 L2.5 framing" → resolves HB#672
+ *   - HB#1040 title "SELF-CORRECTION: rlBTRFLY..." body refs HB#1039 → resolves
+ *   - HB#796 title "RULE #33 candidate RETRACTED (already subsumed by #30.1)"
+ *     → no HB# immediately after RETRACTED → empty targets → no flag (correct!)
+ */
+function getRetractedTargetIds(l: LessonRef, byId: Map<string, LessonRef>, hbIdx: Map<string, string[]>): Set<string> {
+  if (!isRetractionLesson(l)) return new Set();
+  const targets = new Set<string>();
+  const haystack = `${l.title ?? ''}\n${(l as any).body ?? ''}`;
+
+  // Signal 1: full-slug after retraction keyword
+  RETRACTION_FULL_SLUG_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = RETRACTION_FULL_SLUG_RE.exec(haystack)) !== null) {
+    const slug = m[1];
+    if (slug === l.id) continue;
+    if (byId.has(slug)) targets.add(slug);
+  }
+
+  // Signal 2: HB#NNN after retraction keyword → resolve via title-prefix lookup
+  RETRACTION_HB_NUM_RE.lastIndex = 0;
+  while ((m = RETRACTION_HB_NUM_RE.exec(haystack)) !== null) {
+    const num = m[1];
+    const candidates = hbIdx.get(num) ?? [];
+    if (candidates.length === 1) {
+      const targetId = candidates[0];
+      if (targetId !== l.id) targets.add(targetId);
+    }
+    // Multi-match (>= 2 lessons share HB#NNN) → ambiguous, skip
+  }
+
+  return targets;
+}
+
 interface DescendantStatus {
   lesson: LessonRef;
   depth: number;
@@ -107,6 +205,7 @@ function walkDescendants(
   startId: string,
   byId: Map<string, LessonRef>,
   byParent: Map<string, string[]>,
+  hbIdx: Map<string, string[]>,
   maxDepth: number,
 ): { entries: DescendantStatus[]; warnings: string[] } {
   const visited = new Set<string>();
@@ -132,22 +231,42 @@ function walkDescendants(
     const lesson = byId.get(id);
     if (!lesson) continue;
 
-    // Compute retraction status: a descendant is "retracted" iff
-    //   (a) the descendant itself is a retraction lesson (self-marker), OR
-    //   (b) one of ITS descendants is a retraction lesson (retraction-by-followup)
+    // Compute retraction status (v0.2): a descendant is "retracted" iff
+    //   (a) the descendant itself is a retraction lesson whose parsed
+    //       retracted-target set is NON-EMPTY (genuine self-retraction OR
+    //       retraction of a parent in our chain), OR
+    //   (b) one of its first-level children is a retraction lesson AND
+    //       that child's parsed retracted-target set includes the
+    //       descendant's id (explicit retraction-by-followup).
+    //
+    // v0.1 false-positive fix: a child that has retraction markers but
+    // retracts a DIFFERENT lesson (not the descendant) no longer flags
+    // the descendant. The HB#796 case (retracted argus's RULE #33, not
+    // vigil HB#677) is now correctly NOT flagged.
     let retracted = false;
     let retractedBy: string | undefined;
     let retractedByTitle: string | undefined;
 
     if (isRetractionLesson(lesson)) {
-      retracted = true;
-      retractedBy = lesson.id;
-      retractedByTitle = lesson.title;
+      const targets = getRetractedTargetIds(lesson, byId, hbIdx);
+      // Self-retraction: descendant itself is a retraction lesson AND its
+      // targets include the chain's source (parent target via causedBy)
+      // OR is otherwise non-empty (genuine retraction artifact).
+      // Conservative: if the retraction has NO parsed target, do not flag
+      // (this avoids the v0.1 false-positive where a retraction-of-something-
+      // else just happens to appear in the descendant tree).
+      if (targets.size > 0) {
+        retracted = true;
+        retractedBy = lesson.id;
+        retractedByTitle = lesson.title;
+      }
     } else {
-      // Scan first-level children for retraction markers
+      // Scan first-level children for retraction markers TARGETING this descendant
       for (const grandId of byParent.get(id) ?? []) {
         const grand = byId.get(grandId);
-        if (grand && isRetractionLesson(grand)) {
+        if (!grand || !isRetractionLesson(grand)) continue;
+        const grandTargets = getRetractedTargetIds(grand, byId, hbIdx);
+        if (grandTargets.has(id)) {
           retracted = true;
           retractedBy = grand.id;
           retractedByTitle = grand.title;
@@ -229,7 +348,8 @@ export const checkRetractionsHandler = {
         process.exit(2);
       }
 
-      const { entries, warnings } = walkDescendants(lessonId, byId, byParent, maxDepth);
+      const hbIdx = buildHbNumberIndex(lessons);
+      const { entries, warnings } = walkDescendants(lessonId, byId, byParent, hbIdx, maxDepth);
 
       const retractedCount = entries.filter((e) => e.retracted).length;
       const pendingCount = entries.length - retractedCount;
