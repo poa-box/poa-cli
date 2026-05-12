@@ -284,6 +284,32 @@ export const auditBreadHandler = {
       const nak75 = nakamoto(values, 0.75);
       const top10Share = values.slice(0, 10).reduce((s, x) => s + x, 0) / sampledSupply;
 
+      // 5b. Custodial-presence detection (HB#662 vigil + sentinel HB#1024 cross-DAO insight):
+      // Probe nonces for top-N holders. Addresses with nonce > NONCE_CUSTODIAL_THRESHOLD
+      // (default 1M) are almost certainly exchange custodial wallets (only exchange
+      // hot wallets reach that tx volume). Their voting power is structurally idle —
+      // exchanges typically don't vote/delegate on behalf of depositors.
+      const NONCE_CUSTODIAL_THRESHOLD = 1_000_000;
+      const custodialProbeN = Math.min(30, balances.length);
+      const custodialHolders: Array<{ addr: string; balance: number; nonce: number }> = [];
+      let custodialBalance = 0;
+      if (custodialProbeN > 0) {
+        spin && (spin.text = `Probing nonces for top ${custodialProbeN} holders (custodial detection)...`);
+        for (let i = 0; i < custodialProbeN; i += 10) {
+          const batch = balances.slice(i, i + 10);
+          const nonces = await Promise.all(
+            batch.map((b) => p.getTransactionCount(b.addr).catch(() => 0)),
+          );
+          for (let j = 0; j < batch.length; j++) {
+            if (nonces[j] >= NONCE_CUSTODIAL_THRESHOLD) {
+              custodialHolders.push({ addr: batch[j].addr, balance: batch[j].balance, nonce: nonces[j] });
+              custodialBalance += batch[j].balance;
+            }
+          }
+        }
+      }
+      const custodialPct = sampledSupply > 0 ? custodialBalance / sampledSupply : 0;
+
       // 6. Delegation network analysis
       let selfDelegated = 0;
       let nonSelfDelegated = 0;
@@ -473,6 +499,24 @@ export const auditBreadHandler = {
           nakamoto50: nak50,
           nakamoto75: nak75,
         },
+        // HB#662 vigil: custodial-governance presence per HB#656 4-quadrant framework.
+        // Top-30 sampled holders' nonces probed; addresses with nonce >= 1M are
+        // almost certainly exchange custodial wallets (only exchange hot wallets
+        // reach that tx volume). Their VP is structurally idle — exchanges
+        // typically don't vote/delegate.
+        custodialPresence: {
+          nonceThreshold: NONCE_CUSTODIAL_THRESHOLD,
+          probedHolders: custodialProbeN,
+          custodialHolderCount: custodialHolders.length,
+          custodialPctOfSampled: custodialPct,
+          custodialPctOfSupply: supply > 0 ? custodialBalance / supply : 0,
+          custodialHolders: custodialHolders.map((h) => ({
+            addr: h.addr,
+            balance: h.balance,
+            nonce: h.nonce,
+            pctOfSupply: (h.balance / supply) * 100,
+          })),
+        },
         delegation: {
           changeEvents: totalDelegationEvents,
           selfDelegated,
@@ -513,6 +557,17 @@ export const auditBreadHandler = {
         console.log(`  Delegation events:    ${result.delegation.changeEvents}`);
         console.log(`  Self-delegated:       ${result.delegation.selfDelegated}`);
         console.log(`  Non-self delegated:   ${result.delegation.nonSelfDelegated} (${(result.delegation.nonSelfRatio * 100).toFixed(1)}%)`);
+        console.log('');
+        // HB#662: custodial-governance presence (nonce-based exchange detection)
+        console.log(`Custodial-governance presence (top-${result.custodialPresence.probedHolders} probed):`);
+        if (result.custodialPresence.custodialHolderCount === 0) {
+          console.log(`  No likely-custodial holders (nonce >= ${result.custodialPresence.nonceThreshold.toLocaleString()})`);
+        } else {
+          console.log(`  Custodial holders:    ${result.custodialPresence.custodialHolderCount} (nonce >= ${result.custodialPresence.nonceThreshold.toLocaleString()})`);
+          console.log(`  % of sampled supply:  ${(result.custodialPresence.custodialPctOfSampled * 100).toFixed(2)}%`);
+          console.log(`  % of total supply:    ${(result.custodialPresence.custodialPctOfSupply * 100).toFixed(2)}%`);
+          console.log(`  Note: high custodialPct + low nonSelfDelegation → "decentralized in name, exchange-idle in practice" (HB#656 4-quadrant framework).`);
+        }
         console.log('');
         if (yd) {
           console.log(`YieldDistributor (on-chain voting):`);
