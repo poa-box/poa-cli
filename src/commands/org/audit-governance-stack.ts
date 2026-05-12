@@ -25,7 +25,7 @@ import { ethers } from 'ethers';
 import { request } from 'https';
 import * as output from '../../lib/output';
 
-const AUDIT_GOVERNANCE_STACK_TOOLING_VERSION = 'audit-governance-stack-v0.2-governor-snapshot-hb801';
+const AUDIT_GOVERNANCE_STACK_TOOLING_VERSION = 'audit-governance-stack-v0.3-safe-vetoken-hb802';
 
 // Reuse same RPC defaults pattern as lockstep-analyzer.js (HB#792 task #540).
 // Override per-chain via AUDIT_GS_RPC_<chainId> env vars for paid endpoints.
@@ -55,6 +55,31 @@ const GOVERNOR_VIEW_ABI = [
   'function name() view returns (string)',
   'function quorumNumerator() view returns (uint256)',
   'event ProposalCreated(uint256 proposalId, address proposer, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 startBlock, uint256 endBlock, string description)',
+];
+
+// Gnosis Safe probe ABI — getOwners + getThreshold + nonce + VERSION are
+// canonical Safe.sol view methods present on every deployed Safe regardless
+// of version (1.0.0 through 1.4.x).
+const SAFE_VIEW_ABI = [
+  'function getOwners() view returns (address[])',
+  'function getThreshold() view returns (uint256)',
+  'function nonce() view returns (uint256)',
+  'function VERSION() view returns (string)',
+];
+
+// VotingEscrow probe ABI — covers veCRV (Curve), veBAL (Balancer), vlCVX
+// (Convex locked-vote), and Redacted Cartel rlBTRFLY (lockedSupply pattern
+// per sentinel HB#1040 finding). totalSupply/lockedSupply/name/symbol union
+// + locking constants for variant disambiguation.
+const VETOKEN_VIEW_ABI = [
+  'function totalSupply() view returns (uint256)',
+  'function lockedSupply() view returns (uint256)',
+  'function name() view returns (string)',
+  'function symbol() view returns (string)',
+  'function decimals() view returns (uint8)',
+  'function epoch() view returns (uint256)',
+  'function MAXTIME() view returns (uint256)',
+  'function token() view returns (address)',
 ];
 
 export type ProbeStatus = 'succeeded' | 'failed' | 'skipped' | 'not-implemented';
@@ -139,12 +164,18 @@ function classify(probes: AuditGovernanceStackResult['probes']): AuditGovernance
   const safeSucceeded = probes.safe.status === 'succeeded';
   const hasOnChainGovernor = govSucceeded ? Boolean((probes.governor.data as { hasProposals?: boolean })?.hasProposals) : null;
   const hasSnapshotSpace = snapshotSucceeded ? Boolean((probes.snapshot.data as { spaceExists?: boolean })?.spaceExists) : null;
+  // isSafeMultisig is a TRUE Safe (getOwners + getThreshold succeeded) AND target
+  // doesn't already have a token-vote mechanism. This prevents misclassifying
+  // a Safe-controlled treasury as multisig-only when the org also has Snapshot.
+  const isSafeMultisig = safeSucceeded ? Boolean((probes.safe.data as { isSafe?: boolean })?.isSafe) : false;
   let effectiveGovMechanism: AuditGovernanceStackResult['classification']['effectiveGovMechanism'] = 'unknown';
-  if (hasOnChainGovernor && hasSnapshotSpace) {
+  if ((hasOnChainGovernor || hasSnapshotSpace) && isSafeMultisig) {
+    effectiveGovMechanism = 'mixed';
+  } else if (hasOnChainGovernor && hasSnapshotSpace) {
     effectiveGovMechanism = 'mixed';
   } else if (hasOnChainGovernor || hasSnapshotSpace) {
     effectiveGovMechanism = 'token-vote';
-  } else if (safeSucceeded) {
+  } else if (isSafeMultisig) {
     effectiveGovMechanism = 'multisig-only';
   }
   return { hasOnChainGovernor, hasSnapshotSpace, effectiveGovMechanism };
@@ -302,12 +333,110 @@ async function probeSnapshot(address: string, spaceHint?: string): Promise<Probe
   }
 }
 
-async function probeSafe(_address: string, _chainId: number, _rpc?: string): Promise<ProbeResult> {
-  return { status: 'not-implemented', reason: 'HB#802 will wire pop org audit-safe composition + signer-set probe' };
+async function probeSafe(address: string, chainId: number, rpcOverride?: string): Promise<ProbeResult> {
+  const rpcUrl = resolveRpc(chainId, rpcOverride);
+  if (!rpcUrl) {
+    return { status: 'failed', reason: `no RPC URL for chain ${chainId} (set AUDIT_GS_RPC_${chainId} env var)` };
+  }
+  try {
+    const provider = new ethers.providers.JsonRpcProvider(rpcUrl, { name: `chain-${chainId}`, chainId });
+    const code = await provider.getCode(address);
+    if (code === '0x') {
+      return { status: 'succeeded', data: { isSafe: false, isContract: false, reason: 'address is EOA, not a Safe multisig' } };
+    }
+    const safe = new ethers.Contract(address, SAFE_VIEW_ABI, provider);
+    const data: Record<string, unknown> = { isContract: true, codeBytes: (code.length - 2) / 2 };
+    // Definitive Safe-detection: getOwners + getThreshold both succeed
+    let isSafe = false;
+    try {
+      const [owners, threshold] = await Promise.all([safe.getOwners(), safe.getThreshold()]);
+      isSafe = true;
+      data.isSafe = true;
+      data.signerCount = owners.length;
+      data.threshold = threshold.toNumber();
+      data.signers = owners.map((o: string) => o.toLowerCase());
+      data.thresholdRatio = `${threshold.toNumber()}/${owners.length}`;
+    } catch {
+      data.isSafe = false;
+      data.reason = 'getOwners/getThreshold reverted — not a Safe multisig';
+    }
+    if (isSafe) {
+      // Operational activity indicator + version
+      try { data.nonce = (await safe.nonce()).toNumber(); } catch { /* not required */ }
+      try { data.safeVersion = await safe.VERSION(); } catch { /* not required */ }
+    }
+    return { status: 'succeeded', data };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { status: 'failed', reason: msg.slice(0, 200) };
+  }
 }
 
-async function probeVetoken(_address: string, _chainId: number, _rpc?: string): Promise<ProbeResult> {
-  return { status: 'not-implemented', reason: 'HB#802 will wire pop org audit-vetoken composition for veCRV-family VotingEscrow probe' };
+async function probeVetoken(address: string, chainId: number, rpcOverride?: string): Promise<ProbeResult> {
+  const rpcUrl = resolveRpc(chainId, rpcOverride);
+  if (!rpcUrl) {
+    return { status: 'failed', reason: `no RPC URL for chain ${chainId} (set AUDIT_GS_RPC_${chainId} env var)` };
+  }
+  try {
+    const provider = new ethers.providers.JsonRpcProvider(rpcUrl, { name: `chain-${chainId}`, chainId });
+    const code = await provider.getCode(address);
+    if (code === '0x') {
+      return { status: 'succeeded', data: { isVeToken: false, isContract: false, reason: 'address is EOA, not a token contract' } };
+    }
+    const token = new ethers.Contract(address, VETOKEN_VIEW_ABI, provider);
+    const data: Record<string, unknown> = { isContract: true, codeBytes: (code.length - 2) / 2 };
+    let veVariant: string | null = null;
+    let totalSupply: ethers.BigNumber | null = null;
+    let lockedSupply: ethers.BigNumber | null = null;
+    // Try standard ERC20 metadata first (unaffected by veToken-ness)
+    try { data.tokenName = await token.name(); } catch { /* not required */ }
+    try { data.tokenSymbol = await token.symbol(); } catch { /* not required */ }
+    try {
+      const dec = await token.decimals();
+      data.decimals = Number(dec);
+    } catch { /* not required */ }
+    // totalSupply (always tried)
+    try {
+      totalSupply = await token.totalSupply();
+      data.totalSupplyRaw = totalSupply!.toString();
+      if (data.decimals && typeof data.decimals === 'number') {
+        data.totalSupply = Number(ethers.utils.formatUnits(totalSupply!, data.decimals as number));
+      }
+    } catch { /* not all contracts have totalSupply */ }
+    // lockedSupply (sentinel HB#1040 — Redacted Cartel rlBTRFLY pattern)
+    try {
+      lockedSupply = await token.lockedSupply();
+      data.lockedSupplyRaw = lockedSupply!.toString();
+      if (data.decimals && typeof data.decimals === 'number') {
+        data.lockedSupply = Number(ethers.utils.formatUnits(lockedSupply!, data.decimals as number));
+      }
+      veVariant = 'has-lockedSupply';
+    } catch { /* not present on most contracts */ }
+    // Curve VotingEscrow signature: epoch() + MAXTIME()
+    try {
+      const ep = await token.epoch();
+      data.epoch = ep.toString();
+      veVariant = 'curve-VotingEscrow (epoch present)';
+    } catch { /* not Curve-style */ }
+    try {
+      const mt = await token.MAXTIME();
+      data.MAXTIME_seconds = mt.toString();
+      if (!veVariant || veVariant === 'has-lockedSupply') veVariant = 'curve-style-VotingEscrow';
+    } catch { /* not present */ }
+    // VotingEscrow underlying token reference
+    try { data.underlyingToken = (await token.token()).toLowerCase(); } catch { /* not always present */ }
+    // Classify
+    const isVeToken = veVariant !== null || (lockedSupply !== null && lockedSupply.gt(0));
+    data.isVeToken = isVeToken;
+    if (veVariant) data.veVariant = veVariant;
+    if (totalSupply && totalSupply.eq(0) && lockedSupply && lockedSupply.gt(0)) {
+      data.dormancyPattern = 'totalSupply()=0 + lockedSupply()>0 — Redacted-Cartel rlBTRFLY pattern (sentinel HB#1040 finding); use lockedSupply for governance weight';
+    }
+    return { status: 'succeeded', data };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { status: 'failed', reason: msg.slice(0, 200) };
+  }
 }
 
 async function probeActorFootprint(_address: string, _chainId: number, _rpc?: string): Promise<ProbeResult> {
