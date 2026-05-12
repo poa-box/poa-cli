@@ -18,6 +18,7 @@ import { auditSnapshotHandler } from './audit-snapshot';
 import { auditSafeHandler } from './audit-safe';
 import { auditFullHandler } from './audit-full';
 import { auditGovernorHandler } from './audit-governor';
+import { auditGovernanceStackHandler } from './audit-governance-stack';
 import { gaasStatusHandler } from './gaas-status';
 import { publishHandler } from './publish';
 import { leaderboardHandler } from './leaderboard';
@@ -58,6 +59,7 @@ export function registerOrgCommands(yargs: Argv) {
     .command('audit-safe', 'Audit treasury for any Safe multisig', auditSafeHandler.builder, auditSafeHandler.handler)
     .command('audit-full', 'Combined governance + treasury audit for any DAO', auditFullHandler.builder, auditFullHandler.handler)
     .command('audit-governor', 'Audit on-chain Governor DAO governance', auditGovernorHandler.builder, auditGovernorHandler.handler)
+    .command('audit-governance-stack', 'Parallel-probe governance audit (Governor + Snapshot + Safe + vetoken + actor-footprint) → HAS_ONCHAIN_GOVERNOR/HAS_SNAPSHOT_SPACE/EFFECTIVE_GOV_MECHANISM classification (task #536)', auditGovernanceStackHandler.builder, auditGovernanceStackHandler.handler)
     .command('audit-dschief', 'Audit DSChief-pattern executive-voting governance (MakerDAO Chief, Sky, forks) — task #472', auditDschiefHandler.builder, auditDschiefHandler.handler)
     .command('audit-proxy-factory', 'Detect E-proxy identity-obfuscating pattern (voters = contracts not EOAs) — task #473', auditProxyFactoryHandler.builder, auditProxyFactoryHandler.handler)
     .command('boundary-score', 'Capture-cluster boundary score per argus v0.5 spec — task #489', boundaryScoreHandler.builder, boundaryScoreHandler.handler)
