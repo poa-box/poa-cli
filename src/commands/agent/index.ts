@@ -18,6 +18,7 @@ import { validateHandler } from './validate';
 import { lookupHandler } from './lookup';
 import { storyHandler } from './story';
 import { checklistHandler } from './checklist';
+import { fleetHealthHandler } from './fleet-health';
 import {
   subscribeHandler,
   unsubscribeHandler,
@@ -48,5 +49,6 @@ export function registerAgentCommands(yargs: Argv) {
     .command('lookup', 'ERC-8004 agent identity lookup by id or address (recovered HB#615)', lookupHandler.builder, lookupHandler.handler)
     .command('story', 'Render an agent\'s recent on-chain activity as a narrative timeline (recovered HB#615; demo-first)', storyHandler.builder, storyHandler.handler)
     .command('checklist', 'Agent onboarding/health checklist (registration + delegation + sponsorship + identity) (recovered HB#615)', checklistHandler.builder, checklistHandler.handler)
+    .command('fleet-health', 'Diagnose brain.shared sync state across fleet (task #538, P7) — peer-latest-ts staleness check + remediation suggestion', fleetHealthHandler.builder, fleetHealthHandler.handler)
     .demandCommand(1, 'Please specify an agent action');
 }
