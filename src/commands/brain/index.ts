@@ -39,6 +39,7 @@ import { retroFileTasksHandler } from './retro-file-tasks';
 import { retroMarkChangeHandler } from './retro-mark-change';
 import { retroRemoveHandler } from './retro-remove';
 import { threadHandler } from './thread';
+import { checkRetractionsHandler } from './check-retractions';
 import { delegationsHandler } from './delegations';
 
 export function registerBrainCommands(yargs: Argv) {
@@ -55,6 +56,7 @@ export function registerBrainCommands(yargs: Argv) {
     .command('remove-lesson', 'Soft-delete a brain lesson (tombstone; filtered from snapshot output)', removeLessonHandler.builder, removeLessonHandler.handler)
     .command('search', 'Filter lessons in a brain doc by query / tag / author / timestamp', searchHandler.builder, searchHandler.handler)
     .command('thread <lesson-id>', 'Task #509 (HB#962): walk a lesson causedBy chain — ancestry + descendants — chronologically. Surfaces deliberation threads machine-readably.', threadHandler.builder as any, threadHandler.handler as any)
+    .command('check-retractions <lesson-id>', 'Task #531 (vigil HB#682): walk causedBy descendants from a corrected/retracted lesson; surface cascade-retraction candidates (PENDING vs already-retracted). RULE #24 ext.', checkRetractionsHandler.builder as any, checkRetractionsHandler.handler as any)
     .command('delegations', 'Task #510 (HB#965): list claim-signaling lessons with delegateTo set. Filter via --to / --from / --unanswered. Heartbeat skill consults this each cycle to surface own-delegations as priority-0.', delegationsHandler.builder as any, delegationsHandler.handler as any)
     .command('tag', 'Add or remove tags on an existing brain lesson', tagHandler.builder, tagHandler.handler)
     .command('brainstorm-start', 'Open a new cross-agent brainstorm (task #354 — forward-looking ideation surface)', brainstormStartHandler.builder, brainstormStartHandler.handler)
