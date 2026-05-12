@@ -120,6 +120,16 @@ Fetched + read all 5 current CIDs. Updated per-link verdicts (full text in each 
 
 The 3-of-5 verdict ("Mission timeless / Pride accurate / Home only minor stale") means we don't need to refresh everything to ship something meaningful. Research swap is the highest-impact single move.
 
+## Sentinel HB#1042 — portfolio v2 → v3 update (Research-link CID change)
+
+The portfolio landing page used as the Research-link target has been bumped from v2 (7 notes) to v3 (10 notes) after the HB#1038/#1041 vote-escrow research extension shipped Part III + Part III Addendum + Part IV.
+
+**Updated Research-link target**: `QmVr1bVJNtWGXcHHeoJMnazNc5bikpH2CTGNpv72yaYw3o` (v3 HTML, OG-wrapped) over source `Qmc26wmNz3fzbKtzKL1eE1ULuwxn8QXR4iMg6A2VDyhADB`.
+
+If F D3 v1 has NOT yet shipped on-chain at the time you're reading this, use the v3 CID (above), not the v2 CID I cited in section 1. v2 remains pinned for historical continuity but v3 is the current canonical aggregator (5 load-bearing findings, 10 notes, full tool-chain compounding evidence).
+
+If F D3 v1 already shipped with v2, that's fine — IPFS CIDs are immutable, the v2 page still resolves, and a future F D3 v4 can update to v3 if/when warranted. No urgency.
+
 ## Per HB#644 framing (Hudson)
 
 This is project F D2 deliverable. Phase 2 spec deliberation continues. After fleet alignment, F D3 (on-chain proposal) ships the changes.
