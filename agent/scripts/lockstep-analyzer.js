@@ -366,6 +366,56 @@ async function fetchVotesFromGovernor(governorAddr, chainId, proposals, voterAdd
   return votes;
 }
 
+// HB#793 Task #540: auto top-N voter selection for governor mode.
+// Aggregates VoteCast events across the scan window and returns the top-N
+// voters by cumulative weight (cum-vp) or vote count (active-share).
+// Same return shape as fetchTopVoters() so main() dispatch is symmetric.
+async function fetchTopVotersFromGovernor(governorAddr, chainId, topN, selection) {
+  const { ethers } = require('ethers');
+  const rpcUrl = getRpcUrl(chainId);
+  const provider = new ethers.providers.JsonRpcProvider(rpcUrl, { name: `chain-${chainId}`, chainId });
+  const governor = new ethers.Contract(governorAddr, GOVERNOR_ABI, provider);
+  const currentBlock = await provider.getBlockNumber();
+  const SCAN_WINDOW = Number(process.env.LOCKSTEP_SCAN_WINDOW) || 2_000_000;
+  const fromBlock = Math.max(0, currentBlock - SCAN_WINDOW);
+  const CHUNK = Number(process.env.LOCKSTEP_RPC_CHUNK) || 50_000;
+  console.error(`  [lockstep] scanning VoteCast for top-${topN} voter selection: blocks ${fromBlock}..${currentBlock}`);
+  const voterTotals = new Map(); // voter → BigNumber sum of weights
+  const voterCounts = new Map(); // voter → integer vote count
+  let totalEvents = 0;
+  for (let b = fromBlock; b <= currentBlock; b += CHUNK) {
+    const toB = Math.min(b + CHUNK - 1, currentBlock);
+    const events = await governor.queryFilter(governor.filters.VoteCast(), b, toB);
+    totalEvents += events.length;
+    for (const e of events) {
+      const voter = e.args.voter.toLowerCase();
+      const weight = e.args.weight;
+      const prev = voterTotals.get(voter) || ethers.BigNumber.from(0);
+      voterTotals.set(voter, prev.add(weight));
+      voterCounts.set(voter, (voterCounts.get(voter) || 0) + 1);
+    }
+  }
+  console.error(`  [lockstep] aggregated ${totalEvents} VoteCast events across ${voterTotals.size} unique voters`);
+  if (voterTotals.size === 0) return [];
+  if (selection === 'active-share') {
+    // Approximation: voter's per-proposal participation rate (count / max-count).
+    // Lacks proposal-count denominator (Snapshot has this), so use total-count
+    // as a stand-in — relative ordering still correct, absolute share is illustrative.
+    const sorted = [...voterCounts.entries()].sort((a, b) => b[1] - a[1]);
+    const maxCount = sorted[0][1];
+    return sorted.slice(0, topN).map(([addr, count]) => ({ address: addr, avgShare: count / maxCount }));
+  }
+  // default: cum-vp
+  const sorted = [...voterTotals.entries()].sort((a, b) => {
+    const diff = b[1].sub(a[1]);
+    return diff.gt(0) ? 1 : diff.lt(0) ? -1 : 0;
+  });
+  return sorted.slice(0, topN).map(([addr, total]) => ({
+    address: addr,
+    cumulativeVP: Number(ethers.utils.formatUnits(total, 18)),
+  }));
+}
+
 async function fetchVotes(proposalIds, voterAddrs) {
   // HB#543: batched fetch via Snapshot proposal_in filter. Previously
   // fired N sequential gql() calls (one per proposal); for high-volume
@@ -536,10 +586,6 @@ async function main() {
       console.error('--governor-chain <chain-id> required when --governor-address is set');
       process.exit(1);
     }
-    if (!explicitVoters) {
-      console.error('--voters required in governor mode (HB#792 MVP); auto top-N selection lands HB#793. Pass --voters 0xaddr1,0xaddr2,...');
-      process.exit(1);
-    }
     if (!getRpcUrl(governorChain)) {
       console.error(`No RPC URL for chain ${governorChain}. Set LOCKSTEP_RPC_${governorChain} env var or add to DEFAULT_RPC map.`);
       process.exit(1);
@@ -547,7 +593,8 @@ async function main() {
   }
   if (!governorMode && !space) {
     console.error('Usage: node lockstep-analyzer.js <space.eth> [topN=5] [--voters addr1,...] [--selection cum-vp|active-share] [--multi-choice] [--pattern-mode binary|categorical|weighted|ranked]');
-    console.error('       OR on-chain Governor: node lockstep-analyzer.js --governor-address <0x...> --governor-chain <id> --voters addr1,addr2,... [--tally-api-key <key>]');
+    console.error('       OR on-chain Governor: node lockstep-analyzer.js --governor-address <0x...> --governor-chain <id> [topN=5] [--voters addr1,...] [--selection cum-vp|active-share]');
+    console.error('       Tune scan: LOCKSTEP_SCAN_WINDOW=<blocks> LOCKSTEP_RPC_CHUNK=<blocks> LOCKSTEP_RPC_<chainId>=<url>');
     process.exit(1);
   }
   if (!['cum-vp', 'active-share'].includes(selection)) { console.error('--selection must be cum-vp or active-share'); process.exit(1); }
@@ -570,8 +617,14 @@ async function main() {
     console.log('Explicit voters (from --voters arg):');
     topVoters.forEach((v, i) => console.log(`  ${i + 1}. ${v.address}`));
   } else {
-    topVoters = await fetchTopVoters(space, topN, selection);
-    console.log(`Top voters by ${selection} (from last 4K votes):`);
+    topVoters = governorMode
+      ? await fetchTopVotersFromGovernor(governorAddress, governorChain, topN, selection)
+      : await fetchTopVoters(space, topN, selection);
+    if (topVoters.length === 0) {
+      console.log(`No voters found ${governorMode ? `for Governor ${governorAddress} on chain ${governorChain}` : `for ${space}`} (try wider --scan-window or check the contract has any VoteCast events).`);
+      return;
+    }
+    console.log(`Top voters by ${selection} (from ${governorMode ? 'VoteCast event aggregation' : 'last 4K votes'}):`);
     topVoters.forEach((v, i) => {
       const extra = v.avgShare !== undefined
         ? `avg-share=${(v.avgShare * 100).toFixed(2)}%`
