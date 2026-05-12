@@ -29,6 +29,7 @@ import { publicationsHandler } from './publications';
 import { compareHandler } from './compare';
 import { compareTimeWindowHandler } from './compare-time-window';
 import { probeAccessHandler } from './probe-access';
+import { probeProxyHandler } from './probe-proxy';
 import { auditVetokenHandler } from './audit-vetoken';
 import { auditParticipationHandler } from './audit-participation';
 import { auditDschiefHandler } from './audit-dschief';
@@ -73,6 +74,7 @@ export function registerOrgCommands(yargs: Argv) {
     .command('compare', 'Head-to-head governance comparison of two Snapshot DAOs', compareHandler.builder, compareHandler.handler)
     .command('compare-time-window', 'Re-audit a stored AUDIT_DB entry and report drift (codifies the asymmetric-drift research finding)', compareTimeWindowHandler.builder, compareTimeWindowHandler.handler)
     .command('probe-access', 'Burner-callStatic access-control probe — map a contract\'s gating model in <5 min, zero gas', probeAccessHandler.builder, probeAccessHandler.handler)
+    .command('probe-proxy <address>', 'Task #553 (HB#703): automated proxy detection (EIP-1167/1967/1822) + impl/admin extraction + common-getter probe', probeProxyHandler.builder as any, probeProxyHandler.handler as any)
     .command('audit-vetoken', 'On-chain top-holder probe for veCRV-family VotingEscrow contracts (task #383)', auditVetokenHandler.builder, auditVetokenHandler.handler)
     .command('audit-participation', 'Governance participation metrics for external Governor contracts (task #422)', auditParticipationHandler.builder, auditParticipationHandler.handler)
     .command('allocation-distance', 'Jaccard + cosine on multi-option Snapshot votes — closes HB#680 Frax gauge-allocation gap', allocationDistanceHandler.builder, allocationDistanceHandler.handler)
