@@ -688,6 +688,84 @@ lessons that other agents see via triage `--watch`. The trigger is event-driven
 
 ---
 
+## Step 0.9: Treasury runway gate (HB#660+, Sprint 21 project A D3, Hudson HB#644 follow-up #1)
+
+After post-mortem auto-scan, check treasury runway via `pop treasury health
+--json`. Surface status flag (HEALTHY / WARN / CRITICAL) in the HB log so
+agents see treasury state at decision-time, not buried in `balance` output.
+
+```bash
+pop treasury health --json > /tmp/hb-treasury-health.json 2>/dev/null || true
+STATUS=$(jq -r '.status' /tmp/hb-treasury-health.json 2>/dev/null || echo UNKNOWN)
+RUNWAY=$(jq -r '.runway.liquidDays' /tmp/hb-treasury-health.json 2>/dev/null || echo 0)
+LIQUID=$(jq -r '.balances.liquidGas' /tmp/hb-treasury-health.json 2>/dev/null || echo 0)
+```
+
+### Behavior
+
+- **STATUS=HEALTHY** → silent (or one-line "treasury: HEALTHY (Nd runway)")
+- **STATUS=WARN** → emit warning to HB log:
+  `⚠ Treasury runway ${RUNWAY}d (WARN threshold). Consider sDAI redemption or distribution adjustment.`
+- **STATUS=CRITICAL** → emit critical alert + brain.shared lesson:
+  ```bash
+  pop brain append-lesson \
+    --title "🚨 TREASURY-CRITICAL: ${RUNWAY}d liquid runway (HB#N detector)" \
+    --body "pop treasury health surfaced CRITICAL: ${LIQUID} xDAI liquid, ${RUNWAY}-day runway at default burn rate. File refuel proposal or sDAI redemption."
+  ```
+  Continue to Step 1 — do NOT block other ops; this is informational surfacing.
+
+### Why this exists at Step 0.9
+
+Hudson HB#644 follow-up #1: "your shared brain infra should keep you thinking
+about treasury... in a way thats good for humans to read." Without this step,
+gas-low warnings repeated in triage every HB for hours without
+burn-rate context. Step 0.9 surfaces the *runway* metric at decision-time
+so agents see how urgent the warning actually is.
+
+Per RULE #25 Layer 4 (heartbeat trigger) for the treasury-runway-blindness
+failure class. Layer 1 detector = `pop treasury health` CLI (vigil HB#659,
+commit 4e11b86). Layer 3 CI gate not yet built; would test the health
+handler's pure functions (runway calc, status thresholds).
+
+### State (lightweight)
+
+`pop treasury health` reads live RPC state; no per-agent persistent state
+file needed (unlike Step 0.8's last-post-mortem-scan.json). The status flag
+is computed each HB from fresh data.
+
+If running this every HB becomes too RPC-expensive (~3 ERC20 reads per
+invocation), introduce a cooldown via `$HOME/.pop-agent/brain/Memory/
+last-treasury-check.json` similar to Step 0.8 pattern. Default no cooldown.
+
+### Failure modes + recovery
+
+- `pop treasury health` unavailable (CLI build broken) → silent skip
+- RPC error / network down → jq fallback returns UNKNOWN/0 → silent skip
+- Per-agent runway differs from org runway (only Hudson can verify): if
+  agent wallet (signing key) low but Executor healthy, sponsored-op path
+  still works. The status flag here is for ORG-level runway, not
+  per-agent gas.
+
+### Provenance
+
+- Vigil HB#645 — Project A scope draft (4 deliverables D1-D4)
+- Vigil HB#659 — D2 pop treasury health CLI (commit 4e11b86, Layer 1 detector)
+- Vigil HB#660 (this) — D3 Step 0.9 (Layer 4 heartbeat trigger)
+- Hudson HB#644 follow-up #1 — original motivation
+- Prop #67 — Sprint 21 priority A ratified at 60 points (20% of fleet allocation)
+
+### Composition with other Step 0.X gates
+
+- Step 0.6 log-size: separate failure class (heartbeat-log bloat)
+- Step 0.7 wire-check: separate failure class (orphan tools / dangling imports)
+- Step 0.8 post-mortem: separate failure class (execute-internal-revert)
+- Step 0.9 (this): separate failure class (treasury-runway-blindness)
+
+Each Step 0.X gate is non-blocking; together they form a layered preventive-infra
+check that runs in <5s per HB (per RULE #25 ship-order discipline).
+
+---
+
 ## Step 1: Triage
 
 Run the triage command — it synthesizes all observations into a prioritized
