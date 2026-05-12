@@ -105,13 +105,11 @@ function readLogTail(scanWindowHBs) {
 function buildCapabilityMap() {
   console.error('[survey-tools] enumerating capabilities...');
   const caps = [];
+  // Pass A: pop CLI domains
   for (const domain of DOMAINS) {
     const domainHelp = runHelp(domain);
     const subs = parseSubcommands(domainHelp);
-    if (subs.length === 0) {
-      // Domain might not exist (e.g., paymaster) — skip silently
-      continue;
-    }
+    if (subs.length === 0) continue;
     for (const sub of subs) {
       const subHelp = runHelp(domain, sub);
       const flags = parseFlags(subHelp);
@@ -120,7 +118,37 @@ function buildCapabilityMap() {
       }
     }
   }
-  console.error(`[survey-tools] enumerated ${caps.length} capabilities across ${DOMAINS.length} domains`);
+  // Pass B: agent/scripts/*.{mjs,js} node scripts (HB#827 extension)
+  // These don't have --help; we scan source for argv-parser blocks
+  // matching `args[i] === '--<flag>'` OR `argv.includes('--<flag>')`.
+  const scriptsDir = path.join(REPO_ROOT, 'agent', 'scripts');
+  if (fs.existsSync(scriptsDir)) {
+    const scriptFiles = fs.readdirSync(scriptsDir).filter(f => /\.(mjs|js)$/.test(f));
+    for (const sf of scriptFiles) {
+      const src = fs.readFileSync(path.join(scriptsDir, sf), 'utf8');
+      const flagsFound = new Set();
+      // Pattern 1: args[i] === '--flag-name'
+      for (const m of src.matchAll(/args\[[\w+\d]+\]\s*===\s*['"](--[\w-]+)['"]/g)) {
+        flagsFound.add(m[1]);
+      }
+      // Pattern 2: argv.includes('--flag-name')
+      for (const m of src.matchAll(/argv\.includes\(\s*['"](--[\w-]+)['"]\s*\)/g)) {
+        flagsFound.add(m[1]);
+      }
+      // Pattern 3: --pattern-mode <value> style (positional value flags)
+      //   args[i] === '--<flag>' && args[i + 1] — same as Pattern 1
+      // Pattern 4: --flag=value style
+      for (const m of src.matchAll(/['"](--[\w-]+)=/g)) {
+        flagsFound.add(m[1]);
+      }
+      for (const flag of flagsFound) {
+        if (['--help', '--version'].includes(flag)) continue;
+        caps.push({ tool: 'agent/scripts', subcommand: sf, flag, hint: '(script source-scan)' });
+      }
+    }
+    console.error(`[survey-tools] script enumeration: ${scriptFiles.length} files scanned`);
+  }
+  console.error(`[survey-tools] enumerated ${caps.length} total capabilities (pop CLI + scripts)`);
   return caps;
 }
 
@@ -132,8 +160,12 @@ function crossReferenceUsage(caps, logTail, scanWindowHBs) {
   const hbMatches = logTail.match(/^## HB#(\d+)/gm) || [];
   const latestHb = hbMatches.length > 0 ? Number(hbMatches[hbMatches.length - 1].match(/\d+/)[0]) : 0;
   for (const cap of caps) {
-    // Full-pattern match
-    const fullPattern = new RegExp(`(?:pop|dist/index\\.js)\\s+${cap.tool}\\s+${cap.subcommand}(?:\\s+[\\w-./=]+)*\\s+${cap.flag.replace(/-/g, '-')}`, 'g');
+    // Full-pattern match — two variants:
+    // (a) pop CLI: "pop <tool> <subcommand> ... --flag" or "dist/index.js <tool> <subcommand> ... --flag"
+    // (b) Node script: "node agent/scripts/<subcommand> ... --flag" (when tool==='agent/scripts')
+    const fullPattern = cap.tool === 'agent/scripts'
+      ? new RegExp(`node\\s+(?:[\\w./]+/)?${cap.subcommand.replace(/\./g, '\\.')}(?:\\s+[\\w-./=]+)*\\s+${cap.flag}\\b`, 'g')
+      : new RegExp(`(?:pop|dist/index\\.js)\\s+${cap.tool}\\s+${cap.subcommand}(?:\\s+[\\w-./=]+)*\\s+${cap.flag.replace(/-/g, '-')}`, 'g');
     // Standalone flag (lower confidence; require subcommand mention within same paragraph)
     const standalonePattern = new RegExp(`${cap.flag}\\b`, 'g');
     const fullMatches = logTail.match(fullPattern) || [];
