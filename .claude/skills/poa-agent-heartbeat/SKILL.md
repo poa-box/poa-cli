@@ -898,6 +898,110 @@ proposal #506.
 
 ---
 
+## Step 1.7: Pre-action task-coverage check (RULE #31 enforcer / task #534, HB#680+)
+
+RULE #31 (task-first discipline, codified vigil HB#680) requires every
+substantive piece of work the fleet does to have an on-chain task BEFORE
+execution. This step enforces it at heartbeat time, BEFORE any Step 2
+substantive write-action.
+
+### Which triage actions REQUIRE task coverage
+
+Apply the check to these `type` values from `pop agent triage --json`:
+- `claim-task` (already-task-tracked; just verify before claim)
+- `work` (already-assigned task; just verify in-progress status)
+- `review` (review is a task action; verify reviewer-permission)
+- Any custom action involving a CLI write op, IPFS pin, or governance tx
+
+### Which triage actions BYPASS the check
+
+These are discussion-mode / emergency-mode / status-only:
+- `gas` (CRITICAL gas-low — fund-via-sponsor allowed without pre-task)
+- `brainstorm-respond` (Phase 1 deliberation; no deliverable yet)
+- `vote` (governance Phase 3; vote-on-existing-proposal)
+- Any status-poll or read-only-fetch action
+
+### Pre-action probe (paste-or-script)
+
+For each Step 2 candidate action involving substantive write-work, run:
+
+```bash
+# Probe: does a task exist matching the intended work?
+# Resolution: match by title-substring OR by description keyword
+INTENT="<one-line description of intended work>"
+EXISTING_TASKS=$(pop task list --status Open --status Submitted --json 2>/dev/null \
+  | jq --arg q "$INTENT" '[.tasks[] | select((.title|test($q;"i")) or (.description|test($q;"i")))]')
+COUNT=$(echo "$EXISTING_TASKS" | jq 'length')
+
+if [ "$COUNT" -gt 0 ]; then
+  echo "MATCH: task exists; claim before executing"
+  echo "$EXISTING_TASKS" | jq -r '.[] | "  #\(.taskId) [\(.status)] \(.title)"'
+  # Proceed: pop task claim --task <id>; then execute; then submit
+else
+  echo "NO MATCH: create task before executing"
+  # Halt + create task per RULE #31 + Hudson HB#674 directive
+fi
+```
+
+### What to do when no matching task exists
+
+**Substantive deliverable work (CLI feature, skill, rule codification, audit,
+brain-infra change, IPFS pin) — REQUIRED to halt + create task**:
+
+```bash
+# Build single-task JSONL
+cat > /tmp/inflight-task.jsonl <<EOF
+{"name":"<title>","description":"<scope + completion criteria + empirical basis>","payout":<PT>,"difficulty":"<easy|medium|hard>","estHours":<N>}
+EOF
+
+# Create
+pop task create-batch \
+  --project <project-id-or-name> \
+  --file /tmp/inflight-task.jsonl \
+  --json -y
+
+# Then claim and proceed
+```
+
+**CRITICAL exception** — gas-low, fund-low, hostile-actor, or security
+incident may proceed without pre-task. Post-hoc placeholder:
+
+```bash
+# After resolving the critical incident
+pop task create \
+  --project <project> \
+  --name "EMERGENCY-FIX: <one-line>" \
+  --description "Critical incident resolved at HB#N (placeholder; per RULE #31 §5)" \
+  --payout 5 --difficulty easy --est-hours 1 \
+  --json -y
+```
+
+**Discussion-mode lessons (peer engagement, retraction, methodology,
+heartbeat log) — NO task needed**. These stay in brain.shared per RULE #31 §3.
+
+### Review-load rebalance check (HB#680+)
+
+Additionally, if this step is processing a `review` action, verify:
+1. The task's project has the calling agent's wallet as a manager (else review
+   tx will revert per Hudson-project HB#671 trap):
+   ```bash
+   pop task view --task <id> --json | jq '.project.managers'
+   ```
+2. The reviewer-load distribution is not skewed past 60% to one agent. Track
+   per-agent approver counts via subgraph; if one agent has handled >60% of
+   approvals in the last 7-day window, suggest the OTHER fleet members claim
+   reviews next.
+
+### Provenance
+
+- Task #534 (vigil HB#674 plan; vigil HB#680 codification + implementation HB#681)
+- RULE #31 (heuristics doc, vigil HB#680)
+- Hudson HB#644 → HB#674 directive on task-first discipline
+- Empirical basis: vigil HB#669-#673 drift (5 HBs zero new tasks) → HB#674-#680
+  task-first dogfood (5 tasks shipped in 5 HBs)
+
+---
+
 ## Step 2: Act (follow triage priority)
 
 Work through the triage output top-to-bottom. CRITICAL first, then HIGH, etc.
