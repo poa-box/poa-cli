@@ -20,6 +20,41 @@ const https = require('https');
 
 const SNAPSHOT_URL = 'https://hub.snapshot.org/graphql';
 
+// HB#792 Task #540: on-chain Governor data source (alternative to Snapshot).
+// RPC endpoints by chain id — public/permissionless; override via
+// LOCKSTEP_RPC_<chainId> env vars for higher rate limits (e.g.,
+// LOCKSTEP_RPC_1=https://your-alchemy-key.infura.io).
+const DEFAULT_RPC = {
+  1: 'https://cloudflare-eth.com',        // Ethereum mainnet (Compound, ENS, Uniswap, AAVE, Maker)
+  10: 'https://mainnet.optimism.io',      // Optimism (Velodrome, Optimism Citizens')
+  137: 'https://polygon-rpc.com',         // Polygon
+  8453: 'https://mainnet.base.org',       // Base (Aerodrome)
+  42161: 'https://arb1.arbitrum.io/rpc',  // Arbitrum
+  100: 'https://rpc.gnosischain.com',     // Gnosis (POP itself)
+};
+// Note: public endpoints rate-limit aggressively; for any serious analysis
+// pass LOCKSTEP_RPC_<chainId> env var pointing at your own Alchemy/Infura/QuickNode key.
+
+// Standard Governor ABI fragment — covers both GovernorBravo (Compound-derived)
+// and OpenZeppelin Governor. Both emit identical ProposalCreated + VoteCast
+// signatures; getReceipt is Bravo-only, so we read votes purely from event scan.
+const GOVERNOR_ABI = [
+  'event ProposalCreated(uint256 proposalId, address proposer, address[] targets, uint256[] values, string[] signatures, bytes[] calldatas, uint256 startBlock, uint256 endBlock, string description)',
+  'event VoteCast(address indexed voter, uint256 proposalId, uint8 support, uint256 weight, string reason)',
+];
+
+// Governor support enum → lockstep choice index (1-indexed):
+// support 0 = Against → choice 2 ; support 1 = For → choice 1 ; support 2 = Abstain → choice 3.
+// This makes Governor results compatible with Snapshot's For-first convention
+// (choices = ['For', 'Against', 'Abstain']) and lets the existing analysis core
+// run unchanged. Abstain (3) is filtered downstream via abstainChoice mechanism.
+const GOVERNOR_SUPPORT_TO_CHOICE = [2, 1, 3];
+
+function getRpcUrl(chainId) {
+  const override = process.env[`LOCKSTEP_RPC_${chainId}`];
+  return override || DEFAULT_RPC[chainId];
+}
+
 // HB#567 Task #499: cosine-similarity helper for WEIGHTED pattern-mode.
 // Snapshot weighted votes have choice as `{choice_idx: weight}` object
 // (e.g. {"1": 50, "2": 50} for split 50/50 across choices 1 and 2).
@@ -223,6 +258,114 @@ async function fetchProposals(space, first = 1000, includeMultiChoice = false, p
   });
 }
 
+// HB#792 Task #540: on-chain Governor adapter. Scans ProposalCreated +
+// VoteCast events from the Governor contract via ethers v5 + a chain-specific
+// RPC endpoint. Returns data shapes compatible with the Snapshot fetchers so
+// the existing analysis core runs unchanged.
+//
+// LIMITATIONS (HB#792 MVP):
+// - Event-scan window defaults to last 2M blocks (~9mo mainnet, ~1mo on L2s);
+//   override via --scan-window flag in follow-on if needed for older Governors.
+// - Auto top-N voter selection NOT implemented in governor mode; users must
+//   pass --voters explicitly. HB#793 will add VoteCast-weight aggregation.
+// - Reads weight as uint256 from event (works for both Bravo uint96 and OZ
+//   uint256 emissions since uint96 fits in uint256).
+async function fetchProposalsFromGovernor(governorAddr, chainId, first = 1000) {
+  const { ethers } = require('ethers');
+  const rpcUrl = getRpcUrl(chainId);
+  if (!rpcUrl) {
+    throw new Error(`No RPC URL for chain ${chainId}. Set LOCKSTEP_RPC_${chainId} env var or extend DEFAULT_RPC map.`);
+  }
+  const provider = new ethers.providers.JsonRpcProvider(rpcUrl, { name: `chain-${chainId}`, chainId });
+  const governor = new ethers.Contract(governorAddr, GOVERNOR_ABI, provider);
+  const currentBlock = await provider.getBlockNumber();
+  const SCAN_WINDOW = Number(process.env.LOCKSTEP_SCAN_WINDOW) || 2_000_000;
+  const fromBlock = Math.max(0, currentBlock - SCAN_WINDOW);
+  const CHUNK = Number(process.env.LOCKSTEP_RPC_CHUNK) || 50_000;
+  console.error(`  [lockstep] scanning ProposalCreated events: blocks ${fromBlock}..${currentBlock} (${CHUNK}-block chunks)`);
+  const events = [];
+  for (let b = fromBlock; b <= currentBlock; b += CHUNK) {
+    const toB = Math.min(b + CHUNK - 1, currentBlock);
+    try {
+      const chunkEvents = await governor.queryFilter(governor.filters.ProposalCreated(), b, toB);
+      if (chunkEvents.length > 0) {
+        events.push(...chunkEvents);
+      }
+    } catch (err) {
+      console.error(`  [lockstep] RPC error at blocks ${b}..${toB}: ${err.message} — try smaller LOCKSTEP_RPC_CHUNK`);
+      throw err;
+    }
+  }
+  console.error(`  [lockstep] found ${events.length} ProposalCreated events`);
+  const proposals = [];
+  for (const e of events.slice(-first)) {
+    const propId = e.args.proposalId.toString();
+    const endBlock = e.args.endBlock.toNumber();
+    if (endBlock >= currentBlock) continue; // not closed yet
+    proposals.push({
+      id: propId,
+      type: 'basic',
+      choices: ['For', 'Against', 'Abstain'],
+      scores_total: 0,
+      abstainChoice: 3,
+      _endBlock: endBlock,
+      _startBlock: e.args.startBlock.toNumber(),
+    });
+  }
+  console.error(`  [lockstep] ${proposals.length} closed proposals (filtered from ${events.length} total)`);
+  return proposals;
+}
+
+async function fetchVotesFromGovernor(governorAddr, chainId, proposals, voterAddrs) {
+  // proposals is the array returned by fetchProposalsFromGovernor (with _startBlock/_endBlock).
+  // voterAddrs is a list of lowercased addresses to filter to.
+  const { ethers } = require('ethers');
+  const rpcUrl = getRpcUrl(chainId);
+  const provider = new ethers.providers.JsonRpcProvider(rpcUrl, { name: `chain-${chainId}`, chainId });
+  const governor = new ethers.Contract(governorAddr, GOVERNOR_ABI, provider);
+  const voterSet = new Set(voterAddrs.map(a => a.toLowerCase()));
+  // Compute global VoteCast scan window across all proposals: min(_startBlock) to max(_endBlock).
+  if (proposals.length === 0) return [];
+  let minBlock = proposals[0]._startBlock, maxBlock = proposals[0]._endBlock;
+  for (const p of proposals) {
+    if (p._startBlock < minBlock) minBlock = p._startBlock;
+    if (p._endBlock > maxBlock) maxBlock = p._endBlock;
+  }
+  const CHUNK = Number(process.env.LOCKSTEP_RPC_CHUNK) || 50_000;
+  console.error(`  [lockstep] scanning VoteCast events: blocks ${minBlock}..${maxBlock} for ${voterSet.size} voters`);
+  const allVoteCast = [];
+  for (let b = minBlock; b <= maxBlock; b += CHUNK) {
+    const toB = Math.min(b + CHUNK - 1, maxBlock);
+    try {
+      const chunk = await governor.queryFilter(governor.filters.VoteCast(), b, toB);
+      allVoteCast.push(...chunk);
+    } catch (err) {
+      console.error(`  [lockstep] RPC error at blocks ${b}..${toB}: ${err.message}`);
+      throw err;
+    }
+  }
+  console.error(`  [lockstep] found ${allVoteCast.length} total VoteCast events`);
+  const propIds = new Set(proposals.map(p => p.id));
+  const votes = [];
+  for (const e of allVoteCast) {
+    const voter = e.args.voter.toLowerCase();
+    if (!voterSet.has(voter)) continue;
+    const pid = e.args.proposalId.toString();
+    if (!propIds.has(pid)) continue;
+    const support = Number(e.args.support);
+    const choice = GOVERNOR_SUPPORT_TO_CHOICE[support];
+    if (!choice) continue; // unknown support enum
+    votes.push({
+      proposal: { id: pid },
+      voter,
+      choice,
+      vp: Number(ethers.utils.formatUnits(e.args.weight, 18)), // Governor weight typically 18-decimal token
+    });
+  }
+  console.error(`  [lockstep] ${votes.length} votes matched (filtered to ${voterSet.size} voters × ${proposals.length} proposals)`);
+  return votes;
+}
+
 async function fetchVotes(proposalIds, voterAddrs) {
   // HB#543: batched fetch via Snapshot proposal_in filter. Previously
   // fired N sequential gql() calls (one per proposal); for high-volume
@@ -393,14 +536,20 @@ async function main() {
       console.error('--governor-chain <chain-id> required when --governor-address is set');
       process.exit(1);
     }
-    // HB#791 Task #540 scaffold: dispatch wired, fetchers in follow-on HBs.
-    // Tally GraphQL adapter (HB#792) + direct-on-chain VoteCast event scan (HB#793)
-    // will replace this throw. Per task spec acceptance: smoke against Compound
-    // GovernorBravo + ENS OZ Governor before submit.
-    console.error(`Governor mode wired (--governor-address=${governorAddress} --governor-chain=${governorChain}) but fetchers not yet implemented — see Task #540 HB#791 scaffold. Track HB#792-#793 for Tally + on-chain adapters.`);
-    process.exit(2);
+    if (!explicitVoters) {
+      console.error('--voters required in governor mode (HB#792 MVP); auto top-N selection lands HB#793. Pass --voters 0xaddr1,0xaddr2,...');
+      process.exit(1);
+    }
+    if (!getRpcUrl(governorChain)) {
+      console.error(`No RPC URL for chain ${governorChain}. Set LOCKSTEP_RPC_${governorChain} env var or add to DEFAULT_RPC map.`);
+      process.exit(1);
+    }
   }
-  if (!space) { console.error('Usage: node lockstep-analyzer.js <space.eth> [topN=5] [--voters addr1,...] [--selection cum-vp|active-share] [--multi-choice] [--pattern-mode binary|categorical|weighted|ranked]\n       OR on-chain Governor mode: node lockstep-analyzer.js --governor-address <0x...> --governor-chain <id> [--voters addr1,...] [--tally-api-key <key>] (HB#791 Task #540: scaffold; fetchers HB#792-#793)'); process.exit(1); }
+  if (!governorMode && !space) {
+    console.error('Usage: node lockstep-analyzer.js <space.eth> [topN=5] [--voters addr1,...] [--selection cum-vp|active-share] [--multi-choice] [--pattern-mode binary|categorical|weighted|ranked]');
+    console.error('       OR on-chain Governor: node lockstep-analyzer.js --governor-address <0x...> --governor-chain <id> --voters addr1,addr2,... [--tally-api-key <key>]');
+    process.exit(1);
+  }
   if (!['cum-vp', 'active-share'].includes(selection)) { console.error('--selection must be cum-vp or active-share'); process.exit(1); }
   if (!['binary', 'categorical', 'weighted', 'ranked'].includes(patternMode)) {
     // HB#531 Task #497 MVP: binary + categorical. HB#567 Task #499: weighted. HB#553: ranked (Kendall-tau).
@@ -408,8 +557,11 @@ async function main() {
     process.exit(1);
   }
 
+  const dataSource = governorMode
+    ? `Governor ${governorAddress} on chain ${governorChain}`
+    : space;
   const selectionLabel = explicitVoters ? 'explicit voters' : `auto-selected by ${selection}`;
-  console.log(`\nLockstep analysis: ${space} (top-${topN}, ${selectionLabel})\n`);
+  console.log(`\nLockstep analysis: ${dataSource} (top-${topN}, ${selectionLabel})\n`);
 
   let topVoters;
   if (explicitVoters) {
@@ -428,7 +580,9 @@ async function main() {
     });
   }
 
-  const binaryProposals = await fetchProposals(space, 1000, includeMultiChoice, patternMode);
+  const binaryProposals = governorMode
+    ? await fetchProposalsFromGovernor(governorAddress, governorChain, 1000)
+    : await fetchProposals(space, 1000, includeMultiChoice, patternMode);
   const multiChoiceCount = binaryProposals.filter(p => p.abstainChoice).length;
   const categoricalCount = patternMode === 'categorical' ? binaryProposals.filter(p => p.choices && p.choices.length > 3).length : 0;
   const propLabel = patternMode === 'categorical' ? 'Classifiable proposals (binary + categorical)' : 'Binary proposals';
@@ -446,7 +600,9 @@ async function main() {
 
   const voterAddrs = topVoters.map(v => v.address);
   const proposalIds = binaryProposals.map(p => p.id);
-  const allVotes = await fetchVotes(proposalIds, voterAddrs);
+  const allVotes = governorMode
+    ? await fetchVotesFromGovernor(governorAddress, governorChain, binaryProposals, voterAddrs)
+    : await fetchVotes(proposalIds, voterAddrs);
   // HB#507 multi-choice handling: filter out votes where choice === Abstain index
   const votes = allVotes.filter(v => {
     const abstainIdx = propAbstain.get(v.proposal.id);
