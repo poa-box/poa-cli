@@ -13,11 +13,13 @@ import { sendHandler } from './send';
 import { proposeSdaiHandler } from './propose-sdai';
 import { incomingHandler } from './incoming';
 import { bridgeHandler } from './bridge';
+import { healthHandler } from './health';
 
 export function registerTreasuryCommands(yargs: Argv) {
   return yargs
     .command('view', 'View treasury overview', viewHandler.builder, viewHandler.handler)
     .command('balance', 'Show token holdings', balanceHandler.builder, balanceHandler.handler)
+    .command('health', 'Treasury runway + sDAI yield projection + status flag (HB#659 Sprint 21 project A D2)', healthHandler.builder, healthHandler.handler)
     .command('deposit', 'Deposit ERC20 tokens to treasury', depositHandler.builder, depositHandler.handler)
     .command('propose-swap', 'Propose a token swap via governance vote', proposeSwapHandler.builder, proposeSwapHandler.handler)
     .command('claim', 'Claim from a distribution', claimHandler.builder, claimHandler.handler)
