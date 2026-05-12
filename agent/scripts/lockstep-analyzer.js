@@ -342,14 +342,23 @@ async function fetchTopVoters(space, topN, selection) {
 
 async function main() {
   // args: space [topN=5] [--voters addr1,addr2,...] [--selection cum-vp|active-share] [--multi-choice]
+  // HB#791 Task #540: on-chain Governor mode via --governor-address + --governor-chain.
+  // When governor flags present, `space` is ignored; data sourced from on-chain Governor
+  // (Compound/OZ Bravo/standard) via VoteCast event scan + getReceipt() rather than Snapshot.
   const args = process.argv.slice(2);
-  const space = args[0];
+  // HB#791: only treat args[0] as positional space if it isn't a flag (don't
+  // consume `--governor-address` as the Snapshot space name).
+  const space = (args[0] && !args[0].startsWith('--')) ? args[0] : null;
+  const loopStart = space === null ? 0 : 1;
   let topN = 5;
   let explicitVoters = null;
   let selection = 'cum-vp';
   let includeMultiChoice = false;
   let patternMode = 'binary';
-  for (let i = 1; i < args.length; i++) {
+  let governorAddress = null;
+  let governorChain = null;
+  let tallyApiKey = process.env.TALLY_API_KEY || null;
+  for (let i = loopStart; i < args.length; i++) {
     if (args[i] === '--voters' && args[i + 1]) {
       explicitVoters = args[i + 1].split(',').map(s => s.trim().toLowerCase());
       i++;
@@ -361,11 +370,37 @@ async function main() {
     } else if (args[i] === '--pattern-mode' && args[i + 1]) {
       patternMode = args[i + 1];
       i++;
+    } else if (args[i] === '--governor-address' && args[i + 1]) {
+      governorAddress = args[i + 1].toLowerCase();
+      i++;
+    } else if (args[i] === '--governor-chain' && args[i + 1]) {
+      governorChain = Number(args[i + 1]);
+      i++;
+    } else if (args[i] === '--tally-api-key' && args[i + 1]) {
+      tallyApiKey = args[i + 1];
+      i++;
     } else if (/^\d+$/.test(args[i])) {
       topN = Number(args[i]);
     }
   }
-  if (!space) { console.error('Usage: node lockstep-analyzer.js <space.eth> [topN=5] [--voters addr1,...] [--selection cum-vp|active-share] [--multi-choice] [--pattern-mode binary|categorical|weighted|ranked]'); process.exit(1); }
+  const governorMode = !!governorAddress;
+  if (governorMode) {
+    if (!/^0x[0-9a-f]{40}$/i.test(governorAddress)) {
+      console.error(`--governor-address must be 0x-prefixed 40-hex; got: ${governorAddress}`);
+      process.exit(1);
+    }
+    if (!governorChain || !Number.isFinite(governorChain)) {
+      console.error('--governor-chain <chain-id> required when --governor-address is set');
+      process.exit(1);
+    }
+    // HB#791 Task #540 scaffold: dispatch wired, fetchers in follow-on HBs.
+    // Tally GraphQL adapter (HB#792) + direct-on-chain VoteCast event scan (HB#793)
+    // will replace this throw. Per task spec acceptance: smoke against Compound
+    // GovernorBravo + ENS OZ Governor before submit.
+    console.error(`Governor mode wired (--governor-address=${governorAddress} --governor-chain=${governorChain}) but fetchers not yet implemented — see Task #540 HB#791 scaffold. Track HB#792-#793 for Tally + on-chain adapters.`);
+    process.exit(2);
+  }
+  if (!space) { console.error('Usage: node lockstep-analyzer.js <space.eth> [topN=5] [--voters addr1,...] [--selection cum-vp|active-share] [--multi-choice] [--pattern-mode binary|categorical|weighted|ranked]\n       OR on-chain Governor mode: node lockstep-analyzer.js --governor-address <0x...> --governor-chain <id> [--voters addr1,...] [--tally-api-key <key>] (HB#791 Task #540: scaffold; fetchers HB#792-#793)'); process.exit(1); }
   if (!['cum-vp', 'active-share'].includes(selection)) { console.error('--selection must be cum-vp or active-share'); process.exit(1); }
   if (!['binary', 'categorical', 'weighted', 'ranked'].includes(patternMode)) {
     // HB#531 Task #497 MVP: binary + categorical. HB#567 Task #499: weighted. HB#553: ranked (Kendall-tau).
