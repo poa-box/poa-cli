@@ -401,6 +401,17 @@ export const auditVetokenHandler = {
       describe: 'Limit output to the top N holders by current veBalance',
       default: 10,
     })
+    .option('validate-coverage', {
+      type: 'number',
+      describe:
+        'Task #548 (HB#699): WARN when top-N aggregate share < threshold percent. Default 30. Closes the window-bias trap (HB#1049 Convex/veCRV, HB#693 Aura/veBAL, HB#696 c2tp.eth/vlCVX all missed without --known-actors-seed). Pair with --strict-coverage to exit non-zero on low coverage.',
+    })
+    .option('strict-coverage', {
+      type: 'boolean',
+      default: false,
+      describe:
+        'Task #548 (HB#699): exit non-zero when --validate-coverage threshold not met. CI-friendly.',
+    })
     .option('chain', { type: 'number', describe: 'Chain ID (default: Ethereum mainnet)', default: 1 })
     .option('rpc', { type: 'string', describe: 'RPC URL override' }),
 
@@ -683,6 +694,25 @@ export const auditVetokenHandler = {
       const topN = rows.slice(0, argv.top ?? 10);
       const topShareAggregate = topN.reduce((a, r) => a + r.sharePctNum, 0);
 
+      // Task #548 (HB#699): coverage validation. Warn when top-N aggregate
+      // share is below threshold — strong signal that a high-concentration
+      // holder is missing from the scan window (Convex/Aura/c2tp.eth pattern).
+      const coverageThreshold = (argv as any).validateCoverage as number | undefined;
+      const strictCoverage = Boolean((argv as any).strictCoverage);
+      let lowCoverage = false;
+      if (typeof coverageThreshold === 'number' && coverageThreshold > 0) {
+        if (topShareAggregate < coverageThreshold) {
+          lowCoverage = true;
+          const msg =
+            `Low coverage detected: top-${topN.length} aggregate share ${topShareAggregate.toFixed(2)}% < threshold ${coverageThreshold}%. ` +
+            `Consider adding --known-actors-seed for high-concentration contracts. ` +
+            `Window-bias examples: HB#1049 Convex/veCRV, HB#693 Aura/veBAL, HB#696 c2tp.eth/vlCVX all missed without explicit seed.`;
+          if (!(argv.json || output.isJsonMode())) {
+            output.warn(msg);
+          }
+        }
+      }
+
       spin.stop();
 
       if (argv.json || output.isJsonMode()) {
@@ -701,10 +731,19 @@ export const auditVetokenHandler = {
           topNAggregateSharePct: topShareAggregate.toFixed(2) + '%',
           topHolderSharePct: topN[0]?.sharePct || '0%',
           method: 'veBalance-via-balanceOf',
+          coverage: typeof coverageThreshold === 'number' && coverageThreshold > 0 ? {
+            threshold: coverageThreshold,
+            actual: topShareAggregate,
+            lowCoverage,
+            warning: lowCoverage
+              ? `Low coverage: top-${topN.length} aggregate ${topShareAggregate.toFixed(2)}% < ${coverageThreshold}%. Add --known-actors-seed.`
+              : null,
+          } : null,
           note:
             'Snapshot is current-time decayed balance. veToken voting power decays linearly over the lock period; re-run for a temporal delta.',
         };
         output.json(artifact);
+        if (lowCoverage && strictCoverage) process.exit(2);
         return;
       }
 
@@ -735,6 +774,7 @@ export const auditVetokenHandler = {
       output.info(
         `\n  Note: snapshot is current-time decayed balance. veToken voting power decays linearly over the lock period; re-run for a temporal delta.`,
       );
+      if (lowCoverage && strictCoverage) process.exit(2);
     } catch (err: any) {
       spin.stop();
       output.error(err.message || String(err));
