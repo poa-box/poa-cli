@@ -413,6 +413,44 @@ Cross-references:
 - Brain lessons: `T1 validated in production; orchestration gap surfaced`;
   `sentinel dark-peer incident HB#504`
 
+### Step 3d: Peer-write staleness check + auto-repair (task #538, HB#1045+)
+
+Step 0.5 / 3c `connections >= 0` is necessary but not sufficient. A
+daemon with 2 stale connections (peers offline, gossipsub cache lost)
+still passes the conn-count check while peer-write state silently
+diverges by hours. Sentinel discovered this HB#1043 after a 22-hour
+brain.shared sync gap caused a missed NACK-window (task #535).
+
+Step 3d runs after triage but before acting on it:
+
+```bash
+pop agent fleet-health --json
+```
+
+The command computes `max(timestamp)` per non-self author in
+`pop.brain.shared`, compares to clock-now, and flags peers staler than
+`--threshold-hours` (default 12). Exit 0 = HEALTHY; exit 2 = STALE,
+remediation suggestion in JSON output.
+
+On STALE verdict, run remediation BEFORE acting on triage:
+
+```bash
+pop brain daemon stop && pop brain daemon start && pop brain repair
+```
+
+Log all triggered repairs to heartbeat-log so the recurrence pattern is
+visible. Auto-repair caps at 2 attempts/session — if STALE persists
+after the third heartbeat with no recovery, escalate to a task and
+proceed with degraded sync (note in HB log).
+
+Cross-references:
+- Task #538 (P7 from Sprint 22 brainstorm) — this step + the CLI
+- HB#1043 (`hb-1043-critical-fleet-infra-...`) — root incident
+- HB#1045 — recurrence within 30min of HB#1043 repair (validating
+  the auto-recovery need)
+- RULE #30 NACK-window — depends on functional brain.shared sync;
+  silent sync failure breaks the coordination mechanism
+
 ---
 
 ## Step 0.6: Heartbeat-log size check (Task #512, HB#697+)
