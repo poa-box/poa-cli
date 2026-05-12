@@ -25,7 +25,7 @@ import { ethers } from 'ethers';
 import { request } from 'https';
 import * as output from '../../lib/output';
 
-const AUDIT_GOVERNANCE_STACK_TOOLING_VERSION = 'audit-governance-stack-v0.3-safe-vetoken-hb802';
+const AUDIT_GOVERNANCE_STACK_TOOLING_VERSION = 'audit-governance-stack-v0.4-actor-footprint-hb803';
 
 // Reuse same RPC defaults pattern as lockstep-analyzer.js (HB#792 task #540).
 // Override per-chain via AUDIT_GS_RPC_<chainId> env vars for paid endpoints.
@@ -66,6 +66,23 @@ const SAFE_VIEW_ABI = [
   'function nonce() view returns (uint256)',
   'function VERSION() view returns (string)',
 ];
+
+// Cross-protocol governance token registry (mainnet chain 1 v0.1). Per
+// sentinel HB#1041 Part IV federation census methodology: scan canonical
+// governance-token holdings to surface cross-protocol presence + ENS-name
+// identification. Subset of full actor-footprint tool (HB#1034 vigil ship);
+// composition tool surfaces SIGNAL not full balance breakdown.
+const GOVERNANCE_TOKENS_MAINNET: { symbol: string; address: string; decimals: number }[] = [
+  { symbol: 'CRV', address: '0xD533a949740bb3306d119CC777fa900bA034cd52', decimals: 18 },
+  { symbol: 'CVX', address: '0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B', decimals: 18 },
+  { symbol: 'BAL', address: '0xba100000625a3754423978a60c9317c58a424e3D', decimals: 18 },
+  { symbol: 'AURA', address: '0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF', decimals: 18 },
+  { symbol: 'FXS', address: '0x3432B6A60D23Ca0dFCa7761B7ab56459D9C964D0', decimals: 18 },
+  { symbol: 'ENS', address: '0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72', decimals: 18 },
+  { symbol: 'UNI', address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', decimals: 18 },
+];
+
+const ERC20_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'];
 
 // VotingEscrow probe ABI — covers veCRV (Curve), veBAL (Balancer), vlCVX
 // (Convex locked-vote), and Redacted Cartel rlBTRFLY (lockedSupply pattern
@@ -163,7 +180,12 @@ function classify(probes: AuditGovernanceStackResult['probes']): AuditGovernance
   const snapshotSucceeded = probes.snapshot.status === 'succeeded';
   const safeSucceeded = probes.safe.status === 'succeeded';
   const hasOnChainGovernor = govSucceeded ? Boolean((probes.governor.data as { hasProposals?: boolean })?.hasProposals) : null;
-  const hasSnapshotSpace = snapshotSucceeded ? Boolean((probes.snapshot.data as { spaceExists?: boolean })?.spaceExists) : null;
+  // HB#803: spaceExists may be explicitly null (discovery-unsupported path) —
+  // distinguish from false. null propagates as unknown; only true/false coerce.
+  const snapshotSpaceExists = (probes.snapshot.data as { spaceExists?: boolean | null })?.spaceExists;
+  const hasSnapshotSpace = snapshotSucceeded
+    ? (snapshotSpaceExists === null || snapshotSpaceExists === undefined ? null : Boolean(snapshotSpaceExists))
+    : null;
   // isSafeMultisig is a TRUE Safe (getOwners + getThreshold succeeded) AND target
   // doesn't already have a token-vote mechanism. This prevents misclassifying
   // a Safe-controlled treasury as multisig-only when the org also has Snapshot.
@@ -296,41 +318,20 @@ async function probeSnapshot(address: string, spaceHint?: string): Promise<Probe
       return { status: 'failed', reason: `Snapshot lookup failed for space '${spaceHint}': ${msg.slice(0, 200)}` };
     }
   }
-  // Discovery without hint: search any spaces where `address` is admin or member.
-  // Snapshot's `spaces` query supports `where` on admins/members.
-  try {
-    const data = await snapshotGql(
-      `query($addr: [String!]) {
-        spaces(first: 10, where: {admins_in: $addr}) { id name network admins }
-      }`,
-      { addr: [lcAddr] },
-    );
-    const d = data as { spaces?: { id: string; name?: string; network?: string }[] };
-    const matched = d.spaces || [];
-    if (matched.length === 0) {
-      return {
-        status: 'succeeded',
-        data: {
-          spaceExists: false,
-          discoveryAttempted: 'admins-in',
-          reason: `no Snapshot space found where ${address} is admin (try --snapshot-space <id> for direct lookup)`,
-        },
-      };
-    }
-    return {
-      status: 'succeeded',
-      data: {
-        spaceExists: true,
-        discoveryAttempted: 'admins-in',
-        matchedSpaces: matched.map((s) => ({ id: s.id, name: s.name, network: s.network })),
-        primarySpaceId: matched[0].id,
-        isActive: null, // not probed in discovery mode
-      },
-    };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { status: 'failed', reason: `Snapshot discovery failed: ${msg.slice(0, 200)}` };
-  }
+  // Discovery without hint: Snapshot's hub.snapshot.org schema doesn't expose
+  // a server-side admin-address index on SpaceWhere (HB#803 empirical: query
+  // `where: {admins_in: $addr}` returns 'Field "admins_in" is not defined').
+  // v0.4 returns graceful 'discovery-unsupported'. Workaround: pass
+  // --snapshot-space <id> for direct lookup. HB#804+ may add ENS-resolved
+  // space-name guessing OR Snapshot search-API integration.
+  return {
+    status: 'succeeded',
+    data: {
+      spaceExists: null,
+      discoveryAttempted: 'none-supported',
+      reason: 'Snapshot space discovery without --snapshot-space hint not supported in v0.4 (admins_in not in SpaceWhere schema). Pass --snapshot-space <id> for direct probe.',
+    },
+  };
 }
 
 async function probeSafe(address: string, chainId: number, rpcOverride?: string): Promise<ProbeResult> {
@@ -439,8 +440,56 @@ async function probeVetoken(address: string, chainId: number, rpcOverride?: stri
   }
 }
 
-async function probeActorFootprint(_address: string, _chainId: number, _rpc?: string): Promise<ProbeResult> {
-  return { status: 'not-implemented', reason: 'HB#803 will wire pop org actor-footprint composition for cross-protocol balance scan' };
+async function probeActorFootprint(address: string, chainId: number, rpcOverride?: string): Promise<ProbeResult> {
+  if (chainId !== 1) {
+    return { status: 'skipped', reason: `actor-footprint v0.1 is mainnet-only (got chain ${chainId}); HB#804+ may extend per-chain governance-token registry` };
+  }
+  const rpcUrl = resolveRpc(chainId, rpcOverride);
+  if (!rpcUrl) {
+    return { status: 'failed', reason: `no RPC URL for chain ${chainId} (set AUDIT_GS_RPC_${chainId} env var)` };
+  }
+  try {
+    const provider = new ethers.providers.JsonRpcProvider(rpcUrl, { name: `chain-${chainId}`, chainId });
+    const data: Record<string, unknown> = {};
+    // ENS reverse lookup (best-effort; provider may not support; mainnet only)
+    try {
+      const ensName = await provider.lookupAddress(address);
+      data.ensName = ensName;
+    } catch {
+      data.ensName = null;
+    }
+    // EOA vs contract
+    const code = await provider.getCode(address);
+    data.isContract = code !== '0x';
+    if (data.isContract) data.codeBytes = (code.length - 2) / 2;
+    // Parallel balanceOf across governance tokens
+    const balances = await Promise.all(
+      GOVERNANCE_TOKENS_MAINNET.map(async (tok) => {
+        try {
+          const c = new ethers.Contract(tok.address, ERC20_BALANCE_ABI, provider);
+          const bal = await c.balanceOf(address);
+          if (bal.eq(0)) return null;
+          return {
+            symbol: tok.symbol,
+            address: tok.address,
+            balance: Number(ethers.utils.formatUnits(bal, tok.decimals)),
+            balanceRaw: bal.toString(),
+          };
+        } catch {
+          return { symbol: tok.symbol, error: 'balanceOf reverted' } as { symbol: string; error: string };
+        }
+      }),
+    );
+    const nonzero = balances.filter((b): b is { symbol: string; address: string; balance: number; balanceRaw: string } => b !== null && !('error' in b));
+    data.tokensHeld = nonzero;
+    data.tokensHeldCount = nonzero.length;
+    data.crossProtocol = nonzero.length >= 2;
+    data.governanceTokensScanned = GOVERNANCE_TOKENS_MAINNET.length;
+    return { status: 'succeeded', data };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { status: 'failed', reason: msg.slice(0, 200) };
+  }
 }
 
 export const auditGovernanceStackHandler = {
