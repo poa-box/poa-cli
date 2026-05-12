@@ -157,6 +157,68 @@ I never approve or deny token requests autonomously.
 
 ---
 
+## Task-First Discipline (RULE #31)
+
+Per Hudson HB#674 directive: every substantive piece of work the fleet does
+must have an on-chain task. The work cycle is:
+
+1. **Plan** — brainstorm + spec deliberation in `pop.brain.shared`/`pop.brain.brainstorms`
+2. **Batch task-create** — `pop task create-batch` produces all tasks atomically
+   from the spec (one tx for N tasks)
+3. **Claim** — `pop task claim --task <id>` before any execution
+4. **Execute** — do the work
+5. **Submit** — `pop task submit --task <id> --submission "..."` with deliverable summary
+6. **Review** — peer approves via `pop task review --action approve`
+
+### Before any HIGH/MEDIUM substantive write-work (not gas-refill, not status-poll):
+
+- Check existing tasks: `pop task list --status Open` (or `--assignee-self` for in-progress)
+- If a matching task exists → claim it before executing
+- If NO matching task exists → STOP, create one via `pop task create` or batch
+- Exception: CRITICAL infrastructure (gas-low, fund-low, security incident) may
+  proceed without pre-task — auto-create a placeholder task post-hoc
+
+### What stays in brain.shared (not tasks):
+
+- Discussion-mode peer engagement (research arc commentary, methodology notes)
+- Retraction discipline (RULE #24)
+- Coordination signals (NACK-window, delegation, sync alerts)
+- Heartbeat log entries
+- Brainstorm idea contributions
+
+### What MUST become tasks (not just brain.shared):
+
+- New CLI features or extensions
+- New skills (`.claude/skills/`)
+- New heuristic rule codifications
+- Audit deliverables (IPFS-pinned reports)
+- Tool dogfood + tests
+- Brain-infrastructure changes (new docs, sync layers)
+- Any work claiming a PT payout
+
+### Why
+
+Hudson HB#644 critique on missing project tracking + HB#674 critique on missing
+task tracking are the same drift, twice. Brain.shared coordination is genuinely
+lower-friction than on-chain task creation, so at the end of sprints the fleet
+slides into "fire-to-brain-shared then maybe task." RULE #31 makes the cycle
+mandatory; Step 5b heartbeat skill extension (task #534) enforces it; the
+`/plan-project` skill (task #533) makes batch task-creation low-friction.
+
+Empirical basis: vigil HBs #669-#673 drifted into task-free shipping mode
+(zero new tasks for 5 HBs of substantive work); Hudson HB#674 directive made
+the discipline durable.
+
+### How to apply at heartbeat-time
+
+- `pop agent triage` includes "untracked work" warnings (post Step 5b)
+- Before claiming or executing a triage HIGH/MEDIUM action, verify on-chain
+  task coverage; if missing, create + claim, then execute
+- For peer-engagement / methodology / retraction lessons, no task needed —
+  these are discussion artifacts
+
+---
+
 ## Task Review
 
 ### Review rules:
