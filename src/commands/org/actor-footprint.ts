@@ -33,6 +33,7 @@ interface ActorFootprintArgs {
   json?: boolean;
   tokens?: string;
   extraTokens?: string;
+  includeLocked?: boolean;
 }
 
 // Default token list for Ethereum mainnet (chainId 1). Common governance +
@@ -58,6 +59,25 @@ const DEFAULT_TOKENS_BY_CHAIN: Record<number, Array<{ symbol: string; address: s
   ],
 };
 
+// HB#1035: known locker / vote-escrow contracts. balanceOf(addr) on these
+// returns the locked position. Surfacing them with --include-locked closes
+// the HB#1034 limitation where c2tp.eth's 4.4M vlCVX position was invisible
+// to direct balanceOf scans (locker contracts hold the actual CVX; the user's
+// balanceOf on the underlying CVX shows only their unlocked position).
+//
+// Symbol prefix conventions:
+//   vl* = vote-locked (CvxLockerV2, AuraLocker pattern — non-decaying single-period lock)
+//   ve* = vote-escrowed (Curve VotingEscrow pattern — multi-year lock with linear decay)
+const LOCKERS_BY_CHAIN: Record<number, Array<{ symbol: string; address: string }>> = {
+  1: [
+    { symbol: 'vlCVX', address: '0x72a19342e8F1838460eBFCCEf09F6585e32db86E' },
+    { symbol: 'vlAURA', address: '0x3Fa73f1E5d8A792C80F426fc8F84FBF7Ce9bBCAC' },
+    { symbol: 'veCRV', address: '0x5f3b5DfEb7B28CDbD7FAba78963EE202a494e2A2' },
+    { symbol: 'veBAL', address: '0xC128a9954e6c874eA3d62ce62B468bA073093F25' },
+    { symbol: 'veFXS', address: '0xc8418aF6358FFddA74e09Ca9CC3Fe03Ca6aDC5b0' },
+  ],
+};
+
 const ERC20_ABI = [
   'function balanceOf(address) view returns (uint256)',
   'function decimals() view returns (uint8)',
@@ -80,7 +100,8 @@ export const actorFootprintHandler = {
     .option('chain', { type: 'number', default: 1, describe: 'Chain ID (default: Ethereum mainnet)' })
     .option('rpc', { type: 'string', describe: 'RPC URL override' })
     .option('tokens', { type: 'string', describe: 'Replace default token list. Comma-separated SYMBOL:0xADDRESS pairs.' })
-    .option('extra-tokens', { type: 'string', describe: 'Append to default token list. Comma-separated SYMBOL:0xADDRESS pairs.' }),
+    .option('extra-tokens', { type: 'string', describe: 'Append to default token list. Comma-separated SYMBOL:0xADDRESS pairs.' })
+    .option('include-locked', { type: 'boolean', default: false, describe: 'Append known vote-locker/escrow contracts (vlCVX, vlAURA, veCRV, veBAL, veFXS on Ethereum) to surface locked positions invisible to underlying-token balanceOf.' }),
 
   handler: async (argv: ArgumentsCamelCase<ActorFootprintArgs>) => {
     const addr = argv.address;
@@ -100,6 +121,9 @@ export const actorFootprintHandler = {
     } else {
       tokens = [...(DEFAULT_TOKENS_BY_CHAIN[chainId] || [])];
       if (argv.extraTokens) tokens.push(...parseTokenList(argv.extraTokens));
+    }
+    if (argv.includeLocked) {
+      tokens.push(...(LOCKERS_BY_CHAIN[chainId] || []));
     }
 
     const spin = output.spinner(`Probing ${normalized.slice(0, 12)}...`);
