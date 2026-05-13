@@ -25,7 +25,7 @@ import { ethers } from 'ethers';
 import { request } from 'https';
 import * as output from '../../lib/output';
 
-const AUDIT_GOVERNANCE_STACK_TOOLING_VERSION = 'audit-governance-stack-v0.4-actor-footprint-hb803';
+const AUDIT_GOVERNANCE_STACK_TOOLING_VERSION = 'audit-governance-stack-v0.5-actor-footprint-multichain-hb745';
 
 // Reuse same RPC defaults pattern as lockstep-analyzer.js (HB#792 task #540).
 // Override per-chain via AUDIT_GS_RPC_<chainId> env vars for paid endpoints.
@@ -67,20 +67,58 @@ const SAFE_VIEW_ABI = [
   'function VERSION() view returns (string)',
 ];
 
-// Cross-protocol governance token registry (mainnet chain 1 v0.1). Per
-// sentinel HB#1041 Part IV federation census methodology: scan canonical
-// governance-token holdings to surface cross-protocol presence + ENS-name
-// identification. Subset of full actor-footprint tool (HB#1034 vigil ship);
-// composition tool surfaces SIGNAL not full balance breakdown.
-const GOVERNANCE_TOKENS_MAINNET: { symbol: string; address: string; decimals: number }[] = [
-  { symbol: 'CRV', address: '0xD533a949740bb3306d119CC777fa900bA034cd52', decimals: 18 },
-  { symbol: 'CVX', address: '0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B', decimals: 18 },
-  { symbol: 'BAL', address: '0xba100000625a3754423978a60c9317c58a424e3D', decimals: 18 },
-  { symbol: 'AURA', address: '0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF', decimals: 18 },
-  { symbol: 'FXS', address: '0x3432B6A60D23Ca0dFCa7761B7ab56459D9C964D0', decimals: 18 },
-  { symbol: 'ENS', address: '0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72', decimals: 18 },
-  { symbol: 'UNI', address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', decimals: 18 },
-];
+// Cross-protocol governance token registry. Per sentinel HB#1041 Part IV
+// federation census methodology: scan canonical governance-token holdings to
+// surface cross-protocol presence + ENS-name identification. Subset of full
+// actor-footprint tool (HB#1034 vigil ship); composition tool surfaces SIGNAL
+// not full balance breakdown.
+//
+// HB#745 task #570: extended to per-chain registries to support cross-chain
+// governance audits (κ-H Part V vigil HB#735-#744 + sentinel HB#1089). Each
+// L2 ecosystem has its own canonical governance tokens.
+const GOVERNANCE_TOKENS_BY_CHAIN: Record<number, { symbol: string; address: string; decimals: number }[]> = {
+  // Ethereum mainnet — v0.1 set (HB#1041)
+  1: [
+    { symbol: 'CRV', address: '0xD533a949740bb3306d119CC777fa900bA034cd52', decimals: 18 },
+    { symbol: 'CVX', address: '0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B', decimals: 18 },
+    { symbol: 'BAL', address: '0xba100000625a3754423978a60c9317c58a424e3D', decimals: 18 },
+    { symbol: 'AURA', address: '0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF', decimals: 18 },
+    { symbol: 'FXS', address: '0x3432B6A60D23Ca0dFCa7761B7ab56459D9C964D0', decimals: 18 },
+    { symbol: 'ENS', address: '0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72', decimals: 18 },
+    { symbol: 'UNI', address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', decimals: 18 },
+  ],
+  // Optimism — Velodrome ecosystem + cross-chain governance tokens
+  10: [
+    { symbol: 'VELO', address: '0x9560e827af36c94d2ac33a39bce1fe78631088db', decimals: 18 },
+    { symbol: 'OP', address: '0x4200000000000000000000000000000000000042', decimals: 18 },
+    { symbol: 'USDC', address: '0x7f5c764cbc14f9669b88837ca1490cca17c31607', decimals: 6 },
+  ],
+  // Base — Aerodrome ecosystem
+  8453: [
+    { symbol: 'AERO', address: '0x940181a94a35a4569e4529a3cdfb74e38fd98631', decimals: 18 },
+    { symbol: 'USDC', address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', decimals: 6 },
+  ],
+  // Arbitrum — Ramses + cross-chain
+  42161: [
+    { symbol: 'RAM', address: '0xAAA6C1E32C55A7Bfa8066A6FAE9b42650F262418', decimals: 18 },
+    { symbol: 'ARB', address: '0x912CE59144191C1204E64559FE8253a0e49E6548', decimals: 18 },
+    { symbol: 'USDC', address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', decimals: 6 },
+  ],
+  // Polygon — Pearl, Aave, etc.
+  137: [
+    { symbol: 'USDC', address: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174', decimals: 6 },
+    { symbol: 'AAVE', address: '0xd6df932a45c0f255f85145f286ea0b292b21c90b', decimals: 18 },
+  ],
+  // Gnosis — Argus org's primary chain
+  100: [
+    { symbol: 'sDAI', address: '0xaf204776c7245bF4147c2612BF6e5972Ee483701', decimals: 18 },
+    { symbol: 'WXDAI', address: '0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d', decimals: 18 },
+  ],
+};
+
+// Backwards-compat alias retained as the mainnet registry. Existing call sites
+// referencing GOVERNANCE_TOKENS_MAINNET still work.
+const GOVERNANCE_TOKENS_MAINNET = GOVERNANCE_TOKENS_BY_CHAIN[1];
 
 const ERC20_BALANCE_ABI = ['function balanceOf(address) view returns (uint256)'];
 
@@ -441,8 +479,13 @@ async function probeVetoken(address: string, chainId: number, rpcOverride?: stri
 }
 
 async function probeActorFootprint(address: string, chainId: number, rpcOverride?: string): Promise<ProbeResult> {
-  if (chainId !== 1) {
-    return { status: 'skipped', reason: `actor-footprint v0.1 is mainnet-only (got chain ${chainId}); HB#804+ may extend per-chain governance-token registry` };
+  // HB#745 task #570: per-chain registry lookup (was mainnet-only v0.1).
+  const tokens = GOVERNANCE_TOKENS_BY_CHAIN[chainId];
+  if (!tokens || tokens.length === 0) {
+    return {
+      status: 'skipped',
+      reason: `actor-footprint registry has no entries for chain ${chainId}. Currently supported: ${Object.keys(GOVERNANCE_TOKENS_BY_CHAIN).join(', ')}. Extend GOVERNANCE_TOKENS_BY_CHAIN in src/commands/org/audit-governance-stack.ts.`,
+    };
   }
   const rpcUrl = resolveRpc(chainId, rpcOverride);
   if (!rpcUrl) {
@@ -462,9 +505,9 @@ async function probeActorFootprint(address: string, chainId: number, rpcOverride
     const code = await provider.getCode(address);
     data.isContract = code !== '0x';
     if (data.isContract) data.codeBytes = (code.length - 2) / 2;
-    // Parallel balanceOf across governance tokens
+    // Parallel balanceOf across governance tokens (per-chain registry, HB#745)
     const balances = await Promise.all(
-      GOVERNANCE_TOKENS_MAINNET.map(async (tok) => {
+      tokens.map(async (tok) => {
         try {
           const c = new ethers.Contract(tok.address, ERC20_BALANCE_ABI, provider);
           const bal = await c.balanceOf(address);
@@ -484,7 +527,8 @@ async function probeActorFootprint(address: string, chainId: number, rpcOverride
     data.tokensHeld = nonzero;
     data.tokensHeldCount = nonzero.length;
     data.crossProtocol = nonzero.length >= 2;
-    data.governanceTokensScanned = GOVERNANCE_TOKENS_MAINNET.length;
+    data.governanceTokensScanned = tokens.length;
+    data.chainId = chainId;
     return { status: 'succeeded', data };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
