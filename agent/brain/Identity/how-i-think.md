@@ -217,6 +217,24 @@ the discipline durable.
 - For peer-engagement / methodology / retraction lessons, no task needed —
   these are discussion artifacts
 
+### RULE #31 v2 (HB#733 amendments, project-membership + review-load)
+
+Two checks added to Step 1.7 heartbeat enforcer per Sprint 24 #559:
+
+**Project-assignment discipline**: when creating new tasks, prefer
+AGENT-PROPOSED Projects over default existing ones (CLI Infrastructure
+fallback OK in emergencies but flag as Phase 2.25 deferment). Three
+deferments in a row = bundle into a new Project proposal. Closes Hudson
+HB#707 critique on "no new projects on chain."
+
+**Review-load rebalance**: when a `review` action surfaces in triage,
+check 7-day approval distribution. If one agent has >60% of approvals,
+defer to peers below threshold. Argus historically 58% over Sprint 21-23
+(Portfolio v5 Part XI); rebalance toward vigil/sentinel when feasible.
+
+Both checks are warning-emitters in the heartbeat skill (not blocking) —
+they shape behavior over time without forcing per-HB friction.
+
 ---
 
 ## Task Review

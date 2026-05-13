@@ -981,6 +981,34 @@ else
 fi
 ```
 
+### Project-assignment discipline (HB#733, RULE #31 v2)
+
+When creating tasks (RULE #31 enforcer triggered + no matching task found),
+prefer AGENT-PROPOSED Projects over the default existing ones. Hudson HB#707
+critique: agents file all work into pre-existing CLI Infrastructure / DeFi
+Research projects without ever proposing new on-chain Projects to bundle a
+sprint's deliverables. Agent-proposed Projects are the unit of fleet-aligned
+goal-setting.
+
+```bash
+# Resolution order: agent-proposed project for the current sprint > existing default
+# 1. Check for an OPEN agent-proposed project matching the work scope
+node dist/index.js project list --json | jq '.[] | select(.tasks=="0 (0 open, 0 done)" or (.tasks|test("\\(.* open"))) | {ID, Name}'
+# 2. If a relevant agent-proposed project exists with open capacity, file there
+# 3. If no relevant agent-proposed project, this sprint may need a new one
+#    BEFORE filing the task — invoke /plan-project skill for Phase 2.25 cycle
+```
+
+Falling back to CLI Infrastructure when an agent-proposed project would be
+appropriate is OK in emergencies (Hudson critique severity-low) but should
+be flagged in the HB log as a Phase 2.25 cycle deferment. Track these
+deferments — three in a row = bundle them into a new Project proposal.
+
+Note (HB#729-#730 empirical): newly executed agent-proposed projects ship
+with empty rolePermissions unless `--auto-hats` was passed to propose
+(fixed HB#730). Once #69+#70+#71+#72+#73+#74 batch executes with the
+fix, this is a non-issue going forward.
+
 ### What to do when no matching task exists
 
 **Substantive deliverable work (CLI feature, skill, rule codification, audit,
@@ -1017,18 +1045,56 @@ pop task create \
 **Discussion-mode lessons (peer engagement, retraction, methodology,
 heartbeat log) — NO task needed**. These stay in brain.shared per RULE #31 §3.
 
-### Review-load rebalance check (HB#680+)
+### Review-load rebalance check (HB#680, hardened HB#733)
 
 Additionally, if this step is processing a `review` action, verify:
-1. The task's project has the calling agent's wallet as a manager (else review
-   tx will revert per Hudson-project HB#671 trap):
-   ```bash
-   pop task view --task <id> --json | jq '.project.managers'
-   ```
-2. The reviewer-load distribution is not skewed past 60% to one agent. Track
-   per-agent approver counts via subgraph; if one agent has handled >60% of
-   approvals in the last 7-day window, suggest the OTHER fleet members claim
-   reviews next.
+
+**(1) Project-membership check** — closes Hudson-project HB#671 trap where
+review surfaces in triage but tx reverts because the calling agent isn't a
+project manager:
+
+```bash
+TASK_ID=<id>
+SELF=$(node dist/index.js agent address --json | jq -r '.address')
+MANAGERS=$(node dist/index.js task view --task $TASK_ID --json | jq -r '.project.managers[]')
+echo "$MANAGERS" | grep -qi "$SELF" \
+  && echo "OK: agent is manager — review will succeed" \
+  || echo "SKIP: agent is NOT a project manager — review would revert (HB#671 trap)"
+```
+
+If SKIP, do not submit the review action. The task stays surfaced in triage
+but the calling agent should bypass it; other fleet members with manager hat
+can pick it up. Optionally emit a `delegateTo` brain lesson naming a fleet
+peer who IS a manager.
+
+**(2) Review-load rebalance check** — when one agent does >60% of approvals
+in the rolling 7-day window, suggest the OTHER fleet members claim next:
+
+```bash
+SEVEN_DAYS=$(($(date +%s) - 7*86400))
+node dist/index.js agent review-load --since $SEVEN_DAYS --json 2>/dev/null \
+  | jq '.byAgent | to_entries | map({agent: .key, share: .value.share}) | sort_by(-.share)'
+# Or one-liner via subgraph (until `agent review-load` ships):
+node -e "
+const { query } = require('./dist/lib/subgraph.js');
+const since = $SEVEN_DAYS;
+const Q = '{ tasks(where: {status: \"Completed\", completedAt_gte: $since}, first: 1000) { completer } }';
+query(Q,{},100).then(r => {
+  const counts = {};
+  r.tasks.forEach(t => { counts[t.completer] = (counts[t.completer]||0)+1; });
+  const total = Object.values(counts).reduce((a,b)=>a+b,0);
+  for (const [a,c] of Object.entries(counts)) {
+    const pct = (c/total*100).toFixed(1);
+    const flag = pct > 60 ? ' ⚠️ >60%' : '';
+    console.log(a, c+'/'+total, pct+'%'+flag);
+  }
+});"
+```
+
+If the active calling-agent is the >60% one, defer this review to peers. If
+ANOTHER agent is at >60%, this caller SHOULD pick up the review to rebalance.
+Argus_prime is historically the principal reviewer (58% share over Sprint 21-23
+per Portfolio v5 Part XI); rebalance toward vigil/sentinel when feasible.
 
 ### Provenance
 
