@@ -359,6 +359,21 @@ export function computeBoundaryScore(args: {
 }
 
 async function handlerImpl(argv: ArgumentsCamelCase<BoundaryScoreArgs>): Promise<void> {
+  // HB#750 (retro-1098 boundary-score-help-docs): explicit warning when no
+  // composition flags passed AND no --space auto-fetch attempted. Closes the
+  // silent-zero pattern surfaced HB#1081 where invoking the command with
+  // empty args returned BS_total=0 with no indication that input was needed.
+  const hasComposition = argv.gini !== undefined || argv.top5pct !== undefined ||
+                          argv.passRate !== undefined || argv.cohortN !== undefined ||
+                          argv.substrateBand !== undefined || argv.dimensionFlags !== undefined;
+  if (!hasComposition && !argv.space) {
+    output.warn(
+      'No composition flags or --space provided. boundary-score requires AT LEAST ONE of: ' +
+      '--gini / --top5pct / --pass-rate / --cohort-n / --substrate-band / --dimension-flags / --space (auto-fetch). ' +
+      'Returning BS_total=0 with empty inputs. Example: ' +
+      '`pop org boundary-score --space curve.eth --substrate-band pure-token --cohort-n 1500 --gini 0.85 --top5pct 0.72 --pass-rate 0.81`',
+    );
+  }
   const weights = parseWeights(argv.weights);
   const dimParse = parseDimensionFlags(argv.dimensionFlags);
 
