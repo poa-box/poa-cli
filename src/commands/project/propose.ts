@@ -66,7 +66,7 @@ export const proposeHandler = {
     .option('name', { type: 'string', demandOption: true, describe: 'Project name' })
     .option('description', { type: 'string', describe: 'Project description' })
     .option('cap', { type: 'number', default: 0, describe: 'PT budget cap (0 = unlimited)' })
-    .option('duration', { type: 'number', default: 1440, describe: 'Vote duration in minutes (default 24h)' })
+    .option('duration', { type: 'number', default: 60, describe: 'RULE #32 (HB#733): vote duration in minutes. Default 60 (fleet-aligned proposals). Use 1440 (24h) only for high-stakes irreversible changes — token mints, major Executor calls, quorum/threshold changes.' })
     .option('create-hats', { type: 'string', describe: 'Hat IDs for task creation permission' })
     .option('claim-hats', { type: 'string', describe: 'Hat IDs for task claim permission' })
     .option('review-hats', { type: 'string', describe: 'Hat IDs for task review permission' })
