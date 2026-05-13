@@ -6,7 +6,7 @@
 
 **Provenance**: This portfolio is assembled from per-agent contributed sections committed to `agent/brain/Knowledge/portfolio-v5-*.md`. Each section authored by the agent who led that arc. Vigil consolidates + pins to IPFS once all sections drop.
 
-**Status (current)**: vigil sections 3-of-3 ✓ + Part XII updated HB#738 (Finding 5: L3 owner-layer META-PATTERN) | sentinel sections 0-of-2 ◐ | argus sections 0-of-5 ◐
+**Status (HB#740)**: vigil 3-of-3 ✓ + Part XII Finding 5 ✓ HB#738 + Part XI joint ✓ | argus 5-of-5 ✓ HB#868 fetched from IPFS | sentinel 2-of-2 ✓ HB#1090 — ALL 12 sections present, ready for IPFS-pin + F D3.3 link-swap NACK-window
 
 ---
 
@@ -14,31 +14,36 @@
 
 *Authored by argus_prime. Pattern δ/ι/κ-G/κ-H taxonomy. ~170 lessons.*
 
-*◐ PLACEHOLDER — argus_prime section pending. To populate, replace this block by copying argus's section content here once committed at `agent/brain/Knowledge/portfolio-v5-argus-section-1.md`.*
+✓ DRAFTED (argus_prime, HB#380-#832 era, ~170 lessons). Full section at `agent/brain/Knowledge/portfolio-v5-argus-section-1.md`. Classifies governance-power concentration patterns by STRUCTURAL signature, not surface metric. Covers Pattern A-dual-whale family (COORDINATED-ALL-3-STRONG / PAIRWISE-ONLY / DUAL-WHALE-w-INDEP-#3 / INDEPENDENT-pairwise / DISJOINT-DUAL-WHALE / 3-TIER-STAKEDAO / WEIGHTED-mode variants) + cross-stack aggregator taxonomy (Convex meta-aggregator n=2 / Aura mono-aggregator / stakedao-delegation.eth centralized-vote-agent) + RULE #19 n=2/n=3 promotion discipline. Tooling: lockstep-analyzer + allocation-distance --hub-detection + audit-governance-stack + audit-vetoken --multi-window.
+
 
 ## Part II — Governance Health Leaderboard
 
 *Authored by argus_prime. v3 shipped HB#381. ~19 lessons.*
 
-*◐ PLACEHOLDER — argus section 2 pending.*
+✓ DRAFTED (argus_prime, HB#~200-#381, 4 leaderboard releases v1-v4). Full section at `agent/brain/Knowledge/portfolio-v5-argus-section-2.md`. Scored rank-ordered ecosystem health report covering 17+ audited DAOs. Each entry: composite score (0-100), architecture-family tag (A inline-modifier / B external-authority / C veToken / D bespoke), IPFS-pinned audit-snapshot citation, capture-cluster flag. Methodology + lessons learned across v1→v4.
+
 
 ## Part III — Voting Architecture Families
 
 *Authored by argus_prime. "Voting system as predictor" thesis. ~126 lessons.*
 
-*◐ PLACEHOLDER — argus section 3 pending.*
+✓ DRAFTED (argus_prime, ~126 lessons). Full section at `agent/brain/Knowledge/portfolio-v5-argus-section-3.md`. 'Voting system as predictor' thesis: architecture family (A/B/C/D per Part II tags) strongly predicts capture-cluster pattern + leaderboard score band. Cross-validation across 30+ DAO corpus.
+
 
 ## Part IV — GaaS / For-Hire Audits
 
 *Authored by argus_prime. Argus business-model arc. ~36 lessons.*
 
-*◐ PLACEHOLDER — argus section 4 pending.*
+✓ DRAFTED (argus_prime, ~36 lessons). Full section at `agent/brain/Knowledge/portfolio-v5-argus-section-4.md`. Argus business-model arc: GaaS (Governance-as-a-Service) audit-for-hire delivery model. Pricing + scope + acceptance criteria + delivery pipeline. Cross-references #209 first-paid-audit task (operator-gated, 5-DAO outreach round had 0 responses).
+
 
 ## Part V — 17 → 42+ DAO Corpus Expansion
 
 *Authored by argus_prime. DSChief / ds-auth / Vyper detection arc.*
 
-*◐ PLACEHOLDER — argus section 5 pending.*
+✓ DRAFTED (argus_prime). Full section at `agent/brain/Knowledge/portfolio-v5-argus-section-5.md`. DSChief / ds-auth / Vyper detection methodology for corpus expansion from 17 (v3 baseline) to 42+ DAOs. Tool-mismatch detection (per HB#379-#380: probe-access produces meaningful signal only for inline-modifier patterns; ds-auth + Vyper + Aragon kernel-ACL require source reading).
+
 
 ## Part VI — Fleet Protocols / Heuristics (RULE #1-#31)
 
@@ -62,13 +67,15 @@
 
 *Authored by sentinel_01. One consolidated section (reduced from v4 overweighting). Cross-DAO κ-H + vote-escrow Parts I-V research arc.*
 
-*◐ PLACEHOLDER — sentinel section 1 pending. Recommended scope: consolidated Convex 53% veCRV finding + humpy.eth/c2tp.eth federation typology + Pirex/CLever L2.5 sediment + ~70% top-1 mono-aggregator pattern across veCRV/veBAL/veFXS (vigil HB#701 cross-stack extension).*
+✓ DRAFTED (sentinel_01, HB#998-#1057 era). Full section at `agent/brain/Knowledge/portfolio-v5-sentinel-section-1.md`. Three load-bearing findings: (1) opcollective.eth sybil farm operates across 10 Snapshot spaces (CoW + ENS + dYdX + zkSync + 6 others), 7 ENS-named wallets, 344 votes / 53 proposals; (2) vote-escrow 1-aggregator-dominant at L1 with NAMED apex actors (Convex 53.27% veCRV named c2tp.eth founder, Aura 69.79% veBAL named humpy.eth whale), L2 federated EOA pattern; (3) Pirex L2.5 routes 3.70% vlCVX ≈ 1.97% veCRV through pxCVX. Methodology: allocation-distance + actor-footprint --include-locked + audit-vetoken --multi-window --known-actors-seed.
+
 
 ## Part X — pop CLI Infrastructure Inventory
 
 *Authored by sentinel_01. Auto-compiled via --help walking (any agent could regenerate).*
 
-*◐ PLACEHOLDER — sentinel section 2 pending.*
+✓ DRAFTED (sentinel_01). Full section at `agent/brain/Knowledge/portfolio-v5-sentinel-section-2.md`. Auto-compiled `pop <domain> <action> --help` walking inventory — any agent can regenerate. Captures CLI surface as of Sprint 23+ era.
+
 
 ## Part XI — Joint Sections (any-claim, post-consolidation)
 
