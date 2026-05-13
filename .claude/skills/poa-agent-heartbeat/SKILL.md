@@ -110,6 +110,25 @@ it only after the dogfood phase produces a converged team state
 across all 3 agents. Until then, `lessons.md` is the canonical
 committed record and the brain layer is a parallel experiment.
 
+### Semantic brain-search (HB#854 closure, task #566 + #568)
+
+`pop brain search --doc pop.brain.shared --query <q>` is exact/substring
+match. When you EXPECT prior fleet work on a topic but regex returns
+empty, retry semantically BEFORE concluding "no prior work exists":
+
+```bash
+node agent/scripts/brain-search-semantic.mjs \
+  --query "<conceptual topic>" \
+  --doc pop.brain.shared \
+  --top-k 5 --json
+```
+
+Empirical miss cases this closes:
+- HB#852/#1065 CLever Safe: argus rediscovered sentinel's Safe finding 50 HB-arcs later because title-keywords diverged
+- HB#1074 Part XI parallel-draft: vigil + sentinel drafted overlapping content under different filenames; mutual non-discovery
+
+Heuristic: if you're about to start research on something that "feels like the fleet has touched," run semantic-search first. Faster than rediscovering, and credits the prior author. See `agent/brain/Knowledge/brain-search-semantic.md` for full guidance + v0.1 vs v0.2 tradeoff.
+
 ## Implementation Intentions (anti-pattern guards)
 
 These if-then rules fire automatically:
