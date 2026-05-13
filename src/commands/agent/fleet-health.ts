@@ -98,18 +98,48 @@ export const fleetHealthHandler = {
     let daemonConns = -1;
     let daemonKnownPeers = -1;
     let daemonUptime = -1;
-    try {
+    // HB#751 (retro-1098 fleet-health-ipc-aware): distinguish IPC-error
+    // (transient EPIPE, simple retry suffices) from daemon-down (PID-dead,
+    // restart needed). Per HB#1078/#1080/#1085 recurrent pattern: Automerge
+    // disjoint-history rejection holds IPC write past CLI timeout. After
+    // ~5s the daemon recovers but the CLI saw an error. Bare retry recovers
+    // without stop+start cycle.
+    let daemonStatus: 'running' | 'ipc-error' | 'down' | 'unknown' = 'unknown';
+    let daemonIpcRetried = false;
+    const probeDaemon = () => {
       const r = spawnSync('node', ['dist/index.js', 'brain', 'daemon', 'status', '--json'], {
         cwd: process.cwd(),
         encoding: 'utf8',
       });
       const lines = (r.stdout || '').trim().split('\n');
       const lastJson = lines.reverse().find(l => l.startsWith('{'));
-      if (lastJson) {
-        const obj = JSON.parse(lastJson);
+      if (!lastJson) return null;
+      try {
+        return JSON.parse(lastJson);
+      } catch {
+        return null;
+      }
+    };
+    try {
+      let obj = probeDaemon();
+      if (obj && obj.status === 'ipc-error') {
+        // Retry once after a brief settle (HB#1078 pattern: Automerge
+        // disjoint-history holds IPC briefly; ~1s usually suffices).
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        const obj2 = probeDaemon();
+        daemonIpcRetried = true;
+        obj = obj2 || obj;
+      }
+      if (obj) {
         daemonConns = obj.connections ?? -1;
         daemonKnownPeers = obj.knownPeerCount ?? -1;
         daemonUptime = obj.uptime ?? -1;
+        daemonStatus = obj.status === 'running' ? 'running' :
+                       obj.status === 'ipc-error' ? 'ipc-error' :
+                       (obj.status === 'down' || obj.status === 'stopped') ? 'down' :
+                       'unknown';
+      } else {
+        daemonStatus = 'down';
       }
     } catch { /* daemon read best-effort */ }
 
@@ -157,19 +187,38 @@ export const fleetHealthHandler = {
     }
     peers.sort((a, b) => b.latestTs - a.latestTs);
 
+    // HB#751: daemon-state-aware remediation. ipc-error → retry suffices;
+    // down → restart needed; running+stale-peers → restart + repair.
+    let remediation: string | null = null;
+    if (daemonStatus === 'down') {
+      remediation = 'Daemon not running. Run: pop brain daemon start';
+    } else if (daemonStatus === 'ipc-error') {
+      remediation = daemonIpcRetried
+        ? 'Daemon IPC error persisted across 1.5s retry. Run: pop brain daemon stop && pop brain daemon start (transient EPIPE per HB#1078 pattern; only restart if recurrence)'
+        : 'Daemon IPC transient. Retry the command (no restart needed; HB#751 ipc-aware detection)';
+    } else if (staleCount > 0) {
+      remediation = 'Run: pop brain daemon stop && pop brain daemon start && pop brain repair';
+    }
+
     const result = {
       doc,
       selfAddress: selfAddress || '(unknown)',
       thresholdHours,
       now: nowSec,
-      daemon: { connections: daemonConns, knownPeers: daemonKnownPeers, uptimeSec: daemonUptime },
+      daemon: {
+        status: daemonStatus,
+        connections: daemonConns,
+        knownPeers: daemonKnownPeers,
+        uptimeSec: daemonUptime,
+        ipcRetried: daemonIpcRetried,
+      },
       peers,
       stalePeerCount: staleCount,
-      verdict: staleCount > 0 ? 'STALE' : 'HEALTHY',
-      remediation:
-        staleCount > 0
-          ? 'Run: pop brain daemon stop && pop brain daemon start && pop brain repair'
-          : null,
+      verdict:
+        daemonStatus === 'down' ? 'DAEMON-DOWN' :
+        daemonStatus === 'ipc-error' ? 'DAEMON-IPC-ERROR' :
+        staleCount > 0 ? 'STALE' : 'HEALTHY',
+      remediation,
     };
 
     if (argv.json) {
