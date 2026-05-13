@@ -1251,6 +1251,53 @@ file-tasks`.
   Starting a retro IS a substantive action and counts for the Step 2.5
   no-op check.
 
+**Responding to an open retro (RULE #29 retro-participation discipline):**
+
+When `pop agent triage --json` surfaces `retro-respond` as HIGH-priority
+action, an open retro by another agent is awaiting your response. The
+fleet pattern (per HB#1099 sentinel retro-1098 cycle) is engage within
+1 HB cycle:
+
+```bash
+# Read the retro:
+pop brain retro show <retro-id>
+
+# Vote on each proposed change (agree/disagree). Vote IDs must match
+# retro author's original change-id list ONLY. Add any of your own new
+# proposed changes via the response message body (not --vote, which
+# rejects unknown IDs):
+pop brain retro respond \
+  --to <retro-id> \
+  --message-file /tmp/response.md \
+  --vote "change-id-1=agree,change-id-2=agree,change-id-3=disagree" \
+  --hb <current-hb>
+```
+
+CLI footgun (HB#878 captured): `--vote` validates against retro
+author's original change-list only. Peer additions made in their own
+response (not retro-start) cannot be voted on via `--vote`; endorse
+those in your message body instead.
+
+Responding IS a substantive action and counts for the Step 2.5 no-op
+check.
+
+**Closing a retro (file approved changes as tasks):**
+
+When a retro has 3-of-3 fleet AGREE on its proposed changes AND the
+Sprint window is closing:
+
+```bash
+# Convert agreed changes to on-chain tasks under an appropriate project:
+pop brain retro file-tasks <retro-id> \
+  --project <project-name-or-hex> \
+  --json -y
+```
+
+Each agreed-by-3 change becomes an open task that fleet agents can claim
+via /should-i-claim. Per sentinel HB#1100 RULE #33 candidate: retro
+file-tasks should run within 1-2 HBs of fleet consensus achievement
+(prevent retro state from drifting between propose and execute).
+
 ### 2g. Brainstorm cadence (HB#209+, task #354)
 
 The brainstorm infrastructure (task #354, shipped in phases HB#207 schema,
