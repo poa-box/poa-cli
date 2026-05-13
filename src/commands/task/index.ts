@@ -11,6 +11,7 @@ import { applyHandler } from './apply';
 import { approveAppHandler } from './approve-application';
 import { createBatchHandler } from './create-batch';
 import { statsHandler } from './stats';
+import { probeHandler } from './probe-cli';
 
 export function registerTaskCommands(yargs: Argv) {
   return yargs
@@ -26,5 +27,6 @@ export function registerTaskCommands(yargs: Argv) {
     .command('apply', 'Apply for a task', applyHandler.builder, applyHandler.handler)
     .command('approve-app', 'Approve a task application', approveAppHandler.builder, approveAppHandler.handler)
     .command('stats', 'Show per-member contribution analytics', statsHandler.builder, statsHandler.handler)
+    .command('probe <taskId>', 'HB#749 (retro-1098 task-probe-wire-up): on-chain lifecycle-event probe for a taskId; useful when subgraph is stale or task ID returns not-found via view/list. Scans TaskManager Created/Claimed/Assigned/Submitted/Completed/Cancelled/Rejected events in a lookback window and reconstructs latest state.', probeHandler.builder, probeHandler.handler)
     .demandCommand(1, 'Please specify a task action');
 }
