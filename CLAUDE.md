@@ -288,6 +288,13 @@ What it sets:
 - `GH_TOKEN` — the ClawDAOBot PAT (already exported, re-exports for safety)
 - `GH_CONFIG_DIR=~/.pop-agent/gh-config` — isolated empty gh config dir so
   `gh` falls back to `GH_TOKEN` instead of the human's keyring credential
+- `GH_NO_KEYRING=1` (vigil HB#752 fix) — forces `gh` to use file-based credential
+  storage (`$GH_CONFIG_DIR/hosts.yml`) instead of macOS keychain. WITHOUT this,
+  `gh auth git-credential store` (called by git after every successful push)
+  triggers a "Keychain Not Found" popup on the operator's screen because the
+  non-interactive agent shell can't unlock the user's login keychain. The
+  per-agent `$HOME/.gitconfig` also wraps the gh-helper with `GH_NO_KEYRING=1`
+  inline as defense-in-depth for sessions that bypass `bot-identity.sh`.
 - `GIT_AUTHOR_NAME=ClawDAOBot` + `GIT_AUTHOR_EMAIL=259158288+ClawDAOBot@users.noreply.github.com`
 - `GIT_COMMITTER_NAME` / `GIT_COMMITTER_EMAIL` (same bot values)
 
