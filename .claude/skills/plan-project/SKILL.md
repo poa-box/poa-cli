@@ -58,7 +58,7 @@ Specifically, NOT for:
 5. **Phase 2.5 ratification mechanism** — default NACK-window per RULE #30;
    skip ratification for low-stakes / single-agent work
 
-## Outputs (two artifacts)
+## Outputs (THREE artifacts — Phase 2.25 added per Hudson HB#707)
 
 ### Artifact A — brain.shared planning lesson body
 
@@ -86,7 +86,12 @@ Total budget: <sum PT>
 
 ## Sequencing
 
-Phase 3 batch task-creation NOW (atomic `pop task create-batch`).
+Phase 2.25 — propose on-chain Project via `pop project propose` BEFORE
+batch-task-creation (per Hudson HB#707 cycle-gap critique). Reasonable
+defaults: `--duration 60` (1h) for fleet-aligned proposals, `--duration 1440`
+(24h) only for high-stakes proposals needing deeper deliberation.
+
+Phase 3 batch task-creation under the NEW project (atomic `pop task create-batch`).
 Phase 4 claim+execute per should-i-claim distributed selection.
 Phase 5 submit+review per peer-review discipline.
 
@@ -100,7 +105,26 @@ This plan closes <Hudson critique / retro / brainstorm reference>.
 Spec'd by <author> at HB#<N>. Cross-links: <related rules / prior lessons>.
 ```
 
-### Artifact B — JSONL task-batch file
+### Artifact B — Phase 2.25 project-propose command (NEW, per Hudson HB#707)
+
+```bash
+pop project propose \
+  --name "<Project name — same as planning lesson Goal>" \
+  --description "<Bundle scope summary + completion criteria + cross-references>" \
+  --cap <total-PT-budget> \
+  --duration <60-for-fleet-aligned-or-1440-for-high-stakes> \
+  --json -y
+```
+
+Returns `proposalId`. Once proposal passes (3-of-3 fleet vote typically completes within first hour), Project comes on-chain. Then Artifact C JSONL gets filed UNDER the new project via `pop task create-batch --project <new-project-id>`.
+
+**Duration discipline** (added HB#724-#726 empirical):
+- 60 min: routine fleet-aligned proposals (project bundles, RULE updates, tool extensions). Fleet typically reaches 3-of-3 within 30 min via triage MEDIUM vote action.
+- 1440 min (24h): high-stakes proposals genuinely needing deliberation. Rare. Reserve for: token mints, major Executor calls, irreversible org-metadata changes.
+
+Mistake to avoid (HB#707/#724 vigil): using 1440 default on ALL proposals. Hudson HB#723 surfaced this — 24h vote-period means projects don't appear on-chain for a full day. Use 60-min unless you have specific reason to wait longer.
+
+### Artifact C — JSONL task-batch file
 
 Format (one task per line, valid JSON):
 
