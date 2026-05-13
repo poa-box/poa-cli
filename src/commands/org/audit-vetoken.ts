@@ -228,6 +228,62 @@ async function enumerateDepositors(
 }
 
 /**
+ * HB#731 task #557 (v0.2 NFT-mode Transfer scan): build tokenId → current-owner
+ * mapping by scanning the veNFT contract's own Transfer(from, to, tokenId)
+ * events. Used when ERC721Enumerable is not implemented (Velodrome veNFT case).
+ * The latest Transfer for each tokenId wins (transfers are linear). Returns a
+ * Map<owner-lowercase, tokenId-string[]> so per-address ve-power can be summed
+ * via balanceOfNFT(tokenId) without an O(N²) per-owner scan.
+ *
+ * Cost note: veNFT contracts have far fewer Transfer events than ERC20 tokens
+ * (one mint per lock + occasional transfers), so this scan is cheap relative
+ * to enumerateHoldersViaUnderlyingTransfers.
+ */
+async function scanNftTokenOwnersViaTransfers(
+  contract: ethers.Contract,
+  fromBlock: number,
+  toBlock: number,
+  chunk: number,
+): Promise<{ ownerToTokenIds: Map<string, string[]>; tokensSeen: number; chunksScanned: number }> {
+  const tokenIdToOwner = new Map<string, string>();
+  let chunksScanned = 0;
+
+  for (let start = fromBlock; start <= toBlock; start += chunk) {
+    const end = Math.min(start + chunk - 1, toBlock);
+    try {
+      const logs = await contract.queryFilter(contract.filters.Transfer(), start, end);
+      chunksScanned++;
+      for (const log of logs) {
+        const to = (log.args as any)?.to;
+        const tokenId = (log.args as any)?.tokenId;
+        if (to && tokenId !== undefined && tokenId !== null) {
+          const tokenIdStr = tokenId.toString();
+          const toAddr = String(to).toLowerCase();
+          // Latest Transfer for this tokenId wins (chronological event order
+          // within and across chunks is preserved by getLogs).
+          tokenIdToOwner.set(tokenIdStr, toAddr);
+        }
+      }
+    } catch {
+      // Best-effort: skip transient chunk failures (rate limit, timeout).
+      void 0;
+    }
+  }
+
+  // Invert into owner → tokenIds[] for efficient per-address lookup.
+  const zeroAddr = '0x0000000000000000000000000000000000000000';
+  const ownerToTokenIds = new Map<string, string[]>();
+  for (const [tokenId, owner] of tokenIdToOwner.entries()) {
+    if (owner === zeroAddr) continue; // burned
+    const arr = ownerToTokenIds.get(owner) ?? [];
+    arr.push(tokenId);
+    ownerToTokenIds.set(owner, arr);
+  }
+
+  return { ownerToTokenIds, tokensSeen: tokenIdToOwner.size, chunksScanned };
+}
+
+/**
  * HB#456 task #389: enumerate candidate holders via the underlying ERC20's
  * Transfer events filtered to (to == locker address).
  *
@@ -409,6 +465,12 @@ export const auditVetokenHandler = {
       default: false,
       describe:
         'Task #556 (HB#716): force NFT-locked ve-token mode (veVELO/veAERO/veRAM/veCHR class). Auto-detected via supportsInterface(0x80ac58cd) when omitted. NFT-mode enumerates owner tokenIds via tokenOfOwnerByIndex + sums balanceOfNFT per tokenId for true per-owner ve-power.',
+    })
+    .option('nft-scan-transfers', {
+      type: 'boolean',
+      default: false,
+      describe:
+        'Task #557 (HB#731) v0.2: in nft-mode, when ERC721Enumerable not supported (e.g. Velodrome veNFT), scan Transfer(from,to,tokenId) events between --from-block/--to-block to build tokenId→current-owner mapping + sum balanceOfNFT for true ve-power. Without this flag, the v0.1 fallback ranks by NFT-count only (which understates power for users with old high-value locks).',
     })
     .option('validate-coverage', {
       type: 'number',
@@ -694,6 +756,31 @@ export const auditVetokenHandler = {
         }
       }
 
+      // HB#731 task #557 v0.2: build owner→tokenIds map ONCE via Transfer-event
+      // scan when caller passed --nft-scan-transfers. Used as the v0.2 fallback
+      // when ERC721Enumerable isn't supported (Velodrome veNFT case).
+      let nftOwnerMap: Map<string, string[]> | null = null;
+      let nftScanMeta: { tokensSeen: number; chunksScanned: number; windowFrom: number; windowTo: number } | null = null;
+      if (nftMode && (argv as any).nftScanTransfers) {
+        const latestBlock = await provider.getBlockNumber();
+        const chunkV = argv.chunk ?? chainDefaultChunk;
+        const fromB = argv['from-block'] ?? Math.max(0, latestBlock - DEFAULT_ENUMERATE_LOOKBACK_BLOCKS);
+        const toB = argv['to-block'] ?? latestBlock;
+        spin.stop();
+        output.info(
+          `  Scanning veNFT Transfer events ${fromB}..${toB} (${chunkV}-block chunks) for tokenId→owner map...`,
+        );
+        spin.start();
+        const scanResult = await scanNftTokenOwnersViaTransfers(ve, fromB, toB, chunkV);
+        nftOwnerMap = scanResult.ownerToTokenIds;
+        nftScanMeta = {
+          tokensSeen: scanResult.tokensSeen,
+          chunksScanned: scanResult.chunksScanned,
+          windowFrom: fromB,
+          windowTo: toB,
+        };
+      }
+
       const rows: HolderRow[] = await Promise.all(
         holderAddrs.map(async (addr) => {
           const lockEnd = await (ve as any).locked__end(addr).catch(() => null);
@@ -701,9 +788,9 @@ export const auditVetokenHandler = {
 
           if (nftMode) {
             // NFT-mode: try ERC721Enumerable path first (tokenOfOwnerByIndex);
-            // fallback to NFT-count ranking when Enumerable not supported
-            // (Velodrome veNFT doesn't implement Enumerable — needs Transfer-event
-            // scan path for accurate ve-power; Sprint 24 v0.2 work).
+            // HB#731 v0.2: when --nft-scan-transfers provided, use pre-built
+            // owner→tokenIds map from Transfer-event scan (Velodrome veNFT case
+            // where Enumerable isn't implemented). Else fallback to NFT count.
             try {
               const nftCount = await ve.balanceOf(addr);
               const count = Number(nftCount.toString());
@@ -719,9 +806,22 @@ export const auditVetokenHandler = {
                   break;
                 }
               }
-              if (!enumerableOk) {
-                // Fallback: report NFT count as "balance" with WARN annotation
-                // (Sprint 24 v0.2 will scan Transfer events instead for true ve-power)
+              if (!enumerableOk && nftOwnerMap) {
+                // v0.2 path: scan-derived tokenId list for this owner
+                const tokenIds = nftOwnerMap.get(addr.toLowerCase()) ?? [];
+                let vePower = 0;
+                for (const tid of tokenIds) {
+                  try {
+                    const power = await (ve as any).balanceOfNFT(tid);
+                    vePower += Number(ethers.utils.formatUnits(power, 18));
+                  } catch {
+                    // Token may have been burned mid-scan; skip
+                  }
+                }
+                balNum = vePower;
+              } else if (!enumerableOk) {
+                // v0.1 fallback: NFT-count ranking (understates power when
+                // some owners hold older high-value locks).
                 balNum = count;
               } else {
                 balNum = totalVePower;
@@ -787,6 +887,7 @@ export const auditVetokenHandler = {
           probedHolderCount: holderAddrs.length,
           explicitHolderCount: explicitHolders.length,
           enumerationWindow: enumerationMeta,
+          nftScan: nftScanMeta,
           topHolders: topN,
           topNAggregateSharePct: topShareAggregate.toFixed(2) + '%',
           topHolderSharePct: topN[0]?.sharePct || '0%',
