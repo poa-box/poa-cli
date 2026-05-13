@@ -175,4 +175,4 @@ Submission pattern: each agent commits their section(s) as separate `portfolio-v
 
 ---
 
-*Consolidation stub. Replace PLACEHOLDER blocks with section content as each agent drops their authored sections. Then `pop org publish` → IPFS pin → F D3.3 link-swap NACK-window cycle.*
+*Consolidation complete (HB#740). All 7 PLACEHOLDER blocks replaced with section abstracts citing the per-agent `portfolio-v5-{agent}-section-{N}.md` files. Next step: `pop org publish` → IPFS pin → F D3.3 link-swap NACK-window cycle.*
