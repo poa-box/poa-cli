@@ -111,6 +111,11 @@ const EIP1967_BEACON_SLOT = '0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6
 // EIP-1822 (legacy UUPS proxy)
 const EIP1822_IMPL_SLOT = '0xc5f16f0fcc639fa48a6947836d9850f504798523bf8c9a3a87d5876cf622bcf7';
 
+// OpenZeppelin zeppelinos-legacy (pre-EIP-1967) impl slot
+// keccak256('org.zeppelinos.proxy.implementation')
+// USDC FiatTokenProxy uses this pattern
+const OZ_ZEPPELINOS_IMPL_SLOT = '0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3';
+
 // EIP-1167 minimal-proxy bytecode template
 // 0x363d3d373d3d3d363d73<20-byte impl>5af43d82803e903d91602b57fd5bf3
 const EIP1167_PREFIX = '363d3d373d3d3d363d73';
@@ -283,6 +288,73 @@ export const probeProxyHandler = {
           result.proxyKind = 'eip-1822';
           result.implementation = eip1822Impl;
           result.notes.push(`EIP-1822 (legacy UUPS) implementation slot: ${eip1822Impl}`);
+        }
+
+        // Step 3.4 (Task #555, HB#714): OZ legacy zeppelinos slot (pre-EIP-1967).
+        // Used by USDC FiatTokenProxy + several Centre/Circle stablecoins.
+        if (!result.implementation) {
+          const ozSlot = await provider.getStorageAt(addr, OZ_ZEPPELINOS_IMPL_SLOT);
+          const ozImpl = slotToAddress(ozSlot);
+          if (ozImpl) {
+            result.isProxy = true;
+            result.proxyKind = 'oz-zeppelinos';
+            result.implementation = ozImpl;
+            result.notes.push(
+              `OpenZeppelin zeppelinos-legacy impl slot non-empty: ${ozImpl} (USDC FiatTokenProxy pattern)`,
+            );
+          }
+        }
+
+        // Step 3.5 (Task #555, HB#714): FiatTokenProxy / slot-0 admin pattern.
+        // Used by USDC (FiatTokenProxy.sol from Centre/Circle) + Yearn legacy
+        // strategies + some Curve gauges. Reads slot 0 as impl when no EIP-1967
+        // slots populated.
+        if (!result.implementation) {
+          const slot0 = await provider.getStorageAt(addr, '0x0');
+          const slot0Impl = slotToAddress(slot0);
+          if (slot0Impl) {
+            // Confirm it's a CONTRACT (not just a stored address)
+            try {
+              const implCode = await provider.getCode(slot0Impl);
+              if (implCode !== '0x') {
+                result.isProxy = true;
+                result.proxyKind = 'slot-0-proxy';
+                result.implementation = slot0Impl;
+                result.notes.push(
+                  `slot-0 storage points to contract ${slot0Impl} (FiatTokenProxy / Yearn-legacy pattern)`,
+                );
+              }
+            } catch {
+              // skip if probe fails
+            }
+          }
+        }
+
+        // Step 3.6 (Task #555): EIP-2535 Diamond detection via DiamondLoupeFacet.
+        // facetAddresses() = 0x52ef6b2c → returns address[] of facet contracts.
+        try {
+          const iface = new ethers.utils.Interface([
+            'function facetAddresses() view returns (address[])',
+          ]);
+          const data = iface.encodeFunctionData('facetAddresses');
+          const out = await provider.call({ to: addr, data });
+          const decoded = iface.decodeFunctionResult('facetAddresses', out);
+          if (Array.isArray(decoded[0]) && decoded[0].length > 0) {
+            result.isProxy = true;
+            // Don't override EIP-1967 if already detected (Diamond can coexist)
+            if (result.proxyKind === 'none' || result.proxyKind === 'slot-0-proxy') {
+              result.proxyKind = 'eip-2535-diamond';
+            }
+            result.notes.push(
+              `EIP-2535 Diamond: ${decoded[0].length} facet contracts (e.g. ${decoded[0][0]})`,
+            );
+            // Set implementation to first facet if no other impl set
+            if (!result.implementation) {
+              result.implementation = String(decoded[0][0]).toLowerCase();
+            }
+          }
+        } catch {
+          // not a Diamond, skip
         }
 
         // Step 4: bytecode-pattern hint for upgradeTo/upgradeToAndCall selectors
