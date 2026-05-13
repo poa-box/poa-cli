@@ -126,6 +126,35 @@ function slotToAddress(slotRaw: string): string {
   return ('0x' + slotRaw.slice(-40)).toLowerCase();
 }
 
+// Task #558 v0.3 (HB#732): EIP-7201 namespaced storage slot derivation.
+// Formula: keccak256(abi.encode(uint256(keccak256(namespace)) - 1)) & ~bytes32(uint256(0xff))
+// Used by OZ v5+ Initializable contracts to avoid storage-layout collisions
+// in upgradeable contracts. The final & ~0xff zero-suffixes 1 byte so the
+// 256 slots starting at the namespace base are usable for the struct fields.
+function deriveEip7201Slot(namespace: string): string {
+  const inner = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(namespace));
+  const innerMinus1 = ethers.BigNumber.from(inner).sub(1);
+  const encoded = ethers.utils.defaultAbiCoder.encode(['uint256'], [innerMinus1]);
+  const outer = ethers.utils.keccak256(encoded);
+  // Mask off the last byte (zero out bottom 8 bits)
+  const masked = ethers.BigNumber.from(outer).and(
+    ethers.BigNumber.from('0x' + 'f'.repeat(62) + '00'),
+  );
+  return ethers.utils.hexZeroPad(masked.toHexString(), 32);
+}
+
+// Common OZ v5 namespaces that are worth probing for any contract suspected
+// of using EIP-7201 namespaced storage. Each entry: human label + namespace
+// string. The slot is derived once at module load (pure function).
+const EIP7201_KNOWN_NAMESPACES: Array<{ label: string; namespace: string }> = [
+  { label: 'OZ-Initializable', namespace: 'openzeppelin.storage.Initializable' },
+  { label: 'OZ-AccessControl', namespace: 'openzeppelin.storage.AccessControl' },
+  { label: 'OZ-Ownable', namespace: 'openzeppelin.storage.Ownable' },
+  { label: 'OZ-Pausable', namespace: 'openzeppelin.storage.Pausable' },
+  { label: 'OZ-ReentrancyGuard', namespace: 'openzeppelin.storage.ReentrancyGuard' },
+  { label: 'OZ-ERC20', namespace: 'openzeppelin.storage.ERC20' },
+];
+
 function detectEip1167(code: string): string {
   if (!code.toLowerCase().includes(EIP1167_PREFIX)) return '';
   if (!code.toLowerCase().includes(EIP1167_SUFFIX)) return '';
@@ -145,6 +174,7 @@ interface ProbeResult {
   admin: string;
   beacon: string;
   commonGetters: Record<string, string | null>;
+  eip7201Namespaces: Array<{ label: string; namespace: string; slot: string; nonEmpty: boolean }>;
   notes: string[];
   sourcify?: {
     self?: SourcifyResult;
@@ -233,6 +263,7 @@ export const probeProxyHandler = {
       admin: '',
       beacon: '',
       commonGetters: {},
+      eip7201Namespaces: [],
       notes: [],
     };
 
@@ -278,6 +309,29 @@ export const probeProxyHandler = {
           result.beacon = eip1967Beacon;
           if (result.proxyKind === 'none') result.proxyKind = 'eip-1967-beacon';
           result.notes.push(`EIP-1967 beacon slot non-empty: ${eip1967Beacon}`);
+
+          // Task #558 v0.3 (HB#732): resolve beacon → implementation() via call.
+          // BeaconProxy / UpgradeableBeacon pattern: the slot holds the beacon
+          // address, and the beacon exposes implementation() returning the real
+          // impl. Without this resolution, beacon-style proxies surface only
+          // the beacon (one level of indirection short).
+          try {
+            const beaconIface = new ethers.utils.Interface([
+              'function implementation() view returns (address)',
+            ]);
+            const beaconCalldata = beaconIface.encodeFunctionData('implementation');
+            const beaconOut = await provider.call({ to: eip1967Beacon, data: beaconCalldata });
+            const beaconImpl = beaconIface.decodeFunctionResult('implementation', beaconOut)[0];
+            const beaconImplStr = String(beaconImpl).toLowerCase();
+            if (beaconImplStr !== ethers.constants.AddressZero) {
+              result.implementation = beaconImplStr;
+              result.notes.push(
+                `Beacon resolved → implementation(): ${beaconImplStr} (UpgradeableBeacon / BeaconProxy v0.3 resolution)`,
+              );
+            }
+          } catch {
+            // Beacon doesn't expose implementation() — skip resolution.
+          }
         }
 
         // Step 3: EIP-1822 (legacy UUPS)
@@ -365,6 +419,25 @@ export const probeProxyHandler = {
           );
         }
 
+        // Step 4.1 (Task #558 v0.3, HB#732): EIP-7201 namespaced storage probe.
+        // For each known OZ v5 namespace, derive the EIP-7201 slot and read it.
+        // Non-empty slot is a strong signal that the contract uses namespaced
+        // storage (and thus is OZ v5+ Initializable). Surfaces which OZ
+        // modules are present without source-verification roundtrip.
+        for (const { label, namespace } of EIP7201_KNOWN_NAMESPACES) {
+          const slot = deriveEip7201Slot(namespace);
+          try {
+            const raw = await provider.getStorageAt(addr, slot);
+            const nonEmpty = !(/^0x0+$/.test(raw));
+            result.eip7201Namespaces.push({ label, namespace, slot, nonEmpty });
+            if (nonEmpty) {
+              result.notes.push(`EIP-7201 ${label} slot non-empty (namespace=${namespace})`);
+            }
+          } catch {
+            // Skip slot probe errors
+          }
+        }
+
         // Step 5: common-getter probe
         result.commonGetters = await probeCommonGetters(provider, addr);
 
@@ -406,6 +479,13 @@ export const probeProxyHandler = {
         console.log(`\n  Common getters present:`);
         for (const [k, v] of gettersPresent) {
           console.log(`    ${k}(): ${String(v).slice(0, 80)}`);
+        }
+      }
+      const eip7201Hits = result.eip7201Namespaces.filter(ns => ns.nonEmpty);
+      if (eip7201Hits.length > 0) {
+        console.log(`\n  EIP-7201 namespaces present:`);
+        for (const ns of eip7201Hits) {
+          console.log(`    ${ns.label} (${ns.namespace})`);
         }
       }
       if (result.notes.length > 0) {
