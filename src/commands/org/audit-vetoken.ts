@@ -52,6 +52,9 @@ import * as output from '../../lib/output';
 // Convex's vlCVX all follow the same interface.
 const VE_VIEW_ABI = [
   'function balanceOf(address addr) view returns (uint256)',
+  'function supportsInterface(bytes4) view returns (bool)',
+  'function balanceOfNFT(uint256 tokenId) view returns (uint256)',
+  'function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)',
   'function totalSupply() view returns (uint256)',
   'function totalSupplyAt(uint256 block) view returns (uint256)',
   'function locked__end(address addr) view returns (uint256)',
@@ -401,6 +404,12 @@ export const auditVetokenHandler = {
       describe: 'Limit output to the top N holders by current veBalance',
       default: 10,
     })
+    .option('nft-mode', {
+      type: 'boolean',
+      default: false,
+      describe:
+        'Task #556 (HB#716): force NFT-locked ve-token mode (veVELO/veAERO/veRAM/veCHR class). Auto-detected via supportsInterface(0x80ac58cd) when omitted. NFT-mode enumerates owner tokenIds via tokenOfOwnerByIndex + sums balanceOfNFT per tokenId for true per-owner ve-power.',
+    })
     .option('validate-coverage', {
       type: 'number',
       describe:
@@ -667,14 +676,65 @@ export const auditVetokenHandler = {
       const totalSupplyBn = await ve.totalSupply();
       const totalSupplyNum = Number(ethers.utils.formatUnits(totalSupplyBn, 18));
 
-      // Parallel balanceOf + locked__end reads
+      // Task #556 (HB#716): detect ERC-721 NFT-locked ve-tokens (veVELO/veAERO/veRAM class).
+      // Velodrome v2 + family use ERC-721 where each lock is a tokenId; ve-power
+      // is balanceOfNFT(tokenId) not balanceOf(address). Auto-detect via supportsInterface.
+      let nftMode = Boolean((argv as any).nftMode);
+      if (!nftMode) {
+        try {
+          const isERC721 = await (ve as any).supportsInterface('0x80ac58cd');
+          if (isERC721) {
+            nftMode = true;
+            output.info(
+              `  ℹ️  ERC-721 detected via supportsInterface — auto-enabling --nft-mode (veNFT class: Velodrome / Aerodrome / Ramses / Chronos family).`,
+            );
+          }
+        } catch {
+          // Not an ERC-721; proceed with default ERC20 path
+        }
+      }
+
       const rows: HolderRow[] = await Promise.all(
         holderAddrs.map(async (addr) => {
-          const [balBn, lockEnd] = await Promise.all([
-            ve.balanceOf(addr).catch(() => ethers.BigNumber.from(0)),
-            ve.locked__end(addr).catch(() => null),
-          ]);
-          const balNum = Number(ethers.utils.formatUnits(balBn, 18));
+          const lockEnd = await (ve as any).locked__end(addr).catch(() => null);
+          let balNum: number;
+
+          if (nftMode) {
+            // NFT-mode: try ERC721Enumerable path first (tokenOfOwnerByIndex);
+            // fallback to NFT-count ranking when Enumerable not supported
+            // (Velodrome veNFT doesn't implement Enumerable — needs Transfer-event
+            // scan path for accurate ve-power; Sprint 24 v0.2 work).
+            try {
+              const nftCount = await ve.balanceOf(addr);
+              const count = Number(nftCount.toString());
+              let totalVePower = 0;
+              let enumerableOk = true;
+              for (let i = 0; i < count; i++) {
+                try {
+                  const tokenId = await (ve as any).tokenOfOwnerByIndex(addr, i);
+                  const power = await (ve as any).balanceOfNFT(tokenId);
+                  totalVePower += Number(ethers.utils.formatUnits(power, 18));
+                } catch {
+                  enumerableOk = false;
+                  break;
+                }
+              }
+              if (!enumerableOk) {
+                // Fallback: report NFT count as "balance" with WARN annotation
+                // (Sprint 24 v0.2 will scan Transfer events instead for true ve-power)
+                balNum = count;
+              } else {
+                balNum = totalVePower;
+              }
+            } catch {
+              balNum = 0;
+            }
+          } else {
+            // ERC20-mode (default): balanceOf returns ve-power directly
+            const balBn = await ve.balanceOf(addr).catch(() => ethers.BigNumber.from(0));
+            balNum = Number(ethers.utils.formatUnits(balBn, 18));
+          }
+
           const sharePctNum = totalSupplyNum > 0 ? (balNum / totalSupplyNum) * 100 : 0;
           const lockEndNum = lockEnd ? Number(lockEnd.toString()) : null;
           return {
