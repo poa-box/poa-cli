@@ -216,6 +216,34 @@ These are administrative / onboarding commands that should be ZERO use after fle
 
 8. **Sprint 24+ ship candidate**: `pop agent tool-rotation-reminder` — emits a 1-line nudge each HB suggesting an underused command relevant to current triage actions. Closes the tool-overhang gap structurally.
 
+## Updates HB#1080→#1091 (real-time additions from fleet sprint)
+
+### Newly-shipped tools (Sprint 24)
+- **`agent/scripts/brain-search-semantic.mjs`** (argus #566 HB#863): TF-IDF + cosine semantic search. **Trigger**: when `pop brain search` returns empty AND topic is conceptually familiar. Validated 2 miss cases first-run (HB#1074 Part XI parallel-draft + HB#852/#1065 CLever Safe). Production-validated HB#1087.
+- **`pop org probe-proxy --eip7201 --beacon`** v0.3 (vigil #558 HB#732): beacon resolution + EIP-7201 namespace detection. Production-validated HB#735 (veVELO #1 chain walk).
+- **`pop org audit-vetoken --nft-scan-transfers`** v0.2 (vigil #557 HB#731): Transfer-event scan for true ve-power per holder. **Trigger**: ERC721Enumerable not supported (Velodrome/Aerodrome/Ramses veNFT).
+- **`pop project propose --auto-hats`** default true (vigil #562 HB#730): closes Hudson HB#707 cycle-gap. Every project proposal that needs immediate task-fileability.
+- **`pop project propose --duration` default 60-min** (vigil #561 HB#733 = RULE #32): routine fleet-aligned proposals use 60; reserve 1440 for high-stakes.
+
+### Audit findings discovered while dogfooding
+- **`pop task probe`** — file exists but NOT registered as yargs subcommand (HB#1083). CLI-registration gap.
+- **`pop project list`** — subgraph "Odd number of digits" hex parse error (HB#1083). Upstream subgraph bug.
+- **`pop org boundary-score`** — silent-zero without `--substrate/--cohort/--dimension` flags (HB#1081). Documentation gap.
+- **`pop org publish`** requires PRE-PINNED CID — ipfs CLI not installed in env; use `task submit` auto-pin instead (HB#1085).
+
+### Discipline adoptions (fleet-wide)
+- **Step 0.6 = `pop config validate`** before triage: sentinel HB#1081 + argus HB#858/#859/#866 adopted (vigil pending).
+- **Phase-2 task-batch pre-staging** before Phase-3 batch filing: vigil HB#722 + sentinel HB#1078 + argus HB#857 SYMMETRIC across fleet.
+- **`pop brain remove-lesson`** dogfooded HB#1085 (4th use of forgotten command — cleaned up duplicate from IPC-timeout retry).
+- **`pop task stats`** revealed argus 16 self-reviews (vigil + sentinel = 0) — bootstrap-artifact per argus HB#865 honest investigation, NOT recent discipline drift.
+- **`pop org gaas-status`** revealed REVENUE (2 external transfers) — business state visibility gap closed.
+
+### Daemon IPC EPIPE diagnostic (HB#1080→#1083→#1085 validated 3x)
+Transient symptom: `pop brain daemon status` returns `ipc-error / conns: undefined` when daemon busy handling Automerge disjoint-history rejection (task #350). **Recovery**: simple CLI retry, NOT heavyweight stop+start.
+
+### Audit pipeline compound-value (10-HB end-to-end chain)
+HB#1074+#1075 surface miss → HB#1080 audit Sprint 24+ candidate → argus HB#854 META-finding → argus #74 project + #566 v0.1 TF-IDF ship → vigil #568 docs ship → sentinel HB#1087 production-dogfood. Hudson directive produces real fleet-coordination upgrade now in earnest use.
+
 ## Cross-references
 
 - Sentinel HB#1055 dogfood scan (narrative-mention metric, 97.9% rate — superseded by this exact-invocation metric)
@@ -224,6 +252,7 @@ These are administrative / onboarding commands that should be ZERO use after fle
 - HB#813 origin: tool shipped → unused → accidentally rediscovered
 - Portfolio v5 Part X (sentinel section 2, HB#1068) — enumeration without usage context
 - Hudson HB#1080 directive (this audit's prompt)
+- Cross-DAO Coordination v6 Final Report (sentinel HB#1090) — bundles 4 sentinel-arc Sprint 24 empirical findings
 
 ## Methodology note
 
