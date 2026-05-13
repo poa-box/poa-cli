@@ -19,6 +19,7 @@ interface UpdateMetadataArgs {
   description?: string;
   logo?: string;
   links?: string;
+  'update-link'?: string[];
   'background-color'?: string;
   'hide-treasury'?: boolean;
   chain?: number;
@@ -32,7 +33,8 @@ export const updateMetadataHandler = {
     .option('name', { type: 'string', describe: 'New org name' })
     .option('description', { type: 'string', describe: 'Org description' })
     .option('logo', { type: 'string', describe: 'Path to logo image file' })
-    .option('links', { type: 'string', describe: 'JSON array of {name, url} links' })
+    .option('links', { type: 'string', describe: 'JSON array of {name, url} links. REPLACES the full link list. Use --update-link <name>:<url> instead for safe single-link patches without re-passing all existing links.' })
+    .option('update-link', { type: 'string', array: true, describe: 'HB#749 (retro-1098 vigil-proposed update-metadata-merge-flag): single-link patch as "<name>:<url>". Preserves all other existing links. Pass multiple --update-link flags to patch multiple links in one tx. Mutually exclusive with --links.' })
     .option('background-color', { type: 'string', describe: 'Background color hex' })
     .option('hide-treasury', { type: 'boolean', describe: 'Hide treasury in UI' }),
 
@@ -55,8 +57,12 @@ export const updateMetadataHandler = {
         throw new Error('Could not resolve OrgRegistry address from subgraph');
       }
 
-      if (!argv.name && !argv.description && !argv.logo && !argv.links && argv.backgroundColor === undefined && argv.hideTreasury === undefined) {
-        throw new Error('At least one metadata field must be provided (--name, --description, --logo, --links, --background-color, or --hide-treasury)');
+      const updateLinks = (argv.updateLink as string[] | undefined) ?? [];
+      if (!argv.name && !argv.description && !argv.logo && !argv.links && updateLinks.length === 0 && argv.backgroundColor === undefined && argv.hideTreasury === undefined) {
+        throw new Error('At least one metadata field must be provided (--name, --description, --logo, --links, --update-link, --background-color, or --hide-treasury)');
+      }
+      if (argv.links && updateLinks.length > 0) {
+        throw new Error('--links and --update-link are mutually exclusive. Use --links to replace the full list, OR --update-link to patch individual links.');
       }
 
       // Resolve org ID early so we can fetch existing metadata
@@ -80,12 +86,34 @@ export const updateMetadataHandler = {
       }
 
       // Parse links if provided, otherwise keep existing
-      let links = currentMeta.links || [];
+      let links = (currentMeta.links || []).map((l: any) => ({ name: l.name, url: l.url }));
       if (argv.links) {
         try {
           links = JSON.parse(argv.links);
         } catch {
           throw new Error('--links must be valid JSON array: [{"name":"...","url":"..."}]');
+        }
+        links = links.map((l: any, i: number) => ({ ...l, index: i }));
+      } else if (updateLinks.length > 0) {
+        // HB#749 (retro-1098 vigil-proposed): single-link patch path.
+        // For each "<name>:<url>", upsert into the existing link list:
+        // replace url if name exists (case-insensitive match), else append.
+        for (const patch of updateLinks) {
+          const colonIdx = patch.indexOf(':');
+          if (colonIdx < 0) {
+            throw new Error(`--update-link must be "<name>:<url>"; got: "${patch}"`);
+          }
+          const name = patch.slice(0, colonIdx).trim();
+          const url = patch.slice(colonIdx + 1).trim();
+          if (!name || !url) {
+            throw new Error(`--update-link "<name>" and "<url>" both required; got: "${patch}"`);
+          }
+          const idx = links.findIndex((l: any) => l.name?.toLowerCase() === name.toLowerCase());
+          if (idx >= 0) {
+            links[idx] = { ...links[idx], url };
+          } else {
+            links.push({ name, url });
+          }
         }
         links = links.map((l: any, i: number) => ({ ...l, index: i }));
       }
