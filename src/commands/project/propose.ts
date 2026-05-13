@@ -8,6 +8,7 @@ import { stringToBytes, ipfsCidToBytes32 } from '../../lib/encoding';
 import { loadAbi } from '../../lib/contracts';
 import { resolveOrgModules } from '../../lib/resolve';
 import { resolveVotingContracts } from '../vote/helpers';
+import { query } from '../../lib/subgraph';
 import * as output from '../../lib/output';
 
 interface ProposeArgs {
@@ -20,10 +21,39 @@ interface ProposeArgs {
   'claim-hats'?: string;
   'review-hats'?: string;
   'assign-hats'?: string;
+  'auto-hats'?: boolean;
   chain?: number;
   rpc?: string;
   'private-key'?: string;
   'dry-run'?: boolean;
+}
+
+// HB#730: closes #562 cycle-gap. Pulls hats from an existing same-org project's
+// rolePermissions (where canCreate=true) so the new project inherits the SAME
+// known-good permission config. Without this, proposals execute but the new
+// project has empty rolePermissions and task-create reverts.
+//
+// Why existing project rather than org.taskManager.creatorHatIds: those are
+// different hat IDs on Argus — creatorHatIds is org-level (can create PROJECTS)
+// but rolePermissions is project-level (can create TASKS within). Agents hold
+// the project-level hat, so that's what we need to seed the new project with.
+async function fetchOrgCreatorHats(orgId: string, chainId?: number): Promise<ethers.BigNumber[]> {
+  const q = `{ organization(id: "${orgId}") { taskManager { projects(where: {deleted: false}, first: 50) { rolePermissions { hatId canCreate canClaim canReview canAssign } } } } }`;
+  try {
+    const r: any = await query(q, {}, chainId);
+    const projects = r?.organization?.taskManager?.projects || [];
+    const hatSet = new Set<string>();
+    for (const p of projects) {
+      const rps = p?.rolePermissions || [];
+      for (const rp of rps) {
+        if (rp?.canCreate && rp?.canClaim && rp?.hatId) hatSet.add(rp.hatId);
+      }
+    }
+    if (hatSet.size === 0) return [];
+    return Array.from(hatSet).map(h => ethers.BigNumber.from(h));
+  } catch {
+    return [];
+  }
 }
 
 function parseBigNumberList(val?: string): ethers.BigNumber[] {
@@ -40,7 +70,8 @@ export const proposeHandler = {
     .option('create-hats', { type: 'string', describe: 'Hat IDs for task creation permission' })
     .option('claim-hats', { type: 'string', describe: 'Hat IDs for task claim permission' })
     .option('review-hats', { type: 'string', describe: 'Hat IDs for task review permission' })
-    .option('assign-hats', { type: 'string', describe: 'Hat IDs for task assign permission' }),
+    .option('assign-hats', { type: 'string', describe: 'Hat IDs for task assign permission' })
+    .option('auto-hats', { type: 'boolean', default: true, describe: 'HB#730 (#562 fix): when no explicit hat flags are passed, auto-populate from org.taskManager.creatorHatIds so the project is task-creatable on execution. Pass --no-auto-hats to disable.' }),
 
   handler: async (argv: ArgumentsCamelCase<ProposeArgs>) => {
     const spin = output.spinner('Creating project proposal...');
@@ -72,10 +103,27 @@ export const proposeHandler = {
       // Build BootstrapProjectConfig struct
       const titleBytes = stringToBytes(argv.name);
       const cap = argv.cap ? ethers.utils.parseUnits(argv.cap.toString(), 18) : 0;
-      const createHats = parseBigNumberList(argv.createHats as string);
-      const claimHats = parseBigNumberList(argv.claimHats as string);
-      const reviewHats = parseBigNumberList(argv.reviewHats as string);
-      const assignHats = parseBigNumberList(argv.assignHats as string);
+      let createHats = parseBigNumberList(argv.createHats as string);
+      let claimHats = parseBigNumberList(argv.claimHats as string);
+      let reviewHats = parseBigNumberList(argv.reviewHats as string);
+      let assignHats = parseBigNumberList(argv.assignHats as string);
+
+      // HB#730: closes #562 cycle-gap. If --auto-hats (default) and no explicit
+      // hat flags were passed, pull the org's creatorHatIds so the new project
+      // has the same task-creation permissions as the org's existing projects.
+      // Without this, proposals execute but the project is "frozen" — no hat
+      // has canCreate/canClaim, so task-create reverts.
+      const anyExplicit = createHats.length || claimHats.length || reviewHats.length || assignHats.length;
+      if (argv.autoHats && !anyExplicit) {
+        spin.text = 'Fetching org creator hats for auto-permission grant...';
+        const orgHats = await fetchOrgCreatorHats(modules.orgId, argv.chain);
+        if (orgHats.length > 0) {
+          createHats = orgHats;
+          claimHats = orgHats;
+          reviewHats = orgHats;
+          assignHats = orgHats;
+        }
+      }
 
       const projectStruct = [
         titleBytes, metaHash, cap,
@@ -130,6 +178,8 @@ export const proposeHandler = {
           project: argv.name,
           cap: argv.cap ? `${argv.cap} PT` : 'unlimited',
           voteDuration: `${argv.duration} minutes`,
+          rolePermissionHats: createHats.length > 0 ? createHats.map(h => h.toString()) : [],
+          autoHatsApplied: argv.autoHats && !anyExplicit && createHats.length > 0,
           ipfsCid: proposalCid,
         });
       } else {

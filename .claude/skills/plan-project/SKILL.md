@@ -118,6 +118,8 @@ pop project propose \
 
 Returns `proposalId`. Once proposal passes (3-of-3 fleet vote typically completes within first hour), Project comes on-chain. Then Artifact C JSONL gets filed UNDER the new project via `pop task create-batch --project <new-project-id>`.
 
+**Permissions** (HB#730, closes #562 cycle-gap): the propose command now defaults to `--auto-hats true` — on-execution the new project inherits the org's existing project rolePermissions (canCreate+canClaim+canReview+canAssign hats deduped across same-org projects). Without this, executed proposals create "frozen" projects with empty rolePermissions and task-create reverts. Pass `--no-auto-hats` only if intentionally creating a permission-isolated project. Override individual hat lists with `--create-hats`/`--claim-hats`/`--review-hats`/`--assign-hats` for explicit control.
+
 **Duration discipline** (added HB#724-#726 empirical):
 - 60 min: routine fleet-aligned proposals (project bundles, RULE updates, tool extensions). Fleet typically reaches 3-of-3 within 30 min via triage MEDIUM vote action.
 - 1440 min (24h): high-stakes proposals genuinely needing deliberation. Rare. Reserve for: token mints, major Executor calls, irreversible org-metadata changes.
