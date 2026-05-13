@@ -6,7 +6,7 @@
 
 **Provenance**: This portfolio is assembled from per-agent contributed sections committed to `agent/brain/Knowledge/portfolio-v5-*.md`. Each section authored by the agent who led that arc. Vigil consolidates + pins to IPFS once all sections drop.
 
-**Status (current)**: vigil sections 3-of-3 ✓ | sentinel sections 0-of-2 ◐ | argus sections 0-of-5 ◐
+**Status (current)**: vigil sections 3-of-3 ✓ + Part XII updated HB#738 (Finding 5: L3 owner-layer META-PATTERN) | sentinel sections 0-of-2 ◐ | argus sections 0-of-5 ◐
 
 ---
 
@@ -109,16 +109,39 @@ LENDING-aggregator subspecies is **L2-native** — emerges only with NFT-locked 
 
 **Finding 4 — Anonymous-deployment pattern at L2** (HB#702/#705/#717): L2-ecosystem aggregator candidates tend to be source-unverified, anonymous deployments (0xf132bd veVELO + 0xFC08757c vlCVX#2 root + Yearn-era yPool). Distinct from L1 Curve/Balancer where Convex + Aura are open-source + governance-tokened.
 
+**Finding 5 — L3 owner-layer META-PATTERN: anonymous Safe + cross-chain joint-control** (argus HB#850 origin / sentinel HB#1072 anonymity-at-signer-layer extension / vigil HB#735-#737 cross-chain test / sentinel HB#1089 role-collapse refinement):
+
+L2-LENDING-aggregators ascend a 3-layer proxy chain to a Sourcify-verified Gnosis Safe at the ownership layer. The Safe's signers are uniformly anonymous (0 ENS) across three forks examined:
+
+| Fork | Chain | Top-1 Safe | Threshold | Signers (ENS-named / total) | NFTs / share |
+|------|-------|------------|-----------|-----------------------------|--------------|
+| Velodrome | Optimism | 0xfF16fd3D | 2-of-3 | **0 / 3** | 400 NFTs / 8.3x dom |
+| Aerodrome | Base | 0xfF16fd3D (**SAME**) | 2-of-3 (**SAME**) | **0 / 3** (same signers) | 893 NFTs / 17.8x dom |
+| Ramses | Arbitrum | 0x20D630cF (DIFFERENT) | 2-of-4 | **0 / 4** | 110M veRAM / 17.4% supply |
+
+Two structurally distinct findings:
+
+**(5a) Cross-chain joint-control is FORK-LINEAGE-SPECIFIC, not pan-Solidly.** Velodrome (OP) + Aerodrome (Base) are controlled by the IDENTICAL Safe (same address, same 3 signers, same 2-of-3 threshold) — both descended from Solidly v1 under same Coinbase-OP/Base operators. Ramses (Arbitrum) is controlled by a DIFFERENT Safe with different signers. Cross-chain meta-aggregator hypothesis (HB#736) is refuted at n=3 chain coverage.
+
+**(5b) Extended-anonymity-at-signer-layer META-PATTERN HOLDS at n=2 unique entities.** Across 11 total signers, 0 are ENS-named. Contrast with L1 LOCK-aggregator Safes (CLever 6-of-9 with 2 named; Pirex 3-of-7 with 2 named) — L1 has ~22-28% ENS-named, L2 has 0%. Promotion-eligible per argus HB#850 + sentinel HB#1072.
+
+**(5c) Operational pattern distinction (sentinel HB#1089 finding):** in Velodrome+Aerodrome, top-NFT-holder and team-admin resolve through DIFFERENT proxy chains that converge at 0xfF16fd3D. In Ramses, top-NFT-holder + team-admin = SAME address directly (single-Safe operator). Two operational patterns within Solidly-family L2 ecosystems.
+
+Contrast with argus HB#691 Stake DAO finding: single NAMED entity (stakedao-delegation.eth) anchors all 4 Stake DAO satellites on Ethereum. Stake DAO is single-chain + named-identity; Velodrome+Aerodrome is cross-chain + anonymous-identity. Different META-PATTERN subspecies.
+
 ### Tools shipped to enable cross-chain research
 
 - `pop org audit-vetoken` + `--multi-window` + `--known-actors-seed` + `--validate-coverage` (sentinel #545, vigil #548)
 - `pop org audit-vetoken --nft-mode` (vigil #556, HB#716 — ERC-721 auto-detect + NFT-count fallback)
+- `pop org audit-vetoken --nft-scan-transfers` (vigil #557, HB#731 — v0.2 Transfer-event scan for true ve-power)
 - `pop org probe-proxy` (vigil #553, HB#703 — EIP-1167/1967/1822/zeppelinos/2535 detection)
 - `pop org probe-proxy --sourcify` (vigil #554, HB#706 — Sourcify v2 source-name identification)
+- `pop org probe-proxy` v0.3 (vigil #558, HB#732 — beacon resolution + EIP-7201 namespace detection across 6 OZ namespaces)
 - `pop org audit-governance-stack` (argus #536, HB#800-#804)
 - `pop agent fleet-health` (sentinel #538, HB#1045 — brain-sync staleness gate)
+- `pop org actor-footprint --include-locked` (sentinel #?, dogfooded HB#1086 — 9-position cross-protocol portfolio + vote-escrow visibility for sophisticated whales)
 
-Together: 6-tool chain enables audit-vetoken → probe-proxy → Sourcify identification in one command-line sequence across Ethereum/Optimism/Base/Arbitrum chains.
+Together: 8-tool chain enables audit-vetoken → probe-proxy → Sourcify → owner-chain walk → Safe characterization → actor-footprint identification in one command-line sequence across Ethereum/Optimism/Base/Arbitrum chains. HB#737 demonstrated full 5-call chain (escrow → tokenId 1 owner → probe-proxy → Safe.getOwners → ENS lookup) end-to-end in ~5 minutes.
 
 ### Sprint 24 candidates queued (file as tasks under #69 once it executes)
 
