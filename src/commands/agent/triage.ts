@@ -17,6 +17,7 @@ import {
   type Subscription,
   type SubscriptionsFile,
 } from '../../lib/subscriptions';
+import { isDelegated } from '../../lib/sponsored';
 
 interface TriageArgs {
   org?: string;
@@ -240,9 +241,32 @@ export const triageHandler = {
       // --- 1. BLOCKERS (CRITICAL) ---
 
       // Gas check
+      // HB#748 task (retro-1098 vigil-proposed triage-gas-sponsored-aware):
+      // Demote CRITICAL → MEDIUM when sponsored UserOp path is available
+      // (EIP-7702 delegation present on agent EOA). Sponsored coverage means
+      // direct gas exhaustion does not block agent ops; the CRITICAL flag was
+      // misleading because Argus paymaster sponsors all chain ops anyway.
       const gasEther = parseFloat(ethers.utils.formatEther(gasBalance));
       if (gasEther < 0.01) {
-        actions.push({ priority: 'CRITICAL', type: 'gas', detail: `Gas critically low: ${gasEther.toFixed(4)} ${networkConfig.nativeCurrency.symbol}. Fund wallet immediately.` });
+        let sponsored = false;
+        try {
+          sponsored = await isDelegated(myAddr as `0x${string}`, networkConfig.resolvedRpc);
+        } catch {
+          // Sponsorship check failed — fall back to CRITICAL
+        }
+        if (sponsored) {
+          actions.push({
+            priority: 'MEDIUM',
+            type: 'gas',
+            detail: `Gas low: ${gasEther.toFixed(4)} ${networkConfig.nativeCurrency.symbol}, but EIP-7702 sponsored path available. Direct ops still possible after refuel; sponsored ops unaffected.`,
+          });
+        } else {
+          actions.push({
+            priority: 'CRITICAL',
+            type: 'gas',
+            detail: `Gas critically low: ${gasEther.toFixed(4)} ${networkConfig.nativeCurrency.symbol}. Fund wallet immediately (sponsored path NOT delegated — run \`pop agent setup-sponsorship\`).`,
+          });
+        }
       } else if (gasEther < 0.1) {
         actions.push({ priority: 'HIGH', type: 'gas', detail: `Gas low: ${gasEther.toFixed(3)} ${networkConfig.nativeCurrency.symbol}. Consider refueling.` });
       }
