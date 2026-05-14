@@ -29,31 +29,63 @@ interface ProposeArgs {
 }
 
 // HB#730: closes #562 cycle-gap. Pulls hats from an existing same-org project's
-// rolePermissions (where canCreate=true) so the new project inherits the SAME
-// known-good permission config. Without this, proposals execute but the new
-// project has empty rolePermissions and task-create reverts.
+// rolePermissions so the new project inherits the SAME known-good permission
+// config. Without this, proposals execute but the new project has empty
+// rolePermissions and task-create reverts.
 //
 // Why existing project rather than org.taskManager.creatorHatIds: those are
 // different hat IDs on Argus — creatorHatIds is org-level (can create PROJECTS)
 // but rolePermissions is project-level (can create TASKS within). Agents hold
 // the project-level hat, so that's what we need to seed the new project with.
-async function fetchOrgCreatorHats(orgId: string, chainId?: number): Promise<ethers.BigNumber[]> {
+//
+// HB#755 (RULE #33 implementation): split the hat-union per permission type
+// instead of single create+claim intersection. RULE #33 (review-perm-parity)
+// requires every active project to grant canReview to ALL fleet hats. The
+// per-permission union ensures auditor-only hats (canReview but not canCreate)
+// also propagate, closing the HB#1083 review-perm-asymmetry trap.
+interface PermHatSets {
+  createHats: ethers.BigNumber[];
+  claimHats: ethers.BigNumber[];
+  reviewHats: ethers.BigNumber[];
+  assignHats: ethers.BigNumber[];
+}
+
+async function fetchOrgPermHats(orgId: string, chainId?: number): Promise<PermHatSets> {
   const q = `{ organization(id: "${orgId}") { taskManager { projects(where: {deleted: false}, first: 50) { rolePermissions { hatId canCreate canClaim canReview canAssign } } } } }`;
+  const empty: PermHatSets = { createHats: [], claimHats: [], reviewHats: [], assignHats: [] };
   try {
     const r: any = await query(q, {}, chainId);
     const projects = r?.organization?.taskManager?.projects || [];
-    const hatSet = new Set<string>();
+    const create = new Set<string>();
+    const claim = new Set<string>();
+    const review = new Set<string>();
+    const assign = new Set<string>();
     for (const p of projects) {
       const rps = p?.rolePermissions || [];
       for (const rp of rps) {
-        if (rp?.canCreate && rp?.canClaim && rp?.hatId) hatSet.add(rp.hatId);
+        if (!rp?.hatId) continue;
+        if (rp.canCreate) create.add(rp.hatId);
+        if (rp.canClaim) claim.add(rp.hatId);
+        if (rp.canReview) review.add(rp.hatId);
+        if (rp.canAssign) assign.add(rp.hatId);
       }
     }
-    if (hatSet.size === 0) return [];
-    return Array.from(hatSet).map(h => ethers.BigNumber.from(h));
+    const toBN = (s: Set<string>) => Array.from(s).map(h => ethers.BigNumber.from(h));
+    return {
+      createHats: toBN(create),
+      claimHats: toBN(claim),
+      reviewHats: toBN(review),
+      assignHats: toBN(assign),
+    };
   } catch {
-    return [];
+    return empty;
   }
+}
+
+// Backwards-compat alias retained for any external callers.
+async function fetchOrgCreatorHats(orgId: string, chainId?: number): Promise<ethers.BigNumber[]> {
+  const sets = await fetchOrgPermHats(orgId, chainId);
+  return sets.createHats;
 }
 
 function parseBigNumberList(val?: string): ethers.BigNumber[] {
@@ -71,7 +103,7 @@ export const proposeHandler = {
     .option('claim-hats', { type: 'string', describe: 'Hat IDs for task claim permission' })
     .option('review-hats', { type: 'string', describe: 'Hat IDs for task review permission' })
     .option('assign-hats', { type: 'string', describe: 'Hat IDs for task assign permission' })
-    .option('auto-hats', { type: 'boolean', default: true, describe: 'HB#730 (#562 fix): when no explicit hat flags are passed, auto-populate from org.taskManager.creatorHatIds so the project is task-creatable on execution. Pass --no-auto-hats to disable.' }),
+    .option('auto-hats', { type: 'boolean', default: true, describe: 'HB#730 (#562 fix) + HB#755 (RULE #33 review-perm-parity): when no explicit hat flags are passed, auto-populate per-permission hat unions from existing org projects (canCreate hats → createHats; canReview hats → reviewHats; etc). Closes the cycle-gap (empty rolePermissions on new project) + the HB#1083 review-perm-asymmetry trap (auditor-only hats now propagate). Pass --no-auto-hats to disable.' }),
 
   handler: async (argv: ArgumentsCamelCase<ProposeArgs>) => {
     const spin = output.spinner('Creating project proposal...');
@@ -109,19 +141,23 @@ export const proposeHandler = {
       let assignHats = parseBigNumberList(argv.assignHats as string);
 
       // HB#730: closes #562 cycle-gap. If --auto-hats (default) and no explicit
-      // hat flags were passed, pull the org's creatorHatIds so the new project
-      // has the same task-creation permissions as the org's existing projects.
+      // hat flags were passed, pull the org's per-permission hat unions so the
+      // new project has the same role coverage as the org's existing projects.
       // Without this, proposals execute but the project is "frozen" — no hat
       // has canCreate/canClaim, so task-create reverts.
+      //
+      // HB#755 (RULE #33 implementation): per-permission split instead of
+      // single-union-applied-to-all-4. Closes the HB#1083 review-perm-asymmetry
+      // trap where auditor-only hats (canReview without canCreate) were missed.
       const anyExplicit = createHats.length || claimHats.length || reviewHats.length || assignHats.length;
       if (argv.autoHats && !anyExplicit) {
-        spin.text = 'Fetching org creator hats for auto-permission grant...';
-        const orgHats = await fetchOrgCreatorHats(modules.orgId, argv.chain);
-        if (orgHats.length > 0) {
-          createHats = orgHats;
-          claimHats = orgHats;
-          reviewHats = orgHats;
-          assignHats = orgHats;
+        spin.text = 'Fetching org per-permission hat unions for auto-grant...';
+        const sets = await fetchOrgPermHats(modules.orgId, argv.chain);
+        if (sets.createHats.length || sets.claimHats.length || sets.reviewHats.length || sets.assignHats.length) {
+          createHats = sets.createHats;
+          claimHats = sets.claimHats;
+          reviewHats = sets.reviewHats;
+          assignHats = sets.assignHats;
         }
       }
 
