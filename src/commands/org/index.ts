@@ -21,6 +21,7 @@ import { auditGovernorHandler } from './audit-governor';
 import { auditGovernanceStackHandler } from './audit-governance-stack';
 import { gaasStatusHandler } from './gaas-status';
 import { publishHandler } from './publish';
+import { pinHandler } from './pin';
 import { leaderboardHandler } from './leaderboard';
 import { auditRequestHandler } from './audit-request';
 import { portfolioHandler } from './portfolio';
@@ -66,6 +67,7 @@ export function registerOrgCommands(yargs: Argv) {
     .command('boundary-score', 'Capture-cluster boundary score per argus v0.5 spec — task #489. REQUIRES composition flags --substrate-band + --cohort-n + (--gini AND/OR --top5pct AND/OR --pass-rate) AND/OR --dimension-flags to produce non-zero BS_total. Without these, returns BS_total=0 (silent-zero pattern per HB#1081 finding; closes retro-1098 boundary-score-help-docs). Example: `pop org boundary-score --space curve.eth --substrate-band pure-token --cohort-n 1500 --gini 0.85 --top5pct 0.72 --pass-rate 0.81 --dimension-flags "A,C"`', boundaryScoreHandler.builder, boundaryScoreHandler.handler)
     .command('gaas-status', 'GaaS pipeline dashboard — audits, distribution, revenue', gaasStatusHandler.builder, gaasStatusHandler.handler)
     .command('publish', 'Convert IPFS content to shareable HTML page with Open Graph tags', publishHandler.builder, publishHandler.handler)
+    .command('pin', 'HB#754 (retro-1098 ipfs-pin-cli-or-pop-org-pin): pin a local file OR inline content to IPFS; returns CID + gateway URL. Wraps pinFile/pinJson helpers. Bypasses the `pop org publish --cid` PRE-PINNED-CID requirement.', pinHandler.builder, pinHandler.handler)
     .command('leaderboard', 'Governance health leaderboard — rank multiple DAOs', leaderboardHandler.builder, leaderboardHandler.handler)
     .command('audit-request', 'Generate a governance audit request with pricing', auditRequestHandler.builder, auditRequestHandler.handler)
     .command('portfolio', 'Generate shareable HTML audit portfolio page', portfolioHandler.builder, portfolioHandler.handler)
