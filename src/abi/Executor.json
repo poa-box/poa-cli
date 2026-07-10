@@ -664,5 +664,49 @@
     "type": "error",
     "name": "ZeroAddress",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "CapBelowCommitted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptyTitle",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidPayout",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidString",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TitleTooLong",
+    "inputs": []
+  },
+  {
+    "type": "event",
+    "name": "HatToggled",
+    "inputs": [
+      {
+        "name": "hatId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
   }
 ]

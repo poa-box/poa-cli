@@ -265,6 +265,24 @@
   },
   {
     "type": "function",
+    "name": "clearWearerVouches",
+    "inputs": [
+      {
+        "name": "wearer",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "hatId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "combinesWithHierarchy",
     "inputs": [
       {
@@ -513,6 +531,19 @@
   },
   {
     "type": "function",
+    "name": "getMaxDailyVouches",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getRoleApplicants",
     "inputs": [
       {
@@ -701,7 +732,7 @@
         "internalType": "address"
       },
       {
-        "name": "targetHatId",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -979,6 +1010,19 @@
         "name": "hatId",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMaxDailyVouches",
+    "inputs": [
+      {
+        "name": "maxVouches",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
     "outputs": [],
@@ -1454,6 +1498,19 @@
   },
   {
     "type": "event",
+    "name": "MaxDailyVouchesSet",
+    "inputs": [
+      {
+        "name": "maxDailyVouches",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "NewUserVouchingRestrictedEvent",
     "inputs": [
       {
@@ -1723,6 +1780,31 @@
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "WearerVouchesCleared",
+    "inputs": [
+      {
+        "name": "wearer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "hatId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "admin",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "error",
     "name": "AlreadyVouched",
     "inputs": []
@@ -1769,6 +1851,11 @@
   },
   {
     "type": "error",
+    "name": "InvalidMaxDailyVouches",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidMembershipHat",
     "inputs": []
   },
@@ -1790,11 +1877,6 @@
   {
     "type": "error",
     "name": "NoActiveApplication",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotAuthorizedAdmin",
     "inputs": []
   },
   {
@@ -1826,5 +1908,49 @@
     "type": "error",
     "name": "ZeroAddress",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "CapBelowCommitted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptyTitle",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidPayout",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidString",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TitleTooLong",
+    "inputs": []
+  },
+  {
+    "type": "event",
+    "name": "HatToggled",
+    "inputs": [
+      {
+        "name": "hatId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
   }
 ]

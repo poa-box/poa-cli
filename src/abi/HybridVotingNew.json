@@ -729,6 +729,31 @@
   },
   {
     "type": "event",
+    "name": "ProposalExecutionFailed",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "winningIdx",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "reason",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "VoteCast",
     "inputs": [
       {
@@ -806,6 +831,57 @@
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AlreadyExecuted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AlreadyVoted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DuplicateIndex",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidIndex",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidWeight",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LengthMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RoleNotAllowed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "VotingExpired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "WeightSumNot100",
+    "inputs": [
+      {
+        "name": "sum",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "event",
@@ -900,6 +976,36 @@
     "anonymous": false
   },
   {
+    "type": "error",
+    "name": "DurationOutOfRange",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptyTitle",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidClassCount",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TitleTooLong",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooManyCalls",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooManyOptions",
+    "inputs": []
+  },
+  {
     "type": "event",
     "name": "ClassesReplaced",
     "inputs": [
@@ -961,5 +1067,40 @@
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "InvalidSliceSum",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooManyClasses",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptyBatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidQuorum",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "Overflow",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TargetNotAllowed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TargetSelf",
+    "inputs": []
   }
 ]

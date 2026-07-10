@@ -635,6 +635,31 @@
   },
   {
     "type": "event",
+    "name": "ProposalExecutionFailed",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "winningIdx",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "reason",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "QuorumSet",
     "inputs": [
       {
@@ -811,11 +836,6 @@
   },
   {
     "type": "error",
-    "name": "TargetSelf",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "TitleTooLong",
     "inputs": []
   },
@@ -858,6 +878,46 @@
   {
     "type": "error",
     "name": "ZeroAddress",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptyBatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidClassCount",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidQuorum",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidSliceSum",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "Overflow",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "Paused",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TargetSelf",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooManyClasses",
     "inputs": []
   }
 ]

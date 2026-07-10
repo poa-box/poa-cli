@@ -73,6 +73,24 @@
   },
   {
     "type": "function",
+    "name": "bootstrapGlobalPerms",
+    "inputs": [
+      {
+        "name": "hatIds",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "masks",
+        "type": "uint8[]",
+        "internalType": "uint8[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "bootstrapProjectsAndTasks",
     "inputs": [
       {
@@ -117,6 +135,16 @@
           },
           {
             "name": "assignHats",
+            "type": "uint256[]",
+            "internalType": "uint256[]"
+          },
+          {
+            "name": "bountyTokens",
+            "type": "address[]",
+            "internalType": "address[]"
+          },
+          {
+            "name": "bountyCaps",
             "type": "uint256[]",
             "internalType": "uint256[]"
           }
@@ -263,6 +291,16 @@
         "name": "requiresApplication",
         "type": "bool",
         "internalType": "bool"
+      },
+      {
+        "name": "absoluteDeadline",
+        "type": "uint48",
+        "internalType": "uint48"
+      },
+      {
+        "name": "completionWindow",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
     "outputs": [
@@ -383,9 +421,85 @@
         "name": "requiresApplication",
         "type": "bool",
         "internalType": "bool"
+      },
+      {
+        "name": "absoluteDeadline",
+        "type": "uint48",
+        "internalType": "uint48"
+      },
+      {
+        "name": "completionWindow",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
     "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createTasksBatch",
+    "inputs": [
+      {
+        "name": "pid",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "tasks",
+        "type": "tuple[]",
+        "internalType": "struct TaskManager.CreateTaskInput[]",
+        "components": [
+          {
+            "name": "payout",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "title",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "metadataHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "bountyToken",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "bountyPayout",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "requiresApplication",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "absoluteDeadline",
+            "type": "uint48",
+            "internalType": "uint48"
+          },
+          {
+            "name": "completionWindow",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "taskIds",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      }
+    ],
     "stateMutability": "nonpayable"
   },
   {
@@ -496,6 +610,24 @@
   },
   {
     "type": "function",
+    "name": "setFolders",
+    "inputs": [
+      {
+        "name": "expectedCurrentRoot",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "newRoot",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setProjectRolePerm",
     "inputs": [
       {
@@ -568,6 +700,39 @@
         "name": "newBountyPayout",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "newAbsoluteDeadline",
+        "type": "uint48",
+        "internalType": "uint48"
+      },
+      {
+        "name": "newCompletionWindow",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "updateTaskMetadata",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "newTitle",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "newMetadataHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [],
@@ -612,6 +777,31 @@
         "name": "newExecutor",
         "type": "address",
         "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "FoldersUpdated",
+    "inputs": [
+      {
+        "name": "newRoot",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "oldRoot",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "sender",
+        "type": "address",
+        "indexed": true,
         "internalType": "address"
       }
     ],
@@ -670,6 +860,25 @@
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OrganizerHatAllowed",
+    "inputs": [
+      {
+        "name": "hatId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
       }
     ],
     "anonymous": false
@@ -795,6 +1004,25 @@
   },
   {
     "type": "event",
+    "name": "RolePermSet",
+    "inputs": [
+      {
+        "name": "hatId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "mask",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "TaskApplicationApproved",
     "inputs": [
       {
@@ -880,6 +1108,50 @@
       },
       {
         "name": "canceller",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "TaskClaimDeadlineSet",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "claimDeadline",
+        "type": "uint48",
+        "indexed": false,
+        "internalType": "uint48"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "TaskClaimExpired",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "previousClaimer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newClaimer",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -982,6 +1254,31 @@
   },
   {
     "type": "event",
+    "name": "TaskDeadlinesSet",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "absoluteDeadline",
+        "type": "uint48",
+        "indexed": false,
+        "internalType": "uint48"
+      },
+      {
+        "name": "completionWindow",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "TaskRejected",
     "inputs": [
       {
@@ -1074,6 +1371,11 @@
   },
   {
     "type": "error",
+    "name": "ArrayLengthMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "BadStatus",
     "inputs": []
   },
@@ -1089,7 +1391,33 @@
   },
   {
     "type": "error",
+    "name": "EmptyBatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "EmptyTitle",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FoldersRootStale",
+    "inputs": [
+      {
+        "name": "expected",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "actual",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidDeadline",
     "inputs": []
   },
   {
@@ -1150,6 +1478,11 @@
   {
     "type": "error",
     "name": "NotInitializing",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotOrganizer",
     "inputs": []
   },
   {

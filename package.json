@@ -17,6 +17,7 @@
     "test:xmachine-smoke": "yarn build && POP_BRAIN_HOME=${POP_BRAIN_HOME:-/tmp/brain-xmachine-loopback} POP_PRIVATE_KEY=${POP_PRIVATE_KEY:-$(grep -h '^POP_PRIVATE_KEY=' ~/.pop-agent/.env 2>/dev/null | head -1 | cut -d= -f2)} sh -c 'ROLE=publish node test/scripts/brain-cross-machine-smoke.js && ROLE=verify node test/scripts/brain-cross-machine-smoke.js'",
     "onboard": "bash scripts/onboard.sh",
     "apply": "bash scripts/apply.sh",
+    "sync-abis": "bash scripts/sync-abis.sh",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

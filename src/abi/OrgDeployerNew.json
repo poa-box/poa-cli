@@ -526,6 +526,23 @@
                 "internalType": "uint32"
               }
             ]
+          },
+          {
+            "name": "taskManagerPerms",
+            "type": "tuple",
+            "internalType": "struct OrgDeployer.TaskManagerPermConfig",
+            "components": [
+              {
+                "name": "roleIndices",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+              },
+              {
+                "name": "masks",
+                "type": "uint8[]",
+                "internalType": "uint8[]"
+              }
+            ]
           }
         ]
       }
@@ -903,6 +920,64 @@
   {
     "type": "error",
     "name": "Reentrant",
+    "inputs": []
+  },
+  {
+    "type": "event",
+    "name": "ModuleDeployed",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "typeId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "proxy",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "beacon",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "autoUpgrade",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      },
+      {
+        "name": "owner",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "EmptyInit",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InitFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedType",
     "inputs": []
   }
 ]
