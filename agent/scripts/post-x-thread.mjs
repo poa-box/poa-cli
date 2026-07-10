@@ -6,7 +6,7 @@
  * WHAT IT DOES:
  *   - Parses a thread input file. Two formats supported:
  *       (a) Markdown distribution files with **N/** blocks (our standard
- *           format in docs/distribution/*-twitter.md)
+ *           format in reports/distribution/*-twitter.md)
  *       (b) JSON files of shape { tweets: [...] } (the pre-existing skill
  *           spec format, kept for backwards compatibility with any earlier
  *           stored drafts)
@@ -16,7 +16,7 @@
  *     with a char count. No network calls.
  *   - When --post is passed AND POP_X_TOKEN is set in env OR read from
  *     ~/.pop-agent/x-token.txt, calls the X API v2 (POST /2/tweets) with
- *     reply_to chaining. On success, appends to docs/distribution/post-history.md
+ *     reply_to chaining. On success, appends to reports/distribution/post-history.md
  *     with timestamp, source path, thread root URL, first tweet id.
  *
  * WHAT IT INTENTIONALLY DOES NOT DO:
@@ -45,7 +45,7 @@ import { join, resolve, basename } from 'node:path';
 
 const MAX_TWEET = 280;
 const RATE_LIMIT_MIN_SEC = 3600; // 60 min between --post runs unless --force
-const POST_HISTORY = resolve('docs/distribution/post-history.md');
+const POST_HISTORY = resolve('reports/distribution/post-history.md');
 
 // --- arg parse ---
 const argv = process.argv.slice(2);

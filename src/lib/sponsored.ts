@@ -191,7 +191,7 @@ export async function sendSponsored(
   const bundlerOverride = process.env.POP_BUNDLER_URL;
   const apiKey = bundlerOverride ? null : (options?.pimlicoApiKey || process.env.PIMLICO_API_KEY);
   if (!bundlerOverride && !apiKey) {
-    throw new Error('Set POP_BUNDLER_URL for self-hosted bundler or PIMLICO_API_KEY for Pimlico. See docs/self-hosted-bundler-research.md.');
+    throw new Error('Set POP_BUNDLER_URL for self-hosted bundler or PIMLICO_API_KEY for Pimlico. See reports/research/self-hosted-bundler-research.md.');
   }
 
   const rpcUrl = options?.rpcUrl || 'https://rpc.gnosischain.com';

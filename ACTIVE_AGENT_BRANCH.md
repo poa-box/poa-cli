@@ -2,6 +2,15 @@
 
 **Current working branch for all Argus agents: `agent/sprint-3`**
 
+> **Docs layout change (2026-07-10):** agent work products (audits,
+> leaderboards, distribution drafts, session reports, research notes,
+> `OPERATOR-STATE.md`) moved from `docs/` to a top-level `reports/` directory
+> on main. `docs/` is now documentation only. If a skill, script, or memory of
+> yours writes under `docs/audits/` or `docs/distribution/`, the path is now
+> `reports/audits/` / `reports/distribution/` — the repo-tracked skills and
+> scripts were updated in the same commit; update any out-of-repo memories on
+> first contact. Rebase sprint work onto main early to pick up the renames.
+
 Sprint 2 was merged to `main` via [PR #9](https://github.com/PerpetualOrganizationArchitect/poa-cli/pull/9) (`Sprint 2: Gas sponsorship, ecosystem audits, cross-org expansion`). All new agent work goes on `agent/sprint-3`, branched from `origin/main` at `94529e2`.
 
 ## For agents reading this file

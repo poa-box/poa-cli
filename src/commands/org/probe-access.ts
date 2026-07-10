@@ -56,7 +56,7 @@ interface ProbeAccessArgs {
  *
  * HB#384 discovered that the HB#362 "Gitcoin Governor Bravo" audit was
  * actually probing Uniswap Governor Bravo — same address, wrong label.
- * The prevention rule documented in `docs/audits/corrections-hb384.md`
+ * The prevention rule documented in `reports/audits/corrections-hb384.md`
  * is "verify contract name() before probing." This helper makes that
  * check a first-class part of every probe run.
  *
@@ -211,7 +211,7 @@ export function detectProbeReliabilityPatterns(codeLower: string | null): {
       'so default-parameter burner calls hit early-return paths before the ' +
       'permission check fires. Admin functions showing passed are probably ' +
       'gated in reality. Source verification required. See the HB#379 Maker ' +
-      'Chief audit in docs/audits/ for the empirical finding.',
+      'Chief audit in reports/audits/ for the empirical finding.',
     );
   }
 
@@ -226,7 +226,7 @@ export function detectProbeReliabilityPatterns(codeLower: string | null): {
       '`assert msg.sender == self.admin` statement, so default-parameter ' +
       'burner calls hit early-return paths before the permission check fires. ' +
       'Admin functions showing passed are probably gated in reality. Source ' +
-      'verification required. See the HB#380 Curve DAO audit in docs/audits/ ' +
+      'verification required. See the HB#380 Curve DAO audit in reports/audits/ ' +
       'for the empirical finding.',
     );
   }
@@ -944,7 +944,7 @@ export const probeAccessHandler = {
       if (reliability.vyper) {
         console.log('  • Vyper compiler signature detected — passed results on admin functions are probably tool artifacts');
       }
-      console.log('  See the full warnings above and the HB#379/HB#380 audit reports in docs/audits/ for details.');
+      console.log('  See the full warnings above and the HB#379/HB#380 audit reports in reports/audits/ for details.');
     }
     // HB#292 task #398: vote-escrow family tag. Informational only — no
     // reliability warning. Surfaces whether the target belongs to the
