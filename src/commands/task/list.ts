@@ -2,8 +2,13 @@ import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { query } from '../../lib/subgraph';
 import { resolveOrgId } from '../../lib/resolve';
+import { resolveNetworkConfig } from '../../config/networks';
 import { FETCH_PROJECTS_DATA } from '../../queries/task';
-import { formatAddress } from '../../lib/encoding';
+import { formatAddress, parseDurationSeconds } from '../../lib/encoding';
+import { formatCountdown, formatRelativeTime, statusColor } from '../../lib/format';
+import { detectTaskManagerFeatures } from '../../lib/version';
+import { enrichTasksWithDeadlines, deriveClaimState } from '../../lib/task-lens';
+import type { ClaimState } from '../../lib/task-lens';
 import * as output from '../../lib/output';
 
 interface ListArgs {
@@ -14,10 +19,59 @@ interface ListArgs {
   mine?: boolean;
   open?: boolean;
   'for-review'?: boolean;
+  claimable?: boolean;
+  expiring?: string;
+  fast?: boolean;
   'sort-by'?: string;
   limit?: number;
   chain?: number;
   'private-key'?: string;
+}
+
+interface TaskRow {
+  id: string;
+  name: string;
+  status: string;
+  /** Raw subgraph status (undecorated), used for filtering + JSON output. */
+  statusRaw: string;
+  assignee: string;
+  payout: number;
+  payoutDisplay: string;
+  project: string;
+  createdAt: string;
+  rejections: string;
+  /** v6 on-chain enrichment (undefined when not enriched / pre-v6 org). */
+  absoluteDeadline?: number;
+  completionWindow?: number;
+  claimDeadline?: number;
+  claimState?: ClaimState;
+}
+
+/** Subgraph statuses that map to non-terminal on-chain states. */
+const NON_TERMINAL_STATUSES = new Set(['open', 'unclaimed', 'assigned', 'claimed', 'submitted']);
+const CLAIMED_STATUSES = new Set(['assigned', 'claimed']);
+const UNCLAIMED_STATUSES = new Set(['open', 'unclaimed']);
+
+/**
+ * The deadline that currently governs a task: the per-claim deadline while
+ * CLAIMED, otherwise the absolute claim cutoff. undefined = no deadline known.
+ */
+function governingDeadline(row: TaskRow): number | undefined {
+  const dl = CLAIMED_STATUSES.has(row.statusRaw.toLowerCase())
+    ? (row.claimDeadline || row.absoluteDeadline)
+    : row.absoluteDeadline;
+  return dl || undefined;
+}
+
+/** Human-mode status cell: colorized + deadline-state decorations. */
+function statusCell(row: TaskRow): string {
+  if (row.claimState === 'expired-claimable') {
+    return `${statusColor('Claimed')} (expired — claimable)`;
+  }
+  if (row.claimState === 'expiring-soon') {
+    return `${statusColor(row.status)} ⚠`;
+  }
+  return statusColor(row.status);
 }
 
 export const listHandler = {
@@ -28,6 +82,9 @@ export const listHandler = {
     .option('mine', { type: 'boolean', describe: 'Show only tasks assigned to me' })
     .option('open', { type: 'boolean', describe: 'Shortcut for --status Open' })
     .option('for-review', { type: 'boolean', describe: 'Shortcut for --status Submitted' })
+    .option('claimable', { type: 'boolean', describe: 'Only tasks you could claim right now: unclaimed tasks plus claimed tasks whose deadline expired (v6 takeover)' })
+    .option('expiring', { type: 'string', describe: 'Only tasks whose governing deadline falls within this window (e.g. "24h", "7d"; default 24h)' })
+    .option('fast', { type: 'boolean', default: false, describe: 'Skip on-chain deadline enrichment (subgraph data only)' })
     .option('sort-by', { type: 'string', choices: ['id', 'payout', 'status', 'created'], default: 'id', describe: 'Sort field' })
     .option('limit', { type: 'number', describe: 'Max results to show' }),
 
@@ -36,6 +93,11 @@ export const listHandler = {
     spin.start();
 
     try {
+      // Parse --expiring up front so bad input fails before network work.
+      const expiringWindow = argv.expiring !== undefined
+        ? parseDurationSeconds(String(argv.expiring) || '24h')
+        : undefined;
+
       const orgId = await resolveOrgId(argv.org, argv.chain);
       const result = await query<any>(FETCH_PROJECTS_DATA, { orgId }, argv.chain);
 
@@ -63,8 +125,9 @@ export const listHandler = {
         : argv.forReview ? 'submitted'
         : argv.status?.toLowerCase();
 
+      const taskManagerAddress: string = result.organization.taskManager.id;
       const projects = result.organization.taskManager.projects;
-      let rows: Array<{ id: string; name: string; status: string; assignee: string; payout: number; payoutDisplay: string; project: string; createdAt: string; rejections: string }> = [];
+      let rows: TaskRow[] = [];
 
       for (const project of projects) {
         if (argv.project && !project.id.includes(argv.project)) continue;
@@ -80,6 +143,7 @@ export const listHandler = {
             id: task.taskId,
             name: task.title || task.metadata?.name || 'Untitled',
             status: rejCount > 0 && task.status === 'Assigned' ? `Rejected(${rejCount})` : task.status,
+            statusRaw: task.status,
             assignee: task.assigneeUsername || formatAddress(task.assignee || ''),
             payout,
             payoutDisplay: `${payout} PT`,
@@ -99,6 +163,68 @@ export const listHandler = {
         return parseInt(a.id) - parseInt(b.id);
       });
 
+      // v6 on-chain deadline enrichment. The deployed subgraph does not index
+      // deadlines/claimDeadline, so this data is chain-only via the task lens.
+      // Skipped with --fast, on pre-v6 orgs, and degraded gracefully on RPC
+      // failure (the list still renders, minus deadline data).
+      let enriched = false;
+      let enrichmentNote: string | null = null;
+      if (argv.fast) {
+        enrichmentNote = 'deadline data skipped (--fast)';
+      } else if (rows.length > 0) {
+        try {
+          spin.text = 'Fetching on-chain deadlines...';
+          const netConfig = resolveNetworkConfig(argv.chain);
+          const provider = new ethers.providers.JsonRpcProvider(netConfig.resolvedRpc, netConfig.chainId);
+          const features = await detectTaskManagerFeatures(provider, taskManagerAddress, netConfig.chainId);
+          if (features.deadlines) {
+            const targets = rows.filter(r => NON_TERMINAL_STATUSES.has(r.statusRaw.toLowerCase()));
+            const { tasks } = await enrichTasksWithDeadlines(
+              provider,
+              taskManagerAddress,
+              targets.map(r => r.id),
+            );
+            for (const row of targets) {
+              const onChain = tasks.get(row.id);
+              if (!onChain || onChain.absoluteDeadline === undefined) continue;
+              row.absoluteDeadline = onChain.absoluteDeadline;
+              row.completionWindow = onChain.completionWindow;
+              row.claimDeadline = onChain.claimDeadline;
+              row.claimState = deriveClaimState(onChain);
+            }
+            enriched = true;
+          }
+        } catch (err: any) {
+          enrichmentNote = `deadline data unavailable (${err?.message || err})`;
+        }
+      }
+
+      // --claimable: unclaimed tasks + claimed tasks whose deadline expired
+      // (v6 allows claimTask/assignTask to take over an expired claim).
+      if (argv.claimable) {
+        rows = rows.filter(r =>
+          UNCLAIMED_STATUSES.has(r.statusRaw.toLowerCase()) || r.claimState === 'expired-claimable'
+        );
+        if (!enriched) {
+          enrichmentNote = (enrichmentNote ? enrichmentNote + '; ' : '')
+            + '--claimable could not check for expired claims (no deadline data) — showing unclaimed tasks only';
+        }
+      }
+
+      // --expiring: governing deadline falls within the window (future only —
+      // already-expired claims are --claimable territory).
+      if (expiringWindow !== undefined) {
+        const now = Math.floor(Date.now() / 1000);
+        rows = rows.filter(r => {
+          const dl = governingDeadline(r);
+          return dl !== undefined && dl > now && dl <= now + expiringWindow;
+        });
+        if (!enriched) {
+          enrichmentNote = (enrichmentNote ? enrichmentNote + '; ' : '')
+            + '--expiring requires on-chain deadline data (skipped or unavailable) — no tasks matched';
+        }
+      }
+
       // Limit
       if (argv.limit && argv.limit > 0) {
         rows = rows.slice(0, argv.limit);
@@ -106,14 +232,48 @@ export const listHandler = {
 
       spin.stop();
 
+      if (enrichmentNote) output.info(enrichmentNote);
+
       if (rows.length === 0) {
         output.info('No tasks found matching filters');
         return;
       }
 
+      if (output.isJsonMode()) {
+        // Script-compatible: same keys as the pre-v6 table output, with
+        // additive deadline fields on enriched rows only.
+        output.json(rows.map(r => ({
+          ID: r.id,
+          Name: r.name,
+          Status: r.status,
+          Assignee: r.assignee,
+          Payout: r.payoutDisplay,
+          Project: r.project,
+          ...(r.createdAt !== '0' ? { createdAt: r.createdAt } : {}),
+          ...(r.absoluteDeadline !== undefined ? {
+            absoluteDeadline: r.absoluteDeadline,
+            completionWindow: r.completionWindow,
+            claimDeadline: r.claimDeadline,
+            claimState: r.claimState,
+          } : {}),
+        })));
+        return;
+      }
+
+      const headers = enriched
+        ? ['ID', 'Name', 'Status', 'Deadline', 'Assignee', 'Payout', 'Project', 'Age']
+        : ['ID', 'Name', 'Status', 'Assignee', 'Payout', 'Project', 'Age'];
       output.table(
-        ['ID', 'Name', 'Status', 'Assignee', 'Payout', 'Project'],
-        rows.map(r => [r.id, r.name, r.status, r.assignee, r.payoutDisplay, r.project])
+        headers,
+        rows.map(r => {
+          const age = r.createdAt !== '0' ? formatRelativeTime(r.createdAt) : '—';
+          const base = [r.id, r.name, statusCell(r)];
+          if (enriched) {
+            const dl = governingDeadline(r);
+            base.push(dl !== undefined ? formatCountdown(dl) : '—');
+          }
+          return [...base, r.assignee, r.payoutDisplay, r.project, age];
+        })
       );
     } catch (err: any) {
       spin.stop();

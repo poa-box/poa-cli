@@ -6,7 +6,7 @@ Command reference generated from the yargs command tree. Regenerate with `yarn d
 
 | Domain | Description | Commands | Reference |
 | --- | --- | --- | --- |
-| `task` | Task management | 12 | [task.md](task.md) |
+| `task` | Task management | 16 | [task.md](task.md) |
 | `project` | Project management | 4 | [project.md](project.md) |
 | `org` | Organization management | 31 | [org.md](org.md) |
 | `vote` | Governance & voting | 10 | [vote.md](vote.md) |

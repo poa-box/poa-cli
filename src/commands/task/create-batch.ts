@@ -11,8 +11,12 @@ import {
   parseProjectId,
   parseDeadline,
   parseDurationSeconds,
+  formatDeadline,
 } from '../../lib/encoding';
 import { detectTaskManagerFeatures, featureUnavailable, LEGACY_TM_FRAGMENTS } from '../../lib/version';
+import { confirmWrite, finishWrite } from '../../lib/command';
+import { formatToken } from '../../lib/format';
+import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import { getTokenDecimals } from '../../config/tokens';
 import * as output from '../../lib/output';
@@ -29,6 +33,8 @@ interface BatchArgs {
   rpc?: string;
   'private-key'?: string;
   'dry-run'?: boolean;
+  yes?: boolean;
+  preflight?: boolean;
 }
 
 interface TaskLine {
@@ -156,6 +162,21 @@ export const createBatchHandler = {
         return;
       }
 
+      // ── Confirm BEFORE any IPFS pin or transaction ─────────────────────
+      // (interactive TTY prompts; --yes / --json / non-TTY proceed)
+      const totalPayoutWei = tasks.reduce(
+        (sum, t) => sum.add(ethers.utils.parseUnits(t.payout.toString(), 18)),
+        ethers.BigNumber.from(0)
+      );
+      await confirmWrite(argv, {
+        project: String(argv.project),
+        tasks: tasks.length,
+        totalPayout: formatToken(totalPayoutWei, 18, 'PT'),
+        deadline: defaultDeadline > 0 ? formatDeadline(defaultDeadline) : undefined,
+        completionWindow: defaultWindow > 0 ? `${defaultWindow}s` : undefined,
+        mode: features.batchCreate ? 'one all-or-nothing transaction (v6)' : `${tasks.length} sequential transactions (legacy)`,
+      }, { actionLabel: 'About to create task batch' });
+
       if (features.batchCreate) {
         // v6: one all-or-nothing createTasksBatch transaction — the contract
         // reverts the whole batch if any task fails.
@@ -205,6 +226,13 @@ export const createBatchHandler = {
         if (!result.success) {
           output.error(`Batch creation failed: ${result.error}`, { error: result.error, errorCode: result.errorCode });
           process.exit(2);
+          return;
+        }
+
+        // Dry run: standardized rendering (method/to/gasEstimate) via
+        // finishWrite — nothing landed, so there are no task ids to report.
+        if (result.dryRun) {
+          finishWrite(result, { successMsg: `Batch created: ${tasks.length} tasks in one transaction` });
           return;
         }
 
@@ -299,7 +327,11 @@ export const createBatchHandler = {
 
       if (failed > 0) process.exit(2);
     } catch (err: any) {
-      output.error(err.message);
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
+      output.error(err?.message || String(err));
       process.exit(1);
     }
   },

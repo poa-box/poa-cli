@@ -57,6 +57,9 @@ pop task list [flags]
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `--assignee` | string | no | - | Filter by assignee address |
+| `--claimable` | boolean | no | - | Only tasks you could claim right now: unclaimed tasks plus claimed tasks whose deadline expired (v6 takeover) |
+| `--expiring` | string | no | - | Only tasks whose governing deadline falls within this window (e.g. "24h", "7d"; default 24h) |
+| `--fast` | boolean | no | `false` | Skip on-chain deadline enrichment (subgraph data only) |
 | `--for-review` | boolean | no | - | Shortcut for --status Submitted |
 | `--limit` | number | no | - | Max results to show |
 | `--mine` | boolean | no | - | Show only tasks assigned to me |
@@ -134,6 +137,8 @@ pop task cancel [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
+| `--idempotency-key` | string | no | - | Explicit idempotency key. Two cancels of the same task within 15 minutes return the same result without re-submitting. Default: auto-derived from argv. |
+| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
 | `--task` | string | yes | - | Task ID |
 
 ## pop task assign
@@ -147,6 +152,8 @@ pop task assign [flags]
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `--assignee` | string | no | - | Address to assign to |
+| `--idempotency-key` | string | no | - | Explicit idempotency key. Two assigns of the same task within 15 minutes return the same result without re-submitting. Default: auto-derived from argv. |
+| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
 | `--task` | string | yes | - | Task ID |
 | `--username` | string | no | - | Username to assign to (resolves to address) |
 
@@ -161,6 +168,8 @@ pop task apply [flags]
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `--experience` | string | no | - | Relevant experience |
+| `--idempotency-key` | string | no | - | Explicit idempotency key. Two applications for the same task within 15 minutes return the same result without re-submitting or re-pinning. Default: auto-derived from argv. |
+| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
 | `--notes` | string | no | - | Application notes |
 | `--task` | string | yes | - | Task ID |
 
@@ -175,6 +184,8 @@ pop task approve-app [flags]
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `--applicant` | string | yes | - | Applicant address to approve |
+| `--idempotency-key` | string | no | - | Explicit idempotency key. Two approvals for the same task within 15 minutes return the same result without re-submitting. Default: auto-derived from argv. |
+| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
 | `--task` | string | yes | - | Task ID |
 
 ## pop task stats
@@ -184,5 +195,122 @@ Show per-member contribution analytics
 ```text
 pop task stats [flags]
 ```
+
+## pop task update
+
+Update task fields — read-then-merge full edit (payout, metadata, bounty, deadlines; v6)
+
+```text
+pop task update [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--bounty-amount` | number | no | - | New bounty payout amount (0 clears) |
+| `--bounty-token` | string | no | - | New bounty ERC20 token address ("none" clears the bounty) |
+| `--completion-window` | string | no | - | New per-claim submission window, e.g. "48h" ("0" = none) |
+| `--deadline` | string | no | - | New absolute claim deadline ("0" = none; a PAST value opens a claimed task to takeover) |
+| `--description` | string | no | - | New task description (re-pins metadata) |
+| `--name` | string | no | - | New task name (re-pins metadata) |
+| `--payout` | number | no | - | New PT payout amount |
+| `--task` | string | yes | - | Task ID |
+
+## pop task edit-meta
+
+Edit only a task's name/description (post-claim safe; v5+)
+
+```text
+pop task edit-meta [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--description` | string | no | - | New task description |
+| `--name` | string | no | - | New task name |
+| `--task` | string | yes | - | Task ID |
+
+## pop task perms
+
+Show and manage task permission masks (show / set / propose-global)
+
+```text
+pop task perms <sub> [flags]
+```
+
+| Positional | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `<sub>` | - | yes | - | - |
+
+### pop task perms show
+
+Show global + per-project task permission masks
+
+```text
+pop task perms show [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--project` | string | no | - | Also show this project's per-hat overrides (ID or name) |
+
+### pop task perms set
+
+Set a hat's permission mask on one project (direct tx; creator-hat/executor)
+
+```text
+pop task perms set [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--hat` | string | yes | - | Hat ID whose project mask to set |
+| `--perms` | string | yes | - | Comma-separated permission list (create, claim, review, assign, self-review, budget, edit-meta, edit-full) or "none" to remove the override |
+| `--project` | string | yes | - | Project ID (bytes32) or name |
+
+### pop task perms propose-global
+
+Propose an org-wide permission mask change (governance vote)
+
+```text
+pop task perms propose-global [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--duration` | number | no | `60` | Vote duration in minutes |
+| `--hat` | string | yes | - | Hat ID whose GLOBAL mask to set |
+| `--perms` | string | yes | - | Comma-separated permission list (create, claim, review, assign, self-review, budget, edit-meta, edit-full) or "none" to revoke |
+
+## pop task folders
+
+Show and update the org folder-tree root (show / set)
+
+```text
+pop task folders <sub> [flags]
+```
+
+| Positional | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `<sub>` | - | yes | - | - |
+
+### pop task folders show
+
+Show the org folder-tree root (bytes32 + CIDv0)
+
+```text
+pop task folders show [flags]
+```
+
+### pop task folders set
+
+Publish a new folder-tree root (CAS-guarded; organizer hat/executor)
+
+```text
+pop task folders set [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--new-root` | string | yes | - | New folder-tree root: Qm… CIDv0, 0x-prefixed bytes32, or "clear" |
 
 _Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

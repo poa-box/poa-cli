@@ -267,7 +267,12 @@ describe('pop task create — v6/legacy signature selection', () => {
     await expect(createHandler.handler(baseArgv({ deadline: '2020-01-01' }))).rejects.toBeInstanceOf(ExitError);
 
     expect(exitSpy).toHaveBeenCalledWith(1);
-    expect(output.error).toHaveBeenCalledWith(expect.stringContaining('in the past'));
+    // The CliError-aware catch (v6 consistency migration) now surfaces the
+    // parse error's suggestion as a second output.error argument (additive).
+    expect(output.error).toHaveBeenCalledWith(
+      expect.stringContaining('in the past'),
+      expect.objectContaining({ suggestion: expect.stringContaining('future') }),
+    );
     expect(mocks.executeTx).not.toHaveBeenCalled();
     expect(mocks.pinJson).not.toHaveBeenCalled();
     expect(mocks.detectTaskManagerFeatures).not.toHaveBeenCalled();
@@ -279,7 +284,10 @@ describe('pop task create — v6/legacy signature selection', () => {
 
     await expect(createHandler.handler(baseArgv({ completionWindow: 'soonish' }))).rejects.toBeInstanceOf(ExitError);
 
-    expect(output.error).toHaveBeenCalledWith(expect.stringContaining('Unparseable duration'));
+    expect(output.error).toHaveBeenCalledWith(
+      expect.stringContaining('Unparseable duration'),
+      expect.anything(), // suggestion payload from the CliError-aware catch
+    );
     expect(mocks.executeTx).not.toHaveBeenCalled();
   });
 

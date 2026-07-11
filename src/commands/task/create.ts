@@ -13,6 +13,9 @@ import {
   formatDeadline,
 } from '../../lib/encoding';
 import { detectTaskManagerFeatures, featureUnavailable, LEGACY_TM_FRAGMENTS } from '../../lib/version';
+import { confirmWrite, finishWrite } from '../../lib/command';
+import { formatToken } from '../../lib/format';
+import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import { requireArg } from '../../lib/validation';
 import { getTokenDecimals } from '../../config/tokens';
@@ -46,6 +49,8 @@ interface CreateArgs {
   rpc?: string;
   'private-key'?: string;
   'dry-run'?: boolean;
+  yes?: boolean;
+  preflight?: boolean;
   'idempotency-key'?: string;
   'no-idempotency'?: boolean;
 }
@@ -154,22 +159,6 @@ export const createHandler = {
         }
       }
 
-      // Build metadata JSON (key order must match frontend exactly)
-      const metadata = {
-        name: argv.name,
-        description: argv.description,
-        location: argv.location || '',
-        difficulty: argv.difficulty || 'medium',
-        estHours: argv.estHours || 0,
-        submission: '',
-      };
-
-      spin.text = 'Pinning metadata to IPFS...';
-      const cid = await pinJson(JSON.stringify(metadata));
-      const metadataHash = ipfsCidToBytes32(cid);
-
-      const titleBytes = stringToBytes(argv.name);
-
       // Resolve project name to on-chain bytes32 ID
       let pid: string;
       const projectInput = argv.project as string;
@@ -208,6 +197,38 @@ export const createHandler = {
 
       const requiresApp = argv.requiresApplication || false;
 
+      // ── Confirm BEFORE the IPFS pin or any transaction ─────────────────
+      // (interactive TTY prompts; --yes / --json / non-TTY proceed)
+      spin.stop();
+      await confirmWrite(argv, {
+        project: String(argv.project),
+        name: argv.name,
+        payout: formatToken(payoutWei, 18, 'PT'),
+        bounty: typeof bountyPayoutWei !== 'number'
+          ? `${formatToken(bountyPayoutWei, getTokenDecimals(bountyToken))} of ${bountyToken}`
+          : undefined,
+        requiresApplication: requiresApp ? 'yes' : undefined,
+        deadline: absoluteDeadline > 0 ? formatDeadline(absoluteDeadline) : undefined,
+        completionWindow: completionWindow > 0 ? `${completionWindow}s` : undefined,
+      }, { actionLabel: 'About to create task' });
+      spin.start();
+
+      // Build metadata JSON (key order must match frontend exactly)
+      const metadata = {
+        name: argv.name,
+        description: argv.description,
+        location: argv.location || '',
+        difficulty: argv.difficulty || 'medium',
+        estHours: argv.estHours || 0,
+        submission: '',
+      };
+
+      spin.text = 'Pinning metadata to IPFS...';
+      const cid = await pinJson(JSON.stringify(metadata));
+      const metadataHash = ipfsCidToBytes32(cid);
+
+      const titleBytes = stringToBytes(argv.name);
+
       spin.text = 'Sending transaction...';
       // v6 orgs get the 9-arg createTask (deadline params); legacy orgs fall
       // back to the 7-arg signature via LEGACY_TM_FRAGMENTS (the current ABI
@@ -222,46 +243,47 @@ export const createHandler = {
 
       spin.stop();
 
-      if (result.success) {
-        // Extract taskId from TaskCreated event
-        const taskCreatedEvent = result.logs?.find(l => l.name === 'TaskCreated');
-        const taskId = taskCreatedEvent?.args?.id?.toString();
+      // Extract taskId from TaskCreated event (absent on dry runs/failures)
+      const taskCreatedEvent = result.logs?.find(l => l.name === 'TaskCreated');
+      const taskId = taskCreatedEvent?.args?.id?.toString();
 
-        // v6 with deadlines set: surface what the contract actually recorded
-        // (TaskDeadlinesSet log), falling back to the parsed flag values on
-        // dry runs where no logs exist.
-        let deadlineFields: Record<string, string | number> = {};
-        if (features.deadlines && (absoluteDeadline > 0 || completionWindow > 0)) {
-          const deadlinesSetEvent = result.logs?.find(l => l.name === 'TaskDeadlinesSet');
-          const dl = deadlinesSetEvent ? Number(deadlinesSetEvent.args.absoluteDeadline.toString()) : absoluteDeadline;
-          const cw = deadlinesSetEvent ? Number(deadlinesSetEvent.args.completionWindow.toString()) : completionWindow;
-          deadlineFields = { deadline: formatDeadline(dl), completionWindowSeconds: cw };
-        }
+      // v6 with deadlines set: surface what the contract actually recorded
+      // (TaskDeadlinesSet log), falling back to the parsed flag values on
+      // dry runs where no logs exist.
+      let deadlineFields: Record<string, string | number> = {};
+      if (features.deadlines && (absoluteDeadline > 0 || completionWindow > 0)) {
+        const deadlinesSetEvent = result.logs?.find(l => l.name === 'TaskDeadlinesSet');
+        const dl = deadlinesSetEvent ? Number(deadlinesSetEvent.args.absoluteDeadline.toString()) : absoluteDeadline;
+        const cw = deadlinesSetEvent ? Number(deadlinesSetEvent.args.completionWindow.toString()) : completionWindow;
+        deadlineFields = { deadline: formatDeadline(dl), completionWindowSeconds: cw };
+      }
 
-        // Task #369: record idempotent result so retries hit the cache
-        if (!argv.noIdempotency) {
-          recordIdempotentResult(orgId, 'task.create', idempKey, {
-            taskId,
-            txHash: result.txHash,
-            ipfsCid: cid,
-          });
-        }
-
-        output.success('Task created', {
+      finishWrite(result, {
+        successMsg: 'Task created',
+        fields: {
           taskId,
-          txHash: result.txHash,
-          explorerUrl: result.explorerUrl,
           ipfsCid: cid,
           ...deadlineFields,
-        });
-        output.subgraphLagWarning();
-      } else {
-        output.error('Task creation failed', { error: result.error, errorCode: result.errorCode });
-        process.exit(2);
-      }
+        },
+        onSuccess: () => {
+          // Task #369: record idempotent result so retries hit the cache
+          // (finishWrite skips this on dry runs — nothing landed on-chain).
+          if (!argv.noIdempotency) {
+            recordIdempotentResult(orgId, 'task.create', idempKey, {
+              taskId,
+              txHash: result.txHash,
+              ipfsCid: cid,
+            });
+          }
+        },
+      });
     } catch (err: any) {
       spin.stop();
-      output.error(err.message);
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
+      output.error(err?.message || String(err));
       process.exit(1);
     }
   },

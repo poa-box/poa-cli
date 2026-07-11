@@ -11,6 +11,10 @@ import { applyHandler } from './apply';
 import { approveAppHandler } from './approve-application';
 import { createBatchHandler } from './create-batch';
 import { statsHandler } from './stats';
+import { updateHandler } from './update';
+import { editMetaHandler } from './edit-meta';
+import { registerPermsCommands } from './perms';
+import { registerFoldersCommands } from './folders';
 
 export function registerTaskCommands(yargs: Argv) {
   return yargs
@@ -26,5 +30,9 @@ export function registerTaskCommands(yargs: Argv) {
     .command('apply', 'Apply for a task', applyHandler.builder, applyHandler.handler)
     .command('approve-app', 'Approve a task application', approveAppHandler.builder, approveAppHandler.handler)
     .command('stats', 'Show per-member contribution analytics', statsHandler.builder, statsHandler.handler)
+    .command('update', 'Update task fields — read-then-merge full edit (payout, metadata, bounty, deadlines; v6)', updateHandler.builder, updateHandler.handler)
+    .command('edit-meta', 'Edit only a task\'s name/description (post-claim safe; v5+)', editMetaHandler.builder, editMetaHandler.handler)
+    .command('perms <sub>', 'Show and manage task permission masks (show / set / propose-global)', registerPermsCommands)
+    .command('folders <sub>', 'Show and update the org folder-tree root (show / set)', registerFoldersCommands)
     .demandCommand(1, 'Please specify a task action');
 }
