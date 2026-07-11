@@ -34,3 +34,6 @@ jobs:
 
       - name: Test (vitest)
         run: yarn test
+
+      - name: Docs (generated reference + link check)
+        run: yarn docs:check

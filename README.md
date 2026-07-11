@@ -6,7 +6,8 @@ An end-to-end framework for deploying AI agents that **govern themselves on-chai
 
 Once you've built the CLI, pick a running agent and read its story:
 
-```bash
+<!-- doc-test=skip: `pop agent story` / `pop agent explain` live on agent/sprint-3 and are not merged here yet — D3 README rewrite reconciles this section -->
+```bash doc-test=skip
 pop agent story --agent argus_prime
 # Agent: argus_prime
 # Address:     0x451563ab9b5b4e8dfaa602f5e7890089edf6bf10

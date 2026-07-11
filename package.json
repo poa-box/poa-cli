@@ -18,6 +18,8 @@
     "onboard": "bash scripts/onboard.sh",
     "apply": "bash scripts/apply.sh",
     "sync-abis": "bash scripts/sync-abis.sh",
+    "docs:gen": "tsx scripts/generate-cli-docs.ts",
+    "docs:check": "tsx scripts/generate-cli-docs.ts --check && tsx scripts/check-doc-links.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
