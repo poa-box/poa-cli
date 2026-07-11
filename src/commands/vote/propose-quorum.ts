@@ -9,12 +9,13 @@ import * as output from '../../lib/output';
 import { resolveVotingContracts } from './helpers';
 
 /**
- * setConfig keys for quorum:
- *   HybridVoting: key 3
- *   DirectDemocracyVoting: key 4
+ * setConfig keys for quorum (contracts origin/main, v6):
+ *   HybridVoting: key 3 (QUORUM)
+ *   DirectDemocracyVoting: key 4 (QUORUM)
  *
- * Discovered by reverse-engineering Proposal #0 (setQuorum to 1).
- * The voting contracts use setConfig(uint8, bytes) instead of a direct setter.
+ * The voting contracts use setConfig(uint8, bytes) instead of a direct
+ * setter, and decode the value as uint32. Since PR #119 quorum is a
+ * minimum voter COUNT (0 disables), not a percentage.
  */
 const HYBRID_QUORUM_KEY = 3;
 const DD_QUORUM_KEY = 4;
@@ -49,7 +50,7 @@ export const proposeQuorumHandler = {
 
       // Encode setConfig calls for both voting contracts
       const iface = new ethers.utils.Interface(['function setConfig(uint8 key, bytes value)']);
-      const encodedValue = ethers.utils.defaultAbiCoder.encode(['uint256'], [newQuorum]);
+      const encodedValue = ethers.utils.defaultAbiCoder.encode(['uint32'], [newQuorum]);
 
       const hybridCall = iface.encodeFunctionData('setConfig', [HYBRID_QUORUM_KEY, encodedValue]);
 

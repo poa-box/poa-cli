@@ -4,7 +4,16 @@ import { createSigner } from '../../lib/signer';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { pinJson } from '../../lib/ipfs';
-import { stringToBytes, ipfsCidToBytes32, parseProjectId } from '../../lib/encoding';
+import {
+  stringToBytes,
+  ipfsCidToBytes32,
+  parseProjectId,
+  parseDeadline,
+  parseDurationSeconds,
+  formatDeadline,
+} from '../../lib/encoding';
+import { detectTaskManagerFeatures, featureUnavailable, LEGACY_TM_FRAGMENTS } from '../../lib/version';
+import { EXIT } from '../../lib/exit-codes';
 import { requireArg } from '../../lib/validation';
 import { getTokenDecimals } from '../../config/tokens';
 import {
@@ -30,6 +39,8 @@ interface CreateArgs {
   'bounty-token'?: string;
   'bounty-amount'?: number;
   'requires-application'?: boolean;
+  deadline?: string;
+  'completion-window'?: string;
   force?: boolean;
   chain?: number;
   rpc?: string;
@@ -51,6 +62,8 @@ export const createHandler = {
     .option('bounty-token', { type: 'string', describe: 'Bounty ERC20 token address' })
     .option('bounty-amount', { type: 'number', describe: 'Bounty payout amount' })
     .option('requires-application', { type: 'boolean', default: false, describe: 'Require applications' })
+    .option('deadline', { type: 'string', describe: 'Absolute claim deadline — no claims after this time (v6 orgs only)' })
+    .option('completion-window', { type: 'string', describe: 'Time a claimer has to submit after claiming (v6 orgs only)' })
     .option('force', { type: 'boolean', default: false, describe: 'Skip duplicate check' })
     .option('idempotency-key', {
       type: 'string',
@@ -67,6 +80,12 @@ export const createHandler = {
     spin.start();
 
     try {
+      // v6 deadline flags: parse up-front so bad input fails before any
+      // network work (and long before any transaction is sent).
+      const deadlineFlagsSet = argv.deadline !== undefined || argv.completionWindow !== undefined;
+      const absoluteDeadline = argv.deadline !== undefined ? parseDeadline(argv.deadline) : 0;
+      const completionWindow = argv.completionWindow !== undefined ? parseDurationSeconds(argv.completionWindow) : 0;
+
       const { taskManagerAddress, orgId } = await resolveOrgContracts(argv.org, argv.chain);
 
       // Task #369: idempotency check. Same pattern as pop vote create —
@@ -84,7 +103,22 @@ export const createHandler = {
           return;
         }
       }
-      const { signer } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
+      const { signer, provider, chainId } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
+
+      // Feature-gate: pre-v6 TaskManagers only expose the 7-arg createTask.
+      // Detection is a read call, so it runs on --dry-run too (the dry run
+      // still needs the right signature to estimate gas against).
+      const features = await detectTaskManagerFeatures(provider, taskManagerAddress, chainId);
+      if (!features.deadlines && deadlineFlagsSet) {
+        spin.stop();
+        output.error(featureUnavailable(
+          'task deadlines',
+          'TaskManager v6',
+          'Re-run without --deadline/--completion-window, or upgrade the org TaskManager beacon.'
+        ));
+        process.exit(EXIT.PRECONDITION);
+        return;
+      }
 
       // Duplicate check: warn if similar task exists
       // Heuristic: strip stopwords + common CLI scaffolding words, then compare by
@@ -175,13 +209,16 @@ export const createHandler = {
       const requiresApp = argv.requiresApplication || false;
 
       spin.text = 'Sending transaction...';
-      const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', signer);
-      const result = await executeTx(
-        contract,
-        'createTask',
-        [payoutWei, titleBytes, metadataHash, pid, bountyToken, bountyPayoutWei, requiresApp],
-        { dryRun: argv.dryRun }
-      );
+      // v6 orgs get the 9-arg createTask (deadline params); legacy orgs fall
+      // back to the 7-arg signature via LEGACY_TM_FRAGMENTS (the current ABI
+      // no longer contains it).
+      const contract = features.deadlines
+        ? createWriteContract(taskManagerAddress, 'TaskManagerNew', signer)
+        : new ethers.Contract(taskManagerAddress, LEGACY_TM_FRAGMENTS, signer);
+      const txArgs = features.deadlines
+        ? [payoutWei, titleBytes, metadataHash, pid, bountyToken, bountyPayoutWei, requiresApp, absoluteDeadline, completionWindow]
+        : [payoutWei, titleBytes, metadataHash, pid, bountyToken, bountyPayoutWei, requiresApp];
+      const result = await executeTx(contract, 'createTask', txArgs, { dryRun: argv.dryRun });
 
       spin.stop();
 
@@ -189,6 +226,17 @@ export const createHandler = {
         // Extract taskId from TaskCreated event
         const taskCreatedEvent = result.logs?.find(l => l.name === 'TaskCreated');
         const taskId = taskCreatedEvent?.args?.id?.toString();
+
+        // v6 with deadlines set: surface what the contract actually recorded
+        // (TaskDeadlinesSet log), falling back to the parsed flag values on
+        // dry runs where no logs exist.
+        let deadlineFields: Record<string, string | number> = {};
+        if (features.deadlines && (absoluteDeadline > 0 || completionWindow > 0)) {
+          const deadlinesSetEvent = result.logs?.find(l => l.name === 'TaskDeadlinesSet');
+          const dl = deadlinesSetEvent ? Number(deadlinesSetEvent.args.absoluteDeadline.toString()) : absoluteDeadline;
+          const cw = deadlinesSetEvent ? Number(deadlinesSetEvent.args.completionWindow.toString()) : completionWindow;
+          deadlineFields = { deadline: formatDeadline(dl), completionWindowSeconds: cw };
+        }
 
         // Task #369: record idempotent result so retries hit the cache
         if (!argv.noIdempotency) {
@@ -204,6 +252,7 @@ export const createHandler = {
           txHash: result.txHash,
           explorerUrl: result.explorerUrl,
           ipfsCid: cid,
+          ...deadlineFields,
         });
         output.subgraphLagWarning();
       } else {

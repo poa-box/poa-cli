@@ -101,8 +101,10 @@ export const createHandler = {
       const descriptionHash = ipfsCidToBytes32(cid);
 
       const titleBytes = stringToBytes(argv.name);
+      // Hats IDs are uint256 with high bits set — parseInt loses precision
+      // above 2^53, so parse each entry as a BigNumber from the raw string.
       const hatIds = argv.hatIds
-        ? (argv.hatIds as string).split(',').map(s => parseInt(s.trim(), 10))
+        ? (argv.hatIds as string).split(',').map(s => ethers.BigNumber.from(s.trim()))
         : [];
 
       // Build execution batches: calls go to option 0, other options get empty batches

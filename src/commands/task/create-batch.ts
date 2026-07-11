@@ -5,7 +5,15 @@ import { createSigner } from '../../lib/signer';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { pinJson } from '../../lib/ipfs';
-import { stringToBytes, ipfsCidToBytes32, parseProjectId } from '../../lib/encoding';
+import {
+  stringToBytes,
+  ipfsCidToBytes32,
+  parseProjectId,
+  parseDeadline,
+  parseDurationSeconds,
+} from '../../lib/encoding';
+import { detectTaskManagerFeatures, featureUnavailable, LEGACY_TM_FRAGMENTS } from '../../lib/version';
+import { EXIT } from '../../lib/exit-codes';
 import { getTokenDecimals } from '../../config/tokens';
 import * as output from '../../lib/output';
 import { resolveOrgContracts } from './helpers';
@@ -14,6 +22,8 @@ interface BatchArgs {
   org?: string;
   project: string;
   file: string;
+  deadline?: string;
+  'completion-window'?: string;
   'continue-on-error'?: boolean;
   chain?: number;
   rpc?: string;
@@ -31,13 +41,40 @@ interface TaskLine {
   bountyToken?: string;
   bountyAmount?: number;
   requiresApplication?: boolean;
+  /** v6 orgs only: per-row absolute claim deadline (overrides --deadline) */
+  deadline?: string | number;
+  /** v6 orgs only: per-row completion window (overrides --completion-window) */
+  completionWindow?: string | number;
+}
+
+interface ParsedTask extends TaskLine {
+  /** Resolved absolute deadline (unix seconds; 0 = none) */
+  absoluteDeadline: number;
+  /** Resolved completion window (seconds; 0 = none) */
+  completionWindowSecs: number;
+  /** True when the row or a batch-wide flag set a deadline field */
+  deadlineSet: boolean;
+}
+
+/** Build the frontend-key-order metadata object for a task row. */
+function buildMetadata(task: TaskLine): Record<string, any> {
+  return {
+    name: task.name,
+    description: task.description,
+    location: task.location || '',
+    difficulty: task.difficulty || 'medium',
+    estHours: task.estHours || 0,
+    submission: '',
+  };
 }
 
 export const createBatchHandler = {
   builder: (yargs: Argv) => yargs
     .option('project', { type: 'string', demandOption: true, describe: 'Project ID (shared for all tasks)' })
     .option('file', { type: 'string', demandOption: true, describe: 'JSONL file (one task JSON per line)' })
-    .option('continue-on-error', { type: 'boolean', default: false, describe: 'Skip failed tasks instead of stopping' }),
+    .option('deadline', { type: 'string', describe: 'Absolute claim deadline — no claims after this time (v6 orgs only; batch-wide default, rows may override)' })
+    .option('completion-window', { type: 'string', describe: 'Time a claimer has to submit after claiming (v6 orgs only; batch-wide default, rows may override)' })
+    .option('continue-on-error', { type: 'boolean', default: false, describe: 'Skip failed tasks instead of stopping (legacy orgs only — v6 batches are all-or-nothing)' }),
 
   handler: async (argv: ArgumentsCamelCase<BatchArgs>) => {
     // Validate file
@@ -54,28 +91,153 @@ export const createBatchHandler = {
       return;
     }
 
+    // Batch-wide deadline defaults (v6 orgs only); rows may override.
+    // Parsed up-front so bad input fails before any network work.
+    let defaultDeadline = 0;
+    let defaultWindow = 0;
+    try {
+      if (argv.deadline !== undefined) defaultDeadline = parseDeadline(argv.deadline);
+      if (argv.completionWindow !== undefined) defaultWindow = parseDurationSeconds(argv.completionWindow);
+    } catch (err: any) {
+      output.error(err.message);
+      process.exit(1);
+      return;
+    }
+    const batchDeadlineSet = argv.deadline !== undefined || argv.completionWindow !== undefined;
+
     // Parse all lines upfront to catch errors before sending any transactions
-    const tasks: TaskLine[] = [];
+    const tasks: ParsedTask[] = [];
     for (let i = 0; i < lines.length; i++) {
       try {
         const task = JSON.parse(lines[i]) as TaskLine;
         if (!task.name || !task.description || task.payout === undefined) {
           throw new Error('Missing required fields: name, description, payout');
         }
-        tasks.push(task);
+        const absoluteDeadline = task.deadline !== undefined
+          ? parseDeadline(String(task.deadline))
+          : defaultDeadline;
+        const completionWindowSecs = task.completionWindow !== undefined
+          ? parseDurationSeconds(String(task.completionWindow))
+          : defaultWindow;
+        tasks.push({
+          ...task,
+          absoluteDeadline,
+          completionWindowSecs,
+          deadlineSet: batchDeadlineSet || task.deadline !== undefined || task.completionWindow !== undefined,
+        });
       } catch (err: any) {
         output.error(`Line ${i + 1}: ${err.message}`);
         if (!argv.continueOnError) process.exit(1);
       }
     }
 
+    // Client-side EmptyBatch guard (the v6 contract reverts on empty input)
+    if (tasks.length === 0) {
+      output.error('EmptyBatch: file parsed to 0 valid tasks — nothing to create.');
+      process.exit(1);
+      return;
+    }
+
     output.info(`Creating ${tasks.length} tasks...`);
 
     try {
       const { taskManagerAddress } = await resolveOrgContracts(argv.org as string, argv.chain);
-      const { signer } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
-      const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', signer);
+      const { signer, provider, chainId } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
       const pid = parseProjectId(argv.project);
+
+      const features = await detectTaskManagerFeatures(provider, taskManagerAddress, chainId);
+      if (tasks.some(t => t.deadlineSet) && !features.deadlines) {
+        output.error(featureUnavailable(
+          'task deadlines',
+          'TaskManager v6',
+          'Re-run without --deadline/--completion-window, or upgrade the org TaskManager beacon.'
+        ));
+        process.exit(EXIT.PRECONDITION);
+        return;
+      }
+
+      if (features.batchCreate) {
+        // v6: one all-or-nothing createTasksBatch transaction — the contract
+        // reverts the whole batch if any task fails.
+        if (argv.continueOnError) {
+          output.warn('--continue-on-error has no effect on v6 orgs: createTasksBatch is all-or-nothing.');
+        }
+
+        const spin = output.spinner(`Pinning metadata for ${tasks.length} tasks...`);
+        spin.start();
+
+        // CreateTaskInput tuple field order must match the createTasksBatch
+        // components in src/abi/TaskManagerNew.json (NOTE: no pid inside):
+        // payout, title, metadataHash, bountyToken, bountyPayout,
+        // requiresApplication, absoluteDeadline, completionWindow
+        const inputs: any[][] = [];
+        for (const task of tasks) {
+          const cid = await pinJson(JSON.stringify(buildMetadata(task)));
+          const metadataHash = ipfsCidToBytes32(cid);
+          const titleBytes = stringToBytes(task.name);
+          const payoutWei = ethers.utils.parseUnits(task.payout.toString(), 18);
+
+          const bountyToken = task.bountyToken || ethers.constants.AddressZero;
+          let bountyPayoutWei: ethers.BigNumber | number = 0;
+          if (task.bountyAmount && task.bountyAmount > 0 && bountyToken !== ethers.constants.AddressZero) {
+            const decimals = getTokenDecimals(bountyToken);
+            bountyPayoutWei = ethers.utils.parseUnits(task.bountyAmount.toString(), decimals);
+          }
+
+          inputs.push([
+            payoutWei,
+            titleBytes,
+            metadataHash,
+            bountyToken,
+            bountyPayoutWei,
+            task.requiresApplication || false,
+            task.absoluteDeadline,
+            task.completionWindowSecs,
+          ]);
+        }
+
+        spin.text = `Creating ${tasks.length} tasks in one transaction...`;
+        const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', signer);
+        const result = await executeTx(contract, 'createTasksBatch', [pid, inputs], { dryRun: argv.dryRun });
+
+        spin.stop();
+
+        if (!result.success) {
+          output.error(`Batch creation failed: ${result.error}`, { error: result.error, errorCode: result.errorCode });
+          process.exit(2);
+          return;
+        }
+
+        // One TaskCreated log per task, emitted in input order
+        const taskIds = (result.logs ?? [])
+          .filter(l => l.name === 'TaskCreated')
+          .map(l => l.args?.id?.toString());
+        const results = tasks.map((t, i) => ({ name: t.name, taskId: taskIds[i], txHash: result.txHash, status: 'ok' }));
+
+        if (output.isJsonMode()) {
+          output.json({
+            results,
+            total: tasks.length,
+            succeeded: tasks.length,
+            failed: 0,
+            txHash: result.txHash,
+            explorerUrl: result.explorerUrl,
+          });
+        } else {
+          output.success(`Batch created: ${tasks.length} tasks in one transaction`, {
+            taskIds: taskIds.length > 0 ? taskIds.join(', ') : undefined,
+            txHash: result.txHash,
+            explorerUrl: result.explorerUrl,
+          });
+          output.subgraphLagWarning();
+        }
+        return;
+      }
+
+      // Legacy pre-v6 org: per-task 7-arg createTask loop via the fallback
+      // fragments (the current ABI no longer contains the 7-arg signature).
+      // --continue-on-error only applies here.
+      const contract = new ethers.Contract(taskManagerAddress, LEGACY_TM_FRAGMENTS, signer);
 
       const results: Array<{ name: string; taskId?: string; txHash?: string; status: string; error?: string }> = [];
 
@@ -85,17 +247,7 @@ export const createBatchHandler = {
         spin.start();
 
         try {
-          // Build metadata (key order matches frontend)
-          const metadata = {
-            name: task.name,
-            description: task.description,
-            location: task.location || '',
-            difficulty: task.difficulty || 'medium',
-            estHours: task.estHours || 0,
-            submission: '',
-          };
-
-          const cid = await pinJson(JSON.stringify(metadata));
+          const cid = await pinJson(JSON.stringify(buildMetadata(task)));
           const metadataHash = ipfsCidToBytes32(cid);
           const titleBytes = stringToBytes(task.name);
           const payoutWei = ethers.utils.parseUnits(task.payout.toString(), 18);
