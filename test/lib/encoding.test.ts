@@ -11,6 +11,9 @@ import {
   parseProjectId,
   formatAddress,
   isValidAddress,
+  parseDeadline,
+  parseDurationSeconds,
+  formatDeadline,
 } from '../../src/lib/encoding';
 
 describe('stringToBytes / bytesToString', () => {
@@ -146,5 +149,99 @@ describe('isValidAddress', () => {
   it('rejects invalid', () => {
     expect(isValidAddress('not-an-address')).toBe(false);
     expect(isValidAddress('0x123')).toBe(false);
+  });
+});
+
+describe('parseDeadline', () => {
+  // Fixed "now" so tests are deterministic: 2026-07-01T00:00:00Z
+  const NOW = Date.UTC(2026, 6, 1) / 1000;
+
+  it('returns 0 for empty string and "0" (no deadline)', () => {
+    expect(parseDeadline('', NOW)).toBe(0);
+    expect(parseDeadline('0', NOW)).toBe(0);
+  });
+
+  it('parses ISO date as UTC midnight', () => {
+    expect(parseDeadline('2026-08-01', NOW)).toBe(Date.UTC(2026, 7, 1) / 1000);
+  });
+
+  it('parses full ISO datetime with Z', () => {
+    expect(parseDeadline('2026-08-01T12:30:00Z', NOW)).toBe(Date.UTC(2026, 7, 1, 12, 30) / 1000);
+  });
+
+  it('treats timezone-less datetime as UTC', () => {
+    expect(parseDeadline('2026-08-01T12:30:00', NOW)).toBe(Date.UTC(2026, 7, 1, 12, 30) / 1000);
+  });
+
+  it('parses unix seconds (digits >= 10^9)', () => {
+    const ts = NOW + 86400;
+    expect(parseDeadline(String(ts), NOW)).toBe(ts);
+  });
+
+  it('parses relative durations', () => {
+    expect(parseDeadline('7d', NOW)).toBe(NOW + 7 * 86400);
+    expect(parseDeadline('48h', NOW)).toBe(NOW + 48 * 3600);
+    expect(parseDeadline('90m', NOW)).toBe(NOW + 90 * 60);
+    expect(parseDeadline('3600s', NOW)).toBe(NOW + 3600);
+  });
+
+  it('throws on past deadlines', () => {
+    expect(() => parseDeadline('2020-01-01', NOW)).toThrow(/past/);
+    expect(() => parseDeadline(String(NOW - 100), NOW)).toThrow(/past/);
+  });
+
+  it('throws on garbage', () => {
+    expect(() => parseDeadline('next tuesday', NOW)).toThrow(/Unparseable/);
+    expect(() => parseDeadline('7x', NOW)).toThrow(/Unparseable/);
+  });
+
+  it('throws on ambiguous small bare numbers', () => {
+    expect(() => parseDeadline('12345', NOW)).toThrow(/Ambiguous/);
+  });
+
+  it('throws on uint48 overflow', () => {
+    expect(() => parseDeadline('281474976710656', NOW)).toThrow(/uint48/);
+  });
+});
+
+describe('parseDurationSeconds', () => {
+  it('returns 0 for "0"', () => {
+    expect(parseDurationSeconds('0')).toBe(0);
+  });
+
+  it('parses bare seconds', () => {
+    expect(parseDurationSeconds('3600')).toBe(3600);
+  });
+
+  it('parses s/m/h/d suffixes', () => {
+    expect(parseDurationSeconds('3600s')).toBe(3600);
+    expect(parseDurationSeconds('90m')).toBe(5400);
+    expect(parseDurationSeconds('48h')).toBe(172800);
+    expect(parseDurationSeconds('7d')).toBe(604800);
+  });
+
+  it('throws above the uint32 cap', () => {
+    expect(() => parseDurationSeconds('4294967296')).toThrow(/uint32/);
+    expect(() => parseDurationSeconds('50000d')).toThrow(/uint32/);
+  });
+
+  it('accepts exactly the uint32 max', () => {
+    expect(parseDurationSeconds('4294967295')).toBe(4294967295);
+  });
+
+  it('throws on garbage', () => {
+    expect(() => parseDurationSeconds('soon')).toThrow(/Unparseable/);
+    expect(() => parseDurationSeconds('')).toThrow(/Unparseable/);
+  });
+});
+
+describe('formatDeadline', () => {
+  it('returns "none" for 0', () => {
+    expect(formatDeadline(0)).toBe('none');
+  });
+
+  it('formats as YYYY-MM-DD HH:mm UTC', () => {
+    expect(formatDeadline(Date.UTC(2026, 7, 1, 12, 30) / 1000)).toBe('2026-08-01 12:30 UTC');
+    expect(formatDeadline(Date.UTC(2026, 0, 5, 3, 7) / 1000)).toBe('2026-01-05 03:07 UTC');
   });
 });

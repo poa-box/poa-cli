@@ -6,6 +6,7 @@
 
 import { ethers } from 'ethers';
 import { getNetworkByChainId } from '../config/networks';
+import { decodeContractError } from './error-catalog';
 import { isDelegated, sendSponsored } from './sponsored';
 import type { Hex, Address } from 'viem';
 
@@ -15,6 +16,7 @@ export type ErrorCode =
   | 'NETWORK_ERROR'
   | 'USER_REJECTED'
   | 'GAS_ESTIMATION_FAILED'
+  | 'CONTRACT_ERROR'
   | 'UNKNOWN_ERROR';
 
 export interface TxResult {
@@ -26,7 +28,21 @@ export interface TxResult {
   logs?: ethers.utils.LogDescription[];
   error?: string;
   errorCode?: ErrorCode;
+  /** Decoded custom-error name (e.g. 'BadStatus') when revert data was decodable */
+  errorName?: string;
+  /** Decoded custom-error args (empty for parameterless errors) */
+  errorArgs?: any[];
+  /** Actionable next step from the error catalog */
+  suggestion?: string;
+  /** Original provider/ethers message when the catalog replaced it */
+  rawMessage?: string;
   sponsored?: boolean;
+  /** Dry-run fields (set when options.dryRun is true; no tx is sent) */
+  dryRun?: boolean;
+  gasEstimate?: string;
+  calldata?: string;
+  to?: string;
+  method?: string;
 }
 
 export interface SponsoredConfig {
@@ -84,7 +100,44 @@ function parseEventLogs(
   return parsed;
 }
 
-function classifyError(error: any): { message: string; code: ErrorCode } {
+export interface ClassifiedError {
+  message: string;
+  code: ErrorCode;
+  errorName?: string;
+  errorArgs?: any[];
+  suggestion?: string;
+  rawMessage?: string;
+}
+
+/**
+ * Enrich a revert classification with a decoded custom error when the revert
+ * data is decodable. The catalog human text replaces the message (the original
+ * is kept in rawMessage); unknown selectors keep the original message but
+ * still expose the selector via errorName.
+ */
+function withDecodedError(error: any, iface: ethers.utils.Interface | undefined, base: ClassifiedError): ClassifiedError {
+  const decoded = decodeContractError(error, iface);
+  if (!decoded) return base;
+  if (decoded.name.startsWith('UnknownCustomError(')) {
+    return { ...base, errorName: decoded.name };
+  }
+  return {
+    message: decoded.human,
+    code: base.code,
+    errorName: decoded.name,
+    errorArgs: decoded.args,
+    suggestion: decoded.suggestion,
+    rawMessage: base.message,
+  };
+}
+
+/**
+ * Map a raw ethers/provider error to a stable error code + human message.
+ * When an interface is provided, revert data is decoded against it (then
+ * against the global src/abi error registry) on the TX_REVERTED and
+ * GAS_ESTIMATION_FAILED paths.
+ */
+export function classifyError(error: any, iface?: ethers.utils.Interface): ClassifiedError {
   const msg = error.message || 'Transaction failed';
 
   if (error.code === 'INSUFFICIENT_FUNDS' || msg.includes('insufficient funds')) {
@@ -95,18 +148,115 @@ function classifyError(error: any): { message: string; code: ErrorCode } {
   }
   if (error.code === 'UNPREDICTABLE_GAS_LIMIT' || msg.includes('cannot estimate gas')) {
     const reason = error.reason || error.error?.reason || error.error?.message || msg;
-    return { message: `Transaction would revert: ${reason}`, code: 'GAS_ESTIMATION_FAILED' };
+    return withDecodedError(error, iface, {
+      message: `Transaction would revert: ${reason}`,
+      code: 'GAS_ESTIMATION_FAILED',
+    });
   }
   if (error.code === 'NETWORK_ERROR' || error.code === 'SERVER_ERROR' || msg.includes('ECONNREFUSED')) {
     return { message: `Network error: ${msg}`, code: 'NETWORK_ERROR' };
   }
   if (error.reason) {
-    return { message: `Reverted: ${error.reason}`, code: 'TX_REVERTED' };
+    return withDecodedError(error, iface, { message: `Reverted: ${error.reason}`, code: 'TX_REVERTED' });
   }
   if (error.error?.message) {
-    return { message: error.error.message, code: 'TX_REVERTED' };
+    return withDecodedError(error, iface, { message: error.error.message, code: 'TX_REVERTED' });
   }
   return { message: msg, code: 'UNKNOWN_ERROR' };
+}
+
+/**
+ * ERC-4337 EntryPoint events needed to detect inner UserOp failures.
+ * Topic 0 of UserOperationEvent:
+ *   0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f
+ */
+const ENTRY_POINT_EVENTS = new ethers.utils.Interface([
+  'event UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster, uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)',
+  'event UserOperationRevertReason(bytes32 indexed userOpHash, address indexed sender, uint256 nonce, bytes revertReason)',
+]);
+
+/** Error(string) selector — unwrap to the plain revert string */
+const ERROR_STRING_SELECTOR = '0x08c379a0';
+
+/**
+ * Turn raw revert bytes (e.g. UserOperationRevertReason.revertReason) into a
+ * human message: unwraps Error(string), otherwise decodes custom errors via
+ * the error catalog. Returns null when the bytes are empty/undecodable.
+ */
+function describeRevertData(
+  data: string,
+  iface?: ethers.utils.Interface
+): { message: string; name?: string; suggestion?: string } | null {
+  if (typeof data !== 'string' || !data.startsWith('0x') || data.length < 10) return null;
+  if (data.slice(0, 10).toLowerCase() === ERROR_STRING_SELECTOR) {
+    try {
+      const [reason] = ethers.utils.defaultAbiCoder.decode(['string'], '0x' + data.slice(10));
+      return { message: `Reverted: ${reason}` };
+    } catch {
+      return null;
+    }
+  }
+  const decoded = decodeContractError({ data }, iface);
+  if (!decoded) return null;
+  return { message: decoded.human, name: decoded.name, suggestion: decoded.suggestion };
+}
+
+/**
+ * ERC-4337 critical check: the outer bundler tx ALWAYS has status=1, even
+ * when the inner UserOp call reverts. The actual success/failure of the
+ * inner call is in the UserOperationEvent log emitted by the EntryPoint.
+ * Returns a failure TxResult when the inner call reverted (decoding the
+ * UserOperationRevertReason payload for a human message), else null.
+ */
+export function detectUserOpFailure(
+  receipt: ethers.providers.TransactionReceipt,
+  txHash: string,
+  chainId: number,
+  iface?: ethers.utils.Interface
+): TxResult | null {
+  const userOpTopic = ENTRY_POINT_EVENTS.getEventTopic('UserOperationEvent');
+  const userOpLog = receipt.logs.find((log) => log.topics[0] === userOpTopic);
+  if (!userOpLog) return null;
+
+  let innerSuccess: boolean;
+  try {
+    innerSuccess = ENTRY_POINT_EVENTS.parseLog(userOpLog).args.success as boolean;
+  } catch {
+    return null; // Unparseable event — assume success rather than false-alarm
+  }
+  if (innerSuccess) return null;
+
+  // Inner call failed — look for UserOperationRevertReason for detail
+  const revertTopic = ENTRY_POINT_EVENTS.getEventTopic('UserOperationRevertReason');
+  const revertLog = receipt.logs.find((log) => log.topics[0] === revertTopic);
+  let detail = revertLog ? ` Revert data available in tx ${txHash}` : '';
+  let errorName: string | undefined;
+  let suggestion: string | undefined;
+
+  if (revertLog) {
+    try {
+      const revertReason = ENTRY_POINT_EVENTS.parseLog(revertLog).args.revertReason as string;
+      const described = describeRevertData(revertReason, iface);
+      if (described) {
+        detail = ` Reason: ${described.message}`;
+        errorName = described.name;
+        suggestion = described.suggestion;
+      }
+    } catch {
+      // Keep the generic detail
+    }
+  }
+
+  return {
+    success: false,
+    txHash,
+    explorerUrl: buildExplorerUrl(txHash, chainId),
+    error: `Sponsored UserOp inner call reverted (tx succeeded but execution failed).${detail}`,
+    errorCode: 'TX_REVERTED',
+    errorName,
+    suggestion,
+    sponsored: true,
+  };
 }
 
 /**
@@ -161,46 +311,12 @@ async function trySponsoredTx(
       };
     }
 
-    // ERC-4337 critical check: the outer bundler tx ALWAYS has status=1,
-    // even when the inner UserOp call reverts. The actual success/failure
-    // of the inner call is in the UserOperationEvent log emitted by the
-    // EntryPoint contract. We must check this to detect silent failures.
-    //
-    // UserOperationEvent signature:
-    //   event UserOperationEvent(
-    //     bytes32 indexed userOpHash, address indexed sender,
-    //     address indexed paymaster,
-    //     uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed
-    //   )
-    // Topic 0: 0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f
-    // Data layout: nonce (32 bytes) | success (32 bytes) | actualGasCost | actualGasUsed
-    const USER_OP_EVENT_TOPIC = '0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f';
+    // ERC-4337: outer bundler tx has status=1 even when the inner UserOp
+    // reverted — inspect the EntryPoint events to detect silent failures.
     if (receipt) {
-      const userOpLog = receipt.logs.find(
-        (log) => log.topics[0] === USER_OP_EVENT_TOPIC
-      );
-      if (userOpLog) {
-        // success is the second 32-byte word in data (offset 66..130 in hex string)
-        const successWord = userOpLog.data.slice(66, 130);
-        const innerSuccess = parseInt(successWord, 16) !== 0;
-        if (!innerSuccess) {
-          // Check for UserOperationRevertReason event for more detail
-          const REVERT_REASON_TOPIC = '0x1c4fada7374c0a9ee8841fc38afe82932dc0f8e69012e927f061a8bae611a201';
-          const revertLog = receipt.logs.find(
-            (log) => log.topics[0] === REVERT_REASON_TOPIC
-          );
-          const revertDetail = revertLog
-            ? ` Revert data available in tx ${result.txHash}`
-            : '';
-          return {
-            success: false,
-            txHash: result.txHash,
-            explorerUrl: buildExplorerUrl(result.txHash, chainId),
-            error: `Sponsored UserOp inner call reverted (tx succeeded but execution failed).${revertDetail}`,
-            errorCode: 'TX_REVERTED' as ErrorCode,
-            sponsored: true,
-          };
-        }
+      const userOpFailure = detectUserOpFailure(receipt, result.txHash, chainId, contract.interface);
+      if (userOpFailure) {
+        return userOpFailure;
       }
     }
 
@@ -243,8 +359,14 @@ export async function executeTx(
       const calldata = contract.interface.encodeFunctionData(method, args);
       return {
         success: true,
-        gasUsed: gasEstimate.toString(),
-        txHash: `dry-run:${calldata.slice(0, 20)}...`,
+        dryRun: true,
+        gasEstimate: gasEstimate.toString(),
+        calldata,
+        to: contract.address,
+        method,
+        txHash: process.env.POP_LEGACY_DRYRUN_TXHASH === '1'
+          ? `dry-run:${calldata.slice(0, 20)}...`
+          : undefined,
       };
     }
 

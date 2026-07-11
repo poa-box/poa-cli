@@ -13,6 +13,7 @@ import {
   recordIdempotentResult,
 } from '../../lib/idempotency';
 import * as output from '../../lib/output';
+import { tokenize, jaccard } from '../../lib/similarity';
 import { resolveOrgContracts } from './helpers';
 import { query } from '../../lib/subgraph';
 import { FETCH_PROJECTS_DATA } from '../../queries/task';
@@ -91,17 +92,6 @@ export const createHandler = {
       // words to flag — prevents short titles from tripping on a single shared word.
       if (!argv.force) {
         try {
-          const STOPWORDS = new Set([
-            'the', 'and', 'for', 'with', 'from', 'into', 'onto', 'that', 'this',
-            'task', 'tasks', 'create', 'build', 'make', 'add', 'new', 'fix',
-            'command', 'commands', 'update', 'updates', 'support', 'test',
-            'cli', 'pop', 'org', 'orgs', 'run', 'use', 'using', 'via', 'like',
-            'proposal', 'proposals', 'vote', 'votes', 'write', 'generate',
-          ]);
-          const tokenize = (s: string): Set<string> => {
-            const words = (s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4);
-            return new Set(words.filter(w => !STOPWORDS.has(w)));
-          };
           const result = await query<any>(FETCH_PROJECTS_DATA, { orgId }, argv.chain);
           const projects = result.organization?.taskManager?.projects || [];
           const allTasks = projects.flatMap((p: any) => p.tasks || []);
@@ -113,13 +103,12 @@ export const createHandler = {
               if (existingWords.size === 0) continue;
               const shared = [...newWords].filter(w => existingWords.has(w));
               if (shared.length < 3) continue; // absolute floor
-              const union = new Set([...newWords, ...existingWords]);
-              const jaccard = shared.length / union.size;
-              if (jaccard >= 0.5) {
+              const score = jaccard(newWords, existingWords);
+              if (score >= 0.5) {
                 spin.stop();
                 output.warn(
                   `Similar task exists: #${task.taskId} "${task.title}" (${task.status}). ` +
-                  `Jaccard=${jaccard.toFixed(2)}, shared=[${shared.join(',')}]. ` +
+                  `Jaccard=${score.toFixed(2)}, shared=[${shared.join(',')}]. ` +
                   `Use --force to create anyway.`
                 );
                 process.exit(1);

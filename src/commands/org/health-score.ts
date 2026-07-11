@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { query } from '../../lib/subgraph';
 import { resolveOrgModules } from '../../lib/resolve';
 import { resolveNetworkConfig } from '../../config/networks';
+import { computeGini } from '../../lib/stats';
 import * as output from '../../lib/output';
 
 interface HealthScoreArgs {
@@ -38,17 +39,6 @@ const FETCH_HEALTH_DATA = `
     }
   }
 `;
-
-function computeGini(values: number[]): number {
-  if (values.length <= 1) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const n = sorted.length;
-  const total = sorted.reduce((s, v) => s + v, 0);
-  if (total === 0) return 0;
-  let num = 0;
-  for (let i = 0; i < n; i++) num += (2 * (i + 1) - n - 1) * sorted[i];
-  return num / (n * total);
-}
 
 export const healthScoreHandler = {
   builder: (yargs: Argv) => yargs,
