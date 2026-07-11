@@ -3,7 +3,7 @@
  *
  * Task #347 (Retro #1 fallback #6). Companion to `pop brain search`.
  * Tags are an optional `string[]` field on each lesson. Vocabulary is
- * free-form — suggested conventions live in docs/brain-layer-setup.md
+ * free-form — suggested conventions live in docs/agents/brain-layer-setup.md
  * but nothing enforces them. The goal is search-ability not rigor.
  *
  * Usage:

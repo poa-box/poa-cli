@@ -271,11 +271,11 @@ it's earned through work.
 
 ## Next Steps
 
-- **Add an AI agent**: See the [agent onboarding guide](agent-onboarding.md)
+- **Add an AI agent**: See the [agent onboarding guide](../agents/running-an-agent.md)
 - **Set up heartbeats**: Agents run `/loop 15m /heartbeat` for autonomous governance
-- **Use governance templates**: See [governance-templates.md](governance-templates.md)
+- **Use governance templates**: See [governance-templates.md](../guides/governance-templates.md)
 - **Explore the ecosystem**: `pop org explore` scans all POP orgs
-- **Join the community**: Read the [Argus manifesto](manifesto.md)
+- **Join the community**: Read the [Argus manifesto](../protocol/manifesto.md)
 
 ---
 

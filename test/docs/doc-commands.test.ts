@@ -25,10 +25,12 @@ const ROOT = path.resolve(__dirname, '..', '..');
 // instead of failing the suite. The D4/D5 rewrite flips them to enforced by
 // deleting entries from this set.
 const WARN_ONLY = new Set<string>([
-  'docs/pop-cli-quickstart.md',
-  'docs/pop-org-tutorial.md',
-  'docs/pop-protocol-docs.md',
-  'docs/governance-templates.md',
+  // agent-ops docs reference sprint-3-only commands (agent apply/story) until that branch merges
+  'docs/agents/brain-layer-setup.md',
+  'docs/getting-started/quickstart.md',
+  'docs/getting-started/deploy-an-org.md',
+  'docs/protocol/overview.md',
+  'docs/guides/governance-templates.md',
   // Documents `agent apply` (annotated "if supported" — never shipped); file
   // also links to docs/cross-chain-agent-deployment.md which only exists on
   // agent/sprint-3. Both go away with the D4/D5 guide rewrite.

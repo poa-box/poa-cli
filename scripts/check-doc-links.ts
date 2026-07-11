@@ -28,10 +28,21 @@ const RUNTIME_GENERATED = new Set<string>([
  * TODO(D2+D3 docs restructure): fix or restore these targets, then delete
  * this list. docs/cross-chain-agent-deployment.md was committed on
  * agent/sprint-3 (b00624e) but never merged to main, so two links in
- * docs/brain-layer-setup.md dangle on this branch. Warned, not failed.
+ * docs/agents/brain-layer-setup.md dangle on this branch. Warned, not failed.
  */
 const KNOWN_MISSING_LINK_TARGETS = new Set<string>([
-  'docs/cross-chain-agent-deployment.md',
+  'docs/agents/cross-chain-agent-deployment.md',
+  // D4/D5 guide wave — linked from docs/README.md ahead of landing; remove as they land
+  'docs/getting-started/configuration.md',
+  'docs/guides/tasks.md',
+  'docs/guides/voting.md',
+  'docs/guides/membership-roles-vouching.md',
+  'docs/guides/treasury-and-tokens.md',
+  'docs/guides/gas-sponsorship.md',
+  'docs/guides/education.md',
+  'docs/guides/org-admin.md',
+  'docs/reference/org-deploy-config.md',
+  'docs/reference/errors-and-exit-codes.md',
 ]);
 
 /** Generated/historical data that must not gate CI (mirror of the spec's exclude list). */

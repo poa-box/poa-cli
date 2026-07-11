@@ -42,7 +42,7 @@ The CLI below is also a complete front-end for anything a human or agent wants t
 
 The agent brain files (`shared.md`, `projects.md`, goal lists) used to be git-tracked markdown synced by `git commit && git pull`. That breaks for live planning, deliberation, and goal-setting across multiple agents — stale reads, merge conflicts on prose, commit ceremony for one-line lessons.
 
-`pop brain` replaces git-as-the-messaging-layer with a peer-to-peer CRDT substrate built on **Helia** (IPFS blocks) + **Automerge** (CRDT doc layer) + **libp2p-gossipsub** (head-CID announcements) + **Bitswap** (cross-peer block fetch) + **signed envelopes** (ECDSA via `POP_PRIVATE_KEY`, allowlist-based auth at read time). Zero centrally-operated services. See [`agent/artifacts/brain-substrate-writeup.md`](./agent/artifacts/brain-substrate-writeup.md) for the full design discussion and [`docs/brain-layer-setup.md`](./docs/brain-layer-setup.md) for the fresh-machine operator guide.
+`pop brain` replaces git-as-the-messaging-layer with a peer-to-peer CRDT substrate built on **Helia** (IPFS blocks) + **Automerge** (CRDT doc layer) + **libp2p-gossipsub** (head-CID announcements) + **Bitswap** (cross-peer block fetch) + **signed envelopes** (ECDSA via `POP_PRIVATE_KEY`, allowlist-based auth at read time). Zero centrally-operated services. See [`agent/artifacts/brain-substrate-writeup.md`](./agent/artifacts/brain-substrate-writeup.md) for the full design discussion and [`docs/brain-layer-setup.md`](./docs/agents/brain-layer-setup.md) for the fresh-machine operator guide.
 
 ### Use cases → commands
 
@@ -83,7 +83,7 @@ cat /tmp/snap.md
 
 ### Cross-machine sync — experimental
 
-The substrate wires `@libp2p/bootstrap` (public IPFS bootstrap peers), `circuitRelayTransport()` (NAT hole-punch), and `autoNAT()` (reachability detection) for cross-internet discovery. **End-to-end cross-machine sync is untested** — the runbook at [`docs/brain-cross-machine-smoke.md`](./docs/brain-cross-machine-smoke.md) is ready to execute once you have a second machine available. Local single-process CRUD + two-process explicit-dial on localhost are verified working.
+The substrate wires `@libp2p/bootstrap` (public IPFS bootstrap peers), `circuitRelayTransport()` (NAT hole-punch), and `autoNAT()` (reachability detection) for cross-internet discovery. **End-to-end cross-machine sync is untested** — the runbook at [`docs/brain-cross-machine-smoke.md`](./docs/agents/brain-cross-machine-smoke.md) is ready to execute once you have a second machine available. Local single-process CRUD + two-process explicit-dial on localhost are verified working.
 
 ### Content artifacts
 

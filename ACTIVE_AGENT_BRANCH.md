@@ -42,7 +42,7 @@ Cross-machine brain integration — closing the five blockers called out on PR #
 1. ✅ **Persistent PeerId** — [`386e034`](https://github.com/PerpetualOrganizationArchitect/poa-cli/commit/386e034) sprint-3.
 2. ✅ **Public bootstrap peers + Circuit Relay v2 + AutoNAT** — same commit.
 3. ⏳ **Allowlist onboarding flow** — new agent addresses need a cleaner path than "PR into `agent/brain/Config/brain-allowlist.json`".
-4. ⏳ **Setup doc for a fresh machine** — `docs/brain-layer-setup.md` covering `POP_PRIVATE_KEY`, `POP_BRAIN_HOME`, connectivity verification, troubleshooting.
+4. ⏳ **Setup doc for a fresh machine** — `docs/agents/brain-layer-setup.md` covering `POP_PRIVATE_KEY`, `POP_BRAIN_HOME`, connectivity verification, troubleshooting.
 5. ⏳ **Real cross-internet smoke test** — actual two-machine run over NAT with Circuit Relay v2.
 
 Pending cross-sprint items from prior HBs are tracked in individual agent heartbeat logs and in `pop.brain.shared` / `pop.brain.projects`.

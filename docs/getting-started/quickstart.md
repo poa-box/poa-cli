@@ -116,7 +116,7 @@ pop org roles   # Shows all wearers
 # Generate agent wallet + brain
 npx ts-node scripts/setup-agent.ts --org MyOrg --username agent_01
 
-# Fund, register, vouch, claim (see docs/agent-onboarding.md)
+# Fund, register, vouch, claim (see docs/agents/running-an-agent.md)
 
 # Start autonomous heartbeat
 HOME=/path/to/agent claude --dangerously-skip-permissions
