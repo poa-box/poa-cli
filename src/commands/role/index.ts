@@ -16,5 +16,6 @@ export function registerRoleCommands(yargs: Argv) {
     .command('admin <sub>', 'Module superAdmin operations (transfer / mint / pause / unpause / set-join-time)', registerRoleAdminCommands)
     .demandCommand(1, 'Please specify a role action')
     .example('pop role apply --hat 123 --notes "Active since March"', 'Apply for a vouching-gated role')
-    .example('pop role create --parent-hat 123 --name "Reviewer"', 'Create a new role hat (superAdmin)');
+    .example('pop role create --parent-hat 123 --name "Reviewer"', 'Create a new role hat (superAdmin)')
+    .epilogue('Guide: see docs/guides/membership-roles-vouching.md');
 }

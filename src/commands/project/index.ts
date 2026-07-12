@@ -10,5 +10,6 @@ export function registerProjectCommands(yargs: Argv) {
     .command('propose', 'Propose a new project via governance vote', proposeHandler.builder, proposeHandler.handler)
     .command('list', 'List projects', listHandler.builder, listHandler.handler)
     .command('delete', 'Delete a project (destructive; creator-hat/executor)', deleteHandler.builder, deleteHandler.handler)
-    .demandCommand(1, 'Please specify a project action');
+    .demandCommand(1, 'Please specify a project action')
+    .epilogue('Guide: see docs/guides/tasks.md');
 }

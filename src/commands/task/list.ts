@@ -86,7 +86,9 @@ export const listHandler = {
     .option('expiring', { type: 'string', describe: 'Only tasks whose governing deadline falls within this window (e.g. "24h", "7d"; default 24h)' })
     .option('fast', { type: 'boolean', default: false, describe: 'Skip on-chain deadline enrichment (subgraph data only)' })
     .option('sort-by', { type: 'string', choices: ['id', 'payout', 'status', 'created'], default: 'id', describe: 'Sort field' })
-    .option('limit', { type: 'number', describe: 'Max results to show' }),
+    .option('limit', { type: 'number', describe: 'Max results to show' })
+    .example('pop task list --claimable --sort-by payout', 'Tasks you could claim right now, richest first')
+    .example('pop task list --mine --status Submitted', 'Your tasks that are awaiting review'),
 
   handler: async (argv: ArgumentsCamelCase<ListArgs>) => {
     const spin = output.spinner('Fetching tasks...');

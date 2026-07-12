@@ -13,5 +13,6 @@ export function registerEducationCommands(yargs: Argv) {
     .command('remove', 'Permanently remove a module (destructive — no undo)', removeModuleHandler.builder, removeModuleHandler.handler)
     .command('complete', 'Complete a module\'s quiz and claim its PT reward', completeHandler.builder, completeHandler.handler)
     .demandCommand(1, 'Please specify an education action')
-    .example('pop education list --json', 'Machine-readable module list');
+    .example('pop education list --json', 'Machine-readable module list')
+    .epilogue('Guide: see docs/guides/education.md');
 }

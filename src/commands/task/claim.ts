@@ -161,7 +161,8 @@ export const claimHandler = {
       type: 'boolean',
       default: false,
       describe: 'Bypass the idempotency cache and always submit.',
-    }),
+    })
+    .example('pop task claim --task 12', 'Claim task 12 (also takes over a claim whose deadline expired)'),
 
   handler: async (argv: ArgumentsCamelCase<ClaimArgs>) => {
     const spin = output.spinner('Checking task state...');

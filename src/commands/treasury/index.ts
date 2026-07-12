@@ -29,5 +29,6 @@ export function registerTreasuryCommands(yargs: Argv) {
     .command('send', 'Propose a transfer from Executor via governance', sendHandler.builder, sendHandler.handler)
     .command('propose-sdai', 'Propose depositing xDAI into sDAI for yield', proposeSdaiHandler.builder, proposeSdaiHandler.handler)
     .command('propose-finalize', 'Propose closing a distribution via governance (returns unclaimed funds to the treasury)', proposeFinalizeHandler.builder, proposeFinalizeHandler.handler)
-    .demandCommand(1, 'Please specify a treasury action');
+    .demandCommand(1, 'Please specify a treasury action')
+    .epilogue('Guide: see docs/guides/treasury-and-tokens.md');
 }

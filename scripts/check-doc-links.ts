@@ -31,18 +31,8 @@ const RUNTIME_GENERATED = new Set<string>([
  * docs/agents/brain-layer-setup.md dangle on this branch. Warned, not failed.
  */
 const KNOWN_MISSING_LINK_TARGETS = new Set<string>([
+  // Only exists on agent/sprint-3; referenced by agent-ops runbooks.
   'docs/agents/cross-chain-agent-deployment.md',
-  // D4/D5 guide wave — linked from docs/README.md ahead of landing; remove as they land
-  'docs/getting-started/configuration.md',
-  'docs/guides/tasks.md',
-  'docs/guides/voting.md',
-  'docs/guides/membership-roles-vouching.md',
-  'docs/guides/treasury-and-tokens.md',
-  'docs/guides/gas-sponsorship.md',
-  'docs/guides/education.md',
-  'docs/guides/org-admin.md',
-  'docs/reference/org-deploy-config.md',
-  'docs/reference/errors-and-exit-codes.md',
 ]);
 
 /** Generated/historical data that must not gate CI (mirror of the spec's exclude list). */
@@ -140,6 +130,11 @@ function checkDocPathReferences(files: string[]): Problem[] {
       for (const match of lines[i].matchAll(DOC_PATH_RE)) {
         const docPath = match[1];
         if (RUNTIME_GENERATED.has(docPath)) continue;
+        // Guide files linked ahead of landing (D4/D5 docs wave): command
+        // epilogues point at docs/guides/*.md before those files exist. The
+        // same allowlist already softens markdown links (part a) — honor it
+        // here so `pop <domain> --help` can cite the guide pre-emptively.
+        if (KNOWN_MISSING_LINK_TARGETS.has(docPath)) continue;
         if (!fs.existsSync(path.join(ROOT, docPath))) {
           problems.push({ file: rel(file), line: i + 1, detail: `missing doc path: ${docPath}` });
         }

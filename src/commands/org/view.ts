@@ -39,7 +39,9 @@ async function readMetadataAdminHat(org: any, chainId?: number): Promise<string 
 }
 
 export const viewHandler = {
-  builder: (yargs: Argv) => yargs,
+  builder: (yargs: Argv) => yargs
+    .example('pop org view --org myorg', 'Modules, roles, token, and voting config for an org (by name)')
+    .example('pop org view --org 0x… --json', 'Machine-readable org snapshot (by hex ID)'),
 
   handler: async (argv: ArgumentsCamelCase<ViewArgs>) => {
     const spin = output.spinner('Fetching organization...');

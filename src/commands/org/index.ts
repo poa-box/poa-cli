@@ -66,5 +66,6 @@ export function registerOrgCommands(yargs: Argv) {
     .command('probe-access', 'Burner-callStatic access-control probe — map a contract\'s gating model in <5 min, zero gas', probeAccessHandler.builder, probeAccessHandler.handler)
     .command('audit-vetoken', 'On-chain top-holder probe for veCRV-family VotingEscrow contracts (task #383)', auditVetokenHandler.builder, auditVetokenHandler.handler)
     .command('audit-participation', 'Governance participation metrics for external Governor contracts (task #422)', auditParticipationHandler.builder, auditParticipationHandler.handler)
-    .demandCommand(1, 'Please specify an org action');
+    .demandCommand(1, 'Please specify an org action')
+    .epilogue('Guide: see docs/guides/org-admin.md');
 }

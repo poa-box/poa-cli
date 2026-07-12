@@ -27,6 +27,7 @@ import { registerRoleCommands } from './commands/role';
 import { registerConfigCommands } from './commands/config';
 import { registerAgentCommands } from './commands/agent';
 import { registerBrainCommands } from './commands/brain';
+import { initHandler } from './commands/init';
 
 async function main() {
   const cli = yargs(hideBin(process.argv))
@@ -46,6 +47,10 @@ async function main() {
     .command('config <action>', 'View and validate configuration', registerConfigCommands)
     .command('agent <action>', 'Agent operations & monitoring', registerAgentCommands)
     .command('brain <action>', 'P2P CRDT brain layer (live-sync knowledge)', registerBrainCommands)
+    // Top-level onboarding wizard. Registered before the global --org option so
+    // it is clearly not an org-scoped command; its handler never resolves an
+    // org, so the POP_DEFAULT_ORG middleware fallback below never blocks it.
+    .command('init', 'Interactive setup: wallet, chain, default org, .env', initHandler.builder, initHandler.handler)
     .option('org', {
       type: 'string',
       description: 'Organization ID or name (or set POP_DEFAULT_ORG)',

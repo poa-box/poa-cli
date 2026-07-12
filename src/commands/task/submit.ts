@@ -67,7 +67,9 @@ export const submitHandler = {
       type: 'boolean',
       default: false,
       describe: 'Bypass the idempotency cache and always submit.',
-    }),
+    })
+    .example('pop task submit --task 12 --submission "PR #42, deployed to staging"', 'Submit work for a task you have claimed')
+    .example('pop task submit --task 12 --submission "done" --commit --commit-files src/foo.ts,README.md', 'Submit, then git-commit the listed files with the tx hash in the message'),
 
   handler: async (argv: ArgumentsCamelCase<SubmitArgs>) => {
     const spin = output.spinner('Submitting task...');

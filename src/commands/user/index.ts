@@ -15,5 +15,6 @@ export function registerUserCommands(yargs: Argv) {
     .command('profile', 'View user profile', profileHandler.builder, profileHandler.handler)
     .command('update-profile', 'Update profile (bio, avatar, links) or change your username', updateProfileHandler.builder, updateProfileHandler.handler)
     .demandCommand(1, 'Please specify a user action')
-    .example('pop user whoami', 'Who is the configured signer and where do they stand?');
+    .example('pop user whoami', 'Who is the configured signer and where do they stand?')
+    .epilogue('Guide: see docs/guides/membership-roles-vouching.md');
 }

@@ -34,5 +34,6 @@ export function registerTaskCommands(yargs: Argv) {
     .command('edit-meta', 'Edit only a task\'s name/description (post-claim safe; v5+)', editMetaHandler.builder, editMetaHandler.handler)
     .command('perms <sub>', 'Show and manage task permission masks (show / set / propose-global)', registerPermsCommands)
     .command('folders <sub>', 'Show and update the org folder-tree root (show / set)', registerFoldersCommands)
-    .demandCommand(1, 'Please specify a task action');
+    .demandCommand(1, 'Please specify a task action')
+    .epilogue('Guide: see docs/guides/tasks.md');
 }

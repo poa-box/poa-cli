@@ -18,5 +18,6 @@ export function registerVouchCommands(yargs: Argv) {
     .command('reset', 'Reset vouches for a hat or one wearer (superAdmin-only, destructive)', resetHandler.builder, resetHandler.handler)
     .demandCommand(1, 'Please specify a vouch action')
     .example('pop vouch for --address 0xabc... --hat 123', 'Vouch for a member')
-    .example('pop vouch config show --hat 123', 'Inspect a hat\'s vouching setup');
+    .example('pop vouch config show --hat 123', 'Inspect a hat\'s vouching setup')
+    .epilogue('Guide: see docs/guides/membership-roles-vouching.md');
 }

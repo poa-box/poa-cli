@@ -78,7 +78,9 @@ export const createHandler = {
       type: 'boolean',
       default: false,
       describe: 'Bypass the idempotency cache and always submit a new task.',
-    }),
+    })
+    .example('pop task create --project "Ops" --name "Write docs" --description "Draft the treasury guide" --payout 25', 'Create a 25 PT task under the Ops project')
+    .example('pop task create --project 0x… --name "Fix bug" --description "…" --payout 10 --deadline 7d --requires-application', 'Application-gated task with a one-week claim deadline (v6)'),
 
   handler: async (argv: ArgumentsCamelCase<CreateArgs>) => {
     const spin = output.spinner('Creating task...');

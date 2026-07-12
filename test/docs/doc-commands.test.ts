@@ -25,16 +25,9 @@ const ROOT = path.resolve(__dirname, '..', '..');
 // instead of failing the suite. The D4/D5 rewrite flips them to enforced by
 // deleting entries from this set.
 const WARN_ONLY = new Set<string>([
-  // agent-ops docs reference sprint-3-only commands (agent apply/story) until that branch merges
+  // agent-ops docs document sprint-3-only commands (agent apply/story); enforced
+  // once that branch merges. Human-facing docs are all enforced.
   'docs/agents/brain-layer-setup.md',
-  'docs/getting-started/quickstart.md',
-  'docs/getting-started/deploy-an-org.md',
-  'docs/protocol/overview.md',
-  'docs/guides/governance-templates.md',
-  // Documents `agent apply` (annotated "if supported" — never shipped); file
-  // also links to docs/cross-chain-agent-deployment.md which only exists on
-  // agent/sprint-3. Both go away with the D4/D5 guide rewrite.
-  'docs/brain-layer-setup.md',
 ]);
 
 const BASH_INFO = /^(bash|sh|shell|zsh|console)\b/;

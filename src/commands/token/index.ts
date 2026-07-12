@@ -12,5 +12,6 @@ export function registerTokenCommands(yargs: Argv) {
     .command('cancel', 'Cancel a pending token request (requester or approver)', cancelHandler.builder, cancelHandler.handler)
     .command('requests', 'List token requests', requestsHandler.builder, requestsHandler.handler)
     .command('balance', 'Check participation token balance', balanceHandler.builder, balanceHandler.handler)
-    .demandCommand(1, 'Please specify a token action');
+    .demandCommand(1, 'Please specify a token action')
+    .epilogue('Guide: see docs/guides/treasury-and-tokens.md');
 }

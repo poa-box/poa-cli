@@ -24,5 +24,6 @@ export function registerVoteCommands(yargs: Argv) {
     .command('analyze', 'Analyze a hybrid vote — power breakdown and counterfactuals', analyzeHandler.builder, analyzeHandler.handler)
     .command('results', 'Show vote results with option names and rankings', resultsHandler.builder, resultsHandler.handler)
     .command('classes <sub>', 'Show or propose the hybrid voting class configuration (show / propose)', registerClassesCommands)
-    .demandCommand(1, 'Please specify a vote action');
+    .demandCommand(1, 'Please specify a vote action')
+    .epilogue('Guide: see docs/guides/voting.md');
 }
