@@ -2,8 +2,11 @@ import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { query } from '../../lib/subgraph';
 import { FETCH_USERNAME, FETCH_USER_DATA } from '../../queries/user';
-import { formatAddress } from '../../lib/encoding';
+import { resolveOrgId } from '../../lib/resolve';
+import { formatToken } from '../../lib/format';
 import { HOME_CHAIN_ID } from '../../config/networks';
+import { CliError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 
 interface ProfileArgs {
@@ -15,7 +18,9 @@ interface ProfileArgs {
 
 export const profileHandler = {
   builder: (yargs: Argv) => yargs
-    .option('address', { type: 'string', describe: 'User address (defaults to signer)' }),
+    .option('address', { type: 'string', describe: 'User address (defaults to signer)' })
+    .example('pop user profile --org myorg', 'Profile + org membership stats for the signer')
+    .example('pop user profile --address 0xabc... --json', 'Machine-readable profile for any address'),
 
   handler: async (argv: ArgumentsCamelCase<ProfileArgs>) => {
     const spin = output.spinner('Fetching profile...');
@@ -42,8 +47,11 @@ export const profileHandler = {
       }
 
       if (argv.org) {
-        // Fetch org-specific user data
-        const orgUserID = `${argv.org}-${address.toLowerCase()}`;
+        // Fetch org-specific user data. The subgraph User id is
+        // "<orgHexId>-<address>", so org NAMES must resolve to the hex id
+        // first (previously a name here silently matched nothing).
+        const orgId = await resolveOrgId(argv.org, argv.chain);
+        const orgUserID = `${orgId.toLowerCase()}-${address.toLowerCase()}`;
         const chainId = argv.chain;
 
         const userResult = await query<any>(
@@ -93,7 +101,7 @@ export const profileHandler = {
             console.log(`  Status: ${user.membershipStatus || 'Unknown'}`);
             console.log(`  Join Method: ${user.joinMethod || 'Unknown'}`);
             if (user.participationTokenBalance) {
-              console.log(`  PT Balance: ${ethers.utils.formatUnits(user.participationTokenBalance, 18)}`);
+              console.log(`  PT Balance: ${formatToken(user.participationTokenBalance, 18, 'PT')}`);
             }
             console.log(`  Tasks Completed: ${user.totalTasksCompleted || 0}`);
             console.log(`  Votes Cast: ${user.totalVotes || 0}`);
@@ -145,8 +153,12 @@ export const profileHandler = {
       }
     } catch (err: any) {
       spin.stop();
-      output.error(err.message);
-      process.exit(1);
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
+      output.error(err?.message || String(err));
+      process.exit(EXIT.USAGE);
     }
   },
 };

@@ -6,7 +6,7 @@ Project management
 
 ## pop project create
 
-Create a new project
+Create a new project (direct tx; creator-hat/executor)
 
 ```text
 pop project create [flags]
@@ -54,7 +54,7 @@ pop project list [flags]
 
 ## pop project delete
 
-Delete a project
+Delete a project (destructive; creator-hat/executor)
 
 ```text
 pop project delete [flags]
@@ -62,6 +62,6 @@ pop project delete [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--project` | string | yes | - | Project ID |
+| `--project` | string | yes | - | Project ID (bytes32 or decimal) or name |
 
 _Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

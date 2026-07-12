@@ -6,10 +6,41 @@ Gas sponsorship (ERC-4337)
 
 ## pop paymaster status
 
-View paymaster status and deposit
+View paymaster registration, balance, budgets, and solidarity state
 
 ```text
 pop paymaster status [flags]
 ```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--hat` | string | no | - | Additional hat ID(s) whose sponsorship budgets to show (admin/operator hats are probed automatically) |
+
+## pop paymaster deposit
+
+Fund an org's gas sponsorship balance (permissionless, one-way — no withdraw)
+
+```text
+pop paymaster deposit [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--amount` | string | yes | - | Amount to deposit, in ether units of the native gas token (e.g. 0.05 = 0.05 xDAI on Gnosis) |
+
+## pop paymaster register
+
+Register an org with the PaymasterHub (sends via PoaManager owner, or prints the exact registrar call)
+
+```text
+pop paymaster register [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--admin-hat` | string | yes | - | Hat ID that will administer the org's paymaster config (usually the org top hat) |
+| `--config` | string | no | - | JSON file with initial fee caps (gwei), rules, and budgets (ether caps) — uses registerAndConfigureOrg |
+| `--deposit` | string | no | - | Also deposit this amount (ether units) after registration via permissionless depositForOrg |
+| `--operator-hat` | string | no | - | Optional hat ID allowed to manage budgets/rules (0 = none) |
 
 _Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

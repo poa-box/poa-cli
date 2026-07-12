@@ -3,12 +3,39 @@ import { ethers } from 'ethers';
 import { query } from '../../lib/subgraph';
 import { fetchJson } from '../../lib/ipfs';
 import { FETCH_ORG_FULL_DATA, GET_ORG_BY_NAME } from '../../queries/org';
+import { FETCH_INFRASTRUCTURE_ADDRESSES } from '../../queries/infrastructure';
+import type { InfrastructureAddresses } from '../../queries/infrastructure';
+import { createReadContract } from '../../lib/contracts';
+import { resolveNetworkConfig } from '../../config/networks';
 import { formatAddress } from '../../lib/encoding';
 import * as output from '../../lib/output';
 
 interface ViewArgs {
   org: string;
   chain?: number;
+}
+
+/**
+ * Current metadata-admin hat via OrgRegistry.getOrgMetadataAdminHat (getter
+ * verified in src/abi/OrgRegistry.json; 0 = unset → topHat fallback).
+ * On-chain read is authoritative; subgraph metadataAdminHatId is the
+ * fallback; null when neither source is reachable (never throws).
+ */
+async function readMetadataAdminHat(org: any, chainId?: number): Promise<string | null> {
+  try {
+    const infra = await query<InfrastructureAddresses>(FETCH_INFRASTRUCTURE_ADDRESSES, {}, chainId);
+    const orgRegistryAddr = infra.poaManagerContracts?.[0]?.orgRegistryProxy;
+    if (!orgRegistryAddr) throw new Error('no OrgRegistry address');
+    const netConfig = resolveNetworkConfig(chainId);
+    const provider = new ethers.providers.JsonRpcProvider(netConfig.resolvedRpc, netConfig.chainId);
+    const registry = createReadContract(orgRegistryAddr, 'OrgRegistry', provider);
+    const hat = await registry.getOrgMetadataAdminHat(org.id);
+    return hat.toString();
+  } catch {
+    return org.metadataAdminHatId !== undefined && org.metadataAdminHatId !== null
+      ? String(org.metadataAdminHatId)
+      : null;
+  }
 }
 
 export const viewHandler = {
@@ -55,6 +82,8 @@ export const viewHandler = {
         } catch { /* ignore */ }
       }
 
+      const metadataAdminHat = await readMetadataAdminHat(org, argv.chain);
+
       spin.stop();
 
       if (output.isJsonMode()) {
@@ -67,6 +96,7 @@ export const viewHandler = {
           links: metadata?.links,
           deployedAt: org.deployedAt,
           topHatId: org.topHatId,
+          metadataAdminHat,
           modules: {
             taskManager: org.taskManager?.id,
             hybridVoting: org.hybridVoting?.id,
@@ -107,6 +137,9 @@ export const viewHandler = {
         console.log(`  ID: ${org.id}`);
         if (metadata?.description) console.log(`  Description: ${metadata.description}`);
         if (org.deployedAt) console.log(`  Deployed: ${new Date(parseInt(org.deployedAt) * 1000).toLocaleString()}`);
+        if (metadataAdminHat !== null) {
+          console.log(`  Metadata admin hat: ${metadataAdminHat === '0' ? 'not set (topHat fallback)' : metadataAdminHat}`);
+        }
         console.log('');
 
         console.log('  Modules:');

@@ -33,6 +33,10 @@ Quick org health summary
 pop org status [flags]
 ```
 
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--fast` | boolean | no | `false` | Skip the on-chain module version check (subgraph summary only) |
+
 ## pop org activity
 
 Recent org activity (agent heartbeat)
@@ -61,6 +65,19 @@ pop org update-metadata [flags]
 | `--links` | string | no | - | JSON array of {name, url} links |
 | `--logo` | string | no | - | Path to logo image file |
 | `--name` | string | no | - | New org name |
+
+## pop org set-metadata-admin
+
+Propose changing the org metadata-admin hat (governance vote)
+
+```text
+pop org set-metadata-admin [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--duration` | number | no | `60` | Vote duration in minutes |
+| `--hat` | string | yes | - | Hat ID that may edit org metadata directly (0 = clear; topHat fallback applies) |
 
 ## pop org deploy
 

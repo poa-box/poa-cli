@@ -17,7 +17,9 @@ interface ApplicationsArgs {
 export const applicationsHandler = {
   builder: (yargs: Argv) => yargs
     .option('mine', { type: 'boolean', describe: 'Show only my applications' })
-    .option('hat', { type: 'string', describe: 'Filter by hat ID' }),
+    .option('hat', { type: 'string', describe: 'Filter by hat ID' })
+    .example('pop role applications --hat 123', 'List active applications for role 123')
+    .example('pop role applications --mine --json', 'My applications, machine-readable'),
 
   handler: async (argv: ArgumentsCamelCase<ApplicationsArgs>) => {
     const spin = output.spinner('Fetching role applications...');
@@ -54,6 +56,22 @@ export const applicationsHandler = {
       }
 
       spin.stop();
+
+      if (output.isJsonMode()) {
+        output.json({
+          count: applications.length,
+          applications: applications.map((a: any) => ({
+            id: a.id,
+            hatId: a.hatId,
+            applicant: a.applicant,
+            applicantUsername: a.applicantUsername || undefined,
+            applicationHash: a.applicationHash,
+            active: Boolean(a.active),
+            appliedAt: a.appliedAt,
+          })),
+        });
+        return;
+      }
 
       if (applications.length === 0) {
         output.info('No role applications found');

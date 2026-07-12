@@ -8,15 +8,15 @@ Command reference generated from the yargs command tree. Regenerate with `yarn d
 | --- | --- | --- | --- |
 | `task` | Task management | 16 | [task.md](task.md) |
 | `project` | Project management | 4 | [project.md](project.md) |
-| `org` | Organization management | 31 | [org.md](org.md) |
-| `vote` | Governance & voting | 10 | [vote.md](vote.md) |
-| `user` | User & membership | 4 | [user.md](user.md) |
-| `education` | Education modules | 3 | [education.md](education.md) |
-| `vouch` | Vouching system | 5 | [vouch.md](vouch.md) |
+| `org` | Organization management | 32 | [org.md](org.md) |
+| `vote` | Governance & voting | 11 | [vote.md](vote.md) |
+| `user` | User & membership | 6 | [user.md](user.md) |
+| `education` | Education modules | 5 | [education.md](education.md) |
+| `vouch` | Vouching system | 7 | [vouch.md](vouch.md) |
 | `token` | Participation token requests | 5 | [token.md](token.md) |
-| `treasury` | Treasury & distributions | 13 | [treasury.md](treasury.md) |
-| `paymaster` | Gas sponsorship (ERC-4337) | 1 | [paymaster.md](paymaster.md) |
-| `role` | Role applications | 2 | [role.md](role.md) |
+| `treasury` | Treasury & distributions | 14 | [treasury.md](treasury.md) |
+| `paymaster` | Gas sponsorship (ERC-4337) | 3 | [paymaster.md](paymaster.md) |
+| `role` | Role applications | 6 | [role.md](role.md) |
 | `config` | View and validate configuration | 2 | [config.md](config.md) |
 | `agent` | Agent operations & monitoring | 10 | [agent.md](agent.md) |
 | `brain` | P2P CRDT brain layer (live-sync knowledge) | 25 | [brain.md](brain.md) |

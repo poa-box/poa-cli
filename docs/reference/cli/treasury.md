@@ -30,7 +30,7 @@ pop treasury deposit [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--amount` | number | yes | - | Amount to deposit |
+| `--amount` | number | yes | - | Amount to deposit (human token units) |
 | `--token` | string | yes | - | ERC20 token address |
 
 ## pop treasury propose-swap
@@ -43,18 +43,18 @@ pop treasury propose-swap [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--amount` | number | yes | - | Amount to swap (human-readable) |
+| `--amount` | number | yes | - | Amount to swap (human units of from-token) |
 | `--duration` | number | no | `1440` | Vote duration in minutes |
 | `--from-index` | number | yes | - | Curve coin index for from-token (0 or 1) |
 | `--from-token` | string | yes | - | Token to sell (address) |
-| `--min-out` | number | no | - | Minimum output amount (default: 95% of input for stables) |
+| `--min-out` | number | no | - | Minimum output amount in to-token units (default: 95% of the pool quote) |
 | `--pool` | string | yes | - | Curve pool address |
 | `--to-index` | number | yes | - | Curve coin index for to-token (0 or 1) |
 | `--to-token` | string | yes | - | Token to receive (address) |
 
 ## pop treasury claim
 
-Claim from a distribution
+Claim from a distribution with a manual amount + proof (prefer claim-mine)
 
 ```text
 pop treasury claim [flags]
@@ -62,13 +62,15 @@ pop treasury claim [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--amount` | string | yes | - | Claim amount (wei) |
+| `--amount` | string | yes | - | Your allocated amount in TOKEN UNITS (e.g. 12.5) — must match the merkle leaf exactly; use --wei for the raw integer |
 | `--distribution` | number | yes | - | Distribution ID |
-| `--proof` | string | yes | - | JSON array of merkle proof bytes32 hashes |
+| `--proof` | string | no | - | JSON array of merkle proof bytes32 hashes |
+| `--proof-file` | string | no | - | Path to a JSON file with the proof array (or an allocation object with a "proof" field, as in merkle-distribution.json) |
+| `--wei` | boolean | no | `false` | Treat --amount as the raw integer (wei-level) value instead of decimal token units |
 
 ## pop treasury distributions
 
-List distributions
+List distributions with finalized/finalizable state
 
 ```text
 pop treasury distributions [flags]
@@ -123,7 +125,7 @@ pop treasury propose-distribution [flags]
 
 ## pop treasury claim-mine
 
-Auto-claim from all unclaimed distributions
+Auto-claim from all unclaimed distributions (recommended claim path)
 
 ```text
 pop treasury claim-mine [flags]
@@ -141,9 +143,9 @@ pop treasury send [flags]
 | --- | --- | --- | --- | --- |
 | `--amount` | number | no | - | Amount to send (single recipient) |
 | `--duration` | number | no | `60` | Vote duration in minutes |
-| `--recipients` | string | no | - | JSON array for batch: [{"to":"0x...","amount":5},...] |
+| `--recipients` | string | no | - | JSON array for batch: [{"to":"0x...","amount":5},...] (max 8) |
 | `--to` | string | no | - | Recipient address (single recipient) |
-| `--token` | string | no | `native` | Token address or "native" for xDAI |
+| `--token` | string | no | `native` | Token address or "native" for the chain's gas token |
 
 ## pop treasury propose-sdai
 
@@ -157,5 +159,19 @@ pop treasury propose-sdai [flags]
 | --- | --- | --- | --- | --- |
 | `--amount` | number | yes | - | xDAI amount to deposit into sDAI |
 | `--duration` | number | no | `60` | Vote duration in minutes |
+
+## pop treasury propose-finalize
+
+Propose closing a distribution via governance (returns unclaimed funds to the treasury)
+
+```text
+pop treasury propose-finalize [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--distribution` | number | yes | - | Distribution ID to finalize |
+| `--duration` | number | no | `60` | Vote duration in minutes |
+| `--min-claim-blocks` | number | no | `0` | On-chain guard: execution reverts until this many blocks have passed since the distribution's CHECKPOINT block (0 = no extra guard beyond the vote duration) |
 
 _Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

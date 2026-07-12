@@ -6,7 +6,7 @@ Participation token requests
 
 ## pop token request
 
-Request participation tokens
+Request participation tokens (members only; minted on approval)
 
 ```text
 pop token request [flags]
@@ -15,11 +15,11 @@ pop token request [flags]
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `--amount` | number | yes | - | Amount of PT to request |
-| `--reason` | string | yes | - | Reason for the request |
+| `--reason` | string | yes | - | Reason for the request (pinned to IPFS) |
 
 ## pop token approve
 
-Approve a token request
+Approve a token request — MINTS the requested PT to the requester
 
 ```text
 pop token approve [flags]
@@ -31,7 +31,7 @@ pop token approve [flags]
 
 ## pop token cancel
 
-Cancel a pending token request
+Cancel a pending token request (requester or approver)
 
 ```text
 pop token cancel [flags]
@@ -55,7 +55,7 @@ pop token requests [flags]
 
 ## pop token balance
 
-Check token balance
+Check participation token balance
 
 ```text
 pop token balance [flags]

@@ -1,12 +1,33 @@
+/**
+ * pop treasury claim-mine — auto-claim your allocation from every unclaimed
+ * distribution. This is the RECOMMENDED claim path: it recomputes the
+ * PT-proportional merkle tree at each distribution's checkpoint block (the
+ * same allocation rules as compute-merkle), verifies the recomputed root
+ * matches the on-chain root, and derives your exact amount + proof — no
+ * manual --amount/--proof needed (that escape hatch is pop treasury claim).
+ *
+ * Pre-flight (skippable with --no-preflight) mirrors the contract's claim
+ * gates before any gas is spent: isOptedOut fails fast, and per-distribution
+ * hasClaimed reads skip claims the subgraph hasn't indexed yet.
+ *
+ * Amounts display in the payout token's human units — address(0) is the
+ * chain's native token (verified against contracts origin/main
+ * src/PaymentManager.sol), otherwise a live ERC20 decimals() read.
+ */
+
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { createSigner } from '../../lib/signer';
-import { createWriteContract } from '../../lib/contracts';
+import { createReadContract, createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { query } from '../../lib/subgraph';
-import { resolveOrgModules } from '../../lib/resolve';
+import { requireModule } from '../../lib/resolve';
+import { getWriteContext, confirmWrite } from '../../lib/command';
+import { runPreflight, checkGasBalance } from '../../lib/preflight';
+import { formatToken } from '../../lib/format';
+import { resolvePayoutTokenInfo, PayoutTokenInfo } from './helpers';
+import { CliError, PreconditionError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
-import { resolveTreasuryContracts } from './helpers';
 
 interface ClaimMineArgs {
   org?: string;
@@ -14,6 +35,8 @@ interface ClaimMineArgs {
   rpc?: string;
   'private-key'?: string;
   'dry-run'?: boolean;
+  yes?: boolean;
+  preflight?: boolean;
 }
 
 // OZ v5 double-hash leaf
@@ -90,24 +113,48 @@ const FETCH_DISTRIBUTIONS = `
   }
 `;
 
+interface ClaimResult {
+  distId: string;
+  amount: string;
+  amountWei?: string;
+  symbol?: string;
+  token?: string;
+  success: boolean;
+  txHash?: string;
+  explorerUrl?: string;
+  dryRun?: boolean;
+  error?: string;
+}
+
+interface Claimable {
+  distId: string;
+  amount: ethers.BigNumber;
+  proof: string[];
+  token: PayoutTokenInfo;
+}
+
 export const claimMineHandler = {
-  builder: (yargs: Argv) => yargs,
+  builder: (yargs: Argv) => yargs
+    .example('pop treasury claim-mine', 'Derive your amount + proof and claim from every unclaimed distribution')
+    .example('pop treasury claim-mine --dry-run --json', 'Preview the claims without sending transactions')
+    .epilogue(
+      'Recommended over pop treasury claim: the amount and merkle proof are recomputed for you '
+      + 'from PT balances at each distribution\'s checkpoint block. Distributions whose recomputed '
+      + 'root does not match on-chain are skipped (different allocation parameters).'
+    ),
 
   handler: async (argv: ArgumentsCamelCase<ClaimMineArgs>) => {
     const spin = output.spinner('Checking claimable distributions...');
     spin.start();
 
     try {
-      const key = argv.privateKey as string || process.env.POP_PRIVATE_KEY;
-      if (!key) throw new Error('No private key configured');
-      const { signer, address: myAddr } = createSigner({ privateKey: key, chainId: argv.chain, rpcUrl: argv.rpc as string });
-      const myAddrLower = myAddr.toLowerCase();
-
-      const modules = await resolveOrgModules(argv.org, argv.chain);
-      const { paymentManagerAddress } = await resolveTreasuryContracts(argv.org, argv.chain);
+      const ctx = await getWriteContext(argv);
+      const paymentManagerAddress = requireModule(ctx.modules, 'paymentManagerAddress');
+      const myAddrLower = ctx.address.toLowerCase();
+      const pmRead = createReadContract(paymentManagerAddress, 'PaymentManager', ctx.provider);
 
       // Get active distributions
-      const distResult = await query<any>(FETCH_DISTRIBUTIONS, { orgId: modules.orgId }, argv.chain);
+      const distResult = await query<any>(FETCH_DISTRIBUTIONS, { orgId: ctx.orgId }, argv.chain);
       const distributions = distResult.organization?.paymentManager?.distributions || [];
 
       if (distributions.length === 0) {
@@ -117,18 +164,38 @@ export const claimMineHandler = {
         return;
       }
 
-      const results: Array<{ distId: string; amount: string; success: boolean; txHash?: string; error?: string }> = [];
+      // ── Pre-flight (skippable with --no-preflight) ────────────────────
+      // Mirror the contract's global claim gate: OptedOut reverts every claim.
+      if (argv.preflight !== false) {
+        const optedOut = await pmRead.isOptedOut(ctx.address);
+        if (optedOut) {
+          throw new PreconditionError(
+            'This wallet is opted out of distributions — every claim would revert OptedOut.',
+            'Opt back in first: pop treasury opt-in'
+          );
+        }
+      }
+      await runPreflight(ctx.provider, [checkGasBalance(ctx.address)], { skip: !argv.preflight });
+
+      // ── Derive amount + proof for every unclaimed distribution ────────
+      const results: ClaimResult[] = [];
+      const claimables: Claimable[] = [];
 
       for (const dist of distributions) {
-        // Skip if already claimed
+        // Skip if already claimed (subgraph view, then authoritative on-chain
+        // read when pre-flight is enabled — the subgraph can lag).
         const alreadyClaimed = (dist.claims || []).some((c: any) => c.claimer?.toLowerCase() === myAddrLower);
         if (alreadyClaimed) continue;
+        if (argv.preflight !== false) {
+          const claimedOnChain = await pmRead.hasClaimed(dist.distributionId, ctx.address);
+          if (claimedOnChain) continue;
+        }
 
         spin.text = `Recomputing merkle tree for distribution #${dist.distributionId}...`;
 
         // Get PT balances at checkpoint block
         const membersResult = await query<any>(FETCH_MEMBERS_AT_BLOCK, {
-          orgId: modules.orgId,
+          orgId: ctx.orgId,
           block: parseInt(dist.checkpointBlock),
         }, argv.chain);
 
@@ -165,74 +232,108 @@ export const claimMineHandler = {
         const layers = buildTree(leaves);
         const computedRoot = layers[layers.length - 1][0];
 
+        const token = await resolvePayoutTokenInfo(ctx.provider, dist.payoutToken, ctx.chainId);
+
         // Verify root matches on-chain
         if (computedRoot !== dist.merkleRoot) {
-          results.push({ distId: dist.distributionId, amount: '0', success: false, error: 'Root mismatch — different allocation parameters' });
+          results.push({ distId: dist.distributionId, amount: '0', symbol: token.symbol, success: false, error: 'Root mismatch — different allocation parameters' });
           continue;
         }
 
         // Find my allocation
         const myAlloc = allocs.find((a: any) => a.address.toLowerCase() === myAddrLower);
         if (!myAlloc || myAlloc.amount.isZero()) {
-          results.push({ distId: dist.distributionId, amount: '0', success: false, error: 'No allocation for this address' });
+          results.push({ distId: dist.distributionId, amount: '0', symbol: token.symbol, success: false, error: 'No allocation for this address' });
           continue;
         }
 
         const myLeaf = hashLeaf(myAlloc.address, myAlloc.amount);
-        const proof = getProof(layers, myLeaf);
-
-        spin.text = `Claiming ${ethers.utils.formatEther(myAlloc.amount)} from distribution #${dist.distributionId}...`;
-
-        const pm = createWriteContract(paymentManagerAddress, 'PaymentManager', signer);
-        const txResult = await executeTx(
-          pm,
-          'claimDistribution',
-          [dist.distributionId, myAlloc.amount, proof],
-          { dryRun: argv.dryRun }
-        );
-
-        if (txResult.success) {
-          results.push({
-            distId: dist.distributionId,
-            amount: ethers.utils.formatEther(myAlloc.amount),
-            success: true,
-            txHash: txResult.txHash,
-          });
-        } else {
-          results.push({
-            distId: dist.distributionId,
-            amount: ethers.utils.formatEther(myAlloc.amount),
-            success: false,
-            error: txResult.error,
-          });
-        }
+        claimables.push({ distId: dist.distributionId, amount: myAlloc.amount, proof: getProof(layers, myLeaf), token });
       }
 
       spin.stop();
 
+      // ── Confirm once for the whole batch, then claim ───────────────────
+      if (claimables.length > 0) {
+        const totalsBySymbol = new Map<string, { total: ethers.BigNumber; decimals: number }>();
+        for (const c of claimables) {
+          const entry = totalsBySymbol.get(c.token.symbol) ?? { total: ethers.BigNumber.from(0), decimals: c.token.decimals };
+          entry.total = entry.total.add(c.amount);
+          totalsBySymbol.set(c.token.symbol, entry);
+        }
+        const totalLabel = [...totalsBySymbol.entries()]
+          .map(([symbol, { total, decimals }]) => formatToken(total, decimals, symbol))
+          .join(' + ');
+
+        await confirmWrite(argv, {
+          distributions: claimables.map(c => `#${c.distId}`).join(', '),
+          total: totalLabel,
+          recipient: `${ctx.address} (you)`,
+          org: argv.org,
+          chain: ctx.networkName,
+        }, { actionLabel: `About to claim from ${claimables.length} distribution(s)` });
+
+        const pm = createWriteContract(paymentManagerAddress, 'PaymentManager', ctx.signer);
+        for (const c of claimables) {
+          const txSpin = output.spinner(`Claiming ${formatToken(c.amount, c.token.decimals, c.token.symbol)} from distribution #${c.distId}...`);
+          txSpin.start();
+          const txResult = await executeTx(
+            pm,
+            'claimDistribution',
+            [c.distId, c.amount, c.proof],
+            { dryRun: argv.dryRun }
+          );
+          txSpin.stop();
+
+          results.push({
+            distId: c.distId,
+            amount: ethers.utils.formatUnits(c.amount, c.token.decimals),
+            amountWei: c.amount.toString(),
+            symbol: c.token.symbol,
+            token: c.token.isNative ? 'native' : c.token.address,
+            success: txResult.success,
+            txHash: txResult.txHash,
+            explorerUrl: txResult.explorerUrl,
+            dryRun: txResult.dryRun || undefined,
+            error: txResult.success ? undefined : txResult.error,
+          });
+        }
+      }
+
       if (output.isJsonMode()) {
-        output.json({ claimed: results.filter(r => r.success).length, distributions: results });
+        output.json({
+          claimed: results.filter(r => r.success && !r.dryRun).length,
+          distributions: results,
+          dryRun: argv.dryRun || undefined,
+        });
       } else {
         if (results.length === 0) {
           output.info('No unclaimed distributions found');
         } else {
           console.log('');
           for (const r of results) {
-            if (r.success) {
-              console.log(`  \x1b[32m✓\x1b[0m Distribution #${r.distId}: claimed ${r.amount} tokens`);
+            if (r.success && r.dryRun) {
+              console.log(`  \x1b[36m○\x1b[0m Distribution #${r.distId}: DRY RUN — would claim ${r.amount} ${r.symbol ?? 'tokens'}`);
+            } else if (r.success) {
+              console.log(`  \x1b[32m✓\x1b[0m Distribution #${r.distId}: claimed ${r.amount} ${r.symbol ?? 'tokens'}`);
+              if (r.explorerUrl) console.log(`      ${r.explorerUrl}`);
             } else {
               console.log(`  \x1b[31m✗\x1b[0m Distribution #${r.distId}: ${r.error}`);
             }
           }
           const ok = results.filter(r => r.success).length;
-          console.log(`\n  ${ok}/${results.length} claimed.`);
+          console.log(`\n  ${ok}/${results.length} claimed${argv.dryRun ? ' (dry run)' : ''}.`);
           console.log('');
         }
       }
     } catch (err: any) {
       spin.stop();
-      output.error(err.message);
-      process.exit(1);
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
+      output.error(err?.message || String(err));
+      process.exit(EXIT.USAGE);
     }
   },
 };

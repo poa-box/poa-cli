@@ -1,15 +1,28 @@
+/**
+ * pop treasury propose-sdai — governance proposal to move idle treasury xDAI
+ * into the sDAI savings vault for yield (Gnosis Chain only — the WXDAI/sDAI
+ * addresses below are Gnosis mainnet deployments).
+ *
+ * Option 0 executes three calls from the Executor: wrap xDAI → WXDAI,
+ * approve the sDAI vault, deposit. DESTRUCTIVE: puts a treasury allocation
+ * on the ballot, so non-interactive runs must pass --yes explicitly.
+ */
+
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { createSigner } from '../../lib/signer';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { pinJson } from '../../lib/ipfs';
 import { stringToBytes, ipfsCidToBytes32 } from '../../lib/encoding';
-import { resolveNetworkConfig } from '../../config/networks';
-import { resolveOrgModules } from '../../lib/resolve';
+import { getWriteContext, confirmWrite, finishWrite } from '../../lib/command';
+import { runPreflight, checkGasBalance } from '../../lib/preflight';
+import { requireModule } from '../../lib/resolve';
+import { formatToken } from '../../lib/format';
+import { CliError, PreconditionError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
-import { resolveVotingContracts } from '../vote/helpers';
 
+const GNOSIS_CHAIN_ID = 100;
 const WXDAI = '0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d';
 const SDAI = '0xaf204776c7245bF4147c2612BF6e5972Ee483701';
 
@@ -32,12 +45,16 @@ interface ProposeSdaiArgs {
   rpc?: string;
   'private-key'?: string;
   'dry-run'?: boolean;
+  yes?: boolean;
+  preflight?: boolean;
 }
 
 export const proposeSdaiHandler = {
   builder: (yargs: Argv) => yargs
     .option('amount', { type: 'number', demandOption: true, describe: 'xDAI amount to deposit into sDAI' })
-    .option('duration', { type: 'number', default: 60, describe: 'Vote duration in minutes' }),
+    .option('duration', { type: 'number', default: 60, describe: 'Vote duration in minutes' })
+    .example('pop treasury propose-sdai --amount 25', 'Propose moving 25 idle xDAI into sDAI for yield (60 min vote)')
+    .epilogue('Gnosis Chain only. Withdrawing later needs another proposal (sDAI redeem via pop treasury send-style execution).'),
 
   handler: async (argv: ArgumentsCamelCase<ProposeSdaiArgs>) => {
     const spin = output.spinner('Creating sDAI deposit proposal...');
@@ -45,29 +62,52 @@ export const proposeSdaiHandler = {
 
     try {
       const amount = argv.amount as number;
-      if (amount <= 0) throw new Error('Amount must be positive');
-
-      const modules = await resolveOrgModules(argv.org, argv.chain);
-      const contracts = await resolveVotingContracts(argv.org, argv.chain);
-      const { signer } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
-      const networkConfig = resolveNetworkConfig(argv.chain);
-      const provider = new ethers.providers.JsonRpcProvider(networkConfig.resolvedRpc);
-
-      if (!contracts.hybridVotingAddress) throw new Error('HybridVoting not deployed');
-      const executorAddr = modules.executorAddress;
-      if (!executorAddr) throw new Error('No executor address found');
-
-      // Check executor xDAI balance
-      const execBalance = await provider.getBalance(executorAddr);
-      const amountWei = ethers.utils.parseEther(amount.toString());
-      if (execBalance.lt(amountWei)) {
-        throw new Error(`Executor has ${ethers.utils.formatEther(execBalance)} xDAI, need ${amount}`);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new CliError(`--amount must be a positive number, got "${argv.amount}".`, EXIT.USAGE);
       }
 
-      // Check current sDAI holdings
-      const sdaiContract = new ethers.Contract(SDAI, SDAI_ABI.fragments, provider);
+      const ctx = await getWriteContext(argv);
+      if (ctx.chainId !== GNOSIS_CHAIN_ID) {
+        throw new PreconditionError(
+          `The sDAI strategy is Gnosis-only (WXDAI/sDAI addresses are Gnosis mainnet); current chain is ${ctx.networkName}.`,
+          'Re-run with --chain 100.'
+        );
+      }
+      const executorAddr = requireModule(ctx.modules, 'executorAddress');
+      const hybridVotingAddr = ctx.modules.hybridVotingAddress;
+      if (!hybridVotingAddr) {
+        throw new PreconditionError('HybridVoting not deployed for this org — cannot create a governance proposal.');
+      }
+
+      const amountWei = ethers.utils.parseEther(amount.toString());
+
+      // ── Pre-flight (skippable with --no-preflight) ────────────────────
+      // The wrap call spends the Executor's native balance at execution time.
+      const execBalance = await ctx.provider.getBalance(executorAddr);
+      if (argv.preflight !== false && execBalance.lt(amountWei)) {
+        throw new PreconditionError(
+          `Executor holds ${formatToken(execBalance, 18, 'xDAI')} but the deposit needs ${amount} xDAI — execution would fail.`,
+          'Lower --amount or fund the treasury first.'
+        );
+      }
+      await runPreflight(ctx.provider, [checkGasBalance(ctx.address)], { skip: !argv.preflight });
+
+      // Check current sDAI holdings (context for the confirm + metadata)
+      const sdaiContract = new ethers.Contract(SDAI, SDAI_ABI.fragments, ctx.provider);
       const currentShares = await sdaiContract.balanceOf(executorAddr);
       const currentAssets = currentShares.gt(0) ? await sdaiContract.convertToAssets(currentShares) : ethers.BigNumber.from(0);
+      spin.stop();
+
+      await confirmWrite(argv, {
+        amount: `${amount} xDAI → sDAI vault`,
+        token: `sDAI ${SDAI}`,
+        recipient: `Executor ${executorAddr} (receives the sDAI shares)`,
+        currentSdai: `${formatToken(currentShares)} shares (${formatToken(currentAssets)} WXDAI equivalent)`,
+        remainingLiquid: formatToken(execBalance.sub(amountWei), 18, 'xDAI'),
+        via: `HybridVoting proposal (${argv.duration} min vote)`,
+        org: argv.org,
+        chain: ctx.networkName,
+      }, { destructive: true, actionLabel: 'About to propose a TREASURY ALLOCATION into sDAI' });
 
       // Encode execution calls: wrap → approve → deposit
       const wrapCall = WXDAI_ABI.encodeFunctionData('deposit', []);
@@ -88,44 +128,46 @@ export const proposeSdaiHandler = {
         createdAt: Date.now(),
       };
 
-      spin.text = 'Pinning metadata...';
+      const txSpin = output.spinner('Pinning metadata...');
+      txSpin.start();
       const cid = await pinJson(JSON.stringify(metadata));
       const descriptionHash = ipfsCidToBytes32(cid);
       const titleBytes = stringToBytes(`Deposit ${amount} xDAI into sDAI for yield`);
 
-      spin.text = 'Sending transaction...';
-      const contract = createWriteContract(contracts.hybridVotingAddress, 'HybridVotingNew', signer);
+      txSpin.text = 'Sending transaction...';
+      const contract = createWriteContract(hybridVotingAddr, 'HybridVotingNew', ctx.signer);
       const result = await executeTx(
         contract,
         'createProposal',
         [titleBytes, descriptionHash, argv.duration, 2, batches, []],
         { dryRun: argv.dryRun }
       );
+      txSpin.stop();
 
-      spin.stop();
+      const proposalEvent = result.logs?.find(l => l.name === 'NewProposal' || l.name === 'NewHatProposal');
+      const proposalId = proposalEvent?.args?.id?.toString();
 
-      if (result.success) {
-        const proposalEvent = result.logs?.find(l => l.name === 'NewProposal' || l.name === 'NewHatProposal');
-        const proposalId = proposalEvent?.args?.id?.toString();
-        output.success('sDAI deposit proposal created', {
+      finishWrite(result, {
+        successMsg: 'sDAI deposit proposal created',
+        fields: {
           proposalId,
-          txHash: result.txHash,
-          explorerUrl: result.explorerUrl,
           amount: `${amount} xDAI`,
           currentSdai: `${ethers.utils.formatEther(currentShares)} shares`,
           currentValue: `${ethers.utils.formatEther(currentAssets)} WXDAI`,
           remainingLiquid: `${ethers.utils.formatEther(execBalance.sub(amountWei))} xDAI`,
           duration: `${argv.duration} minutes`,
           ipfsCid: cid,
-        });
-      } else {
-        output.error('Proposal creation failed', { error: result.error, errorCode: result.errorCode });
-        process.exit(2);
-      }
+          nextStep: `pop vote cast --proposal ${proposalId ?? '<id>'} --choice 0`,
+        },
+      });
     } catch (err: any) {
       spin.stop();
-      output.error(err.message);
-      process.exit(1);
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
+      output.error(err?.message || String(err));
+      process.exit(EXIT.USAGE);
     }
   },
 };

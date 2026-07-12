@@ -68,7 +68,7 @@ pop vote announce [flags]
 | `--force` | boolean | no | `false` | Skip pre-flight check and announce anyway |
 | `--idempotency-key` | string | no | - | Task #375 (HB#217) idempotency cache. |
 | `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache. |
-| `--proposal` | number | yes | - | Proposal ID |
+| `--proposal` | string | yes | - | Proposal ID (number) or fuzzy title query |
 | `--type` | string | yes | - | Voting type (choices: `hybrid`, `dd`) |
 
 ## pop vote execute
@@ -83,7 +83,7 @@ pop vote execute [flags]
 | --- | --- | --- | --- | --- |
 | `--idempotency-key` | string | no | - | Task #375 (HB#217) idempotency cache. |
 | `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache. |
-| `--proposal` | number | yes | - | Proposal ID |
+| `--proposal` | string | yes | - | Proposal ID (number) or fuzzy title query |
 
 ## pop vote announce-all
 
@@ -92,6 +92,11 @@ Announce all ended proposals
 ```text
 pop vote announce-all [flags]
 ```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--idempotency-key` | string | no | - | Explicit idempotency key for the batch (default: derived from argv). |
+| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always re-run the batch. |
 
 ## pop vote propose-quorum
 
@@ -104,7 +109,9 @@ pop vote propose-quorum [flags]
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `--duration` | number | no | `60` | Vote duration in minutes |
-| `--quorum` | number | yes | - | New quorum value |
+| `--idempotency-key` | string | no | - | Explicit idempotency key (default: derived from argv). |
+| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
+| `--quorum` | number | yes | - | New quorum value (minimum voter COUNT, not a percentage) |
 
 ## pop vote propose-config
 
@@ -117,7 +124,9 @@ pop vote propose-config [flags]
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `--duration` | number | no | `60` | Vote duration in minutes |
+| `--idempotency-key` | string | no | - | Explicit idempotency key (default: derived from argv). |
 | `--key` | string | yes | - | Configuration parameter name (choices: `threshold`, `quorum`, `target-allowed`, `executor`, `hat-allowed`) |
+| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
 | `--value` | string | yes | - | New value |
 
 ## pop vote analyze
@@ -142,6 +151,45 @@ pop vote results [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--proposal` | number | yes | - | Proposal ID |
+| `--proposal` | string | yes | - | Proposal ID (number) or fuzzy title query |
+
+## pop vote classes
+
+Show or propose the hybrid voting class configuration (show / propose)
+
+```text
+pop vote classes <sub> [flags]
+```
+
+| Positional | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `<sub>` | - | yes | - | - |
+
+### pop vote classes show
+
+Show the hybrid voting class config + support threshold and quorum
+
+```text
+pop vote classes show [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--proposal` | string | no | - | Show the class snapshot frozen for one proposal (ID or fuzzy title query) instead of the live config |
+
+### pop vote classes propose
+
+Propose replacing the voting classes via setClasses (governance vote)
+
+```text
+pop vote classes propose [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--duration` | number | no | `60` | Vote duration in minutes |
+| `--file` | string | yes | - | Path to a ClassConfig[] JSON file (strategy, slicePct, quadratic, minBalance, asset, hatIds) |
+| `--idempotency-key` | string | no | - | Explicit idempotency key (default: derived from argv). |
+| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
 
 _Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

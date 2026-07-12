@@ -1,10 +1,34 @@
+/**
+ * pop vouch status — vouch progress for a wearer + the signer's own
+ * rate-limit/grace state.
+ *
+ * Wearer side (existing fields, preserved): currentVouchCount vs quorum,
+ * isVouchingEnabled, canClaim.
+ *
+ * Signer side (additive, only when a key is available): canUserVouch,
+ * getCurrentDailyVouchCount vs getMaxDailyVouches, getUserJoinTime →
+ * "You can vouch (2/3 used today)" or the friendly restriction reason
+ * ("Account too new — vouching unlocks in 1d"). Reads verified against
+ * contracts origin/main src/EligibilityModule.sol (canUserVouch mirrors
+ * _checkVouchingRateLimit: join-grace then daily limit, UTC-day buckets).
+ */
+
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { createProvider } from '../../lib/signer';
 import { createReadContract } from '../../lib/contracts';
 import { requireAddress } from '../../lib/validation';
+import { CliError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
-import { resolveEligibilityModule } from './helpers';
+import {
+  resolveEligibilityModule,
+  decodeVouchConfig,
+  readVoucherGate,
+  vouchRestriction,
+  vouchQuotaLabel,
+  VoucherGate,
+} from './helpers';
 
 interface StatusArgs {
   org?: string;
@@ -12,12 +36,25 @@ interface StatusArgs {
   address: string;
   chain?: number;
   rpc?: string;
+  'private-key'?: string;
+}
+
+/** Resolve the signer address from --private-key/POP_PRIVATE_KEY without requiring one. */
+function optionalSignerAddress(argv: { 'private-key'?: string }): string | null {
+  const key = (argv['private-key'] as string) || (argv as any).privateKey || process.env.POP_PRIVATE_KEY;
+  if (!key) return null;
+  try {
+    return new ethers.Wallet(key).address;
+  } catch {
+    return null;
+  }
 }
 
 export const statusHandler = {
   builder: (yargs: Argv) => yargs
     .option('hat', { type: 'string', demandOption: true, describe: 'Hat ID to check' })
-    .option('address', { type: 'string', demandOption: true, describe: 'Wearer address to check' }),
+    .option('address', { type: 'string', demandOption: true, describe: 'Wearer address to check' })
+    .example('pop vouch status --hat 123 --address 0xabc...', 'Vouch progress for a member, plus your own daily quota'),
 
   handler: async (argv: ArgumentsCamelCase<StatusArgs>) => {
     const wearer = requireAddress(argv.address, 'address');
@@ -28,41 +65,77 @@ export const statusHandler = {
       const { eligibilityModuleAddress } = await resolveEligibilityModule(argv.org, argv.chain);
       const provider = createProvider({ chainId: argv.chain, rpcUrl: argv.rpc as string });
       const contract = createReadContract(eligibilityModuleAddress, 'EligibilityModuleNew', provider);
+      const signerAddress = optionalSignerAddress(argv);
 
-      const [vouchCount, isEnabled, vouchConfig] = await Promise.all([
+      const [vouchCount, isEnabled, rawConfig, gate] = await Promise.all([
         contract.currentVouchCount(argv.hat, wearer),
         contract.isVouchingEnabled(argv.hat),
         contract.vouchConfigs(argv.hat),
+        signerAddress
+          ? readVoucherGate(provider, eligibilityModuleAddress, signerAddress)
+          : Promise.resolve(null as VoucherGate | null),
       ]);
 
       spin.stop();
 
+      const config = decodeVouchConfig(rawConfig);
       const count = ethers.BigNumber.from(vouchCount);
-      const quorum = vouchConfig?.quorum ? ethers.BigNumber.from(vouchConfig.quorum) : ethers.BigNumber.from(0);
+      const quorum = ethers.BigNumber.from(config.quorum);
+      const restriction = gate ? vouchRestriction(gate) : null;
+
       const data = {
         hat: argv.hat,
         wearer,
-        vouchingEnabled: isEnabled,
+        vouchingEnabled: Boolean(isEnabled),
         currentVouches: count.toString(),
         requiredVouches: quorum.toString(),
-        canClaim: isEnabled && count.gte(quorum),
+        canClaim: Boolean(isEnabled) && count.gte(quorum),
+        // Additive fields (v6 migration)
+        membershipHat: config.membershipHatId,
+        combineWithHierarchy: config.combineWithHierarchy,
+        voucher: gate && signerAddress ? {
+          address: signerAddress,
+          canVouch: gate.canVouch,
+          dailyVouchesUsed: gate.dailyUsed,
+          maxDailyVouches: gate.maxDaily,
+          joinTime: gate.joinTime,
+          restriction: restriction?.message,
+        } : undefined,
       };
 
       if (output.isJsonMode()) {
         output.json(data);
+        return;
+      }
+
+      console.log('');
+      console.log(`  Hat:              ${argv.hat}`);
+      console.log(`  Wearer:           ${wearer}`);
+      console.log(`  Vouching enabled: ${isEnabled ? 'yes' : 'no'}`);
+      console.log(`  Vouches:          ${count.toString()} / ${quorum.toString()}`);
+      console.log(`  Can claim:        ${data.canClaim ? 'yes (run: pop vouch claim --hat ' + argv.hat + ')' : 'no'}`);
+      if (config.membershipHatId !== '0') {
+        console.log(`  Vouchers wear:    hat ${config.membershipHatId}${config.combineWithHierarchy ? ' (hierarchy admins can also vouch)' : ''}`);
+      }
+      console.log('');
+
+      if (gate) {
+        if (restriction) {
+          output.warn(`${restriction.message} ${restriction.suggestion}`);
+        } else {
+          output.info(`You can vouch (${vouchQuotaLabel(gate)})`);
+        }
       } else {
-        console.log('');
-        console.log(`  Hat:              ${argv.hat}`);
-        console.log(`  Wearer:           ${wearer}`);
-        console.log(`  Vouching enabled: ${isEnabled ? 'yes' : 'no'}`);
-        console.log(`  Vouches:          ${vouchCount.toString()} / ${quorum}`);
-        console.log(`  Can claim:        ${data.canClaim ? 'yes' : 'no'}`);
-        console.log('');
+        output.info('No signer key available — set POP_PRIVATE_KEY or pass --private-key to see your own vouch quota.');
       }
     } catch (err: any) {
       spin.stop();
-      output.error(err.message);
-      process.exit(1);
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
+      output.error(err?.message || String(err));
+      process.exit(EXIT.USAGE);
     }
   },
 };

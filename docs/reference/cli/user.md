@@ -6,7 +6,7 @@ User & membership
 
 ## pop user register
 
-Register a username
+Register a username on the account registry
 
 ```text
 pop user register [flags]
@@ -18,7 +18,7 @@ pop user register [flags]
 
 ## pop user join
 
-Join an organization
+Join an organization (registers your username first if needed)
 
 ```text
 pop user join [flags]
@@ -26,7 +26,31 @@ pop user join [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--username` | string | no | - | Username to register (if not already registered) |
+| `--idempotency-key` | string | no | - | Explicit idempotency key. Two joins for the same org within the TTL return the same result without re-submitting. Default: auto-derived from argv. |
+| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
+| `--username` | string | no | - | Username to register (only needed if not already registered) |
+
+## pop user claim-hats
+
+Claim additional role hats after joining (e.g. a hat you were vouched for)
+
+```text
+pop user claim-hats [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--hats` | string | yes | - | Comma-separated hat IDs to claim (decimal or 0x-hex), e.g. after being vouched for a role |
+| `--idempotency-key` | string | no | - | Explicit idempotency key. Two identical claims within the TTL return the same result without re-submitting. Default: auto-derived from argv. |
+| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
+
+## pop user whoami
+
+Show signer identity: address, username, gas balance, and org standing
+
+```text
+pop user whoami [flags]
+```
 
 ## pop user profile
 
@@ -42,7 +66,7 @@ pop user profile [flags]
 
 ## pop user update-profile
 
-Update profile (bio, avatar, links)
+Update profile (bio, avatar, links) or change your username
 
 ```text
 pop user update-profile [flags]
@@ -54,6 +78,7 @@ pop user update-profile [flags]
 | `--bio` | string | no | - | Profile bio (max 280 chars) |
 | `--github` | string | no | - | GitHub username |
 | `--twitter` | string | no | - | Twitter/X handle |
+| `--username` | string | no | - | New username (DESTRUCTIVE: releases the old name for anyone to claim) |
 | `--website` | string | no | - | Website URL |
 
 _Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

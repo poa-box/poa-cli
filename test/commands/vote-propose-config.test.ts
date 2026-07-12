@@ -47,6 +47,18 @@ vi.mock('../../src/lib/contracts', () => ({
   createWriteContract: vi.fn(() => ({ address: '0xC0FFEE' })),
 }));
 
+// Post-migration plumbing: propose-config now renders via finishWrite and
+// wraps the submit in withIdempotency (lib/command). The mocks pass straight
+// through so the ConfigKey calldata assertions below stay byte-identical.
+vi.mock('../../src/lib/resolve', () => ({
+  resolveOrgId: vi.fn(async () => '0x' + '11'.repeat(32)),
+}));
+
+vi.mock('../../src/lib/command', () => ({
+  finishWrite: vi.fn(),
+  withIdempotency: vi.fn(async (_argv: any, _orgId: any, _cmd: any, run: any) => { await run(); }),
+}));
+
 vi.mock('../../src/lib/output', () => ({
   spinner: vi.fn(() => ({ start: vi.fn(), stop: vi.fn(), text: '' })),
   success: vi.fn(),

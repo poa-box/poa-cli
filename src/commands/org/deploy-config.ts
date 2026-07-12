@@ -1,5 +1,15 @@
+/**
+ * pop org deploy-config — generate an org deploy config file (local only,
+ * no transactions). Overwriting an EXISTING file is treated as destructive:
+ * interactive sessions are prompted, non-TTY sessions must pass --yes.
+ * Writing a fresh file stays silent for non-TTY (agent) sessions.
+ */
+
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import * as fs from 'fs';
+import { confirmWrite } from '../../lib/command';
+import { CliError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 
 interface DeployConfigArgs {
@@ -8,6 +18,7 @@ interface DeployConfigArgs {
   username: string;
   output: string;
   template?: string;
+  yes?: boolean;
 }
 
 export const deployConfigHandler = {
@@ -16,7 +27,9 @@ export const deployConfigHandler = {
     .option('description', { type: 'string', default: '', describe: 'Organization description' })
     .option('username', { type: 'string', demandOption: true, describe: 'Deployer username' })
     .option('output', { type: 'string', default: 'org-deploy-config.json', describe: 'Output file path' })
-    .option('template', { type: 'string', choices: ['standard', 'minimal'], default: 'standard', describe: 'Config template' }),
+    .option('template', { type: 'string', choices: ['standard', 'minimal'], default: 'standard', describe: 'Config template' })
+    .example('pop org deploy-config --name "My Org" --username alice', 'Write org-deploy-config.json from the standard template')
+    .example('pop org deploy-config --name "My Org" --username alice --template minimal --output my-org.json', 'Minimal single-role template to a custom path'),
 
   handler: async (argv: ArgumentsCamelCase<DeployConfigArgs>) => {
     try {
@@ -25,6 +38,16 @@ export const deployConfigHandler = {
         : buildStandardConfig(argv.name, argv.description || '', argv.username);
 
       const outPath = argv.output as string;
+
+      // Overwriting an existing config is destructive; a fresh file is not.
+      if (fs.existsSync(outPath)) {
+        await confirmWrite(argv, {
+          file: outPath,
+          template: argv.template,
+          org: argv.name,
+        }, { destructive: true, actionLabel: 'About to OVERWRITE an existing config file' });
+      }
+
       fs.writeFileSync(outPath, JSON.stringify(config, null, 2) + '\n');
 
       if (output.isJsonMode()) {
@@ -40,8 +63,12 @@ export const deployConfigHandler = {
         console.log('');
       }
     } catch (err: any) {
-      output.error(err.message);
-      process.exit(1);
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
+      output.error(err?.message || String(err));
+      process.exit(EXIT.USAGE);
     }
   },
 };

@@ -1,30 +1,54 @@
+/**
+ * pop vote results — option rankings + per-voter breakdown for one proposal.
+ *
+ * --proposal accepts a numeric ID or a fuzzy title query.
+ *
+ * The two validity parameters are DISTINCT and labeled as such:
+ *   - support threshold — a PERCENTAGE of weighted voting power the winning
+ *     option must reach (HybridVoting.thresholdPct)
+ *   - quorum — a raw VOTER COUNT that must participate (HybridVoting.quorum,
+ *     0 = disabled; a voter-count since PR #119, NOT a percentage)
+ */
+
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import * as output from '../../lib/output';
 import { query } from '../../lib/subgraph';
 import { resolveOrgModules } from '../../lib/resolve';
+import { CliError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
+import { resolveProposalId } from './helpers';
 
 interface ResultsArgs {
   org: string;
-  proposal: number;
+  proposal: string;
   chain?: number;
 }
 
 export const resultsHandler = {
   builder: (yargs: Argv) => yargs
-    .option('proposal', { type: 'number', demandOption: true, describe: 'Proposal ID' }),
+    .option('proposal', { type: 'string', demandOption: true, describe: 'Proposal ID (number) or fuzzy title query' })
+    .example('pop vote results --proposal 12', 'Rankings + voter breakdown for proposal #12')
+    .example('pop vote results --proposal "bridge retry" --json', 'Fuzzy title query, machine-readable'),
 
   handler: async (argv: ArgumentsCamelCase<ResultsArgs>) => {
-    const spin = output.spinner(`Fetching results for proposal #${argv.proposal}...`);
+    const spin = output.spinner(`Fetching results for proposal ${argv.proposal}...`);
     spin.start();
 
     try {
       const modules = await resolveOrgModules(argv.org, argv.chain);
       const orgId = modules.orgId;
+      if (!modules.hybridVotingAddress) {
+        throw new CliError('No HybridVoting contract found for this org', EXIT.PRECONDITION);
+      }
+
+      const proposalId = await resolveProposalId(String(argv.proposal), modules.hybridVotingAddress, argv.chain);
 
       const q = `{
         organization(id: "${orgId}") {
           hybridVoting {
-            proposals(where: {proposalId: ${argv.proposal}}) {
+            thresholdPct
+            quorum
+            proposals(where: {proposalId: ${proposalId}}) {
               proposalId title status
               metadata { description optionNames }
               votes { voterUsername optionIndexes optionWeights }
@@ -34,8 +58,14 @@ export const resultsHandler = {
       }`;
 
       const result = await query<any>(q, {}, argv.chain);
-      const proposal = result.organization?.hybridVoting?.proposals?.[0];
-      if (!proposal) throw new Error(`Proposal #${argv.proposal} not found`);
+      const hybridVoting = result.organization?.hybridVoting;
+      const proposal = hybridVoting?.proposals?.[0];
+      if (!proposal) throw new Error(`Proposal #${proposalId} not found`);
+
+      // Two DISTINCT validity parameters — threshold is a % of weighted
+      // power, quorum is a raw voter count. Never conflate them.
+      const supportThresholdPct = hybridVoting.thresholdPct !== undefined ? Number(hybridVoting.thresholdPct) : undefined;
+      const quorumVoterCount = hybridVoting.quorum !== undefined ? Number(hybridVoting.quorum) : undefined;
 
       const optionNames = proposal.metadata?.optionNames || [];
       const votes = proposal.votes || [];
@@ -76,6 +106,8 @@ export const resultsHandler = {
         title: proposal.title,
         status: proposal.status,
         totalVoters: votes.length,
+        supportThresholdPct,
+        quorumVoterCount,
         ranking: ranked,
         voters: voterBreakdown,
         winner: ranked[0],
@@ -88,6 +120,12 @@ export const resultsHandler = {
       } else {
         console.log(`\n  Proposal #${proposal.proposalId}: ${proposal.title}`);
         console.log(`  Status: ${proposal.status} | Voters: ${votes.length}`);
+        if (supportThresholdPct !== undefined || quorumVoterCount !== undefined) {
+          const parts: string[] = [];
+          if (supportThresholdPct !== undefined) parts.push(`Support threshold: ${supportThresholdPct}% of weighted power`);
+          if (quorumVoterCount !== undefined) parts.push(`Quorum: ${quorumVoterCount} voters (0 = disabled)`);
+          console.log(`  ${parts.join(' | ')}`);
+        }
         console.log('  ' + '─'.repeat(50));
         for (const r of ranked) {
           const bar = '█'.repeat(Math.round(r.score / 5));
@@ -102,6 +140,10 @@ export const resultsHandler = {
       }
     } catch (err: any) {
       spin.stop();
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
       output.error(err.message);
       process.exit(1);
     }

@@ -11,10 +11,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ethers } from 'ethers';
 
-const { executeTxMock, pinJsonMock, resolveVotingContractsMock } = vi.hoisted(() => ({
+const { executeTxMock, pinJsonMock, resolveVotingContractsMock, getWriteContextMock } = vi.hoisted(() => ({
   executeTxMock: vi.fn(),
   pinJsonMock: vi.fn(),
   resolveVotingContractsMock: vi.fn(),
+  getWriteContextMock: vi.fn(),
 }));
 
 vi.mock('../../src/lib/tx', () => ({
@@ -27,6 +28,7 @@ vi.mock('../../src/lib/ipfs', () => ({
 
 vi.mock('../../src/commands/vote/helpers', () => ({
   resolveVotingContracts: resolveVotingContractsMock,
+  describeExecutionCalls: vi.fn(() => []),
 }));
 
 vi.mock('../../src/lib/resolve', () => ({
@@ -41,6 +43,22 @@ vi.mock('../../src/lib/idempotency', () => ({
 
 vi.mock('../../src/lib/signer', () => ({
   createSigner: vi.fn(() => ({ signer: {} })),
+}));
+
+// Post-migration plumbing (task/claim.ts template): create.ts now composes
+// getWriteContext/confirmWrite/finishWrite/withIdempotency + runPreflight.
+// The mocks pass straight through so the createProposal argument assertions
+// below stay byte-identical.
+vi.mock('../../src/lib/command', () => ({
+  getWriteContext: getWriteContextMock,
+  confirmWrite: vi.fn(async () => {}),
+  finishWrite: vi.fn(),
+  withIdempotency: vi.fn(async (_argv: any, _orgId: any, _cmd: any, run: any) => { await run(); }),
+}));
+
+vi.mock('../../src/lib/preflight', () => ({
+  runPreflight: vi.fn(async () => {}),
+  checkGasBalance: vi.fn(() => ({ label: 'gas balance' })),
 }));
 
 vi.mock('../../src/lib/contracts', () => ({
@@ -93,6 +111,16 @@ describe('vote create — --hat-ids BigNumber precision', () => {
       orgId: '0x' + '11'.repeat(32),
       hybridVotingAddress: HYBRID_ADDR,
       ddVotingAddress: DD_ADDR,
+    });
+    getWriteContextMock.mockReset();
+    getWriteContextMock.mockResolvedValue({
+      orgId: '0x' + '11'.repeat(32),
+      modules: { hybridVotingAddress: HYBRID_ADDR, ddVotingAddress: DD_ADDR },
+      signer: {},
+      provider: {},
+      address: '0x' + 'aa'.repeat(20),
+      chainId: 100,
+      networkName: 'Gnosis',
     });
   });
 

@@ -1,3 +1,15 @@
+/**
+ * pop vote announce-all — batch-announce every ended proposal.
+ *
+ * Each candidate is pre-checked with callStatic.announceWinner so proposals
+ * that would revert (already announced, quorum edge, …) are skipped without
+ * burning gas. The whole batch is wrapped in withIdempotency: an identical
+ * retry within the TTL returns the prior batch result instead of re-running
+ * (runs that found nothing to announce return early and are never cached).
+ * finishWrite is deliberately NOT used here — it renders exactly one
+ * transaction, and this command reports N of them with its own summary.
+ */
+
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { createSigner } from '../../lib/signer';
 import { createWriteContract } from '../../lib/contracts';
@@ -5,6 +17,7 @@ import { executeTx } from '../../lib/tx';
 import { resolveOrgId } from '../../lib/resolve';
 import { query } from '../../lib/subgraph';
 import { FETCH_VOTING_DATA } from '../../queries/voting';
+import { withIdempotency } from '../../lib/command';
 import * as output from '../../lib/output';
 import { resolveVotingContracts } from './helpers';
 
@@ -14,10 +27,14 @@ interface AnnounceAllArgs {
   rpc?: string;
   'private-key'?: string;
   'dry-run'?: boolean;
+  'idempotency-key'?: string;
+  'no-idempotency'?: boolean;
 }
 
 export const announceAllHandler = {
-  builder: (yargs: Argv) => yargs,
+  builder: (yargs: Argv) => yargs
+    .option('idempotency-key', { type: 'string', describe: 'Explicit idempotency key for the batch (default: derived from argv).' })
+    .option('no-idempotency', { type: 'boolean', default: false, describe: 'Bypass the idempotency cache and always re-run the batch.' }),
 
   handler: async (argv: ArgumentsCamelCase<AnnounceAllArgs>) => {
     const spin = output.spinner('Checking for ended proposals...');
@@ -72,61 +89,73 @@ export const announceAllHandler = {
       const contracts = await resolveVotingContracts(argv.org, argv.chain);
       const { signer } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
 
-      spin.text = `Announcing ${toAnnounce.length} proposal(s)...`;
+      const run = async (): Promise<Record<string, any>> => {
+        spin.start();
+        spin.text = `Announcing ${toAnnounce.length} proposal(s)...`;
 
-      const results: Array<{ id: string; type: string; title: string; success: boolean; txHash?: string; error?: string }> = [];
+        const results: Array<{ id: string; type: string; title: string; success: boolean; txHash?: string; error?: string }> = [];
 
-      for (const proposal of toAnnounce) {
-        const isHybrid = proposal.type === 'hybrid';
-        const contractAddr = isHybrid ? contracts.hybridVotingAddress : contracts.ddVotingAddress;
-        if (!contractAddr) {
-          results.push({ ...proposal, success: false, error: `No ${proposal.type} voting contract` });
-          continue;
+        for (const proposal of toAnnounce) {
+          const isHybrid = proposal.type === 'hybrid';
+          const contractAddr = isHybrid ? contracts.hybridVotingAddress : contracts.ddVotingAddress;
+          if (!contractAddr) {
+            results.push({ ...proposal, success: false, error: `No ${proposal.type} voting contract` });
+            continue;
+          }
+
+          const abiName = isHybrid ? 'HybridVotingNew' : 'DirectDemocracyVotingNew';
+          const contract = createWriteContract(contractAddr, abiName, signer);
+
+          // Pre-check with callStatic to avoid wasting gas on reverts
+          spin.text = `Checking #${proposal.id}...`;
+          try {
+            await contract.callStatic.announceWinner(proposal.id);
+          } catch {
+            // Would revert — skip (already announced, quorum not met, etc.)
+            continue;
+          }
+
+          spin.text = `Announcing #${proposal.id}: ${proposal.title}...`;
+          const txResult = await executeTx(contract, 'announceWinner', [proposal.id], { dryRun: argv.dryRun });
+
+          if (txResult.success) {
+            results.push({
+              ...proposal,
+              success: true,
+              txHash: txResult.txHash,
+            });
+          } else {
+            results.push({ ...proposal, success: false, error: txResult.error });
+          }
         }
 
-        const abiName = isHybrid ? 'HybridVotingNew' : 'DirectDemocracyVotingNew';
-        const contract = createWriteContract(contractAddr, abiName, signer);
+        spin.stop();
 
-        // Pre-check with callStatic to avoid wasting gas on reverts
-        spin.text = `Checking #${proposal.id}...`;
-        try {
-          await contract.callStatic.announceWinner(proposal.id);
-        } catch {
-          // Would revert — skip (already announced, quorum not met, etc.)
-          continue;
-        }
-
-        spin.text = `Announcing #${proposal.id}: ${proposal.title}...`;
-        const txResult = await executeTx(contract, 'announceWinner', [proposal.id], { dryRun: argv.dryRun });
-
-        if (txResult.success) {
-          const winnerEvent = txResult.logs?.find(l => l.name === 'Winner');
-          results.push({
-            ...proposal,
-            success: true,
-            txHash: txResult.txHash,
-          });
+        const announced = results.filter(r => r.success).length;
+        if (output.isJsonMode()) {
+          output.json({ announced, proposals: results });
         } else {
-          results.push({ ...proposal, success: false, error: txResult.error });
+          console.log('');
+          for (const r of results) {
+            if (r.success) {
+              console.log(`  \x1b[32m✓\x1b[0m #${r.id} ${r.title}`);
+            } else {
+              console.log(`  \x1b[31m✗\x1b[0m #${r.id} ${r.title} — ${r.error}`);
+            }
+          }
+          console.log(`\n  ${announced}/${results.length} proposals announced.`);
+          console.log('');
         }
-      }
+        return { announced, proposals: results };
+      };
 
       spin.stop();
 
-      if (output.isJsonMode()) {
-        output.json({ announced: results.filter(r => r.success).length, proposals: results });
+      // Dry runs simulate unconditionally — no idempotency consult/record.
+      if (argv.dryRun) {
+        await run();
       } else {
-        console.log('');
-        for (const r of results) {
-          if (r.success) {
-            console.log(`  \x1b[32m✓\x1b[0m #${r.id} ${r.title}`);
-          } else {
-            console.log(`  \x1b[31m✗\x1b[0m #${r.id} ${r.title} — ${r.error}`);
-          }
-        }
-        const ok = results.filter(r => r.success).length;
-        console.log(`\n  ${ok}/${results.length} proposals announced.`);
-        console.log('');
+        await withIdempotency(argv, orgId, 'vote.announce-all', run);
       }
     } catch (err: any) {
       spin.stop();
