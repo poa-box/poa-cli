@@ -157,10 +157,13 @@ export const initHandler = {
           privateKey = undefined; // skip
         }
 
-        // (3) Optional default org
+        // (3) Optional default org. Pre-fill any existing POP_DEFAULT_ORG so a
+        // reconfiguration keeps it only when the user visibly confirms — never
+        // silently inherited (that path is why --org is excluded from the
+        // global env fallback in index.ts).
         if (org === undefined) {
           const entered = await input('Default org name or hex ID (optional — press enter to skip):', {
-            default: '',
+            default: process.env.POP_DEFAULT_ORG ?? '',
           });
           org = entered.trim() === '' ? undefined : entered.trim();
         }

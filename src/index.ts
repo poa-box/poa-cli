@@ -28,6 +28,7 @@ import { registerConfigCommands } from './commands/config';
 import { registerAgentCommands } from './commands/agent';
 import { registerBrainCommands } from './commands/brain';
 import { initHandler } from './commands/init';
+import { applyDefaultOrgFallback } from './lib/default-org';
 
 async function main() {
   const cli = yargs(hideBin(process.argv))
@@ -117,10 +118,8 @@ async function main() {
       }
       setQuietMode(Boolean(argv.quiet));
       setVerbose(Boolean(argv.verbose));
-      // Fall back to POP_DEFAULT_ORG if --org not provided
-      if (!argv.org && process.env.POP_DEFAULT_ORG) {
-        argv.org = process.env.POP_DEFAULT_ORG;
-      }
+      // Fall back to POP_DEFAULT_ORG if --org not provided (excludes `init`).
+      applyDefaultOrgFallback(argv);
     }])
     .strict()
     .demandCommand(1, 'Please specify a command')

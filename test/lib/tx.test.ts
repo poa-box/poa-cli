@@ -222,3 +222,47 @@ describe('detectUserOpFailure (ERC-4337 inner revert)', () => {
     expect(result!.error).toContain('inner call reverted');
   });
 });
+
+describe('executeTx failure propagates decoded custom errors', () => {
+  const saved = {
+    POP_PRIVATE_KEY: process.env.POP_PRIVATE_KEY,
+    POP_ORG_ID: process.env.POP_ORG_ID,
+    POP_HAT_ID: process.env.POP_HAT_ID,
+    PIMLICO_API_KEY: process.env.PIMLICO_API_KEY,
+  };
+  afterEach(() => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+
+  it('surfaces errorName + suggestion when gas estimation reverts with a known custom error', async () => {
+    // No sponsored config so the direct path runs; estimateGas rejects first.
+    delete process.env.POP_PRIVATE_KEY;
+    delete process.env.PIMLICO_API_KEY;
+
+    const data = taskManagerIface.encodeErrorResult('BadStatus', []);
+    const contract = {
+      address: '0x2222222222222222222222222222222222222222',
+      interface: taskManagerIface,
+      estimateGas: {
+        doThing: async () => {
+          throw {
+            code: 'UNPREDICTABLE_GAS_LIMIT',
+            message: 'cannot estimate gas; transaction may fail or may require manual gas limit',
+            error: { data },
+          };
+        },
+      },
+    } as unknown as ethers.Contract;
+
+    const result = await executeTx(contract, 'doThing', []);
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('GAS_ESTIMATION_FAILED');
+    expect(result.errorName).toBe('BadStatus');
+    expect(result.error).toBe(ERROR_MESSAGES.BadStatus.human);
+    expect(result.suggestion).toBe(ERROR_MESSAGES.BadStatus.suggestion);
+    expect(result.rawMessage).toContain('Transaction would revert');
+  });
+});

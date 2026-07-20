@@ -128,6 +128,24 @@ describe('--generate-key non-interactive', () => {
     expect(mocks.confirm).not.toHaveBeenCalled(); // no confirm in non-TTY
   });
 
+  it('does NOT inherit POP_DEFAULT_ORG into a fresh config when --org is absent', async () => {
+    // The global middleware excludes `init` from the env-org fallback, so a
+    // fresh non-interactive init (argv.org undefined) must not write a stale
+    // org even when one is exported in the environment.
+    const savedOrg = process.env.POP_DEFAULT_ORG;
+    process.env.POP_DEFAULT_ORG = 'stale-org';
+    try {
+      const file = join(dir, '.env');
+      await initHandler.handler(baseArgv({ file, chain: 100, generateKey: true }));
+      const vars = readEnvFile(file);
+      expect(vars.POP_DEFAULT_ORG).toBeUndefined();
+      expect(vars.POP_DEFAULT_CHAIN).toBe('100');
+    } finally {
+      if (savedOrg === undefined) delete process.env.POP_DEFAULT_ORG;
+      else process.env.POP_DEFAULT_ORG = savedOrg;
+    }
+  });
+
   it('refuses to clobber an existing file without --force', async () => {
     const file = join(dir, '.env');
     writeFileSync(file, 'PRE_EXISTING=1\n');

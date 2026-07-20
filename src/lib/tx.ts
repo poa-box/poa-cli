@@ -399,11 +399,18 @@ export async function executeTx(
       logs: parseEventLogs(receipt, contract.interface),
     };
   } catch (error: any) {
-    const classified = classifyError(error);
+    // Pass the contract interface so custom-error revert data is decoded into a
+    // human message + suggestion, and propagate every classified field so
+    // finishWrite can surface the catalog name/hint (not just the raw message).
+    const classified = classifyError(error, contract.interface);
     return {
       success: false,
       error: classified.message,
       errorCode: classified.code,
+      errorName: classified.errorName,
+      errorArgs: classified.errorArgs,
+      suggestion: classified.suggestion,
+      rawMessage: classified.rawMessage,
     };
   }
 }
