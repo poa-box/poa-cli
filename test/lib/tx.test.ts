@@ -5,11 +5,11 @@
  * inner-revert detection on sponsored transactions.
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ethers } from 'ethers';
 import path from 'path';
 import fs from 'fs';
-import { executeTx, classifyError, detectUserOpFailure } from '../../src/lib/tx';
+import { executeTx, classifyError, detectUserOpFailure, resolveSponsoredConfig } from '../../src/lib/tx';
 import { ERROR_MESSAGES } from '../../src/lib/error-catalog';
 
 const ABI_DIR = path.join(__dirname, '..', '..', 'src', 'abi');
@@ -264,5 +264,44 @@ describe('executeTx failure propagates decoded custom errors', () => {
     expect(result.error).toBe(ERROR_MESSAGES.BadStatus.human);
     expect(result.suggestion).toBe(ERROR_MESSAGES.BadStatus.suggestion);
     expect(result.rawMessage).toContain('Transaction would revert');
+  });
+});
+
+describe('resolveSponsoredConfig bundler resolution', () => {
+  const KEYS = ['POP_PRIVATE_KEY', 'POP_ORG_ID', 'POP_HAT_ID', 'PIMLICO_API_KEY', 'POP_BUNDLER_URL'] as const;
+  const saved: Record<string, string | undefined> = {};
+  beforeEach(() => {
+    for (const k of KEYS) { saved[k] = process.env[k]; delete process.env[k]; }
+    process.env.POP_PRIVATE_KEY = '0x' + '1'.repeat(64);
+    process.env.POP_ORG_ID = '0x' + 'ab'.repeat(32);
+    process.env.POP_HAT_ID = '1';
+  });
+  afterEach(() => {
+    for (const k of KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k]!;
+    }
+  });
+
+  it('resolves with a self-hosted bundler URL and no Pimlico key', () => {
+    process.env.POP_BUNDLER_URL = 'http://localhost:14337/rpc';
+    const cfg = resolveSponsoredConfig();
+    expect(cfg).toBeDefined();
+    expect(cfg!.orgId).toBe(process.env.POP_ORG_ID);
+  });
+
+  it('resolves with a Pimlico key and no bundler URL', () => {
+    process.env.PIMLICO_API_KEY = 'pim_test';
+    expect(resolveSponsoredConfig()).toBeDefined();
+  });
+
+  it('returns undefined when neither a bundler URL nor a Pimlico key is set', () => {
+    expect(resolveSponsoredConfig()).toBeUndefined();
+  });
+
+  it('returns undefined when org/hat context is missing even with a bundler', () => {
+    delete process.env.POP_ORG_ID;
+    process.env.POP_BUNDLER_URL = 'http://localhost:14337/rpc';
+    expect(resolveSponsoredConfig()).toBeUndefined();
   });
 });

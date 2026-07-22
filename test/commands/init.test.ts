@@ -128,6 +128,35 @@ describe('--generate-key non-interactive', () => {
     expect(mocks.confirm).not.toHaveBeenCalled(); // no confirm in non-TTY
   });
 
+  it('prints the generated mnemonic (matching the stored key) in non-TTY human mode', async () => {
+    const file = join(dir, '.env');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await initHandler.handler(baseArgv({ file, chain: 100, generateKey: true }));
+
+      // warn banner + a printed phrase whose wallet is the stored key.
+      expect(output.warn).toHaveBeenCalledWith(expect.stringContaining('SAVE YOUR MNEMONIC'));
+      const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      const phrase = printed.split('\n').map((l) => l.trim()).find((l) => l.split(' ').length >= 12);
+      expect(phrase, 'a mnemonic phrase should be printed').toBeTruthy();
+      const storedKey = readEnvFile(file).POP_PRIVATE_KEY;
+      expect(ethers.Wallet.fromMnemonic(phrase!).privateKey).toBe(storedKey);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('includes the generated mnemonic in --json output', async () => {
+    (output.isJsonMode as any).mockReturnValue(true);
+    const file = join(dir, '.env');
+    await initHandler.handler(baseArgv({ file, chain: 100, generateKey: true }));
+
+    const payload = (output.json as any).mock.calls[0][0];
+    expect(payload.generatedWallet).toBe(true);
+    expect(typeof payload.mnemonic).toBe('string');
+    expect(ethers.Wallet.fromMnemonic(payload.mnemonic).privateKey).toBe(readEnvFile(file).POP_PRIVATE_KEY);
+  });
+
   it('does NOT inherit POP_DEFAULT_ORG into a fresh config when --org is absent', async () => {
     // The global middleware excludes `init` from the env-org fallback, so a
     // fresh non-interactive init (argv.org undefined) must not write a stale

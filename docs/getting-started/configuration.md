@@ -217,8 +217,11 @@ broadcasts nothing. Use it to validate a command before spending gas.
 pop task create --project 0 --name "Test" --description "Test" --payout 1 --dry-run
 ```
 
-In `--dry-run --json` mode the `txHash` is a `dry-run:` placeholder and
-`gasUsed` reflects the estimate.
+In `--dry-run --json` mode the result carries `"dryRun": true` and a
+`"gasEstimate"` (plus the encoded `calldata`, target `to`, and `method`); no
+transaction is sent, so `txHash` is omitted. Set `POP_LEGACY_DRYRUN_TXHASH=1`
+to restore the old `dry-run:` placeholder `txHash` for one release if a script
+still parses it.
 
 ---
 

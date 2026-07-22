@@ -8,7 +8,12 @@ import { ethers } from 'ethers';
 import { getNetworkByChainId } from '../config/networks';
 import { decodeContractError } from './error-catalog';
 import { isDelegated, sendSponsored } from './sponsored';
+import { SponsoredConfig, resolveSponsoredConfig } from './sponsorship-config';
 import type { Hex, Address } from 'viem';
+
+// Re-exported for backward compatibility — canonical home is sponsorship-config.
+export { resolveSponsoredConfig };
+export type { SponsoredConfig };
 
 export type ErrorCode =
   | 'TX_REVERTED'
@@ -45,38 +50,11 @@ export interface TxResult {
   method?: string;
 }
 
-export interface SponsoredConfig {
-  privateKey: Hex;
-  orgId: Hex;
-  hatId: bigint;
-}
-
 export interface TxOptions {
   dryRun?: boolean;
   gasLimit?: number;
   value?: ethers.BigNumber;
   sponsored?: SponsoredConfig;
-}
-
-/**
- * Resolve sponsored config from environment variables.
- * Returns undefined if required env vars are missing.
- */
-export function resolveSponsoredConfig(): SponsoredConfig | undefined {
-  const privateKey = process.env.POP_PRIVATE_KEY;
-  const orgId = process.env.POP_ORG_ID;
-  const hatId = process.env.POP_HAT_ID;
-  const pimlicoKey = process.env.PIMLICO_API_KEY;
-
-  if (!privateKey || !orgId || !hatId || !pimlicoKey) {
-    return undefined;
-  }
-
-  return {
-    privateKey: (privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`) as Hex,
-    orgId: orgId as Hex,
-    hatId: BigInt(hatId),
-  };
 }
 
 function buildExplorerUrl(txHash: string, chainId: number): string | undefined {

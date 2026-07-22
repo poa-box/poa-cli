@@ -181,6 +181,34 @@ describe('runPreflight', () => {
     expect(err.message).toContain(`fund ${WALLET}`);
   });
 
+  it('passes a zero-balance wallet when sponsorship is configured (gasless path)', async () => {
+    const saved = {
+      POP_PRIVATE_KEY: process.env.POP_PRIVATE_KEY,
+      POP_ORG_ID: process.env.POP_ORG_ID,
+      POP_HAT_ID: process.env.POP_HAT_ID,
+      PIMLICO_API_KEY: process.env.PIMLICO_API_KEY,
+    };
+    process.env.POP_PRIVATE_KEY = '0x' + '1'.repeat(64);
+    process.env.POP_ORG_ID = '0x' + 'ab'.repeat(32);
+    process.env.POP_HAT_ID = '1';
+    process.env.PIMLICO_API_KEY = 'pim_test';
+    try {
+      // Provider throws on any access — the sponsored gas check is `local`,
+      // so it must resolve without ever reading the balance.
+      const provider: any = {
+        getCode() { throw new Error('should not touch provider'); },
+        call() { throw new Error('should not touch provider'); },
+        getBalance() { throw new Error('should not touch provider'); },
+      };
+      await expect(runPreflight(provider, [checkGasBalance(WALLET)])).resolves.toBeUndefined();
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
   it('skip bypasses everything without touching the provider', async () => {
     const provider: any = {
       getCode() { throw new Error('provider should not be touched'); },

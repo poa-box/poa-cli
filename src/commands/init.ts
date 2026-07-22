@@ -246,6 +246,8 @@ export const initHandler = {
       ].filter(Boolean) as string[];
 
       if (output.isJsonMode()) {
+        // A generated wallet's mnemonic is only recoverable here — return it in
+        // the payload so a scripted `--generate-key --json` run can back it up.
         output.json({
           status: 'ok',
           file: targetFile,
@@ -254,10 +256,20 @@ export const initHandler = {
           wallet: generatedAddress ?? null,
           keyStored: Boolean(privateKey),
           generatedWallet: Boolean(mnemonicToShow),
+          mnemonic: mnemonicToShow ?? null,
           org: org ?? null,
           nextSteps,
         });
         return;
+      }
+
+      // Non-interactive generate-key path never hit the pre-confirm banner
+      // above, so show the mnemonic once here before the success summary.
+      if (mnemonicToShow && !interactive) {
+        output.warn('SAVE YOUR MNEMONIC — it will not be shown again:');
+        console.log('');
+        console.log(`    ${mnemonicToShow}`);
+        console.log('');
       }
 
       output.success(`Wrote ${targetFile}`, {

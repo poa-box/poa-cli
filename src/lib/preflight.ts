@@ -22,6 +22,7 @@ import {
   deriveClaimState,
   TaskOnChain,
 } from './task-lens';
+import { resolveSponsoredConfig } from './sponsorship-config';
 
 export interface CheckResult {
   ok: boolean;
@@ -129,6 +130,15 @@ const DEFAULT_MIN_GAS_WEI = ethers.utils.parseEther('0.0001');
  */
 export function checkGasBalance(address: string, minWei?: ethers.BigNumber): PreflightCheck {
   const min = minWei ?? DEFAULT_MIN_GAS_WEI;
+  // Sponsored writes (EIP-7702 / ERC-4337) don't spend the EOA's own gas, so a
+  // zero balance is expected and fine — the whole point of the "members
+  // transact without ever holding gas" path. When sponsorship is configured,
+  // skip the balance requirement rather than forcing --no-preflight. (If the
+  // EOA isn't actually delegated, executeTx falls back to a direct tx whose own
+  // gas estimation surfaces the shortfall with a decoded error.)
+  if (resolveSponsoredConfig() !== undefined) {
+    return { label: 'gas balance', local: () => ({ ok: true }) };
+  }
   return {
     label: 'gas balance',
     call: getEthBalanceCall(address),
