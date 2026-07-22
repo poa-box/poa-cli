@@ -16,7 +16,7 @@
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { buildCliTree, GLOBAL_FLAGS, CliCommand } from '../../scripts/lib/cli-tree';
+import { buildCliTree, buildTopLevelCommands, GLOBAL_FLAGS, CliCommand } from '../../scripts/lib/cli-tree';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 
@@ -154,7 +154,7 @@ function tokenize(segment: string): string[] {
 const HEREDOC_RE = /<<-?\s*'?"?([A-Za-z_][A-Za-z0-9_]*)'?"?/;
 const REDIRECT_TOKENS = new Set(['>', '>>', '<', '2>', '2>>', '&>', 'jq', 'tee', 'xargs', 'grep']);
 
-function collectDocCommands(file: string): DocCommandLine[] {
+function collectDocCommands(file: string, topLevelNames: Set<string>): DocCommandLine[] {
   const relFile = path.relative(ROOT, file);
   const out: DocCommandLine[] = [];
   const content = fs.readFileSync(file, 'utf8');
@@ -205,9 +205,15 @@ function collectDocCommands(file: string): DocCommandLine[] {
           else if (tokens[0] === 'pop') tokens = tokens.slice(1);
           else continue;
 
-          // Need `<domain> <action>` — both plain words
+          if (tokens.length < 1 || tokens[0].startsWith('-')) continue;
+          // Top-level command (`pop init`): one plain word, flags may follow.
+          if (topLevelNames.has(tokens[0])) {
+            out.push({ file: relFile, line: lineNo, raw: segment.trim(), tokens });
+            continue;
+          }
+          // Otherwise need `<domain> <action>` — both plain words.
           if (tokens.length < 2) continue;
-          if (tokens[0].startsWith('-') || tokens[1].startsWith('-')) continue;
+          if (tokens[1].startsWith('-')) continue;
           if (REDIRECT_TOKENS.has(tokens[0]) || REDIRECT_TOKENS.has(tokens[1])) continue;
           out.push({ file: relFile, line: lineNo, raw: segment.trim(), tokens });
         }
@@ -267,8 +273,15 @@ function checkFlags(cmd: DocCommandLine, chain: CliCommand[], startIndex: number
   return problems;
 }
 
-function validate(cmd: DocCommandLine, domains: Map<string, { description: string; commands: Map<string, CliCommand> }>): string[] {
+function validate(
+  cmd: DocCommandLine,
+  domains: Map<string, { description: string; commands: Map<string, CliCommand> }>,
+  topLevel: Map<string, CliCommand>,
+): string[] {
   const [domainName, actionName, ...rest] = cmd.tokens;
+  // Top-level command (`pop init`): flags checked against its own options.
+  const top = topLevel.get(domainName);
+  if (top) return checkFlags(cmd, [top], 1);
   const domain = domains.get(domainName);
   if (!domain) return [`unknown domain 'pop ${domainName}'`];
   const command = domain.commands.get(actionName);
@@ -300,6 +313,8 @@ describe('doc-commands: documented CLI invocations match the command tree', () =
       { description: d.description, commands: new Map(d.commands.map((c) => [c.name, c])) },
     ]),
   );
+  const topLevel = new Map(buildTopLevelCommands().map((c) => [c.name, c]));
+  const topLevelNames = new Set(topLevel.keys());
 
   it('buildCliTree() produces the expected shape', () => {
     expect(tree).toHaveLength(14);
@@ -307,6 +322,8 @@ describe('doc-commands: documented CLI invocations match the command tree', () =
     expect(GLOBAL_FLAGS.org).toBeDefined();
     const retro = domains.get('brain')?.commands.get('retro');
     expect(retro?.subcommands?.some((s) => s.name === 'show')).toBe(true);
+    // Top-level commands are modeled too (pop init).
+    expect(topLevel.has('init')).toBe(true);
   });
 
   const docFiles = listDocFiles();
@@ -318,13 +335,13 @@ describe('doc-commands: documented CLI invocations match the command tree', () =
     for (const file of docFiles) {
       const relFile = path.relative(ROOT, file);
       if (relFile.startsWith(path.join('docs', 'reference', 'cli'))) continue; // generated from the tree itself
-      const commands = collectDocCommands(file);
+      const commands = collectDocCommands(file, topLevelNames);
       checked += commands.length;
       if (process.env.DOC_TEST_DEBUG) {
         console.log(`doc-commands DEBUG ${relFile}: ${commands.length} invocations`);
       }
       for (const cmd of commands) {
-        for (const message of validate(cmd, domains)) {
+        for (const message of validate(cmd, domains, topLevel)) {
           const violation = { file: cmd.file, line: cmd.line, message: `${message} — "${cmd.raw}"` };
           if (WARN_ONLY.has(relFile)) warned.push(violation);
           else enforced.push(violation);

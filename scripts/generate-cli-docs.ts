@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   buildCliTree,
+  buildTopLevelCommands,
   getBuildDiagnostics,
   GLOBAL_FLAGS,
   CliCommand,
@@ -125,7 +126,7 @@ function renderDomainPage(domain: CliDomain): string {
   return lines.join('\n');
 }
 
-function renderIndexPage(tree: CliDomain[]): string {
+function renderIndexPage(tree: CliDomain[], topLevel: CliCommand[]): string {
   const lines: string[] = [
     BANNER,
     '',
@@ -140,6 +141,12 @@ function renderIndexPage(tree: CliDomain[]): string {
     lines.push(
       `| \`${domain.domain}\` | ${escapeCell(domain.description)} | ${domain.commands.length} | [${domain.domain}.md](${domain.domain}.md) |`,
     );
+  }
+  if (topLevel.length > 0) {
+    lines.push('', '## Top-level commands', '', 'Run directly as `pop <command>` (not under a domain):', '');
+    for (const command of topLevel) {
+      lines.push(...renderCommand(command, 0));
+    }
   }
   lines.push('', '## Global flags', '', 'Available on every command:', '');
   for (const name of Object.keys(GLOBAL_FLAGS)) {
@@ -162,8 +169,9 @@ function renderIndexPage(tree: CliDomain[]): string {
 
 function generate(): Map<string, string> {
   const tree = buildCliTree();
+  const topLevel = buildTopLevelCommands();
   const files = new Map<string, string>();
-  files.set('index.md', renderIndexPage(tree));
+  files.set('index.md', renderIndexPage(tree, topLevel));
   for (const domain of tree) {
     files.set(`${domain.domain}.md`, renderDomainPage(domain));
   }

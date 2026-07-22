@@ -16,13 +16,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   createSigner: vi.fn(),
+  createProvider: vi.fn(() => ({ __homeChainProvider: true })),
   resolveOrgModules: vi.fn(),
   tryAggregate: vi.fn(),
   query: vi.fn(),
   isJsonMode: vi.fn(() => true),
 }));
 
-vi.mock('../../src/lib/signer', () => ({ createSigner: mocks.createSigner }));
+vi.mock('../../src/lib/signer', () => ({
+  createSigner: mocks.createSigner,
+  createProvider: mocks.createProvider,
+}));
 vi.mock('../../src/lib/resolve', () => ({
   resolveOrgModules: mocks.resolveOrgModules,
   requireModule: (modules: any, key: string) => modules[key],
@@ -57,6 +61,7 @@ vi.mock('../../src/lib/output', () => {
 
 import { ethers } from 'ethers';
 import { whoamiHandler, resolveHatName } from '../../src/commands/user/whoami';
+import { HOME_CHAIN_ID } from '../../src/config/networks';
 import { MULTICALL3, Call } from '../../src/lib/multicall';
 import { formatToken } from '../../src/lib/format';
 import * as output from '../../src/lib/output';
@@ -292,6 +297,13 @@ describe('pop user whoami — identity + org standing', () => {
     expect(payload.address).toBe(WALLET);
     expect(payload.username).toBe('argus'); // via global-registry fallback
     expect(payload.orgError).toContain('not found');
+    // No-org username is home-chain state: the registry is resolved + read on
+    // the home chain, not the selected chain (Sepolia here).
+    expect(mocks.createProvider).toHaveBeenCalledWith(
+      expect.objectContaining({ chainId: HOME_CHAIN_ID })
+    );
+    const infraCall = mocks.query.mock.calls.find((c: any[]) => !String(c[0]).includes('WhoamiOrgData'));
+    expect(infraCall?.[2]).toBe(HOME_CHAIN_ID);
   });
 
   it('human mode: prints the Who am I and Org standing blocks', async () => {

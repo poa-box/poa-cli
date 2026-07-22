@@ -21,6 +21,28 @@ Command reference generated from the yargs command tree. Regenerate with `yarn d
 | `agent` | Agent operations & monitoring | 10 | [agent.md](agent.md) |
 | `brain` | P2P CRDT brain layer (live-sync knowledge) | 25 | [brain.md](brain.md) |
 
+## Top-level commands
+
+Run directly as `pop <command>` (not under a domain):
+
+## pop init
+
+Interactive setup: wallet, chain, default org, .env
+
+```text
+pop init [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--chain` | number | no | - | Chain ID to configure (100 Gnosis, 42161 Arbitrum, 11155111 Sepolia, 84532 Base Sepolia) |
+| `--file` | string | no | - | Write to this exact path (testing) |
+| `--force` | boolean | no | `false` | Overwrite an existing target .env file |
+| `--generate-key` | boolean | no | `false` | Generate a fresh wallet non-interactively (prints the mnemonic once) |
+| `--global` | boolean | no | `false` | Write ~/.pop/.env (per-user) instead of ./.env (project-local) |
+| `--org` | string | no | - | Default org name or hex ID (POP_DEFAULT_ORG) |
+
+
 ## Global flags
 
 Available on every command:

@@ -20,11 +20,11 @@
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { createSigner } from '../../lib/signer';
+import { createSigner, createProvider } from '../../lib/signer';
 import { resolveOrgModules, OrgModules } from '../../lib/resolve';
 import { tryAggregate, getEthBalanceCall, decodeEthBalance, Call, CallResult } from '../../lib/multicall';
 import { formatToken } from '../../lib/format';
-import { getNetworkByChainId } from '../../config/networks';
+import { getNetworkByChainId, HOME_CHAIN_ID } from '../../config/networks';
 import { query } from '../../lib/subgraph';
 import { FETCH_WHOAMI_ORG_DATA } from '../../queries/user';
 import { FETCH_INFRASTRUCTURE_ADDRESSES } from '../../queries/infrastructure';
@@ -153,10 +153,23 @@ export const whoamiHandler = {
           )
         : null;
 
-      // No org QuickJoin → resolve the global registry from the subgraph.
+      // Where the username lives. An org QuickJoin points at its own registry
+      // on the selected chain (read via the selected-chain multicall below).
+      // Without an org, the account registry is HOME-CHAIN state — that's
+      // where `pop user register` writes and `pop user profile` reads — so
+      // resolve + read it on the home chain, independent of the selected
+      // --chain (which still drives the balance/org/PT/hat checks). Otherwise
+      // a home-chain registration reads as "not registered" whenever the
+      // default chain is an org chain.
+      let usernameProvider = provider;
       if (!registryAddr) {
+        if (HOME_CHAIN_ID !== chainId) {
+          // --rpc targets the selected chain; the home-chain provider resolves
+          // its endpoint from the home-chain env/defaults.
+          usernameProvider = createProvider({ chainId: HOME_CHAIN_ID });
+        }
         try {
-          const infra = await query<InfrastructureAddresses>(FETCH_INFRASTRUCTURE_ADDRESSES, {}, argv.chain);
+          const infra = await query<InfrastructureAddresses>(FETCH_INFRASTRUCTURE_ADDRESSES, {}, HOME_CHAIN_ID);
           registryAddr = infra.universalAccountRegistries?.[0]?.id
             || infra.poaManagerContracts?.[0]?.globalAccountRegistryProxy
             || null;
@@ -164,15 +177,28 @@ export const whoamiHandler = {
           // No registry reachable — username shows as unavailable.
         }
       }
+      const usernameOnSelectedChain = usernameProvider === provider;
 
       // ── Phase 2 (chain) + subgraph snapshot, concurrently ──────────────
       const phase2: Call[] = [];
       let usernameIndex = -1;
       let hatBalanceBase = -1;
-      if (registryAddr) {
+      // Batch getUsername into the selected-chain multicall only when the
+      // registry is on that chain; the home-chain fallback reads separately.
+      if (registryAddr && usernameOnSelectedChain) {
         usernameIndex = phase2.length;
         phase2.push({ to: registryAddr, data: UAR_IFACE.encodeFunctionData('getUsername', [address]) });
       }
+      const homeUsernamePromise: Promise<string | null> = (registryAddr && !usernameOnSelectedChain)
+        ? tryAggregate(usernameProvider, [
+            { to: registryAddr, data: UAR_IFACE.encodeFunctionData('getUsername', [address]) },
+          ])
+            .then((r) => decodeOrNull<string>(
+              () => UAR_IFACE.decodeFunctionResult('getUsername', r[0].returnData)[0],
+              r[0]
+            ))
+            .catch(() => null)
+        : Promise.resolve(null);
       if (hatsAddr && memberHatIds && memberHatIds.length > 0) {
         hatBalanceBase = phase2.length;
         for (const hatId of memberHatIds) {
@@ -189,9 +215,10 @@ export const whoamiHandler = {
           }, argv.chain).catch(() => null)
         : Promise.resolve(null);
 
-      const [phase2Results, orgData] = await Promise.all([
+      const [phase2Results, orgData, homeUsername] = await Promise.all([
         tryAggregate(provider, phase2),
         subgraphPromise,
+        homeUsernamePromise,
       ]);
 
       const username = usernameIndex >= 0
@@ -199,7 +226,7 @@ export const whoamiHandler = {
             () => UAR_IFACE.decodeFunctionResult('getUsername', phase2Results[usernameIndex].returnData)[0],
             phase2Results[usernameIndex]
           )
-        : null;
+        : homeUsername;
 
       // Membership: authoritative on-chain member-hat check when readable,
       // else the subgraph's membershipStatus.

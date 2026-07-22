@@ -25,6 +25,7 @@ import { pinJson } from '../../lib/ipfs';
 import { ipfsCidToBytes32 } from '../../lib/encoding';
 import { query } from '../../lib/subgraph';
 import { requireValidUsername } from '../../lib/validation';
+import { HOME_CHAIN_ID } from '../../config/networks';
 import { runPreflight, checkGasBalance, checkUsernameFree, PreflightCheck } from '../../lib/preflight';
 import { confirmWrite, finishWrite } from '../../lib/command';
 import { CliError, PreconditionError } from '../../lib/errors';
@@ -83,8 +84,15 @@ export const updateProfileHandler = {
         }
       }
 
+      // Username + profile metadata are home-chain account-registry state
+      // (that's where `pop user register` writes and `pop user profile`
+      // reads). Default to the home chain, not POP_DEFAULT_CHAIN — otherwise a
+      // typical org config (e.g. POP_DEFAULT_CHAIN=100) would read/write the
+      // wrong registry. An explicit --chain still wins.
+      const registryChainId = argv.chain ?? HOME_CHAIN_ID;
+
       // Get UAR address
-      const uarResult = await query<any>(`{ universalAccountRegistries(first: 1) { id } }`, {}, argv.chain);
+      const uarResult = await query<any>(`{ universalAccountRegistries(first: 1) { id } }`, {}, registryChainId);
       const uarAddr = uarResult.universalAccountRegistries?.[0]?.id;
       if (!uarAddr) {
         throw new CliError(
@@ -96,7 +104,7 @@ export const updateProfileHandler = {
 
       const { signer, provider, address } = createSigner({
         privateKey: argv['private-key'] as string | undefined,
-        chainId: argv.chain,
+        chainId: registryChainId,
         rpcUrl: argv.rpc,
       });
 
@@ -130,7 +138,7 @@ export const updateProfileHandler = {
         const existingResult = await query<any>(
           `{ account(id: "${address.toLowerCase()}") { metadata { bio avatar github twitter website } } }`,
           {},
-          argv.chain
+          registryChainId
         );
         const existing = existingResult.account?.metadata || {};
 

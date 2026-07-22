@@ -27,6 +27,7 @@ import { registerRoleCommands } from '../../src/commands/role';
 import { registerConfigCommands } from '../../src/commands/config';
 import { registerAgentCommands } from '../../src/commands/agent';
 import { registerBrainCommands } from '../../src/commands/brain';
+import { initHandler } from '../../src/commands/init';
 
 export interface OptSpec {
   name: string;
@@ -97,6 +98,19 @@ const DOMAINS: Array<{ domain: string; description: string; register: (y: any) =
   { domain: 'config', description: 'View and validate configuration', register: registerConfigCommands },
   { domain: 'agent', description: 'Agent operations & monitoring', register: registerAgentCommands },
   { domain: 'brain', description: 'P2P CRDT brain layer (live-sync knowledge)', register: registerBrainCommands },
+];
+
+/**
+ * Top-level commands registered directly on the root parser in src/index.ts
+ * (i.e. `pop <command>`, not `pop <domain> <action>`). Mirror of the inline
+ * `.command(...)` calls there — keep in sync when a top-level command is added.
+ */
+const TOP_LEVEL: Array<{ name: string; description: string; builder?: (y: any) => unknown }> = [
+  {
+    name: 'init',
+    description: 'Interactive setup: wallet, chain, default org, .env',
+    builder: initHandler.builder,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -343,11 +357,12 @@ function buildCommand(
   return command;
 }
 
-let lastDiagnostics: CliTreeDiagnostic[] = [];
+let domainDiagnostics: CliTreeDiagnostic[] = [];
+let topLevelDiagnostics: CliTreeDiagnostic[] = [];
 
-/** Builders that threw while being replayed during the last buildCliTree() call. */
+/** Builders that threw while being replayed during the last tree build. */
 export function getBuildDiagnostics(): CliTreeDiagnostic[] {
-  return lastDiagnostics.slice();
+  return [...domainDiagnostics, ...topLevelDiagnostics];
 }
 
 export function buildCliTree(): CliDomain[] {
@@ -364,6 +379,20 @@ export function buildCliTree(): CliDomain[] {
       .filter((cmd): cmd is CliCommand => cmd !== null);
     return { domain, description, commands };
   });
-  lastDiagnostics = diagnostics;
+  domainDiagnostics = diagnostics;
   return domains;
+}
+
+/**
+ * Top-level commands (`pop <command>`), recorded the same way as domain
+ * actions so the generator and the doc-command drift test see them too.
+ */
+export function buildTopLevelCommands(): CliCommand[] {
+  const diagnostics: CliTreeDiagnostic[] = [];
+  const commands = TOP_LEVEL
+    .map(({ name, description, builder }) =>
+      buildCommand({ tokens: name, aliases: [], description, builder }, 'pop', diagnostics))
+    .filter((cmd): cmd is CliCommand => cmd !== null);
+  topLevelDiagnostics = diagnostics;
+  return commands;
 }
