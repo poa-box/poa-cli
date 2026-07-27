@@ -1,3 +1,14 @@
+/**
+ * pop user register — register a username on the UniversalAccountRegistry.
+ *
+ * Usernames live on the home chain (Arbitrum) unless --chain overrides, so
+ * this command deliberately does NOT inherit POP_DEFAULT_CHAIN (preserved
+ * legacy behavior). Validation is the shared requireValidUsername (same
+ * 3-32 alphanumeric+underscore rule the contract's ValidationLib enforces),
+ * and pre-flight fails fast (exit 4) when the name is already registered —
+ * UAR.registerAccount reverts UsernameTaken on-chain otherwise.
+ */
+
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { createSigner } from '../../lib/signer';
 import { createWriteContract } from '../../lib/contracts';
@@ -5,7 +16,12 @@ import { executeTx } from '../../lib/tx';
 import { query } from '../../lib/subgraph';
 import { FETCH_INFRASTRUCTURE_ADDRESSES } from '../../queries/infrastructure';
 import type { InfrastructureAddresses } from '../../queries/infrastructure';
-import { HOME_CHAIN_ID } from '../../config/networks';
+import { HOME_CHAIN_ID, getNetworkByChainId } from '../../config/networks';
+import { requireValidUsername } from '../../lib/validation';
+import { runPreflight, checkGasBalance, checkUsernameFree } from '../../lib/preflight';
+import { confirmWrite, finishWrite } from '../../lib/command';
+import { CliError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 
 interface RegisterArgs {
@@ -14,66 +30,84 @@ interface RegisterArgs {
   rpc?: string;
   'private-key'?: string;
   'dry-run'?: boolean;
+  yes?: boolean;
+  preflight?: boolean;
 }
 
 export const registerHandler = {
   builder: (yargs: Argv) => yargs
-    .option('username', { type: 'string', demandOption: true, describe: 'Username (3-32 chars, alphanumeric + underscores)' }),
+    .option('username', { type: 'string', demandOption: true, describe: 'Username (3-32 chars, alphanumeric + underscores)' })
+    .example('pop user register --username alice', 'Register "alice" on the home chain (Arbitrum)')
+    .example('pop user register --username alice --chain 11155111', 'Register on Sepolia instead'),
 
   handler: async (argv: ArgumentsCamelCase<RegisterArgs>) => {
-    // Validate username
-    const username = argv.username;
-    if (username.length < 3 || username.length > 32) {
-      output.error('Username must be 3-32 characters');
-      process.exit(1);
-      return;
-    }
-    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-      output.error('Username can only contain letters, numbers, and underscores');
-      process.exit(1);
-      return;
-    }
-
     const spin = output.spinner('Registering username...');
     spin.start();
 
     try {
-      // Usernames live on the home chain (Arbitrum)
+      let username: string;
+      try {
+        username = requireValidUsername(argv.username);
+      } catch (err: any) {
+        throw new CliError(err.message, EXIT.USAGE);
+      }
+
+      // Usernames live on the home chain (Arbitrum) unless overridden.
       const chainId = argv.chain || HOME_CHAIN_ID;
-      const { signer } = createSigner({ privateKey: argv.privateKey as string, chainId, rpcUrl: argv.rpc as string });
+      const { signer, provider, address } = createSigner({
+        privateKey: argv['private-key'] as string | undefined,
+        chainId,
+        rpcUrl: argv.rpc,
+      });
 
       // Resolve UniversalAccountRegistry address
-      const infra = await query<InfrastructureAddresses>(
-        FETCH_INFRASTRUCTURE_ADDRESSES,
-        {},
-        chainId
-      );
-
+      const infra = await query<InfrastructureAddresses>(FETCH_INFRASTRUCTURE_ADDRESSES, {}, chainId);
       const registryAddr = infra.universalAccountRegistries?.[0]?.id
         || infra.poaManagerContracts?.[0]?.globalAccountRegistryProxy;
       if (!registryAddr) {
-        throw new Error('Could not resolve UniversalAccountRegistry address');
+        throw new CliError(
+          'Could not resolve the UniversalAccountRegistry address from the subgraph.',
+          EXIT.INFRA,
+          'The subgraph may be syncing — retry shortly, or pass --chain for a chain with a deployed registry.'
+        );
       }
 
-      spin.text = 'Sending registration transaction...';
+      // ── Pre-flight (skippable with --no-preflight) ────────────────────
+      await runPreflight(provider, [
+        checkGasBalance(address),
+        checkUsernameFree(registryAddr, username),
+      ], { skip: argv.preflight === false });
+      spin.stop();
+
+      await confirmWrite(argv, {
+        username,
+        address,
+        registry: registryAddr,
+        chain: getNetworkByChainId(chainId)?.name ?? `chain ${chainId}`,
+      }, { actionLabel: 'About to register username' });
+
+      const txSpin = output.spinner('Sending registration transaction...');
+      txSpin.start();
       const contract = createWriteContract(registryAddr, 'UniversalAccountRegistry', signer);
       const result = await executeTx(contract, 'registerAccount', [username], { dryRun: argv.dryRun });
-      spin.stop();
+      txSpin.stop();
 
-      if (result.success) {
-        output.success(`Username "${username}" registered`, {
-          txHash: result.txHash, explorerUrl: result.explorerUrl,
-          address: signer.address,
+      finishWrite(result, {
+        successMsg: `Username "${username}" registered`,
+        fields: {
+          username,
+          address,
           chain: chainId,
-        });
-      } else {
-        output.error('Registration failed', { error: result.error, errorCode: result.errorCode });
-        process.exit(2);
-      }
+        },
+      });
     } catch (err: any) {
       spin.stop();
-      output.error(err.message);
-      process.exit(1);
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
+      output.error(err?.message || String(err));
+      process.exit(EXIT.USAGE);
     }
   },
 };

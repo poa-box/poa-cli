@@ -2,7 +2,7 @@
  * pop org audit-vetoken — on-chain veToken top-holder probe.
  *
  * Task #383 (HB#442). Closes the methodology gap surfaced in HB#441 when
- * reading argus_prime's Curve DAO audit (task #380, docs/audits/curve-dao.md):
+ * reading argus_prime's Curve DAO audit (task #380, reports/audits/curve-dao.md):
  *
  * The Capture Cluster v1.2 identifies that our Snapshot-based top-voter-share
  * numbers for veToken protocols (Curve, Balancer, Frax, Convex, Beethoven X,
@@ -38,7 +38,7 @@
  *     [--top 10] [--chain 1] [--json]
  *
  * Dogfood against Curve VotingEscrow (mainnet addresses from
- * docs/audits/curve-dao.md) is the acceptance test.
+ * reports/audits/curve-dao.md) is the acceptance test.
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';

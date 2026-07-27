@@ -5,51 +5,74 @@ import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { pinJson } from '../../lib/ipfs';
 import { stringToBytes, ipfsCidToBytes32 } from '../../lib/encoding';
+import { resolveOrgId } from '../../lib/resolve';
+import { finishWrite, withIdempotency } from '../../lib/command';
 import * as output from '../../lib/output';
 import { resolveVotingContracts } from './helpers';
 
 /**
- * ConfigKey mapping for HybridVoting:
- *   0: QUORUM (uint8 — percentage of token-weighted votes needed)
- *   1: TARGET_ALLOWED (address, bool — whitelist execution targets)
+ * ConfigKey mapping for HybridVoting (contracts origin/main, v6):
+ *   0: THRESHOLD (uint8 — support threshold percentage, 1-100)
+ *   1: TARGET_ALLOWED (deprecated — setConfig silently ignores this branch)
  *   2: EXECUTOR (address — change the executor contract)
+ *   3: QUORUM (uint32 — minimum voter count for validity, 0 disables)
  *
- * ConfigKey mapping for DirectDemocracyVoting:
- *   0: QUORUM (uint8 — absolute vote count needed)
+ * ConfigKey mapping for DirectDemocracyVoting (v6):
+ *   0: THRESHOLD (uint8 — support threshold percentage, 1-100)
  *   1: EXECUTOR (address)
- *   2: TARGET_ALLOWED (address, bool)
+ *   2: TARGET_ALLOWED (address, bool — whitelist execution targets)
  *   3: HAT_ALLOWED (uint256, bool — restrict voting to specific hats)
+ *   4: QUORUM (uint32 — minimum voter count for validity, 0 disables)
+ *
+ * Note: since PR #119 quorum is a voter COUNT, not a percentage.
  */
 
 interface ConfigParam {
   name: string;
-  hybridKey: number;
+  hybridKey: number; // -1 = not applicable to Hybrid
   ddKey: number | null; // null = not applicable to DD
   valueType: string;
   description: string;
   encode: (value: string) => string;
   validate: (value: string) => void;
+  hybridUnavailableReason?: string; // shown when hybridKey < 0 and no DD contract exists
 }
 
 const CONFIG_PARAMS: Record<string, ConfigParam> = {
-  quorum: {
-    name: 'quorum',
+  threshold: {
+    name: 'threshold',
     hybridKey: 0,
     ddKey: 0,
     valueType: 'uint8',
-    description: 'Voting quorum (Hybrid: % of token weight, DD: absolute count)',
+    description: 'Support threshold percentage (1-100)',
     encode: (v) => ethers.utils.defaultAbiCoder.encode(['uint8'], [parseInt(v, 10)]),
     validate: (v) => {
       const n = parseInt(v, 10);
-      if (isNaN(n) || n < 1 || n > 100) throw new Error('Quorum must be 1-100');
+      if (isNaN(n) || n < 1 || n > 100) throw new Error('Threshold must be 1-100');
+    },
+  },
+  quorum: {
+    name: 'quorum',
+    hybridKey: 3,
+    ddKey: 4,
+    valueType: 'uint32',
+    description: 'Minimum voter count for validity (0 disables)',
+    encode: (v) => ethers.utils.defaultAbiCoder.encode(['uint32'], [parseInt(v, 10)]),
+    validate: (v) => {
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 0 || n > 4294967295) {
+        throw new Error('Quorum must be an integer >= 0 (uint32 voter count, 0 disables)');
+      }
     },
   },
   'target-allowed': {
     name: 'target-allowed',
-    hybridKey: 1,
+    hybridKey: -1, // deprecated no-op on HybridVoting v6 — setConfig silently ignores it
     ddKey: 2,
     valueType: 'address,bool',
-    description: 'Allow/disallow an execution target address (format: 0xaddr,true/false)',
+    description: 'Allow/disallow an execution target address on DD voting (format: 0xaddr,true/false)',
+    hybridUnavailableReason:
+      'TARGET_ALLOWED is a deprecated no-op on HybridVoting (setConfig silently ignores it); this key only applies to DirectDemocracyVoting',
     encode: (v) => {
       const [addr, allowed] = v.split(',');
       return ethers.utils.defaultAbiCoder.encode(['address', 'bool'], [addr.trim(), allowed.trim() === 'true']);
@@ -77,6 +100,8 @@ const CONFIG_PARAMS: Record<string, ConfigParam> = {
     name: 'hat-allowed',
     hybridKey: -1, // not available on Hybrid
     ddKey: 3,
+    hybridUnavailableReason:
+      'HAT_ALLOWED is not a HybridVoting config key; this key only applies to DirectDemocracyVoting',
     valueType: 'uint256,bool',
     description: 'Allow/disallow a hat ID for DD voting (format: hatId,true/false)',
     encode: (v) => {
@@ -100,6 +125,8 @@ interface ProposeConfigArgs {
   rpc?: string;
   'private-key'?: string;
   'dry-run'?: boolean;
+  'idempotency-key'?: string;
+  'no-idempotency'?: boolean;
 }
 
 export const proposeConfigHandler = {
@@ -111,7 +138,9 @@ export const proposeConfigHandler = {
       describe: 'Configuration parameter name',
     })
     .option('value', { type: 'string', demandOption: true, describe: 'New value' })
-    .option('duration', { type: 'number', default: 60, describe: 'Vote duration in minutes' }),
+    .option('duration', { type: 'number', default: 60, describe: 'Vote duration in minutes' })
+    .option('idempotency-key', { type: 'string', describe: 'Explicit idempotency key (default: derived from argv).' })
+    .option('no-idempotency', { type: 'boolean', default: false, describe: 'Bypass the idempotency cache and always submit.' }),
 
   handler: async (argv: ArgumentsCamelCase<ProposeConfigArgs>) => {
     const spin = output.spinner('Creating config change proposal...');
@@ -123,6 +152,10 @@ export const proposeConfigHandler = {
       if (!param) throw new Error(`Unknown config key: ${paramName}. Available: ${Object.keys(CONFIG_PARAMS).join(', ')}`);
 
       param.validate(argv.value as string);
+
+      if (paramName === 'quorum') {
+        output.info('Note: quorum is a voter COUNT (changed from percentage in the v6 protocol).');
+      }
 
       const contracts = await resolveVotingContracts(argv.org, argv.chain);
       const { signer } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
@@ -147,7 +180,15 @@ export const proposeConfigHandler = {
       }
 
       if (option0Batch.length === 0) {
-        throw new Error(`Config key "${paramName}" has no applicable voting contracts`);
+        const reason = param.hybridKey < 0 && param.hybridUnavailableReason
+          ? ` ${param.hybridUnavailableReason}.`
+          : '';
+        throw new Error(
+          `Config key "${paramName}" has no applicable voting contracts.${reason}` +
+          (param.ddKey !== null && !contracts.ddVotingAddress
+            ? ' No DirectDemocracyVoting contract is deployed for this org.'
+            : '')
+        );
       }
 
       const batches = [option0Batch, []]; // option 0 = change, option 1 = keep current
@@ -160,39 +201,50 @@ export const proposeConfigHandler = {
         createdAt: Date.now(),
       };
 
-      spin.text = 'Pinning metadata...';
-      const cid = await pinJson(JSON.stringify(metadata));
-      const descriptionHash = ipfsCidToBytes32(cid);
-      const titleBytes = stringToBytes(`Set ${paramName} to ${argv.value}`);
-
-      spin.text = 'Sending transaction...';
-      const contract = createWriteContract(contracts.hybridVotingAddress, 'HybridVotingNew', signer);
-      const result = await executeTx(
-        contract,
-        'createProposal',
-        [titleBytes, descriptionHash, argv.duration, 2, batches, []],
-        { dryRun: argv.dryRun }
-      );
-
+      const hybridVotingAddress = contracts.hybridVotingAddress;
+      const resolvedOrgId = await resolveOrgId(argv.org, argv.chain);
       spin.stop();
 
-      if (result.success) {
+      const run = async (): Promise<Record<string, any>> => {
+        const txSpin = output.spinner('Pinning metadata...');
+        txSpin.start();
+        const cid = await pinJson(JSON.stringify(metadata));
+        const descriptionHash = ipfsCidToBytes32(cid);
+        const titleBytes = stringToBytes(`Set ${paramName} to ${argv.value}`);
+
+        txSpin.text = 'Sending transaction...';
+        const contract = createWriteContract(hybridVotingAddress, 'HybridVotingNew', signer);
+        const result = await executeTx(
+          contract,
+          'createProposal',
+          [titleBytes, descriptionHash, argv.duration, 2, batches, []],
+          { dryRun: argv.dryRun }
+        );
+        txSpin.stop();
+
         const proposalEvent = result.logs?.find(l => l.name === 'NewProposal' || l.name === 'NewHatProposal');
         const proposalId = proposalEvent?.args?.id?.toString();
-        output.success('Config change proposal created', {
-          proposalId,
-          txHash: result.txHash,
-          explorerUrl: result.explorerUrl,
-          key: paramName,
-          value: argv.value,
-          contracts: contractList,
-          duration: `${argv.duration} minutes`,
-          ipfsCid: cid,
-          sponsored: result.sponsored || false,
+
+        finishWrite(result, {
+          successMsg: 'Config change proposal created',
+          fields: {
+            proposalId,
+            key: paramName,
+            value: argv.value,
+            contracts: contractList,
+            duration: `${argv.duration} minutes`,
+            ipfsCid: cid,
+            sponsored: result.sponsored || false,
+          },
         });
+        return { proposalId, txHash: result.txHash, ipfsCid: cid };
+      };
+
+      // Dry runs simulate unconditionally — no idempotency consult/record.
+      if (argv.dryRun) {
+        await run();
       } else {
-        output.error('Proposal creation failed', { error: result.error, errorCode: result.errorCode });
-        process.exit(2);
+        await withIdempotency(argv, resolvedOrgId, 'vote.propose-config', run);
       }
     } catch (err: any) {
       spin.stop();

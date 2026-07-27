@@ -4,7 +4,19 @@ import { createSigner } from '../../lib/signer';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { pinJson } from '../../lib/ipfs';
-import { stringToBytes, ipfsCidToBytes32, parseProjectId } from '../../lib/encoding';
+import {
+  stringToBytes,
+  ipfsCidToBytes32,
+  parseProjectId,
+  parseDeadline,
+  parseDurationSeconds,
+  formatDeadline,
+} from '../../lib/encoding';
+import { detectTaskManagerFeatures, featureUnavailable, LEGACY_TM_FRAGMENTS } from '../../lib/version';
+import { confirmWrite, finishWrite } from '../../lib/command';
+import { formatToken } from '../../lib/format';
+import { CliError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
 import { requireArg } from '../../lib/validation';
 import { getTokenDecimals } from '../../config/tokens';
 import {
@@ -13,6 +25,7 @@ import {
   recordIdempotentResult,
 } from '../../lib/idempotency';
 import * as output from '../../lib/output';
+import { tokenize, jaccard } from '../../lib/similarity';
 import { resolveOrgContracts } from './helpers';
 import { query } from '../../lib/subgraph';
 import { FETCH_PROJECTS_DATA } from '../../queries/task';
@@ -29,11 +42,15 @@ interface CreateArgs {
   'bounty-token'?: string;
   'bounty-amount'?: number;
   'requires-application'?: boolean;
+  deadline?: string;
+  'completion-window'?: string;
   force?: boolean;
   chain?: number;
   rpc?: string;
   'private-key'?: string;
   'dry-run'?: boolean;
+  yes?: boolean;
+  preflight?: boolean;
   'idempotency-key'?: string;
   'no-idempotency'?: boolean;
 }
@@ -50,6 +67,8 @@ export const createHandler = {
     .option('bounty-token', { type: 'string', describe: 'Bounty ERC20 token address' })
     .option('bounty-amount', { type: 'number', describe: 'Bounty payout amount' })
     .option('requires-application', { type: 'boolean', default: false, describe: 'Require applications' })
+    .option('deadline', { type: 'string', describe: 'Absolute claim deadline — no claims after this time (v6 orgs only)' })
+    .option('completion-window', { type: 'string', describe: 'Time a claimer has to submit after claiming (v6 orgs only)' })
     .option('force', { type: 'boolean', default: false, describe: 'Skip duplicate check' })
     .option('idempotency-key', {
       type: 'string',
@@ -59,13 +78,21 @@ export const createHandler = {
       type: 'boolean',
       default: false,
       describe: 'Bypass the idempotency cache and always submit a new task.',
-    }),
+    })
+    .example('pop task create --project "Ops" --name "Write docs" --description "Draft the treasury guide" --payout 25', 'Create a 25 PT task under the Ops project')
+    .example('pop task create --project 0x… --name "Fix bug" --description "…" --payout 10 --deadline 7d --requires-application', 'Application-gated task with a one-week claim deadline (v6)'),
 
   handler: async (argv: ArgumentsCamelCase<CreateArgs>) => {
     const spin = output.spinner('Creating task...');
     spin.start();
 
     try {
+      // v6 deadline flags: parse up-front so bad input fails before any
+      // network work (and long before any transaction is sent).
+      const deadlineFlagsSet = argv.deadline !== undefined || argv.completionWindow !== undefined;
+      const absoluteDeadline = argv.deadline !== undefined ? parseDeadline(argv.deadline) : 0;
+      const completionWindow = argv.completionWindow !== undefined ? parseDurationSeconds(argv.completionWindow) : 0;
+
       const { taskManagerAddress, orgId } = await resolveOrgContracts(argv.org, argv.chain);
 
       // Task #369: idempotency check. Same pattern as pop vote create —
@@ -83,7 +110,22 @@ export const createHandler = {
           return;
         }
       }
-      const { signer } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
+      const { signer, provider, chainId } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
+
+      // Feature-gate: pre-v6 TaskManagers only expose the 7-arg createTask.
+      // Detection is a read call, so it runs on --dry-run too (the dry run
+      // still needs the right signature to estimate gas against).
+      const features = await detectTaskManagerFeatures(provider, taskManagerAddress, chainId);
+      if (!features.deadlines && deadlineFlagsSet) {
+        spin.stop();
+        output.error(featureUnavailable(
+          'task deadlines',
+          'TaskManager v6',
+          'Re-run without --deadline/--completion-window, or upgrade the org TaskManager beacon.'
+        ));
+        process.exit(EXIT.PRECONDITION);
+        return;
+      }
 
       // Duplicate check: warn if similar task exists
       // Heuristic: strip stopwords + common CLI scaffolding words, then compare by
@@ -91,17 +133,6 @@ export const createHandler = {
       // words to flag — prevents short titles from tripping on a single shared word.
       if (!argv.force) {
         try {
-          const STOPWORDS = new Set([
-            'the', 'and', 'for', 'with', 'from', 'into', 'onto', 'that', 'this',
-            'task', 'tasks', 'create', 'build', 'make', 'add', 'new', 'fix',
-            'command', 'commands', 'update', 'updates', 'support', 'test',
-            'cli', 'pop', 'org', 'orgs', 'run', 'use', 'using', 'via', 'like',
-            'proposal', 'proposals', 'vote', 'votes', 'write', 'generate',
-          ]);
-          const tokenize = (s: string): Set<string> => {
-            const words = (s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4);
-            return new Set(words.filter(w => !STOPWORDS.has(w)));
-          };
           const result = await query<any>(FETCH_PROJECTS_DATA, { orgId }, argv.chain);
           const projects = result.organization?.taskManager?.projects || [];
           const allTasks = projects.flatMap((p: any) => p.tasks || []);
@@ -113,13 +144,12 @@ export const createHandler = {
               if (existingWords.size === 0) continue;
               const shared = [...newWords].filter(w => existingWords.has(w));
               if (shared.length < 3) continue; // absolute floor
-              const union = new Set([...newWords, ...existingWords]);
-              const jaccard = shared.length / union.size;
-              if (jaccard >= 0.5) {
+              const score = jaccard(newWords, existingWords);
+              if (score >= 0.5) {
                 spin.stop();
                 output.warn(
                   `Similar task exists: #${task.taskId} "${task.title}" (${task.status}). ` +
-                  `Jaccard=${jaccard.toFixed(2)}, shared=[${shared.join(',')}]. ` +
+                  `Jaccard=${score.toFixed(2)}, shared=[${shared.join(',')}]. ` +
                   `Use --force to create anyway.`
                 );
                 process.exit(1);
@@ -130,22 +160,6 @@ export const createHandler = {
           // If duplicate check fails, proceed anyway
         }
       }
-
-      // Build metadata JSON (key order must match frontend exactly)
-      const metadata = {
-        name: argv.name,
-        description: argv.description,
-        location: argv.location || '',
-        difficulty: argv.difficulty || 'medium',
-        estHours: argv.estHours || 0,
-        submission: '',
-      };
-
-      spin.text = 'Pinning metadata to IPFS...';
-      const cid = await pinJson(JSON.stringify(metadata));
-      const metadataHash = ipfsCidToBytes32(cid);
-
-      const titleBytes = stringToBytes(argv.name);
 
       // Resolve project name to on-chain bytes32 ID
       let pid: string;
@@ -185,45 +199,93 @@ export const createHandler = {
 
       const requiresApp = argv.requiresApplication || false;
 
+      // ── Confirm BEFORE the IPFS pin or any transaction ─────────────────
+      // (interactive TTY prompts; --yes / --json / non-TTY proceed)
+      spin.stop();
+      await confirmWrite(argv, {
+        project: String(argv.project),
+        name: argv.name,
+        payout: formatToken(payoutWei, 18, 'PT'),
+        bounty: typeof bountyPayoutWei !== 'number'
+          ? `${formatToken(bountyPayoutWei, getTokenDecimals(bountyToken))} of ${bountyToken}`
+          : undefined,
+        requiresApplication: requiresApp ? 'yes' : undefined,
+        deadline: absoluteDeadline > 0 ? formatDeadline(absoluteDeadline) : undefined,
+        completionWindow: completionWindow > 0 ? `${completionWindow}s` : undefined,
+      }, { actionLabel: 'About to create task' });
+      spin.start();
+
+      // Build metadata JSON (key order must match frontend exactly)
+      const metadata = {
+        name: argv.name,
+        description: argv.description,
+        location: argv.location || '',
+        difficulty: argv.difficulty || 'medium',
+        estHours: argv.estHours || 0,
+        submission: '',
+      };
+
+      spin.text = 'Pinning metadata to IPFS...';
+      const cid = await pinJson(JSON.stringify(metadata));
+      const metadataHash = ipfsCidToBytes32(cid);
+
+      const titleBytes = stringToBytes(argv.name);
+
       spin.text = 'Sending transaction...';
-      const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', signer);
-      const result = await executeTx(
-        contract,
-        'createTask',
-        [payoutWei, titleBytes, metadataHash, pid, bountyToken, bountyPayoutWei, requiresApp],
-        { dryRun: argv.dryRun }
-      );
+      // v6 orgs get the 9-arg createTask (deadline params); legacy orgs fall
+      // back to the 7-arg signature via LEGACY_TM_FRAGMENTS (the current ABI
+      // no longer contains it).
+      const contract = features.deadlines
+        ? createWriteContract(taskManagerAddress, 'TaskManagerNew', signer)
+        : new ethers.Contract(taskManagerAddress, LEGACY_TM_FRAGMENTS, signer);
+      const txArgs = features.deadlines
+        ? [payoutWei, titleBytes, metadataHash, pid, bountyToken, bountyPayoutWei, requiresApp, absoluteDeadline, completionWindow]
+        : [payoutWei, titleBytes, metadataHash, pid, bountyToken, bountyPayoutWei, requiresApp];
+      const result = await executeTx(contract, 'createTask', txArgs, { dryRun: argv.dryRun });
 
       spin.stop();
 
-      if (result.success) {
-        // Extract taskId from TaskCreated event
-        const taskCreatedEvent = result.logs?.find(l => l.name === 'TaskCreated');
-        const taskId = taskCreatedEvent?.args?.id?.toString();
+      // Extract taskId from TaskCreated event (absent on dry runs/failures)
+      const taskCreatedEvent = result.logs?.find(l => l.name === 'TaskCreated');
+      const taskId = taskCreatedEvent?.args?.id?.toString();
 
-        // Task #369: record idempotent result so retries hit the cache
-        if (!argv.noIdempotency) {
-          recordIdempotentResult(orgId, 'task.create', idempKey, {
-            taskId,
-            txHash: result.txHash,
-            ipfsCid: cid,
-          });
-        }
-
-        output.success('Task created', {
-          taskId,
-          txHash: result.txHash,
-          explorerUrl: result.explorerUrl,
-          ipfsCid: cid,
-        });
-        output.subgraphLagWarning();
-      } else {
-        output.error('Task creation failed', { error: result.error, errorCode: result.errorCode });
-        process.exit(2);
+      // v6 with deadlines set: surface what the contract actually recorded
+      // (TaskDeadlinesSet log), falling back to the parsed flag values on
+      // dry runs where no logs exist.
+      let deadlineFields: Record<string, string | number> = {};
+      if (features.deadlines && (absoluteDeadline > 0 || completionWindow > 0)) {
+        const deadlinesSetEvent = result.logs?.find(l => l.name === 'TaskDeadlinesSet');
+        const dl = deadlinesSetEvent ? Number(deadlinesSetEvent.args.absoluteDeadline.toString()) : absoluteDeadline;
+        const cw = deadlinesSetEvent ? Number(deadlinesSetEvent.args.completionWindow.toString()) : completionWindow;
+        deadlineFields = { deadline: formatDeadline(dl), completionWindowSeconds: cw };
       }
+
+      finishWrite(result, {
+        successMsg: 'Task created',
+        fields: {
+          taskId,
+          ipfsCid: cid,
+          ...deadlineFields,
+        },
+        onSuccess: () => {
+          // Task #369: record idempotent result so retries hit the cache
+          // (finishWrite skips this on dry runs — nothing landed on-chain).
+          if (!argv.noIdempotency) {
+            recordIdempotentResult(orgId, 'task.create', idempKey, {
+              taskId,
+              txHash: result.txHash,
+              ipfsCid: cid,
+            });
+          }
+        },
+      });
     } catch (err: any) {
       spin.stop();
-      output.error(err.message);
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
+      output.error(err?.message || String(err));
       process.exit(1);
     }
   },

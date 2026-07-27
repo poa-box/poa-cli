@@ -45,7 +45,7 @@ pop treasury claim-mine
 - Uses OZ v5 double-hash merkle encoding
 - Distribution is proportional to PT balance at a checkpoint block
 - Members can claim anytime after the proposal executes
-- Unclaimed funds can be recovered via `finalizeDistribution` after claim period
+- Unclaimed funds can be recovered after the claim period via `pop treasury propose-finalize --distribution <ID>` (a governance proposal that returns the unclaimed balance to the treasury)
 
 ---
 

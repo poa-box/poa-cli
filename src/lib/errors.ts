@@ -41,3 +41,17 @@ export class IpfsError extends CliError {
     this.name = 'IpfsError';
   }
 }
+
+export class PreconditionError extends CliError {
+  constructor(message: string, suggestion?: string) {
+    super(message, 4, suggestion);
+    this.name = 'PreconditionError';
+  }
+}
+
+export class AbortedError extends CliError {
+  constructor(message: string = 'Aborted by user') {
+    super(message, 5);
+    this.name = 'AbortedError';
+  }
+}

@@ -31,6 +31,38 @@ export const GET_ACCOUNT_BY_USERNAME = `
   }
 `;
 
+/**
+ * One-round-trip org snapshot for `pop user whoami`: org name + role-hat
+ * names, the caller's org-user entity (membership, PT balance, hats worn),
+ * and their pending participation-token requests. The `status: Pending`
+ * filter is inlined (enum literal) to match FETCH_PENDING_TOKEN_REQUESTS
+ * in queries/token.ts.
+ */
+export const FETCH_WHOAMI_ORG_DATA = `
+  query WhoamiOrgData($orgId: Bytes!, $orgUserID: String!, $tokenAddress: String!, $userAddress: Bytes!) {
+    organization(id: $orgId) {
+      id
+      name
+      roles(where: { isUserRole: true }) {
+        hatId
+        name
+      }
+    }
+    user(id: $orgUserID) {
+      id
+      membershipStatus
+      participationTokenBalance
+      currentHatIds
+    }
+    tokenRequests(
+      where: { participationToken: $tokenAddress, requester: $userAddress, status: Pending }
+      first: 100
+    ) {
+      id
+    }
+  }
+`;
+
 export const FETCH_USER_DATA = `
   query FetchUserDataNew($orgUserID: String!, $userAddress: Bytes!) {
     user(id: $orgUserID) {

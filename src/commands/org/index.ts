@@ -3,6 +3,7 @@ import { listHandler } from './list';
 import { viewHandler } from './view';
 import { activityHandler } from './activity';
 import { updateMetadataHandler } from './update-metadata';
+import { setMetadataAdminHandler } from './set-metadata-admin';
 import { deployHandler } from './deploy';
 import { deployConfigHandler } from './deploy-config';
 import { statusHandler } from './status';
@@ -38,6 +39,7 @@ export function registerOrgCommands(yargs: Argv) {
     .command('status', 'Quick org health summary', statusHandler.builder, statusHandler.handler)
     .command('activity', 'Recent org activity (agent heartbeat)', activityHandler.builder, activityHandler.handler)
     .command('update-metadata', 'Update organization metadata', updateMetadataHandler.builder, updateMetadataHandler.handler)
+    .command('set-metadata-admin', 'Propose changing the org metadata-admin hat (governance vote)', setMetadataAdminHandler.builder, setMetadataAdminHandler.handler)
     .command('deploy', 'Deploy a new organization', deployHandler.builder, deployHandler.handler)
     .command('deploy-config', 'Generate a deploy config file', deployConfigHandler.builder, deployConfigHandler.handler)
     .command('roles', 'List org roles with hat IDs and vouch requirements', rolesHandler.builder, rolesHandler.handler)
@@ -64,5 +66,6 @@ export function registerOrgCommands(yargs: Argv) {
     .command('probe-access', 'Burner-callStatic access-control probe — map a contract\'s gating model in <5 min, zero gas', probeAccessHandler.builder, probeAccessHandler.handler)
     .command('audit-vetoken', 'On-chain top-holder probe for veCRV-family VotingEscrow contracts (task #383)', auditVetokenHandler.builder, auditVetokenHandler.handler)
     .command('audit-participation', 'Governance participation metrics for external Governor contracts (task #422)', auditParticipationHandler.builder, auditParticipationHandler.handler)
-    .demandCommand(1, 'Please specify an org action');
+    .demandCommand(1, 'Please specify an org action')
+    .epilogue('Guide: see docs/guides/org-admin.md');
 }

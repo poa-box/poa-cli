@@ -2,6 +2,7 @@ import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { query } from '../../lib/subgraph';
 import { resolveOrgModules } from '../../lib/resolve';
+import { computeGini } from '../../lib/stats';
 import * as output from '../../lib/output';
 
 interface AuditArgs {
@@ -65,19 +66,6 @@ const FETCH_AUDIT_DATA = `
     }
   }
 `;
-
-function computeGini(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const n = sorted.length;
-  const total = sorted.reduce((s, v) => s + v, 0);
-  if (total === 0) return 0;
-  let numerator = 0;
-  for (let i = 0; i < n; i++) {
-    numerator += (2 * (i + 1) - n - 1) * sorted[i];
-  }
-  return numerator / (n * total);
-}
 
 export const auditHandler = {
   builder: (yargs: Argv) => yargs,

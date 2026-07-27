@@ -1,10 +1,28 @@
+/**
+ * pop vouch revoke — withdraw YOUR OWN vouch for a wearer.
+ *
+ * Pre-flight (skippable): hasVouched(hat, wearer, signer) must be true —
+ * a false record means revokeVouch reverts HasNotVouched (verified against
+ * contracts origin/main src/EligibilityModule.sol), so we fail fast with a
+ * friendly message instead. A true-but-stale-epoch record still reverts
+ * on-chain; the decoded HasNotVouched error covers that rare case.
+ *
+ * Note (verified): revoking does NOT refund the daily rate-limit slot, and
+ * dropping the wearer below quorum can revoke their hat when vouching is the
+ * only eligibility path.
+ */
+
 import type { Argv, ArgumentsCamelCase } from 'yargs';
-import { createSigner } from '../../lib/signer';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { requireAddress } from '../../lib/validation';
+import { getWriteContext, confirmWrite, finishWrite, withIdempotency } from '../../lib/command';
+import { runPreflight, checkGasBalance } from '../../lib/preflight';
+import { requireModule } from '../../lib/resolve';
+import { CliError, PreconditionError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
-import { resolveEligibilityModule } from './helpers';
+import { hasVouched } from './helpers';
 
 interface RevokeArgs {
   org?: string;
@@ -14,36 +32,82 @@ interface RevokeArgs {
   rpc?: string;
   'private-key'?: string;
   'dry-run'?: boolean;
+  yes?: boolean;
+  preflight?: boolean;
+  'idempotency-key'?: string;
+  'no-idempotency'?: boolean;
 }
 
 export const revokeHandler = {
   builder: (yargs: Argv) => yargs
     .option('address', { type: 'string', demandOption: true, describe: 'Address whose vouch to revoke' })
-    .option('hat', { type: 'string', demandOption: true, describe: 'Hat ID of the role' }),
+    .option('hat', { type: 'string', demandOption: true, describe: 'Hat ID of the role' })
+    .option('idempotency-key', { type: 'string', describe: 'Explicit idempotency key (repeat calls within the TTL return the prior result).' })
+    .option('no-idempotency', { type: 'boolean', default: false, describe: 'Bypass the idempotency cache and always submit.' })
+    .example('pop vouch revoke --address 0xabc... --hat 123', 'Withdraw your vouch for a member on hat 123'),
 
   handler: async (argv: ArgumentsCamelCase<RevokeArgs>) => {
-    const wearer = requireAddress(argv.address, 'address');
-    const spin = output.spinner('Revoking vouch...');
+    const spin = output.spinner('Checking your vouch record...');
     spin.start();
 
     try {
-      const { eligibilityModuleAddress } = await resolveEligibilityModule(argv.org, argv.chain);
-      const { signer } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
+      const wearer = requireAddress(argv.address, 'address');
+      const ctx = await getWriteContext(argv);
+      const eligibilityModuleAddress = requireModule(ctx.modules, 'eligibilityModuleAddress');
 
-      const contract = createWriteContract(eligibilityModuleAddress, 'EligibilityModuleNew', signer);
-      const result = await executeTx(contract, 'revokeVouch', [wearer, argv.hat], { dryRun: argv.dryRun });
+      if (argv.preflight !== false) {
+        const vouched = await hasVouched(ctx.provider, eligibilityModuleAddress, argv.hat, wearer, ctx.address);
+        if (!vouched) {
+          throw new PreconditionError(
+            `You have not vouched for ${wearer} on hat ${argv.hat} — nothing to revoke.`,
+            `Check vouch state with: pop vouch status --hat ${argv.hat} --address ${wearer}`
+          );
+        }
+      }
+      await runPreflight(ctx.provider, [checkGasBalance(ctx.address)], { skip: !argv.preflight });
       spin.stop();
 
-      if (result.success) {
-        output.success(`Vouch revoked for ${wearer} on hat ${argv.hat}`, { txHash: result.txHash, explorerUrl: result.explorerUrl });
+      await confirmWrite(argv, {
+        wearer,
+        hat: argv.hat,
+        note: 'may drop the wearer below quorum (their hat can be revoked)',
+        org: argv.org,
+        chain: ctx.networkName,
+      }, { actionLabel: 'About to revoke your vouch' });
+
+      const run = async (): Promise<Record<string, any>> => {
+        const txSpin = output.spinner('Revoking vouch...');
+        txSpin.start();
+        const contract = createWriteContract(eligibilityModuleAddress, 'EligibilityModuleNew', ctx.signer);
+        const result = await executeTx(contract, 'revokeVouch', [wearer, argv.hat], { dryRun: argv.dryRun });
+        txSpin.stop();
+
+        // VouchRevoked(voucher, wearer, hatId, newCount) — verified in ABI.
+        const revokedEvent = result.logs?.find(l => l.name === 'VouchRevoked');
+        const newCount = revokedEvent?.args?.newCount !== undefined
+          ? Number(revokedEvent.args.newCount.toString())
+          : undefined;
+
+        finishWrite(result, {
+          successMsg: `Vouch revoked for ${wearer} on hat ${argv.hat}`,
+          fields: { wearer, hat: argv.hat, newCount },
+        });
+        return { wearer, hat: argv.hat, newCount, txHash: result.txHash };
+      };
+
+      if (argv.dryRun) {
+        await run();
       } else {
-        output.error('Revoke failed', { error: result.error, errorCode: result.errorCode });
-        process.exit(2);
+        await withIdempotency(argv, ctx.orgId, 'vouch.revoke', run);
       }
     } catch (err: any) {
       spin.stop();
-      output.error(err.message);
-      process.exit(1);
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
+      output.error(err?.message || String(err));
+      process.exit(EXIT.USAGE);
     }
   },
 };

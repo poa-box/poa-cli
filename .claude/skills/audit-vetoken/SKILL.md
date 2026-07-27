@@ -126,5 +126,5 @@ aggregator capture) is the emerging research thread.
 - Task #386: `--enumerate` mode follow-up (HB#447, this skill filed it)
 - Capture Cluster v1.3: includes live Curve numbers from this skill's
   first dogfood
-- Argus task #380 (`docs/audits/curve-dao.md`): the access-control-level
+- Argus task #380 (`reports/audits/curve-dao.md`): the access-control-level
   deep audit that exposed the methodology gap this skill exists to close

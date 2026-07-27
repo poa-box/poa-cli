@@ -120,7 +120,24 @@ import * as path from 'path';
 import * as os from 'os';
 import { createHash } from 'crypto';
 
-const TTL_SECONDS = 15 * 60; // 15 minutes — see module header
+const DEFAULT_TTL_SECONDS = 15 * 60; // 15 minutes — see module header
+
+/**
+ * Resolve the effective TTL in seconds.
+ * Priority: explicit param → POP_IDEMPOTENCY_TTL_MINUTES env → 15 min.
+ * Invalid or non-positive values fall through to the next tier.
+ */
+export function resolveTtlSeconds(ttlSeconds?: number): number {
+  if (ttlSeconds !== undefined && Number.isFinite(ttlSeconds) && ttlSeconds > 0) {
+    return Math.floor(ttlSeconds);
+  }
+  const envMinutes = process.env.POP_IDEMPOTENCY_TTL_MINUTES;
+  if (envMinutes) {
+    const minutes = parseInt(envMinutes, 10);
+    if (Number.isFinite(minutes) && minutes > 0) return minutes * 60;
+  }
+  return DEFAULT_TTL_SECONDS;
+}
 
 /**
  * On-disk cache shape. Not exported — callers use the functions below.
@@ -133,6 +150,10 @@ interface CacheFile {
 interface CacheEntry {
   /** When this entry was written, unix-seconds. Used for TTL eviction. */
   ts: number;
+  /** TTL (seconds) in effect when the entry was recorded. Older cache
+   *  files predate this field, so eviction falls back to the default
+   *  when absent. */
+  ttlSeconds?: number;
   /** The original cache-key-components, for audit purposes. */
   orgId: string;
   command: string;
@@ -228,6 +249,13 @@ const TRANSIENT_ARGV_KEYS = new Set([
   'idempotency-key',
   'noIdempotency',
   'no-idempotency',
+  'quiet',
+  'q',
+  'no-preflight',
+  'noPreflight',
+  'preflight',
+  'idempotency-ttl',
+  'idempotencyTtl',
 ]);
 
 /**
@@ -254,18 +282,22 @@ export function argvToIdempotencyString(argv: Record<string, any>): string {
  * Check whether an idempotent result already exists for this call.
  * Returns the cached result (unwrapped) on hit, or null on miss.
  * Expired entries (older than TTL) are treated as misses and pruned.
+ *
+ * TTL resolution: explicit `ttlSeconds` param → POP_IDEMPOTENCY_TTL_MINUTES
+ * env → 15 minutes (see resolveTtlSeconds).
  */
 export function checkIdempotencyCache(
   orgId: string,
   commandName: string,
   idempotencyKey: string,
+  ttlSeconds?: number,
 ): Record<string, any> | null {
   const cacheKey = computeCacheKey(orgId, commandName, idempotencyKey);
   const cache = loadCache();
   const entry = cache.entries[cacheKey];
   if (!entry) return null;
   const nowSecs = Math.floor(Date.now() / 1000);
-  if (nowSecs - entry.ts > TTL_SECONDS) {
+  if (nowSecs - entry.ts > resolveTtlSeconds(ttlSeconds)) {
     // Expired — prune silently so the cache file doesn't accumulate
     delete cache.entries[cacheKey];
     saveCache(cache);
@@ -284,18 +316,22 @@ export function recordIdempotentResult(
   commandName: string,
   idempotencyKey: string,
   result: Record<string, any>,
+  ttlSeconds?: number,
 ): void {
   const cacheKey = computeCacheKey(orgId, commandName, idempotencyKey);
   const cache = loadCache();
   const nowSecs = Math.floor(Date.now() / 1000);
 
-  // Prune expired entries while we have the file open
+  // Prune expired entries while we have the file open. Each entry is
+  // judged against the TTL it was recorded with (pre-TTL-field entries
+  // fall back to the default).
   for (const [k, e] of Object.entries(cache.entries)) {
-    if (nowSecs - e.ts > TTL_SECONDS) delete cache.entries[k];
+    if (nowSecs - e.ts > (e.ttlSeconds ?? DEFAULT_TTL_SECONDS)) delete cache.entries[k];
   }
 
   cache.entries[cacheKey] = {
     ts: nowSecs,
+    ttlSeconds: resolveTtlSeconds(ttlSeconds),
     orgId,
     command: commandName,
     result,

@@ -5,9 +5,62 @@ import { resolveOrgId, resolveOrgModules } from '../../lib/resolve';
 import { resolveNetworkConfig } from '../../config/networks';
 import { fetchJson } from '../../lib/ipfs';
 import { FETCH_PROJECTS_DATA } from '../../queries/task';
-import { formatAddress } from '../../lib/encoding';
+import { formatAddress, formatDeadline } from '../../lib/encoding';
+import { formatCountdown } from '../../lib/format';
+import {
+  getTaskOnChain,
+  getTaskApplicants,
+  deriveClaimState,
+  TASK_STATUS,
+} from '../../lib/task-lens';
+import type { TaskOnChain, ClaimState } from '../../lib/task-lens';
 import * as output from '../../lib/output';
 import { probeTaskOnChain } from './probe';
+
+/** '48h' | '2d 12h' | 'none' for a seconds duration. */
+function humanizeDuration(seconds: number | undefined): string {
+  if (!seconds) return 'none';
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const parts: string[] = [];
+  if (d) parts.push(`${d}d`);
+  if (h) parts.push(`${h}h`);
+  if (m) parts.push(`${m}m`);
+  if (parts.length === 0) parts.push(`${s}s`);
+  return parts.join(' ');
+}
+
+/**
+ * One-sentence summary of what the deadlines mean for this task right now.
+ * null when there is nothing actionable to say (no deadlines, terminal state).
+ */
+function deadlineSentence(onChain: TaskOnChain, claimState: ClaimState): string | null {
+  if (onChain.status === TASK_STATUS.CLAIMED) {
+    const governing = onChain.claimDeadline || onChain.absoluteDeadline;
+    if (claimState === 'expired-claimable') {
+      return 'claim expired — anyone with CLAIM permission can take over';
+    }
+    if (governing) {
+      return `submission due ${formatDeadline(governing)} (${formatCountdown(governing)})`;
+    }
+    return null;
+  }
+  if (onChain.status === TASK_STATUS.UNCLAIMED && onChain.absoluteDeadline) {
+    const now = Math.floor(Date.now() / 1000);
+    return onChain.absoluteDeadline <= now
+      ? 'claim deadline passed — this task can no longer be claimed'
+      : `open for claims — closes ${formatDeadline(onChain.absoluteDeadline)} (${formatCountdown(onChain.absoluteDeadline)})`;
+  }
+  if (
+    onChain.status === TASK_STATUS.SUBMITTED &&
+    (onChain.claimDeadline || onChain.absoluteDeadline || onChain.completionWindow)
+  ) {
+    return 'submitted — awaiting review (deadlines no longer apply)';
+  }
+  return null;
+}
 
 interface ViewArgs {
   org: string;
@@ -134,6 +187,32 @@ export const viewHandler = {
         } catch { /* ignore */ }
       }
 
+      // v6 deadline data is chain-only (the deployed subgraph doesn't index
+      // it) — read it via the task lens. Works on any org: pre-v6
+      // implementations return no deadline words, leaving the fields
+      // undefined, and we omit the Deadlines section entirely. RPC failures
+      // degrade the same way rather than breaking the view.
+      let onChain: TaskOnChain | null = null;
+      let lensApplicants: string[] | null = null;
+      const taskManagerAddress: string | undefined = result.organization?.taskManager?.id;
+      if (taskManagerAddress) {
+        try {
+          spin.text = 'Fetching on-chain deadlines...';
+          const netConfig = resolveNetworkConfig(argv.chain);
+          const provider = new ethers.providers.JsonRpcProvider(netConfig.resolvedRpc, netConfig.chainId);
+          onChain = await getTaskOnChain(provider, taskManagerAddress, found.taskId);
+          // Applicant list: the subgraph indexes applications, but can lag —
+          // fall back to the lens when it has none for an application-gated task.
+          if (found.requiresApplication && !found.applications?.length) {
+            try {
+              lensApplicants = await getTaskApplicants(provider, taskManagerAddress, found.taskId);
+            } catch { /* lens applicants are best-effort */ }
+          }
+        } catch { /* on-chain read is best-effort; omit deadline data */ }
+      }
+      const hasDeadlineData = onChain !== null && onChain.absoluteDeadline !== undefined;
+      const claimState: ClaimState = onChain ? deriveClaimState(onChain) : 'none';
+
       spin.stop();
 
       const payout = ethers.utils.formatUnits(found.payout || '0', 18);
@@ -189,6 +268,19 @@ export const viewHandler = {
           assignedAt: found.assignedAt,
           submittedAt: found.submittedAt,
           completedAt: found.completedAt,
+          // Additive v6 fields — only present when the org's TaskManager
+          // supports deadlines and the on-chain read succeeded.
+          ...(hasDeadlineData && onChain ? {
+            absoluteDeadline: onChain.absoluteDeadline,
+            completionWindow: onChain.completionWindow,
+            claimDeadline: onChain.claimDeadline,
+            claimState,
+          } : {}),
+          // Additive lens fallback when the subgraph has no applications yet.
+          ...(lensApplicants ? {
+            applicants: lensApplicants,
+            applicantCount: lensApplicants.length,
+          } : {}),
         });
       } else {
         console.log('');
@@ -203,6 +295,19 @@ export const viewHandler = {
         if (metadata?.difficulty) console.log(`  Difficulty:  ${metadata.difficulty}`);
         if (metadata?.estimatedHours || metadata?.estHours) console.log(`  Est Hours:   ${metadata.estimatedHours || metadata.estHours}`);
         if (metadata?.location) console.log(`  Location:    ${metadata.location}`);
+        if (hasDeadlineData && onChain) {
+          console.log('');
+          console.log('  Deadlines');
+          console.log(`    Absolute deadline:  ${onChain.absoluteDeadline
+            ? `${formatDeadline(onChain.absoluteDeadline)} (${formatCountdown(onChain.absoluteDeadline)})`
+            : 'none'}`);
+          console.log(`    Completion window:  ${humanizeDuration(onChain.completionWindow)}`);
+          if (onChain.claimDeadline) {
+            console.log(`    Claim deadline:     ${formatDeadline(onChain.claimDeadline)} (${formatCountdown(onChain.claimDeadline)})`);
+          }
+          const sentence = deadlineSentence(onChain, claimState);
+          if (sentence) console.log(`    → ${sentence}`);
+        }
         if (found.requiresApplication) console.log(`  Requires Application: yes`);
         if (found.rejectionCount && parseInt(found.rejectionCount) > 0) {
           console.log(`  Rejections:  ${found.rejectionCount}`);
@@ -215,6 +320,11 @@ export const viewHandler = {
           console.log(`  Applications: ${found.applications.length}`);
           for (const app of found.applications) {
             console.log(`    - ${app.applicantUsername || formatAddress(app.applicant)} (approved: ${app.approved})`);
+          }
+        } else if (lensApplicants?.length) {
+          console.log(`  Applicants:  ${lensApplicants.length} (on-chain; subgraph not yet indexed)`);
+          for (const applicant of lensApplicants) {
+            console.log(`    - ${applicant}`);
           }
         }
         console.log('');

@@ -2,6 +2,15 @@
 
 **Current working branch for all Argus agents: `agent/sprint-3`**
 
+> **Docs layout change (2026-07-10):** agent work products (audits,
+> leaderboards, distribution drafts, session reports, research notes,
+> `OPERATOR-STATE.md`) moved from `docs/` to a top-level `reports/` directory
+> on main. `docs/` is now documentation only. If a skill, script, or memory of
+> yours writes under `docs/audits/` or `docs/distribution/`, the path is now
+> `reports/audits/` / `reports/distribution/` — the repo-tracked skills and
+> scripts were updated in the same commit; update any out-of-repo memories on
+> first contact. Rebase sprint work onto main early to pick up the renames.
+
 Sprint 2 was merged to `main` via [PR #9](https://github.com/PerpetualOrganizationArchitect/poa-cli/pull/9) (`Sprint 2: Gas sponsorship, ecosystem audits, cross-org expansion`). All new agent work goes on `agent/sprint-3`, branched from `origin/main` at `94529e2`.
 
 ## For agents reading this file
@@ -33,7 +42,7 @@ Cross-machine brain integration — closing the five blockers called out on PR #
 1. ✅ **Persistent PeerId** — [`386e034`](https://github.com/PerpetualOrganizationArchitect/poa-cli/commit/386e034) sprint-3.
 2. ✅ **Public bootstrap peers + Circuit Relay v2 + AutoNAT** — same commit.
 3. ⏳ **Allowlist onboarding flow** — new agent addresses need a cleaner path than "PR into `agent/brain/Config/brain-allowlist.json`".
-4. ⏳ **Setup doc for a fresh machine** — `docs/brain-layer-setup.md` covering `POP_PRIVATE_KEY`, `POP_BRAIN_HOME`, connectivity verification, troubleshooting.
+4. ⏳ **Setup doc for a fresh machine** — `docs/agents/brain-layer-setup.md` covering `POP_PRIVATE_KEY`, `POP_BRAIN_HOME`, connectivity verification, troubleshooting.
 5. ⏳ **Real cross-internet smoke test** — actual two-machine run over NAT with Circuit Relay v2.
 
 Pending cross-sprint items from prior HBs are tracked in individual agent heartbeat logs and in `pop.brain.shared` / `pop.brain.projects`.

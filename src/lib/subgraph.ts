@@ -76,6 +76,67 @@ export async function query<T = any>(
 }
 
 /**
+ * One tier of a field-fallback query. Tier 0 is the richest query
+ * (newest schema fields); later tiers progressively drop fields for
+ * older subgraph deployments.
+ */
+export interface FieldFallbackTier {
+  query: string;
+  variables?: Record<string, any>;
+}
+
+/**
+ * Detect a GraphQL validation error caused by querying a field the
+ * deployed schema doesn't have (older subgraph version). Network/HTTP
+ * failures deliberately do NOT match — those should propagate.
+ */
+function isUnknownFieldError(error: any): boolean {
+  const messages: string[] = [];
+  const gqlErrors = error?.response?.errors;
+  if (Array.isArray(gqlErrors)) {
+    for (const e of gqlErrors) {
+      if (e?.extensions?.code === 'GRAPHQL_VALIDATION_FAILED') return true;
+      if (e?.message) messages.push(String(e.message));
+    }
+  }
+  if (error?.message) messages.push(String(error.message));
+  return messages.some(m =>
+    /cannot query field/i.test(m)
+    || /has no field/i.test(m)
+    || /unknown field/i.test(m)
+    || /unknown argument/i.test(m)
+    || /undefined field/i.test(m)
+  );
+}
+
+/**
+ * Try query tiers in order, falling through to the next tier when the
+ * deployed schema rejects a field (validation error). Any other error
+ * (network, HTTP, rate limit without fallback) is rethrown immediately.
+ * Returns the first successful result plus the tier index that served it.
+ */
+export async function queryWithFieldFallback<T = any>(
+  tiers: Array<FieldFallbackTier>,
+  opts?: { chainId?: number }
+): Promise<{ data: T; tierIndex: number }> {
+  if (!tiers.length) {
+    throw new Error('queryWithFieldFallback requires at least one query tier');
+  }
+
+  let lastValidationError: any;
+  for (let tierIndex = 0; tierIndex < tiers.length; tierIndex++) {
+    try {
+      const data = await query<T>(tiers[tierIndex].query, tiers[tierIndex].variables, opts?.chainId);
+      return { data, tierIndex };
+    } catch (error: any) {
+      if (!isUnknownFieldError(error)) throw error;
+      lastValidationError = error;
+    }
+  }
+  throw lastValidationError;
+}
+
+/**
  * Query a specific subgraph URL directly.
  */
 export async function queryUrl<T = any>(

@@ -1,13 +1,35 @@
+/**
+ * pop org deploy — deploy a full organization from a config file (DESTRUCTIVE).
+ *
+ * The flow performs several network side-effects but EXACTLY ONE transaction:
+ *   1. IPFS pin of the org metadata (not a tx)
+ *   2. UniversalAccountRegistry.nonces() read + local EIP-712 signature
+ *      (registration happens INSIDE deployFullOrg via that signature — it is
+ *      not a separate tx; verified against contracts origin/main
+ *      src/OrgDeployer.sol deployFullOrg(DeploymentParams))
+ *   3. OrgDeployer.deployFullOrg(params) — the single on-chain write, which
+ *      internally deploys every org module.
+ *
+ * --dry-run therefore fires ZERO transactions: executeTx only runs
+ * estimateGas and returns the calldata. The destructive confirmation (org
+ * name, chain, roles, voting classes, estimated cost when computable) is
+ * shown BEFORE that single tx; non-TTY sessions must pass --yes.
+ */
+
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { createSigner } from '../../lib/signer';
 import { createWriteContract, createReadContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { pinJson } from '../../lib/ipfs';
-import { ipfsCidToBytes32, stringToBytes32 } from '../../lib/encoding';
+import { ipfsCidToBytes32 } from '../../lib/encoding';
 import { query } from '../../lib/subgraph';
+import { getWriteContext, confirmWrite, finishWrite } from '../../lib/command';
+import { runPreflight, checkGasBalance } from '../../lib/preflight';
+import { getNetworkByChainId } from '../../config/networks';
 import { FETCH_INFRASTRUCTURE_ADDRESSES } from '../../queries/infrastructure';
 import type { InfrastructureAddresses } from '../../queries/infrastructure';
+import { CliError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 import fs from 'fs';
 
@@ -17,6 +39,8 @@ interface DeployArgs {
   rpc?: string;
   'private-key'?: string;
   'dry-run'?: boolean;
+  yes?: boolean;
+  preflight?: boolean;
 }
 
 /**
@@ -90,6 +114,15 @@ interface OrgDeployConfig {
     defaultBudgetEpochLen: number;
     funding?: string;
   };
+  /**
+   * Optional org-wide TaskManager ROLE_PERM grants applied at deploy time
+   * (OrgDeployer.TaskManagerPermConfig — roleIndices resolve to hat IDs,
+   * masks are TaskPerm bitmasks: 1=create 2=claim 4=review 8=assign …).
+   */
+  taskManagerPerms?: {
+    roleIndices: number[];
+    masks: number[];
+  };
 }
 
 function indicesToBitmap(indices: number[]): ethers.BigNumber {
@@ -106,25 +139,34 @@ export const deployHandler = {
       type: 'string',
       demandOption: true,
       describe: 'Path to org deploy config JSON file',
-    }),
+    })
+    .example('pop org deploy --config org-deploy-config.json', 'Deploy an org (shows a summary and asks for confirmation)')
+    .example('pop org deploy --config org.json --dry-run --yes', 'Validate the config and estimate gas — no transaction is sent'),
 
   handler: async (argv: ArgumentsCamelCase<DeployArgs>) => {
-    const spin = output.spinner('Deploying organization...');
+    const spin = output.spinner('Preparing organization deployment...');
     spin.start();
 
     try {
-      // Read and validate config
+      // ── Fail fast on config problems before any network work ───────────
       const configPath = argv.config;
       if (!fs.existsSync(configPath)) {
-        throw new Error(`Config file not found: ${configPath}`);
+        throw new CliError(`Config file not found: ${configPath}`, EXIT.USAGE, 'Generate one with: pop org deploy-config --name "My Org" --username me');
       }
-      const config: OrgDeployConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      let config: OrgDeployConfig;
+      try {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      } catch (parseErr: any) {
+        throw new CliError(`Config file is not valid JSON: ${parseErr?.message}`, EXIT.USAGE);
+      }
 
-      if (!config.orgName) throw new Error('Config missing: orgName');
-      if (!config.roles?.length) throw new Error('Config missing: roles');
-      if (!config.hybridVoting) throw new Error('Config missing: hybridVoting');
+      if (!config.orgName) throw new CliError('Config missing: orgName', EXIT.USAGE);
+      if (!config.roles?.length) throw new CliError('Config missing: roles', EXIT.USAGE);
+      if (!config.hybridVoting) throw new CliError('Config missing: hybridVoting', EXIT.USAGE);
 
-      const { signer, address } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
+      // No org module resolution — the org does not exist yet.
+      const ctx = await getWriteContext(argv, { needsOrg: false });
+      const { signer, address } = ctx;
 
       // Resolve infrastructure addresses
       spin.text = 'Resolving infrastructure addresses...';
@@ -136,8 +178,8 @@ export const deployHandler = {
 
       const orgDeployerAddr = infra.poaManagerContracts?.[0]?.orgDeployerProxy;
       const registryAddr = infra.poaManagerContracts?.[0]?.globalAccountRegistryProxy;
-      if (!orgDeployerAddr) throw new Error('Could not resolve OrgDeployer address');
-      if (!registryAddr) throw new Error('Could not resolve UniversalAccountRegistry address');
+      if (!orgDeployerAddr) throw new CliError('Could not resolve OrgDeployer address', EXIT.INFRA);
+      if (!registryAddr) throw new CliError('Could not resolve UniversalAccountRegistry address', EXIT.INFRA);
 
       // Generate orgId: keccak256(orgName.toLowerCase().replace(/\s+/g, '-'))
       const normalizedName = config.orgName.toLowerCase().replace(/\s+/g, '-');
@@ -159,16 +201,19 @@ export const deployHandler = {
 
       // Get registration nonce for deployer
       spin.text = 'Getting registration nonce...';
-      const registryContract = createReadContract(registryAddr, 'UniversalAccountRegistry', signer.provider);
+      const registryContract = createReadContract(registryAddr, 'UniversalAccountRegistry', ctx.provider);
       const regNonce = await registryContract.nonces(address);
-      const regDeadline = Math.floor(Date.now() / 1000) + 300; // 5 min
+      // 15 min validity: the signature must survive the interactive
+      // confirmation prompt below (it is nonce-bound, so a longer window is
+      // not replayable).
+      const regDeadline = Math.floor(Date.now() / 1000) + 900;
 
       // Sign EIP-712 registration message
       spin.text = 'Signing registration...';
       const domain = {
         name: 'UniversalAccountRegistry',
         version: '1',
-        chainId: await signer.getChainId(),
+        chainId: ctx.chainId,
         verifyingContract: registryAddr,
       };
       const types = {
@@ -272,12 +317,30 @@ export const deployHandler = {
         0,                           // defaultBudgetEpochLen
       ];
 
+      // Optional org-wide TaskManager ROLE_PERM grants
+      // (OrgDeployer.TaskManagerPermConfig: roleIndices[] + masks[] — empty
+      // arrays skip the bootstrapGlobalPerms step entirely; verified against
+      // contracts origin/main src/OrgDeployer.sol).
+      const tmPerms = config.taskManagerPerms;
+      if (tmPerms && (tmPerms.roleIndices?.length || 0) !== (tmPerms.masks?.length || 0)) {
+        throw new CliError(
+          'Config invalid: taskManagerPerms.roleIndices and taskManagerPerms.masks must be the same length.',
+          EXIT.USAGE
+        );
+      }
+      const taskManagerPerms = [
+        tmPerms?.roleIndices || [], // uint256[] roleIndices
+        tmPerms?.masks || [],       // uint8[] masks
+      ];
+
       // Build the full DeploymentParams struct
-      // ABI field order: orgId, orgName, metadataHash, registryAddr, deployerAddress,
+      // ABI field order (verified against src/abi/OrgDeployerNew.json +
+      // contracts origin/main src/OrgDeployer.sol DeploymentParams):
+      //   orgId, orgName, metadataHash, registryAddr, deployerAddress,
       //   deployerUsername, regDeadline, regNonce, regSignature, autoUpgrade,
       //   hybridThresholdPct, ddThresholdPct, hybridClasses, ddInitialTargets,
       //   roles, roleAssignments, metadataAdminRoleIndex, passkeyEnabled,
-      //   educationHubConfig, bootstrap, paymasterConfig
+      //   educationHubConfig, bootstrap, paymasterConfig, taskManagerPerms
       const deployParams = [
         orgId,                                                   // bytes32
         config.orgName,                                          // string
@@ -300,36 +363,82 @@ export const deployHandler = {
         [config.educationHub?.enabled ?? true],                  // EducationHubConfig struct
         [[], []],                                                // BootstrapConfig struct (projects, tasks)
         paymasterConfig,                                         // PaymasterConfig struct
+        taskManagerPerms,                                        // TaskManagerPermConfig struct (roleIndices, masks)
       ];
 
-      spin.text = 'Sending deploy transaction...';
       const contract = createWriteContract(orgDeployerAddr, 'OrgDeployerNew', signer);
       const txValue = pm?.funding ? ethers.utils.parseEther(pm.funding) : undefined;
+
+      // ── Pre-flight (skippable with --no-preflight) ────────────────────
+      // When the paymaster is being funded, the wallet must cover the
+      // funding value on top of gas.
+      await runPreflight(ctx.provider, [
+        checkGasBalance(address, txValue ? txValue.add(ethers.utils.parseEther('0.0001')) : undefined),
+      ], { skip: !argv.preflight });
+
+      // Estimated cost, when computable (a failing estimate is NOT fatal
+      // here — executeTx re-estimates and surfaces the decoded revert).
+      spin.text = 'Estimating deployment cost...';
+      let estimatedCost: string | undefined;
+      try {
+        // Sequential awaits (not Promise.all) so a synchronous throw from
+        // either call can never leave the other promise floating.
+        const gasEstimate = await contract.estimateGas.deployFullOrg(deployParams, { value: txValue });
+        const gasPrice = await ctx.provider.getGasPrice();
+        const symbol = getNetworkByChainId(ctx.chainId)?.nativeCurrency.symbol ?? 'ETH';
+        const cost = ethers.utils.formatEther(gasEstimate.mul(gasPrice));
+        estimatedCost = `~${Number(cost).toFixed(6)} ${symbol} (${gasEstimate.toString()} gas)`;
+      } catch { /* not computable — the summary simply omits it */ }
+      spin.stop();
+
+      // ── DESTRUCTIVE confirmation BEFORE the one and only tx ───────────
+      const classesLabel = config.hybridVoting.classes
+        .map(c => `${c.strategy} ${c.slicePct}%${c.quadratic ? ' quadratic' : ''}`)
+        .join(' + ');
+      await confirmWrite(argv, {
+        org: config.orgName,
+        orgId,
+        chain: ctx.networkName,
+        deployer: `${address} (@${deployerUsername})`,
+        roles: `${config.roles.length} (${config.roles.map(r => r.name).join(', ')})`,
+        votingClasses: `${classesLabel} — threshold ${config.hybridVoting.thresholdPct}%`,
+        paymasterFunding: pm?.funding
+          ? `${pm.funding} ${getNetworkByChainId(ctx.chainId)?.nativeCurrency.symbol ?? 'ETH'}`
+          : undefined,
+        autoUpgrade: String(config.autoUpgrade ?? true),
+        estimatedCost,
+      }, { destructive: true, actionLabel: 'About to DEPLOY a new organization (deploys every module; cannot be undone)' });
+
+      // Single on-chain write. --dry-run stops inside executeTx at the gas
+      // estimate — zero transactions are sent.
+      const txSpin = output.spinner('Sending deploy transaction...');
+      txSpin.start();
       const result = await executeTx(
         contract,
         'deployFullOrg',
         [deployParams],
         { dryRun: argv.dryRun, gasLimit: 15000000, value: txValue }
       );
+      txSpin.stop();
 
-      spin.stop();
-
-      if (result.success) {
-        output.success('Organization deployed', {
-          txHash: result.txHash, explorerUrl: result.explorerUrl,
+      finishWrite(result, {
+        successMsg: 'Organization deployed',
+        fields: {
           orgId,
           orgName: config.orgName,
           metadataCid: metaCid,
           gasUsed: result.gasUsed,
-        });
-      } else {
-        output.error('Org deployment failed', { error: result.error, errorCode: result.errorCode });
-        process.exit(2);
-      }
+          nextStep: `pop org status --org ${orgId}`,
+        },
+      });
     } catch (err: any) {
       spin.stop();
-      output.error(err.message);
-      process.exit(1);
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
+      output.error(err?.message || String(err));
+      process.exit(EXIT.USAGE);
     }
   },
 };

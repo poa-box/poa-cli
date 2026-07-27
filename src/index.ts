@@ -1,20 +1,14 @@
 #!/usr/bin/env node
 
-import { config as dotenvConfig } from 'dotenv';
-import { existsSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
+import { loadEnvFiles } from './lib/env-load';
 
-// Load .env: try ~/.pop-agent/.env first (agent-specific), fall back to cwd/.env
-const agentEnv = join(homedir(), '.pop-agent', '.env');
-if (existsSync(agentEnv)) {
-  dotenvConfig({ path: agentEnv });
-} else {
-  dotenvConfig();
-}
+// Load env before the imports below execute — tsconfig targets CommonJS, so
+// emitted require() order follows import order and this call runs first.
+// Precedence: cwd/.env > ~/.pop/.env > ~/.pop-agent/.env (earlier files win).
+loadEnvFiles();
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
-import { setJsonMode } from './lib/output';
+import { setJsonMode, setQuietMode, setVerbose } from './lib/output';
 import * as output from './lib/output';
 import { CliError } from './lib/errors';
 
@@ -33,6 +27,8 @@ import { registerRoleCommands } from './commands/role';
 import { registerConfigCommands } from './commands/config';
 import { registerAgentCommands } from './commands/agent';
 import { registerBrainCommands } from './commands/brain';
+import { initHandler } from './commands/init';
+import { applyDefaultOrgFallback } from './lib/default-org';
 
 async function main() {
   const cli = yargs(hideBin(process.argv))
@@ -52,6 +48,10 @@ async function main() {
     .command('config <action>', 'View and validate configuration', registerConfigCommands)
     .command('agent <action>', 'Agent operations & monitoring', registerAgentCommands)
     .command('brain <action>', 'P2P CRDT brain layer (live-sync knowledge)', registerBrainCommands)
+    // Top-level onboarding wizard. Registered before the global --org option so
+    // it is clearly not an org-scoped command; its handler never resolves an
+    // org, so the POP_DEFAULT_ORG middleware fallback below never blocks it.
+    .command('init', 'Interactive setup: wallet, chain, default org, .env', initHandler.builder, initHandler.handler)
     .option('org', {
       type: 'string',
       description: 'Organization ID or name (or set POP_DEFAULT_ORG)',
@@ -98,19 +98,35 @@ async function main() {
       default: false,
       global: true,
     })
+    .option('quiet', {
+      alias: 'q',
+      type: 'boolean',
+      description: 'Suppress non-essential output',
+      default: false,
+      global: true,
+    })
+    .option('preflight', {
+      type: 'boolean',
+      description: 'Run pre-flight checks before writes (--no-preflight to skip)',
+      default: true,
+      hidden: false,
+      global: true,
+    })
     .middleware([(argv) => {
       if (argv.json) {
         setJsonMode(true);
       }
-      // Fall back to POP_DEFAULT_ORG if --org not provided
-      if (!argv.org && process.env.POP_DEFAULT_ORG) {
-        argv.org = process.env.POP_DEFAULT_ORG;
-      }
+      setQuietMode(Boolean(argv.quiet));
+      setVerbose(Boolean(argv.verbose));
+      // Fall back to POP_DEFAULT_ORG if --org not provided (excludes `init`).
+      applyDefaultOrgFallback(argv);
     }])
     .strict()
     .demandCommand(1, 'Please specify a command')
+    .completion('completion', 'Generate shell completion script')
     .help()
-    .version('0.1.0');
+    .version('0.1.0')
+    .wrap(Math.min(110, yargs.terminalWidth()));
 
   try {
     await cli.parse();

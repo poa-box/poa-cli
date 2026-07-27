@@ -230,7 +230,7 @@ function validateRetrosDoc(doc: any, errors: string[]): void {
 // and pop.brain.projects (lifecycle state machine) — this doc is
 // where new questions get posted, ideas get debated + voted, and
 // top-ranked ideas get promoted to pop.brain.projects at the propose
-// stage. See docs/brain-layer-setup.md and the #354 task description
+// stage. See docs/agents/brain-layer-setup.md and the #354 task description
 // for the full lifecycle.
 const VALID_BRAINSTORM_STATUSES = ['open', 'voting', 'closed', 'promoted'] as const;
 type BrainstormStatus = typeof VALID_BRAINSTORM_STATUSES[number];

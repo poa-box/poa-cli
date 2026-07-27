@@ -2,7 +2,7 @@
  * pop brain doctor — single-command health check for brain layer setup.
  *
  * Answers "is my brain setup healthy?" in one invocation. Complements
- * `docs/brain-layer-setup.md` (setup doc tells you HOW; doctor tells
+ * `docs/agents/brain-layer-setup.md` (setup doc tells you HOW; doctor tells
  * you IF the setup is actually working).
  *
  * Output shape:

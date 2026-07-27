@@ -1,18 +1,29 @@
+/**
+ * pop vote create — create a hybrid or direct-democracy proposal.
+ *
+ * Governance safety: when --calls attaches an execution batch to option 0,
+ * the interactive confirm summary DECODES each call — the target address is
+ * resolved to its org-module name (TaskManager, Executor, …) and the calldata
+ * selector to a function signature via the known ABIs — so a human approves
+ * "TaskManager → setConfig(uint8,bytes)" rather than an opaque hex blob.
+ * Undecodable calls are labeled UNDECODABLE, never hidden.
+ *
+ * Hat IDs are uint256 with high bits set — parseInt loses precision above
+ * 2^53, so each entry is parsed as a BigNumber from the raw string.
+ */
+
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { createSigner } from '../../lib/signer';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { pinJson } from '../../lib/ipfs';
 import { stringToBytes, ipfsCidToBytes32 } from '../../lib/encoding';
-import { resolveOrgId } from '../../lib/resolve';
-import {
-  argvToIdempotencyString,
-  checkIdempotencyCache,
-  recordIdempotentResult,
-} from '../../lib/idempotency';
+import { getWriteContext, confirmWrite, finishWrite, withIdempotency } from '../../lib/command';
+import { runPreflight, checkGasBalance } from '../../lib/preflight';
+import { CliError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
-import { resolveVotingContracts } from './helpers';
+import { describeExecutionCalls, ExecutionCallInput } from './helpers';
 
 interface CreateArgs {
   org: string;
@@ -27,6 +38,8 @@ interface CreateArgs {
   rpc?: string;
   'private-key'?: string;
   'dry-run'?: boolean;
+  yes?: boolean;
+  preflight?: boolean;
   'idempotency-key'?: string;
   'no-idempotency'?: boolean;
 }
@@ -48,67 +61,50 @@ export const createHandler = {
       type: 'boolean',
       default: false,
       describe: 'Bypass the idempotency cache and always submit a new proposal. Use only when you intentionally want a duplicate write.',
-    }),
+    })
+    .example('pop vote create --type hybrid --name "Fund audit" --description "…" --duration 1440 --options "Approve,Reject"', 'Plain 2-option proposal with a 24h window')
+    .example('pop vote create --type hybrid --name "Set quorum" --description "…" --duration 60 --options "Apply,Keep" --calls \'[{"target":"0x…","value":"0","data":"0x…"}]\'', 'Attach execution calls to option 0 (decoded in the confirm summary)'),
 
   handler: async (argv: ArgumentsCamelCase<CreateArgs>) => {
     const spin = output.spinner('Creating proposal...');
     spin.start();
 
     try {
-      const contracts = await resolveVotingContracts(argv.org, argv.chain);
-
-      // Task #369: idempotency check BEFORE any work that touches IPFS
-      // or the chain. We pin to the resolved orgId, not the user input,
-      // so `--org argus` and `--org <hex-id>` resolve to the same cache key.
-      const resolvedOrgId = await resolveOrgId(argv.org, argv.chain);
-      const idempKey = argv.idempotencyKey || argvToIdempotencyString(argv as Record<string, any>);
-      if (!argv.noIdempotency) {
-        const cached = checkIdempotencyCache(resolvedOrgId, 'vote.create', idempKey);
-        if (cached) {
-          spin.stop();
-          output.success('Proposal already created (idempotency cache hit)', {
-            ...cached,
-            cached: true,
-            note: 'A prior call within the 15-minute idempotency window produced this result. Pass --no-idempotency to force a new submission.',
-          });
-          return;
-        }
-      }
-      const { signer } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
+      const ctx = await getWriteContext(argv);
 
       const isHybrid = argv.type === 'hybrid';
-      const contractAddr = isHybrid ? contracts.hybridVotingAddress : contracts.ddVotingAddress;
+      const contractAddr = isHybrid ? ctx.modules?.hybridVotingAddress : ctx.modules?.ddVotingAddress;
       if (!contractAddr) {
-        throw new Error(`${isHybrid ? 'HybridVoting' : 'DirectDemocracyVoting'} not deployed for this org`);
+        throw new CliError(
+          `${isHybrid ? 'HybridVoting' : 'DirectDemocracyVoting'} not deployed for this org`,
+          EXIT.PRECONDITION
+        );
       }
 
       const optionNames = (argv.options as string).split(',').map(s => s.trim());
       const numOptions = optionNames.length;
-
       if (numOptions < 2) {
-        throw new Error('At least 2 options are required');
+        throw new CliError('At least 2 options are required', EXIT.USAGE);
       }
 
-      // Upload proposal metadata to IPFS
-      const proposalMetadata = {
-        description: argv.description,
-        optionNames,
-        createdAt: Date.now(),
-      };
-
-      spin.text = 'Pinning proposal metadata to IPFS...';
-      const cid = await pinJson(JSON.stringify(proposalMetadata));
-      const descriptionHash = ipfsCidToBytes32(cid);
-
-      const titleBytes = stringToBytes(argv.name);
+      // Hats IDs are uint256 with high bits set — parseInt loses precision
+      // above 2^53, so parse each entry as a BigNumber from the raw string.
       const hatIds = argv.hatIds
-        ? (argv.hatIds as string).split(',').map(s => parseInt(s.trim(), 10))
+        ? (argv.hatIds as string).split(',').map(s => ethers.BigNumber.from(s.trim()))
         : [];
 
       // Build execution batches: calls go to option 0, other options get empty batches
+      let calls: ExecutionCallInput[] | null = null;
       const batches: any[][] = [];
       if (argv.calls) {
-        const calls = JSON.parse(argv.calls as string);
+        try {
+          calls = JSON.parse(argv.calls as string);
+        } catch (parseErr: any) {
+          throw new CliError(`--calls is not valid JSON: ${parseErr?.message ?? parseErr}`, EXIT.USAGE);
+        }
+        if (!Array.isArray(calls)) {
+          throw new CliError('--calls must be a JSON array of {target, value, data} objects', EXIT.USAGE);
+        }
         const option0Batch = calls.map((c: any) => [
           c.target,
           ethers.BigNumber.from(c.value || '0'),
@@ -120,51 +116,86 @@ export const createHandler = {
         }
       }
 
-      spin.text = 'Sending transaction...';
-      const abiName = isHybrid ? 'HybridVotingNew' : 'DirectDemocracyVotingNew';
-      const contract = createWriteContract(contractAddr, abiName, signer);
-
-      const result = await executeTx(
-        contract,
-        'createProposal',
-        [titleBytes, descriptionHash, argv.duration, numOptions, batches, hatIds],
-        { dryRun: argv.dryRun }
-      );
-
+      await runPreflight(ctx.provider, [checkGasBalance(ctx.address)], { skip: !argv.preflight });
       spin.stop();
 
-      if (result.success) {
+      // Confirm summary. Execution calls are decoded (module name + function
+      // signature) so the human sees WHAT the proposal would execute.
+      const summary: Record<string, string | number | undefined> = {
+        type: argv.type,
+        title: argv.name,
+        options: optionNames.join(', '),
+        duration: `${argv.duration} minutes`,
+        org: argv.org,
+        chain: ctx.networkName,
+      };
+      if (calls && calls.length > 0) {
+        describeExecutionCalls(calls, ctx.modules).forEach((line, i) => {
+          summary[`call ${i + 1}/${calls!.length}`] = line;
+        });
+      }
+      await confirmWrite(argv, summary, { actionLabel: 'About to create proposal' });
+
+      const run = async (): Promise<Record<string, any>> => {
+        const txSpin = output.spinner('Pinning proposal metadata to IPFS...');
+        txSpin.start();
+
+        // Upload proposal metadata to IPFS (key order matches the frontend).
+        const proposalMetadata = {
+          description: argv.description,
+          optionNames,
+          createdAt: Date.now(),
+        };
+        const cid = await pinJson(JSON.stringify(proposalMetadata));
+        const descriptionHash = ipfsCidToBytes32(cid);
+        const titleBytes = stringToBytes(argv.name);
+
+        txSpin.text = 'Sending transaction...';
+        const abiName = isHybrid ? 'HybridVotingNew' : 'DirectDemocracyVotingNew';
+        const contract = createWriteContract(contractAddr, abiName, ctx.signer);
+
+        const result = await executeTx(
+          contract,
+          'createProposal',
+          [titleBytes, descriptionHash, argv.duration, numOptions, batches, hatIds],
+          { dryRun: argv.dryRun }
+        );
+        txSpin.stop();
+
         const proposalEvent = result.logs?.find(l => l.name === 'NewProposal' || l.name === 'NewHatProposal');
         const proposalId = proposalEvent?.args?.id?.toString();
-        const successFields: Record<string, any> = {
-          proposalId,
-          txHash: result.txHash,
-          explorerUrl: result.explorerUrl,
-          type: argv.type,
-          options: optionNames.join(', '),
-          duration: `${argv.duration} minutes`,
-          ipfsCid: cid,
-          executionCalls: argv.calls ? 'yes (on option 0)' : 'none',
-        };
-        // Task #369: record the successful result so a near-immediate
-        // retry (e.g. background-task race, CLI hang-retry) returns this
-        // exact result instead of submitting a duplicate proposal.
-        if (!argv.noIdempotency) {
-          recordIdempotentResult(resolvedOrgId, 'vote.create', idempKey, {
+
+        finishWrite(result, {
+          successMsg: 'Proposal created',
+          fields: {
             proposalId,
-            txHash: result.txHash,
+            type: argv.type,
+            options: optionNames.join(', '),
+            duration: `${argv.duration} minutes`,
             ipfsCid: cid,
-          });
-        }
-        output.success('Proposal created', successFields);
+            executionCalls: argv.calls ? 'yes (on option 0)' : 'none',
+          },
+        });
+        return { proposalId, txHash: result.txHash, ipfsCid: cid };
+      };
+
+      // Dry runs simulate unconditionally: they neither consult nor record
+      // the idempotency cache (nothing lands on-chain). This also fixes the
+      // old behavior of recording a cache entry for a dry run, which made a
+      // real submit within the TTL falsely report "already created".
+      if (argv.dryRun) {
+        await run();
       } else {
-        output.error('Proposal creation failed', { error: result.error, errorCode: result.errorCode });
-        process.exit(2);
+        await withIdempotency(argv, ctx.orgId, 'vote.create', run);
       }
     } catch (err: any) {
       spin.stop();
-      output.error(err.message);
-      process.exit(1);
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
+      output.error(err?.message || String(err));
+      process.exit(EXIT.USAGE);
     }
   },
 };

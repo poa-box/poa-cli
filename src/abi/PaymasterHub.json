@@ -58,6 +58,29 @@
   },
   {
     "type": "function",
+    "name": "adminBatchAddRules",
+    "inputs": [
+      {
+        "name": "orgIds",
+        "type": "bytes32[]",
+        "internalType": "bytes32[]"
+      },
+      {
+        "name": "targets",
+        "type": "address[]",
+        "internalType": "address[]"
+      },
+      {
+        "name": "selectors",
+        "type": "bytes4[]",
+        "internalType": "bytes4[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "clearRule",
     "inputs": [
       {
@@ -273,6 +296,11 @@
             "name": "accountRegistry",
             "type": "address",
             "internalType": "address"
+          },
+          {
+            "name": "maxOnboardingsPerAccount",
+            "type": "uint8",
+            "internalType": "uint8"
           }
         ]
       }
@@ -697,6 +725,19 @@
   },
   {
     "type": "function",
+    "name": "reinitializeProtocolAdmin",
+    "inputs": [
+      {
+        "name": "_admin",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setBanFromSolidarity",
     "inputs": [
       {
@@ -838,6 +879,11 @@
         "name": "_dailyCreationLimit",
         "type": "uint128",
         "internalType": "uint128"
+      },
+      {
+        "name": "_maxOnboardingsPerAccount",
+        "type": "uint8",
+        "internalType": "uint8"
       },
       {
         "name": "_enabled",
@@ -1312,6 +1358,12 @@
         "internalType": "uint128"
       },
       {
+        "name": "maxOnboardingsPerAccount",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      },
+      {
         "name": "enabled",
         "type": "bool",
         "indexed": false,
@@ -1463,6 +1515,37 @@
       },
       {
         "name": "operatorHatId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OrgSpendingRecorded",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "fromDeposits",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "fromSolidarity",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "solidarityFee",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1811,6 +1894,11 @@
   {
     "type": "error",
     "name": "OnboardingDisabled",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OnboardingLimitExceeded",
     "inputs": []
   },
   {

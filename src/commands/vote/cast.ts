@@ -1,17 +1,29 @@
+/**
+ * pop vote cast — cast a weighted vote on a proposal.
+ *
+ * Input safety kept from the original implementation: option/weight counts
+ * must match, weights must be non-negative and sum to exactly 100 (the
+ * contract's invariant) — all validated before any network traffic.
+ *
+ * --proposal accepts a numeric ID or a fuzzy title query (resolved against
+ * the voting contract's recent proposals with preferActive: an ended homonym
+ * never shadows the one still-open match, since you can only cast on an
+ * open proposal).
+ *
+ * Pre-flight (skippable with --no-preflight): gas balance + the proposal
+ * exists on-chain (proposalsCount > id) via one Multicall3 round-trip.
+ */
+
 import type { Argv, ArgumentsCamelCase } from 'yargs';
-import { createSigner } from '../../lib/signer';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
-import {
-  argvToIdempotencyString,
-  checkIdempotencyCache,
-  recordIdempotentResult,
-} from '../../lib/idempotency';
-import { resolveOrgId } from '../../lib/resolve';
+import { getWriteContext, confirmWrite, finishWrite, withIdempotency } from '../../lib/command';
+import { runPreflight, checkGasBalance, checkProposalActive } from '../../lib/preflight';
+import { CliError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
-import { resolveVotingContracts, resolveProposalId } from './helpers';
+import { resolveProposalId } from './helpers';
 import { query } from '../../lib/subgraph';
-import { resolveOrgModules } from '../../lib/resolve';
 
 interface CastArgs {
   org: string;
@@ -23,6 +35,8 @@ interface CastArgs {
   rpc?: string;
   'private-key'?: string;
   'dry-run'?: boolean;
+  yes?: boolean;
+  preflight?: boolean;
   'idempotency-key'?: string;
   'no-idempotency'?: boolean;
 }
@@ -41,7 +55,9 @@ export const castHandler = {
       type: 'boolean',
       default: false,
       describe: 'Bypass the idempotency cache and always submit.',
-    }),
+    })
+    .example('pop vote cast --type hybrid --proposal 12 --options 0 --weights 100', 'All-in on option 0')
+    .example('pop vote cast --type hybrid --proposal "bridge retry" --options 0,1 --weights 60,40', 'Fuzzy title query + split weights'),
 
   handler: async (argv: ArgumentsCamelCase<CastArgs>) => {
     const optionIndices = (argv.options as string).split(',').map(s => parseInt(s.trim(), 10));
@@ -49,20 +65,20 @@ export const castHandler = {
 
     if (optionIndices.length !== weights.length) {
       output.error('Number of options must match number of weights');
-      process.exit(1);
+      process.exit(EXIT.USAGE);
       return;
     }
 
     if (weights.some(w => w < 0)) {
       output.error('Weights must be non-negative');
-      process.exit(1);
+      process.exit(EXIT.USAGE);
       return;
     }
 
     const weightSum = weights.reduce((a, b) => a + b, 0);
     if (weightSum !== 100) {
       output.error(`Weights must sum to 100, got ${weightSum}`);
-      process.exit(1);
+      process.exit(EXIT.USAGE);
       return;
     }
 
@@ -70,33 +86,16 @@ export const castHandler = {
     spin.start();
 
     try {
-      const contracts = await resolveVotingContracts(argv.org, argv.chain);
-      const resolvedOrgId = await resolveOrgId(argv.org, argv.chain);
-      const { signer } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
-
-      // Task #370: idempotency check
-      const idempKey = argv.idempotencyKey || argvToIdempotencyString(argv as Record<string, any>);
-      if (!argv.noIdempotency) {
-        const cached = checkIdempotencyCache(resolvedOrgId, 'vote.cast', idempKey);
-        if (cached) {
-          spin.stop();
-          output.success(`Vote already cast (idempotency cache hit)`, {
-            ...cached,
-            cached: true,
-            note: 'Prior call within the 15-minute window produced this result. Use --no-idempotency to force re-submit.',
-          });
-          return;
-        }
-      }
+      const ctx = await getWriteContext(argv);
 
       const isHybrid = argv.type === 'hybrid';
-      const contractAddr = isHybrid ? contracts.hybridVotingAddress : contracts.ddVotingAddress;
+      const contractAddr = isHybrid ? ctx.modules?.hybridVotingAddress : ctx.modules?.ddVotingAddress;
       if (!contractAddr) {
-        throw new Error(`${isHybrid ? 'HybridVoting' : 'DirectDemocracyVoting'} not deployed for this org`);
+        throw new CliError(
+          `${isHybrid ? 'HybridVoting' : 'DirectDemocracyVoting'} not deployed for this org`,
+          EXIT.PRECONDITION
+        );
       }
-
-      const abiName = isHybrid ? 'HybridVotingNew' : 'DirectDemocracyVotingNew';
-      const contract = createWriteContract(contractAddr, abiName, signer);
 
       // Resolve proposal — accepts numeric ID or fuzzy title query
       spin.text = 'Resolving proposal...';
@@ -106,55 +105,80 @@ export const castHandler = {
         argv.chain,
         { preferActive: true }
       );
-      spin.text = 'Casting vote...';
 
-      const result = await executeTx(
-        contract,
-        'vote',
-        [proposalId, optionIndices, weights],
-        { dryRun: argv.dryRun }
-      );
-
+      // Pre-flight: gas + the proposal actually exists on this contract.
+      await runPreflight(ctx.provider, [
+        checkGasBalance(ctx.address),
+        checkProposalActive(contractAddr, proposalId),
+      ], { skip: !argv.preflight });
       spin.stop();
 
-      if (result.success) {
-        // Resolve option names for clarity
-        let optionMap = '';
-        try {
-          const modules = await resolveOrgModules(argv.org, argv.chain);
-          const pq = `{ organization(id: "${modules.orgId}") { hybridVoting { proposals(where: {proposalId: ${proposalId}}) { metadata { optionNames } } } } }`;
-          const pResult = await query<any>(pq, {}, argv.chain);
-          const names = pResult.organization?.hybridVoting?.proposals?.[0]?.metadata?.optionNames || [];
-          if (names.length > 0) {
-            optionMap = optionIndices.map((idx: number, i: number) => `${names[idx] || 'Option ' + idx}: ${weights[i]}%`).join(', ');
-          }
-        } catch { /* non-critical */ }
+      await confirmWrite(argv, {
+        proposal: `#${proposalId}`,
+        type: argv.type,
+        options: optionIndices.join(','),
+        weights: weights.map(w => `${w}%`).join(','),
+        org: argv.org,
+        chain: ctx.networkName,
+      }, { actionLabel: 'About to cast vote' });
 
-        // Task #370: record idempotent result
-        if (!argv.noIdempotency) {
-          recordIdempotentResult(resolvedOrgId, 'vote.cast', idempKey, {
-            proposalId,
-            txHash: result.txHash,
-            options: optionIndices.join(','),
-            weights: weights.join(','),
-          });
+      const run = async (): Promise<Record<string, any>> => {
+        const txSpin = output.spinner('Casting vote...');
+        txSpin.start();
+        const abiName = isHybrid ? 'HybridVotingNew' : 'DirectDemocracyVotingNew';
+        const contract = createWriteContract(contractAddr, abiName, ctx.signer);
+        const result = await executeTx(
+          contract,
+          'vote',
+          [proposalId, optionIndices, weights],
+          { dryRun: argv.dryRun }
+        );
+        txSpin.stop();
+
+        // Resolve option names for clarity (non-critical, subgraph best-effort)
+        let optionMap = '';
+        if (result.success && !result.dryRun) {
+          try {
+            const pq = `{ organization(id: "${ctx.orgId}") { hybridVoting { proposals(where: {proposalId: ${proposalId}}) { metadata { optionNames } } } } }`;
+            const pResult = await query<any>(pq, {}, argv.chain);
+            const names = pResult.organization?.hybridVoting?.proposals?.[0]?.metadata?.optionNames || [];
+            if (names.length > 0) {
+              optionMap = optionIndices.map((idx: number, i: number) => `${names[idx] || 'Option ' + idx}: ${weights[i]}%`).join(', ');
+            }
+          } catch { /* non-critical */ }
         }
 
-        output.success(`Vote cast on proposal #${proposalId}`, {
-          txHash: result.txHash, explorerUrl: result.explorerUrl,
+        finishWrite(result, {
+          successMsg: `Vote cast on proposal #${proposalId}`,
+          fields: {
+            proposalId,
+            options: optionIndices.join(','),
+            weights: weights.join(','),
+            ...(optionMap ? { allocation: optionMap } : {}),
+          },
+        });
+        return {
           proposalId,
+          txHash: result.txHash,
           options: optionIndices.join(','),
           weights: weights.join(','),
-          ...(optionMap ? { allocation: optionMap } : {}),
-        });
+        };
+      };
+
+      // Dry runs simulate unconditionally — no idempotency consult/record.
+      if (argv.dryRun) {
+        await run();
       } else {
-        output.error('Vote failed', { error: result.error, errorCode: result.errorCode });
-        process.exit(2);
+        await withIdempotency(argv, ctx.orgId, 'vote.cast', run);
       }
     } catch (err: any) {
       spin.stop();
-      output.error(err.message);
-      process.exit(1);
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
+      output.error(err?.message || String(err));
+      process.exit(EXIT.USAGE);
     }
   },
 };

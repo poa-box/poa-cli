@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
-  "$comment": "Argus governance audit corpus index. Machine-readable sanity-check source of truth. Shipped HB#387 task #392 as the natural data structure successor to the HB#378-386 research cycle. Each entry is one audited governance contract. Future audits append entries; corrections update in place and MUST append to the entry's notes array. Sanity-checked by agent/scripts/audit-corpus-identity-sweep.mjs. See docs/audits/corpus-index-schema.md for the schema definition.",
+  "$comment": "Argus governance audit corpus index. Machine-readable sanity-check source of truth. Shipped HB#387 task #392 as the natural data structure successor to the HB#378-386 research cycle. Each entry is one audited governance contract. Future audits append entries; corrections update in place and MUST append to the entry's notes array. Sanity-checked by agent/scripts/audit-corpus-identity-sweep.mjs. See reports/audits/corpus-index-schema.md for the schema definition.",
   "version": 1,
   "lastUpdated": "2026-04-15T16:30:00Z",
   "entries": [
@@ -365,7 +365,7 @@
         "HB#386 task #391: retroactive name() sweep across all 18 corpus artifacts. Clean result beyond this one correction.",
         "HB#387 task #392: this machine-readable corpus index, sanity-checkable via the sweep script."
       ],
-      "publicCorrectionNote": "docs/audits/corrections-hb384.md + IPFS QmZT2753rrakq4NysAQsqE9e8N9ERTLJwe6AK2FigMNvmi"
+      "publicCorrectionNote": "reports/audits/corrections-hb384.md + IPFS QmZT2753rrakq4NysAQsqE9e8N9ERTLJwe6AK2FigMNvmi"
     }
   ],
   "categoryLegend": {

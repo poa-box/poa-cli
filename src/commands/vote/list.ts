@@ -285,6 +285,26 @@ export const listHandler = {
       // Footer: show the chain reference time so the relative-time column
       // is auditable. Block timestamp is what the contract sees.
       if (!output.isJsonMode()) {
+        // Voting-validity parameters, labeled DISTINCTLY: support threshold
+        // is a % of weighted power; quorum is a raw VOTER COUNT (since
+        // PR #119 — not a percentage). Conflating them has caused real
+        // mis-votes, so each line names its unit explicitly.
+        const configLines: string[] = [];
+        if ((argv.type === 'all' || argv.type === 'hybrid') && org.hybridVoting) {
+          configLines.push(
+            `hybrid — support threshold: ${org.hybridVoting.thresholdPct}% of weighted power | quorum: ${org.hybridVoting.quorum} voters (0 = disabled)`
+          );
+        }
+        if ((argv.type === 'all' || argv.type === 'dd') && org.directDemocracyVoting) {
+          configLines.push(
+            `dd — support threshold: ${org.directDemocracyVoting.thresholdPct}% of weighted power | quorum: ${org.directDemocracyVoting.quorum} voters (0 = disabled)`
+          );
+        }
+        if (configLines.length > 0) {
+          console.log('');
+          for (const line of configLines) console.log(`  ${line}`);
+        }
+
         const refIso = new Date(chainNow * 1000).toISOString();
         console.log(`\n  Chain time: ${refIso} (block.timestamp)`);
 

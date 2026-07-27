@@ -1,20 +1,32 @@
+/**
+ * pop task submit — submit work for a claimed task.
+ *
+ * Order matters (fixed in the v6 migration): pre-flight runs FIRST, so a
+ * submission that would revert (wrong status, not the claimer) fails fast
+ * without wasting an IPFS pin. Then the pin, then the transaction.
+ *
+ * Expiry semantics (v6, verified against contracts origin/main): a lapsed
+ * claim deadline NEVER blocks the original claimer's submitTask — it only
+ * makes the task takeover-able by others until the submission lands. So an
+ * expired claim is a WARNING here, not a failure.
+ */
+
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { execFileSync } from 'child_process';
-import { createSigner } from '../../lib/signer';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { pinJson } from '../../lib/ipfs';
 import { parseTaskId, ipfsCidToBytes32 } from '../../lib/encoding';
+import { formatCountdown } from '../../lib/format';
+import { getTaskOnChain, deriveClaimState, TASK_STATUS, TaskOnChain } from '../../lib/task-lens';
+import { runPreflight, checkGasBalance, checkTaskStatus } from '../../lib/preflight';
+import { getWriteContext, finishWrite, withIdempotency } from '../../lib/command';
+import { requireModule } from '../../lib/resolve';
+import { CliError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
 import { query } from '../../lib/subgraph';
-import { resolveOrgId } from '../../lib/resolve';
 import { FETCH_PROJECTS_DATA } from '../../queries/task';
-import {
-  argvToIdempotencyString,
-  checkIdempotencyCache,
-  recordIdempotentResult,
-} from '../../lib/idempotency';
 import * as output from '../../lib/output';
-import { resolveOrgContracts } from './helpers';
 
 interface SubmitArgs {
   org: string;
@@ -24,6 +36,8 @@ interface SubmitArgs {
   rpc?: string;
   'private-key'?: string;
   'dry-run'?: boolean;
+  yes?: boolean;
+  preflight?: boolean;
   commit?: boolean;
   commitFiles?: string;
   'idempotency-key'?: string;
@@ -53,84 +67,91 @@ export const submitHandler = {
       type: 'boolean',
       default: false,
       describe: 'Bypass the idempotency cache and always submit.',
-    }),
+    })
+    .example('pop task submit --task 12 --submission "PR #42, deployed to staging"', 'Submit work for a task you have claimed')
+    .example('pop task submit --task 12 --submission "done" --commit --commit-files src/foo.ts,README.md', 'Submit, then git-commit the listed files with the tx hash in the message'),
 
   handler: async (argv: ArgumentsCamelCase<SubmitArgs>) => {
     const spin = output.spinner('Submitting task...');
     spin.start();
 
     try {
-      const { taskManagerAddress } = await resolveOrgContracts(argv.org, argv.chain);
-      const { signer } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
-
-      // Fetch existing task metadata so we preserve it in the submission
-      spin.text = 'Fetching task metadata...';
-      const orgId = await resolveOrgId(argv.org, argv.chain);
-
-      // Task #370: idempotency check BEFORE IPFS pin (expensive, don't repeat)
-      const idempKey = argv.idempotencyKey || argvToIdempotencyString(argv as Record<string, any>);
-      if (!argv.noIdempotency) {
-        const cached = checkIdempotencyCache(orgId, 'task.submit', idempKey);
-        if (cached) {
-          spin.stop();
-          output.success(`Task ${argv.task} already submitted (idempotency cache hit)`, {
-            ...cached,
-            cached: true,
-            note: 'Prior call within the 15-minute window produced this result. Use --no-idempotency to force re-submit.',
-          });
-          return;
-        }
-      }
-      const taskData = await query<any>(FETCH_PROJECTS_DATA, { orgId }, argv.chain);
-      const projects = taskData.organization?.taskManager?.projects || [];
-      let existingMeta: any = null;
-      for (const project of projects) {
-        for (const task of project.tasks || []) {
-          if (task.taskId === argv.task || task.id.endsWith(`-${argv.task}`)) {
-            existingMeta = task.metadata;
-            break;
-          }
-        }
-        if (existingMeta) break;
-      }
-
-      // Merge submission into existing metadata (preserves name, description, difficulty, etc.)
-      const submissionMetadata = {
-        name: existingMeta?.name || '',
-        description: existingMeta?.description || '',
-        location: existingMeta?.location || '',
-        difficulty: existingMeta?.difficulty || '',
-        estHours: existingMeta?.estimatedHours ? parseFloat(existingMeta.estimatedHours) : 0,
-        submission: argv.submission,
-      };
-
-      spin.text = 'Pinning submission to IPFS...';
-      const cid = await pinJson(JSON.stringify(submissionMetadata));
-      const submissionHash = ipfsCidToBytes32(cid);
-
-      spin.text = 'Sending transaction...';
-      const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', signer);
+      const ctx = await getWriteContext(argv);
+      const taskManagerAddress = requireModule(ctx.modules, 'taskManagerAddress');
       const parsedTaskId = parseTaskId(argv.task);
-      const result = await executeTx(contract, 'submitTask', [parsedTaskId, submissionHash], { dryRun: argv.dryRun });
-      spin.stop();
 
-      if (result.success) {
-        // Task #370: record idempotent result
-        if (!argv.noIdempotency) {
-          recordIdempotentResult(orgId, 'task.submit', idempKey, {
-            taskId: argv.task,
-            txHash: result.txHash,
-            ipfsCid: cid,
-          });
+      const run = async (): Promise<Record<string, any>> => {
+        // ── 1. PRE-FLIGHT FIRST (skippable with --no-preflight) ──────────
+        // Status must be CLAIMED and the claimer must be this signer — fail
+        // fast (exit 4) BEFORE the IPFS pin so doomed submissions don't
+        // waste pins. The deadline read is warning-only (see module header).
+        spin.text = 'Running pre-flight checks...';
+        let onChainTask: TaskOnChain | null = null;
+        if (argv.preflight !== false) {
+          onChainTask = await getTaskOnChain(ctx.provider, taskManagerAddress, parsedTaskId)
+            .catch(() => null); // warning data only — checkTaskStatus below is the gate
         }
-        output.success(`Task ${argv.task} submitted`, { txHash: result.txHash, explorerUrl: result.explorerUrl, ipfsCid: cid });
+        await runPreflight(ctx.provider, [
+          checkGasBalance(ctx.address),
+          checkTaskStatus(taskManagerAddress, parsedTaskId, [TASK_STATUS.CLAIMED], {
+            claimerMustBe: ctx.address,
+          }),
+        ], { skip: !argv.preflight });
+
+        if (onChainTask && deriveClaimState(onChainTask) === 'expired-claimable') {
+          const deadline = onChainTask.claimDeadline || onChainTask.absoluteDeadline || 0;
+          output.warn(
+            `Your claim deadline passed (${formatCountdown(deadline)}) — the task is takeover-able ` +
+            'by others until you submit. Submitting now still counts.'
+          );
+        }
+
+        // ── 2. Fetch existing metadata so the submission preserves it ────
+        spin.text = 'Fetching task metadata...';
+        const taskData = await query<any>(FETCH_PROJECTS_DATA, { orgId: ctx.orgId }, argv.chain);
+        const projects = taskData.organization?.taskManager?.projects || [];
+        let existingMeta: any = null;
+        for (const project of projects) {
+          for (const task of project.tasks || []) {
+            if (task.taskId === argv.task || task.id.endsWith(`-${argv.task}`)) {
+              existingMeta = task.metadata;
+              break;
+            }
+          }
+          if (existingMeta) break;
+        }
+
+        // Merge submission into existing metadata (preserves name, description, difficulty, etc.)
+        const submissionMetadata = {
+          name: existingMeta?.name || '',
+          description: existingMeta?.description || '',
+          location: existingMeta?.location || '',
+          difficulty: existingMeta?.difficulty || '',
+          estHours: existingMeta?.estimatedHours ? parseFloat(existingMeta.estimatedHours) : 0,
+          submission: argv.submission,
+        };
+
+        // ── 3. Pin, THEN send ─────────────────────────────────────────────
+        spin.text = 'Pinning submission to IPFS...';
+        const cid = await pinJson(JSON.stringify(submissionMetadata));
+        const submissionHash = ipfsCidToBytes32(cid);
+
+        spin.text = 'Sending transaction...';
+        const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);
+        const result = await executeTx(contract, 'submitTask', [parsedTaskId, submissionHash], { dryRun: argv.dryRun });
+        spin.stop();
+
+        finishWrite(result, {
+          successMsg: `Task ${argv.task} submitted`,
+          fields: { taskId: argv.task, ipfsCid: cid },
+        });
 
         // Task #355 (HB#185): optional auto-commit. Runs git add + git
-        // commit on the explicit files list AFTER the on-chain
-        // submission lands. Failure here is a warning, not an error —
-        // the submission is the source of truth and we never roll it
-        // back over a git issue.
-        if (argv.commit) {
+        // commit on the explicit files list AFTER the on-chain submission
+        // lands (never on --dry-run). Failure here is a warning, not an
+        // error — the submission is the source of truth and we never roll
+        // it back over a git issue.
+        if (argv.commit && result.success && !result.dryRun) {
           const filesArg = (argv.commitFiles ?? '').trim();
           if (!filesArg) {
             output.error(
@@ -175,14 +196,27 @@ export const submitHandler = {
             }
           }
         }
+
+        return { taskId: argv.task, txHash: result.txHash, ipfsCid: cid };
+      };
+
+      // Idempotency (task #370) wraps the whole pipeline so a retry within
+      // the TTL returns the cached result BEFORE re-running pre-flight
+      // (post-success the status is SUBMITTED, which would otherwise fail
+      // the retry instead of confirming it). Dry runs bypass the cache.
+      if (argv.dryRun) {
+        await run();
       } else {
-        output.error('Submission failed', { error: result.error, errorCode: result.errorCode });
-        process.exit(2);
+        await withIdempotency(argv, ctx.orgId, 'task.submit', run);
       }
     } catch (err: any) {
       spin.stop();
-      output.error(err.message);
-      process.exit(1);
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
+      output.error(err?.message || String(err));
+      process.exit(EXIT.USAGE);
     }
   },
 };

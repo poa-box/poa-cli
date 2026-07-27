@@ -7,10 +7,11 @@ import { balanceHandler } from './balance';
 
 export function registerTokenCommands(yargs: Argv) {
   return yargs
-    .command('request', 'Request participation tokens', requestHandler.builder, requestHandler.handler)
-    .command('approve', 'Approve a token request', approveHandler.builder, approveHandler.handler)
-    .command('cancel', 'Cancel a pending token request', cancelHandler.builder, cancelHandler.handler)
+    .command('request', 'Request participation tokens (members only; minted on approval)', requestHandler.builder, requestHandler.handler)
+    .command('approve', 'Approve a token request — MINTS the requested PT to the requester', approveHandler.builder, approveHandler.handler)
+    .command('cancel', 'Cancel a pending token request (requester or approver)', cancelHandler.builder, cancelHandler.handler)
     .command('requests', 'List token requests', requestsHandler.builder, requestsHandler.handler)
-    .command('balance', 'Check token balance', balanceHandler.builder, balanceHandler.handler)
-    .demandCommand(1, 'Please specify a token action');
+    .command('balance', 'Check participation token balance', balanceHandler.builder, balanceHandler.handler)
+    .demandCommand(1, 'Please specify a token action')
+    .epilogue('Guide: see docs/guides/treasury-and-tokens.md');
 }
