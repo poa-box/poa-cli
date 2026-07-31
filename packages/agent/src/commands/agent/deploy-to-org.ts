@@ -76,7 +76,7 @@ export const deployToOrgHandler = {
       // Step 4: Check if org exists on target chain
       spin.text = 'Checking target org...';
       const orgQuery = `query($name: String!) { organizations(where: { name: $name }, first: 1) { id name users(first: 100) { address membershipStatus account { username } } } }`;
-      const { queryAllChains } = require('../../lib/subgraph');
+      const { queryAllChains } = require('@poa/cli/lib/subgraph');
       let orgFound = false;
       let isMember = false;
       let orgMembers = 0;

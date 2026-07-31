@@ -9,8 +9,9 @@
  *     (initialize doc: "typically the Executor") — hence the governance wrap.
  *   - Reverts DistributionNotFound (totalAmount == 0), AlreadyFinalized, and
  *     ClaimPeriodNotExpired when block.number < creationBlock + minClaimPeriodBlocks
- *     (audit M-08 re-anchored this from checkpointBlock; creationBlock has no getter, so the
- *     subgraph's Distribution.createdAtBlock supplies it).
+ *     (anchored on checkpointBlock — the DEPLOYED contract's anchor, proven by live eth_call.
+ *     Audit M-08 proposes re-anchoring on the creation block, but that contract is not
+ *     deployed; see the inline note at the guard).
  *   - On success the unclaimed remainder (totalAmount - totalClaimed) is
  *     returned to the owner (Executor treasury) and further claims are blocked.
  *
@@ -29,8 +30,6 @@ import { formatToken } from '../../lib/format';
 import { getWriteContext, confirmWrite, finishWrite } from '../../lib/command';
 import { runPreflight, checkGasBalance } from '../../lib/preflight';
 import { requireModule } from '../../lib/resolve';
-import { query } from '../../lib/subgraph';
-import { FETCH_DISTRIBUTION_BY_ID, distributionEntityId } from '../../queries/treasury';
 import { resolvePayoutTokenInfo } from './helpers';
 import { CliError, PreconditionError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';

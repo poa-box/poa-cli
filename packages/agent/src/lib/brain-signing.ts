@@ -36,6 +36,7 @@
 import { ethers } from 'ethers';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import { getRepoBrainRoot } from './brain-paths';
 
 export interface BrainChangeEnvelope {
   v: 1;
@@ -152,7 +153,7 @@ export interface AllowlistEntry {
  * hard-coding it independently.
  */
 export function getAllowlistPath(): string {
-  return join(process.cwd(), 'agent', 'brain', 'Config', 'brain-allowlist.json');
+  return join(getRepoBrainRoot(), 'Config', 'brain-allowlist.json');
 }
 
 export function loadAllowlist(): AllowlistEntry[] {

@@ -236,6 +236,18 @@ export async function fetchWearerVouchStateFromSubgraph(
     if (!config) return null;
     const vouches = data?.vouches;
     if (!Array.isArray(vouches) || vouches.length >= VOUCH_PAGE_CAP) return null;
+    // EPOCH GUARD. The contract's currentVouchCount is epoch-aware: any
+    // configureVouching/resetVouches bumps the hat's vouch epoch and the
+    // deployed module counts only current-epoch vouches — but it emits no
+    // event for the implicit invalidation, so the indexer still has the old
+    // rows as isActive. A vouch created BEFORE the config's last update may
+    // therefore be stale; counting it would report quorum met when the
+    // contract says otherwise. When that ambiguity exists, this count is not
+    // derivable — fall back to the authoritative RPC read.
+    const configBlock = Number(data?.vouchConfigs?.[0]?.updatedAtBlock ?? 0);
+    if (configBlock > 0 && vouches.some((v: any) => Number(v?.createdAtBlock ?? 0) < configBlock)) {
+      return null;
+    }
     return { config, currentCount: vouches.length };
   } catch {
     return null;

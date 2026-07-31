@@ -116,13 +116,21 @@ export function redactSubgraphUrl(url: string | undefined): string | undefined {
     .replace(/([?&](?:api[-_]?key|access[-_]?token)=)[^&#]+/gi, '$1<redacted>');
 }
 
-function getClient(url: string, chainId?: number): GraphQLClient {
-  const cacheKey = `${chainId ?? '-'}|${url}`;
+function getClient(url: string, chainId?: number, opts?: { paid?: boolean }): GraphQLClient {
+  // The Authorization header follows the PLANNED TIER, not hostname sniffing.
+  // isGatewayUrl only recognises gateway.thegraph.com, but the documented
+  // POP_GRAPH_GATEWAY_URL / POP_<NET>_SUBGRAPH_GATEWAY overrides allow
+  // self-hosted and regional hosts (gateway-arbitrum.network.thegraph.com
+  // fails the regex too) — keying on the hostname sent those requests keyless
+  // and then blamed the operator's valid key. Hostname sniffing remains only
+  // as a fallback for direct queryUrl() calls that carry no tier.
+  const paid = opts?.paid ?? isGatewayUrl(url);
+  const cacheKey = `${chainId ?? '-'}|${paid ? 'paid' : 'free'}|${url}`;
   let client = clientCache.get(cacheKey);
   if (!client) {
     const headers: Record<string, string> = {};
     const key = getApiKey();
-    if (isGatewayUrl(url) && key) {
+    if (paid && key) {
       headers['Authorization'] = `Bearer ${key}`;
     }
     client = new GraphQLClient(url, {
@@ -131,7 +139,7 @@ function getClient(url: string, chainId?: number): GraphQLClient {
       // Reading them lets us record exhaustion BEFORE a request fails, so the
       // next process skips the free transport instead of learning the hard way.
       responseMiddleware: (res: any) => {
-        if (chainId !== undefined && !isGatewayUrl(url)) observeRateLimit(chainId, res);
+        if (chainId !== undefined && !paid) observeRateLimit(chainId, res);
       },
     });
     clientCache.set(cacheKey, client);
@@ -511,16 +519,21 @@ function planError(plan: TransportPlan): CliError {
 }
 
 /** Free quota gone and there is no paid transport to fall back to. */
-function freeExhaustedError(plan: TransportPlan, cause: any): CliError {
+function freeExhaustedError(plan: TransportPlan, cause: any, paidFailure?: any): CliError {
+  const tail = paidFailure
+    ? ` and the configured paid gateway also failed (${String(paidFailure?.message || paidFailure).slice(0, 120)}).`
+    : plan.paidKeyMissing
+      ? ` and the configured paid gateway has no API key.`
+      : ` and no paid gateway is configured.`;
   const err = new CliError(
     `The free Graph Studio subgraph for ${plan.networkName} (chain ${plan.chainId}) is rate-limited (3K queries/day)`
-    + (plan.paidKeyMissing
-      ? ` and the configured paid gateway has no API key.`
-      : ` and no paid gateway is configured.`),
+    + tail,
     EXIT.INFRA,
-    plan.paidKeyMissing
-      ? `Add GRAPH_API_KEY=<your gateway key> to your .env — the gateway URL is already set. Studio's quota resets on a rolling 24h window, so retrying later also works.`
-      : `${gatewayEnvHint(plan.chainId)} Studio's quota resets on a rolling 24h window, so retrying later also works.`
+    paidFailure
+      ? `The gateway failure is likely transient — retry, and check the gateway status if it persists. Studio's quota resets on a rolling 24h window.`
+      : plan.paidKeyMissing
+        ? `Add GRAPH_API_KEY=<your gateway key> to your .env — the gateway URL is already set. Studio's quota resets on a rolling 24h window, so retrying later also works.`
+        : `${gatewayEnvHint(plan.chainId)} Studio's quota resets on a rolling 24h window, so retrying later also works.`
   );
   (err as any).cause = cause;
   (err as any).response = cause?.response;
@@ -560,11 +573,15 @@ async function executePlan<T>(
 ): Promise<T> {
   if (!plan.attempts.length) throw planError(plan);
 
+  // When a paid attempt fails and we fall through to a demoted free attempt,
+  // remember why: if free then quota-fails, the error must state BOTH facts —
+  // "no paid gateway is configured" is a lie when one just returned a 500.
+  let paidFailure: any;
   for (let i = 0; i < plan.attempts.length; i++) {
     const attempt = plan.attempts[i];
     const isLast = i === plan.attempts.length - 1;
     try {
-      const data = await getClient(attempt.url, plan.chainId).request<T>(gqlQuery, variables);
+      const data = await getClient(attempt.url, plan.chainId, { paid: attempt.tier === 'paid' }).request<T>(gqlQuery, variables);
       // A success on free means an earlier pin was a transient burst limit.
       if (attempt.tier === 'free' && plan.freeExhaustedUntil) clearFreeExhausted(plan.chainId);
       return data;
@@ -572,7 +589,7 @@ async function executePlan<T>(
       if (attempt.tier === 'free' && isQuotaError(error)) {
         markFreeExhausted(plan.chainId, 'quota-error', Number(readHeader(error?.response?.headers, 'x-ratelimit-reset')) || undefined);
         if (!isLast) continue; // switch to the paid transport
-        throw freeExhaustedError(plan, error);
+        throw freeExhaustedError(plan, error, paidFailure);
       }
       if (attempt.tier === 'paid') {
         // A broken gateway (revoked key, exhausted budget, DNS/5xx) must not
@@ -581,7 +598,7 @@ async function executePlan<T>(
         // validation errors are excluded: they are a property of the query,
         // not the transport, so retrying elsewhere only wastes a round-trip
         // (queryWithFieldFallback owns that case).
-        if (!isLast && !isUnknownFieldError(error)) continue;
+        if (!isLast && !isUnknownFieldError(error)) { paidFailure = error; continue; }
         if (isAuthError(error)) throw paidAuthError(plan, error);
         if (isQuotaError(error)) throw paidQuotaError(plan, error);
       }
@@ -742,6 +759,7 @@ export function getTransportStatus(chainId?: number): TransportStatus {
     const mins = Math.max(1, Math.ceil((plan.freeExhaustedUntil - nowSeconds()) / 60));
     parts.push(`free quota spent, re-probing in ~${mins}m`);
   }
+  if (plan.modeOverrideIgnored) parts.push(`tier override softened: ${plan.modeOverrideIgnored}`);
 
   return {
     mode: plan.mode,
@@ -752,6 +770,7 @@ export function getTransportStatus(chainId?: number): TransportStatus {
     freeUrl: redactSubgraphUrl(plan.freeUrl),
     paidUrl: redactSubgraphUrl(plan.paidUrl),
     ...(plan.freeExhaustedUntil ? { freeExhaustedUntil: plan.freeExhaustedUntil } : {}),
+    ...(plan.modeOverrideIgnored ? { modeOverrideIgnored: plan.modeOverrideIgnored } : {}),
     summary: parts.join('; '),
   };
 }

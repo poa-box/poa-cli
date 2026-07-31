@@ -63,15 +63,24 @@ function loadAgentPlugin(): AgentPlugin | null {
   return null;
 }
 
-/** Builder for `pop agent|brain …` when @poa/agent is not installed. */
-function agentUnavailable(group: string) {
-  return (y: any) => y.command('$0', false, () => { /* no options */ }, () => {
+/**
+ * When @poa/agent is not installed, every invocation shape must reach the
+ * install hint — `pop brain read --doc x` as much as bare `pop brain`. The
+ * builder disables strict parsing for the group (unknown flags would
+ * otherwise die with a yargs options dump before any handler runs) and the
+ * group-level handler prints the hint.
+ */
+function agentUnavailableBuilder() {
+  return (y: any) => y.strict(false);
+}
+function agentUnavailableHandler(group: string) {
+  return () => {
     output.error(`'pop ${group}' needs the @poa/agent package, which is not installed.`, {
       suggestion: 'In this repo: yarn --cwd packages/agent install && yarn --cwd packages/agent build. '
-        + 'Standalone: npm install -g @poa/agent.',
+        + '(@poa/agent is not yet published to npm — in-repo build is the only install.)',
     });
     process.exit(1);
-  });
+  };
 }
 
 async function main() {
@@ -98,9 +107,11 @@ async function main() {
     .command('zkemail <action>', 'ZK Email role invites (allowlists)', registerZkEmailCommands)
     .command('config <action>', 'View and validate configuration', registerConfigCommands)
     .command('agent <action>', agentDesc('Agent operations & monitoring'),
-      agentPlugin ? agentPlugin.registerAgentCommands : agentUnavailable('agent'))
+      agentPlugin ? agentPlugin.registerAgentCommands : agentUnavailableBuilder(),
+      agentPlugin ? undefined : agentUnavailableHandler('agent'))
     .command('brain <action>', agentDesc('P2P CRDT brain layer (live-sync knowledge)'),
-      agentPlugin ? agentPlugin.registerBrainCommands : agentUnavailable('brain'))
+      agentPlugin ? agentPlugin.registerBrainCommands : agentUnavailableBuilder(),
+      agentPlugin ? undefined : agentUnavailableHandler('brain'))
     // Top-level onboarding wizard. Registered before the global --org option so
     // it is clearly not an org-scoped command; its handler never resolves an
     // org, so the POP_DEFAULT_ORG middleware fallback below never blocks it.

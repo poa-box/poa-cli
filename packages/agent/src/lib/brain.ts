@@ -19,6 +19,7 @@
 
 import { homedir } from 'os';
 import { join } from 'path';
+import { getRepoBrainRoot } from './brain-paths';
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import {
   signBrainChange,
@@ -588,7 +589,7 @@ function saveHeadsManifest(manifest: Record<string, string>): void {
  * for agents without the genesis files available).
  */
 function loadGenesisBytes(docId: string): Uint8Array | null {
-  const genesisPath = join(process.cwd(), 'agent', 'brain', 'Knowledge', `${docId}.genesis.bin`);
+  const genesisPath = join(getRepoBrainRoot(), 'Knowledge', `${docId}.genesis.bin`);
   if (!existsSync(genesisPath)) return null;
   try {
     const bytes = readFileSync(genesisPath);

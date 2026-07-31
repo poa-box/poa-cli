@@ -375,7 +375,7 @@ export const triageHandler = {
       // --- 4b. AUDIT OPPORTUNITIES (when board is empty) ---
       if (!hasWork) {
         try {
-          const { queryAllChains } = require('../../lib/subgraph');
+          const { queryAllChains } = require('@poa/cli/lib/subgraph');
           const exploreQuery = `query($first:Int!){organizations(first:$first){name users(first:100){membershipStatus} taskManager{projects(where:{deleted:false},first:10){tasks(first:200){status}}} hybridVoting{proposals(first:50){status}}}}`;
           const exploreResults = await queryAllChains(exploreQuery, { first: 10 });
           for (const cr of exploreResults) {

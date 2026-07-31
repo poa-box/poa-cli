@@ -30,6 +30,12 @@ interface MerkleResult {
   tokenAddress: string;
   checkpointBlock: number;
   memberCount: number;
+  /** 'ok' | 'partial' | 'failed' — whether the opt-out filter fully ran. Additive field. */
+  optOutCheck: string;
+  /** Probes that could not be read (those members are INCLUDED). Additive field. */
+  optOutProbeFailures: number;
+  /** Members excluded because they opted out. Additive field. */
+  excludedOptedOut: number;
   allocations: Array<MemberAllocation & { proof: string[] }>;
 }
 
@@ -129,6 +135,7 @@ export const computeMerkleHandler = {
       // round-trip for the whole member set.
       const paymentManagerAddress = modules.paymentManagerAddress;
       let optedOut = new Set<string>();
+      let optOutProbeFailures = 0;
       if (paymentManagerAddress) {
         spin.text = `Checking opt-out status for ${ptHolders.length} members...`;
         const pmIface = new ethers.utils.Interface([
@@ -142,22 +149,29 @@ export const computeMerkleHandler = {
           to: paymentManagerAddress,
           data: pmIface.encodeFunctionData('isOptedOut', [ethers.utils.getAddress(m.address)]),
         }));
-        const results = await tryAggregate(provider, optOutCalls);
+        // Pinned to checkpointBlock: the tree's membership snapshot and the
+        // opt-out snapshot must describe the SAME moment, or claim-mine's
+        // block-pinned reconstruction can legitimately disagree with the
+        // committed root over a toggle that landed between the two reads.
+        const results = await tryAggregate(provider, optOutCalls, { blockTag: checkpointBlock });
         results.forEach((r, i) => {
-          if (!r.success) return; // unreadable — fail open, they stay in the tree
+          if (!r.success) { optOutProbeFailures++; return; } // fail open, they stay in the tree
           try {
             if (pmIface.decodeFunctionResult('isOptedOut', r.returnData)[0] === true) {
               optedOut.add(String(ptHolders[i].address).toLowerCase());
             }
-          } catch { /* malformed — treat as not opted out */ }
+          } catch { optOutProbeFailures++; /* malformed — treat as not opted out */ }
         });
-        // Per-member fail-open is deliberate, but ALL probes failing means the opt-out
-        // filter did not run at all — say so instead of silently building an
-        // enforcement-free tree.
-        if (ptHolders.length > 0 && results.every((r) => !r.success)) {
+        // Per-member fail-open is deliberate, but any probe failing means an
+        // opted-out member could be silently paid — say so for EVERY failure,
+        // not only the all-failed case, and record it in the output so
+        // propose-distribution (and its operator) can see the tree was built
+        // with an incomplete filter.
+        if (optOutProbeFailures > 0) {
           output.warn(
-            'Opt-out status could not be read for ANY member (RPC failure?) — the tree will '
-              + 'include members who may have opted out. Verify before proposing this distribution.'
+            `Opt-out status could not be read for ${optOutProbeFailures} of ${ptHolders.length} `
+              + 'member(s) — they are INCLUDED in the tree and may have opted out. '
+              + 'Verify before proposing this distribution.'
           );
         }
       }
@@ -235,6 +249,11 @@ export const computeMerkleHandler = {
         tokenAddress: argv.token,
         checkpointBlock,
         memberCount: allocations.length,
+        optOutCheck: optOutProbeFailures === 0
+          ? 'ok'
+          : optOutProbeFailures >= ptHolders.length ? 'failed' : 'partial',
+        optOutProbeFailures,
+        excludedOptedOut: optedOut.size,
         allocations: allocationsWithProofs,
       };
 

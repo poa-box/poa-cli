@@ -7,8 +7,9 @@
  * manual --amount/--proof needed (that escape hatch is pop treasury claim).
  *
  * Pre-flight (skippable with --no-preflight): per-distribution hasClaimed reads
- * skip claims the subgraph hasn't indexed yet. Opt-out only WARNS — audit L-19
- * removed that gate from the claim path so it cannot strand allocated funds.
+ * skip claims the subgraph hasn't indexed yet. Opt-out BLOCKS with a
+ * PreconditionError — the DEPLOYED PaymentManager reverts OptedOut in
+ * claimDistribution (L-19's removal of that gate is not deployed).
  *
  * Amounts display in the payout token's human units — address(0) is the
  * chain's native token (verified against contracts origin/main

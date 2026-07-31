@@ -16,6 +16,7 @@
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { join } from 'path';
+import { getRepoBrainRoot } from '../../lib/brain-paths';
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { readBrainDoc, stopBrainNode } from '../../lib/brain';
 import { projectForDoc } from '../../lib/brain-projections';
@@ -125,13 +126,12 @@ export const snapshotHandler = {
       // fall through to projectShared so older callers don't regress.
       const markdown = projectForDoc(docId, doc, headCid);
 
-      // Default path: agent/brain/Knowledge/<docId>.generated.md
-      // Use process.cwd() so the command writes into the repo the agent
-      // is operating against — the heartbeat skill runs with the repo
-      // as cwd, and ad-hoc invocations expect the same.
+      // Default path: the repo-TRACKED brain (packages/agent/brain/Knowledge).
+      // Resolved via getRepoBrainRoot, not process.cwd() — a cwd-built path
+      // recreated the pre-split agent/ tree as untracked junk after the move.
       const outPath =
         argv.outputPath ??
-        join(process.cwd(), 'agent', 'brain', 'Knowledge', `${docId}.generated.md`);
+        join(getRepoBrainRoot(), 'Knowledge', `${docId}.generated.md`);
       const outDir = outPath.substring(0, outPath.lastIndexOf('/'));
       if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
 

@@ -119,7 +119,11 @@ export const executeHandler = {
         );
       }
 
-      if (proposal.winnerAnnouncedAt) {
+      // executionFailed proposals ARE announced — the announce succeeded and the
+      // execution reverted. Returning here made the H-05 retry unreachable: the
+      // warning above promised "re-run this command" and this gate then said
+      // "Nothing to do". Let the callStatic pre-flight arbitrate the retry.
+      if (proposal.winnerAnnouncedAt && !proposal.executionFailed) {
         spin.stop();
         output.info(
           `Proposal #${proposalId} winner is already announced (valid=${proposal.isValid}). ` +

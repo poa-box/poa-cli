@@ -65,6 +65,7 @@ export const FETCH_VOUCH_STATUS = `
       membershipHatId
       enabled
       combinesWithHierarchy
+      updatedAtBlock
     }
     vouches(
       where: {
@@ -76,6 +77,7 @@ export const FETCH_VOUCH_STATUS = `
       first: 1000
     ) {
       id
+      createdAtBlock
     }
   }
 `;

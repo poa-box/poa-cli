@@ -14,9 +14,10 @@
  *
  * Pre-flight (skippable with --no-preflight) mirrors the contract's revert
  * gates: DistributionNotFound, DistributionAlreadyFinalized and AlreadyClaimed
- * (hasClaimed) fail fast before gas is spent. Opt-out only WARNS — audit L-19
- * removed that gate from the claim path so an opt-out cannot strand funds
- * already allocated to you.
+ * (hasClaimed) fail fast before gas is spent. Opt-out BLOCKS with a
+ * PreconditionError: the DEPLOYED PaymentManager still reverts OptedOut in
+ * claimDistribution (audit L-19 removes that gate only in a not-yet-deployed
+ * version), so claiming while opted out would just burn gas.
  *
  * Prefer `pop treasury claim-mine` — it recomputes the tree and derives your
  * amount + proof automatically. This command is the manual escape hatch.
