@@ -201,7 +201,15 @@ async function main() {
       + 'Read-only mode: POP_READONLY=1. Identity reads without a key: --address/POP_ADDRESS.'
     )
     .help()
-    .version('0.1.0')
+    // The real package version — hardcoding it means every published bump
+    // lies to consumers trying to correlate behavior with a CLI version.
+    // Resolved at runtime relative to dist/ so it works installed and in-repo.
+    .version((() => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        return String(require(require('path').join(__dirname, '..', 'package.json')).version);
+      } catch { return '0.0.0'; }
+    })())
     .wrap(Math.min(110, yargs.terminalWidth()));
 
   try {

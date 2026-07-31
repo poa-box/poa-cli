@@ -92,6 +92,25 @@ When your integration graduates to acting (creating tasks, voting):
 4. Pass `--yes` explicitly where you mean it. Nothing else consents for you.
 5. Gas can be sponsored (ERC-4337) — see [gas-sponsorship](gas-sponsorship.md).
 
+## The compatibility promise
+
+You should never need to update your integration because the protocol or
+subgraph changed — that churn is absorbed inside the CLI. Concretely:
+
+- Every key in
+  [`output-contracts.json`](../reference/cli/output-contracts.json) is
+  promised: it will not be renamed or removed without a major version bump.
+  New keys may appear at any time — parse defensively, ignore what you don't
+  know.
+- Error codes and exit codes are stable identifiers.
+- Deprecations warn on **stderr** first and survive at least until the next
+  major — stdout stays parseable through them.
+- While on 0.x: patch releases (0.x.y) are always consumer-safe; breaking
+  changes bump the minor and are called out in release notes. Pin `~0.x`
+  (Docker: exact version), and correlate behavior with `pop --version`.
+
+Full policy + release checklist: [docs/RELEASING.md](../RELEASING.md).
+
 ## Packaging
 
 - Docker: see [docker.md](docker.md) and the reference `Dockerfile` — it

@@ -279,7 +279,7 @@ function main(): void {
     // Stale pages (e.g. a removed domain) count as drift too.
     if (fs.existsSync(OUT_DIR)) {
       for (const entry of fs.readdirSync(OUT_DIR)) {
-        if ((entry.endsWith('.md') || entry.endsWith('.json')) && !files.has(entry)) {
+        if ((entry.endsWith('.md') || entry === 'manifest.json') && !files.has(entry)) {
           drifted.push(path.relative(ROOT, path.join(OUT_DIR, entry)));
         }
       }
@@ -319,7 +319,7 @@ function main(): void {
     written += 1;
   }
   for (const entry of fs.readdirSync(OUT_DIR)) {
-    if ((entry.endsWith('.md') || entry.endsWith('.json')) && !files.has(entry)) {
+    if ((entry.endsWith('.md') || entry === 'manifest.json') && !files.has(entry)) {
       fs.unlinkSync(path.join(OUT_DIR, entry));
       console.log(`removed ${path.relative(ROOT, path.join(OUT_DIR, entry))}`);
       written += 1;

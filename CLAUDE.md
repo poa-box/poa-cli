@@ -66,7 +66,9 @@ bare query — **Arbitrum and Gnosis run different deployments**.
 - Metadata JSON key order must match the frontend exactly, or the subgraph and UI break
 - Write commands return `explorerUrl` and entity IDs in `--json` output
 - `--json` output shape is a contract: agents parse it. Adding fields is fine; renaming,
-  reordering, or removing is not
+  reordering, or removing is not. ENFORCED: promised keys live in
+  `docs/reference/cli/output-contracts.json`, verified live by `yarn contracts:check`
+  (release flow, `docs/RELEASING.md`) and structurally in CI
 - Error codes: `TX_REVERTED`, `INSUFFICIENT_FUNDS`, `NETWORK_ERROR`, `GAS_ESTIMATION_FAILED`
 - Errors go through `src/lib/error-catalog.ts`; exit codes through `src/lib/exit-codes.ts`
 - Batch independent contract reads through `src/lib/multicall.ts` — never `await` them in a loop
