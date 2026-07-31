@@ -209,17 +209,30 @@ export const createHandler = {
         hoursOnly: false, hourlyRate: null, useTokenSymbol: false,
       };
       let tokenSymbol: string | null = null;
+      let payoutConfigError: unknown = null;
       try {
         const cfg = await query<any>(FETCH_ORG_PAYOUT_CONFIG, { orgId }, argv.chain);
         payoutConfig = payoutConfigFromMetadata(cfg.organization?.metadata);
         tokenSymbol = cfg.organization?.participationToken?.symbol ?? null;
-      } catch {
-        // Pricing config is advisory; an explicit --payout must still work if the subgraph is down.
+      } catch (err) {
+        // Only fatal when a payout must be DERIVED. An explicit --payout does not
+        // depend on org pricing, so the subgraph being down must not block it.
+        payoutConfigError = err;
       }
       const tokenLabel = resolveTokenLabel({ useTokenSymbol: payoutConfig.useTokenSymbol, symbol: tokenSymbol });
 
       let derivedPayout: number | null = null;
       if (argv.payout === undefined) {
+        if (payoutConfigError) {
+          // Deriving from the hard-coded default config would silently misprice the
+          // task for any org with hours-only or custom hourly pricing — and the
+          // payout goes on-chain. Refuse rather than guess.
+          throw new CliError(
+            'Could not read the org payout config (subgraph unreachable), so a payout cannot be derived safely.',
+            EXIT.PRECONDITION,
+            'Pass --payout explicitly, or retry when the subgraph is reachable.'
+          );
+        }
         derivedPayout = calculatePayout(argv.difficulty || 'medium', argv.estHours || 0, payoutConfig);
         if (derivedPayout <= 0) {
           throw new CliError(

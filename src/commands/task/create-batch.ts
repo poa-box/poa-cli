@@ -163,10 +163,26 @@ export const createBatchHandler = {
       let payoutConfig: PayoutConfig & { useTokenSymbol: boolean } = {
         hoursOnly: false, hourlyRate: null, useTokenSymbol: false,
       };
+      let payoutConfigError: unknown = null;
       try {
         const cfg = await query<any>(FETCH_ORG_PAYOUT_CONFIG, { orgId }, argv.chain);
         payoutConfig = payoutConfigFromMetadata(cfg.organization?.metadata);
-      } catch { /* advisory — explicit payouts still work without it */ }
+      } catch (err) {
+        // Only fatal when a row needs its payout DERIVED — rows with explicit
+        // payouts do not depend on org pricing.
+        payoutConfigError = err;
+      }
+      const needsDerivation = tasks.filter((t) => !t.payoutProvided);
+      if (needsDerivation.length > 0 && payoutConfigError) {
+        // Pricing from the hard-coded default would silently misprice every derived
+        // row for an org with hours-only or custom hourly pricing — and the payouts
+        // go on-chain. Refuse rather than guess.
+        throw new Error(
+          `Could not read the org payout config (subgraph unreachable), and ${needsDerivation.length} `
+          + `row(s) omit "payout": ${needsDerivation.map((t) => t.name).join(', ')}. `
+          + 'Add explicit payouts to those rows, or retry when the subgraph is reachable.'
+        );
+      }
       for (const t of tasks) {
         if (!t.payoutProvided) {
           t.payout = calculatePayout(t.difficulty || 'medium', t.estHours || 0, payoutConfig);

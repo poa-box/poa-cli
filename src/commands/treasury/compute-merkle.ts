@@ -4,7 +4,7 @@ import { StandardMerkleTree } from '@openzeppelin/merkle-tree';
 import * as fs from 'fs';
 import { query } from '../../lib/subgraph';
 import { resolveOrgModules } from '../../lib/resolve';
-import { tryAggregate } from '../../lib/multicall';
+import { tryAggregate, Call } from '../../lib/multicall';
 import { resolveNetworkConfig } from '../../config/networks';
 import * as output from '../../lib/output';
 
@@ -134,13 +134,15 @@ export const computeMerkleHandler = {
         const pmIface = new ethers.utils.Interface([
           'function isOptedOut(address account) view returns (bool)',
         ]);
-        const results = await tryAggregate(
-          provider,
-          ptHolders.map((m: any) => ({
-            target: paymentManagerAddress,
-            callData: pmIface.encodeFunctionData('isOptedOut', [ethers.utils.getAddress(m.address)]),
-          }))
-        );
+        // NOTE the shape: tryAggregate takes { to, data } (lib/multicall Call), not the
+        // raw Multicall3 tuple names { target, callData }. This site once used the tuple
+        // names — `ptHolders` is untyped JSON so `.map` returned any[] and the mistake
+        // compiled — and every probe silently failed, which meant NO ONE was excluded.
+        const optOutCalls: Call[] = ptHolders.map((m: any) => ({
+          to: paymentManagerAddress,
+          data: pmIface.encodeFunctionData('isOptedOut', [ethers.utils.getAddress(m.address)]),
+        }));
+        const results = await tryAggregate(provider, optOutCalls);
         results.forEach((r, i) => {
           if (!r.success) return; // unreadable — fail open, they stay in the tree
           try {
@@ -149,6 +151,15 @@ export const computeMerkleHandler = {
             }
           } catch { /* malformed — treat as not opted out */ }
         });
+        // Per-member fail-open is deliberate, but ALL probes failing means the opt-out
+        // filter did not run at all — say so instead of silently building an
+        // enforcement-free tree.
+        if (ptHolders.length > 0 && results.every((r) => !r.success)) {
+          output.warn(
+            'Opt-out status could not be read for ANY member (RPC failure?) — the tree will '
+              + 'include members who may have opted out. Verify before proposing this distribution.'
+          );
+        }
       }
 
       const activeMembers = ptHolders.filter(
