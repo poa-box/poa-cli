@@ -93,6 +93,28 @@ export const createHandler = {
         ? (argv.hatIds as string).split(',').map(s => ethers.BigNumber.from(s.trim()))
         : [];
 
+      // Hat-restriction cap (audit L-xx): both voting contracts reject more than
+      // MAX_POLL_HATS restricted hats. Read the live constant — an older contract has no
+      // getter and no cap, so the check simply does not apply there.
+      if (hatIds.length > 0) {
+        try {
+          const hv = new ethers.Contract(
+            contractAddr, ['function MAX_POLL_HATS() view returns (uint16)'], ctx.provider
+          );
+          const cap = Number(await hv.MAX_POLL_HATS());
+          if (cap > 0 && hatIds.length > cap) {
+            throw new CliError(
+              `${hatIds.length} restricted hats supplied but the contract allows at most ${cap}.`,
+              EXIT.USAGE,
+              'Reduce --hat-ids, or omit it entirely to let every eligible member vote.'
+            );
+          }
+        } catch (err: any) {
+          if (err instanceof CliError) throw err;
+          output.debug(`poll-hat cap check skipped (${err?.message || err})`);
+        }
+      }
+
       // Build execution batches: calls go to option 0, other options get empty batches
       let calls: ExecutionCallInput[] | null = null;
       const batches: any[][] = [];

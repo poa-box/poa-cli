@@ -247,6 +247,24 @@
   },
   {
     "type": "function",
+    "name": "clearEmailVerified",
+    "inputs": [
+      {
+        "name": "wearer",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "hatId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "clearWearerEligibility",
     "inputs": [
       {
@@ -837,6 +855,30 @@
   },
   {
     "type": "function",
+    "name": "isEmailVerified",
+    "inputs": [
+      {
+        "name": "wearer",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "hatId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isVouchingEnabled",
     "inputs": [
       {
@@ -1010,6 +1052,24 @@
         "name": "hatId",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setEmailVerified",
+    "inputs": [
+      {
+        "name": "wearer",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "hatIds",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
       }
     ],
     "outputs": [],
@@ -1389,6 +1449,56 @@
       },
       {
         "name": "hatsContract",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EmailVerifiedCleared",
+    "inputs": [
+      {
+        "name": "wearer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "hatId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "admin",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EmailVerifiedSet",
+    "inputs": [
+      {
+        "name": "wearer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "hatId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "verifier",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -1826,6 +1936,11 @@
   },
   {
     "type": "error",
+    "name": "DefaultEligibilityConflictsWithVouch",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "HasNotVouched",
     "inputs": []
   },
@@ -1877,6 +1992,11 @@
   {
     "type": "error",
     "name": "NoActiveApplication",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotAuthorizedEmailVerifier",
     "inputs": []
   },
   {

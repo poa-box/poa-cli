@@ -1,9 +1,12 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
+import { resolveIdentityAddress } from '../../lib/signer';
 import { ethers } from 'ethers';
-import { query } from '../../lib/subgraph';
+import { queryWithFieldFallback } from '../../lib/subgraph';
 import { resolveOrgId } from '../../lib/resolve';
 import { resolveNetworkConfig } from '../../config/networks';
-import { FETCH_VOTING_DATA } from '../../queries/voting';
+import { FETCH_VOTING_DATA, FETCH_VOTING_DATA_LEGACY } from '../../queries/voting';
+import { CliError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 import HybridVotingAbi from '../../abi/HybridVotingNew.json';
 import DirectDemocracyVotingAbi from '../../abi/DirectDemocracyVotingNew.json';
@@ -107,18 +110,24 @@ export const listHandler = {
       // Resolve signer address if --unvoted
       let myAddress: string | undefined;
       if (argv.unvoted) {
-        const key = argv.privateKey as string || process.env.POP_PRIVATE_KEY;
-        if (!key) {
+        // Identity-scoped READ: needs an address, never a signing key.
+        try {
+          myAddress = resolveIdentityAddress(argv, { required: true, purpose: '--unvoted' })!.toLowerCase();
+        } catch (e: any) {
           spin.stop();
-          output.error('--unvoted requires a private key (set POP_PRIVATE_KEY or pass --private-key)');
+          output.error(e.message);
           process.exit(1);
           return;
         }
-        myAddress = new ethers.Wallet(key).address.toLowerCase();
       }
 
       const orgId = await resolveOrgId(argv.org, argv.chain);
-      const result = await query<any>(FETCH_VOTING_DATA, { orgId }, argv.chain);
+      // A GraphQL document validates as a whole, so one unknown field fails the entire query.
+      // Fall back to the pre-#195 field set rather than hard-failing (attribution columns render as '-' on the legacy tier).
+      const { data: result } = await queryWithFieldFallback<any>([
+        { query: FETCH_VOTING_DATA, variables: { orgId } },
+        { query: FETCH_VOTING_DATA_LEGACY, variables: { orgId } },
+      ], { chainId: argv.chain });
       const org = result.organization;
 
       // Fetch chain block.timestamp as the relative-time reference. Using
@@ -143,6 +152,23 @@ export const listHandler = {
 
       const rows: string[][] = [];
       let lagWarnings: Array<{ id: string; type: string; chainState: string }> = [];
+
+      /**
+       * Who created a proposal, as an IDENTITY or '-' — deliberately never an address.
+       *
+       * The subgraph derives `proposer` from transaction.from, which under POP's sponsored
+       * ERC-4337 path is the BUNDLER, not the author (live Gnosis data: 3 of the 12 most recent
+       * proposals are 0x4337-prefixed bundler addresses, and 11 of 12 resolve to no username).
+       * Rendering that address here would assert a false author, so this stops at the username
+       * exactly like the frontend (VotingContext.js) and `pop vote results`.
+       *
+       * '-' therefore means "no registered identity for the sender" — and, when it is '-' for
+       * EVERY row, that the legacy query tier served the request and stripped the fields.
+       * `pop vote results --proposal N --json` exposes the raw proposerAddress when needed.
+       */
+      function proposerLabel(p: any): string {
+        return p.proposerUsername || p.creatorUsername || '-';
+      }
 
       // Helper: check if address has voted on a proposal
       function hasVoted(proposal: any): boolean {
@@ -206,6 +232,7 @@ export const listHandler = {
             p.proposalId,
             'hybrid',
             p.title || p.metadata?.description?.substring(0, 40) || 'Untitled',
+            proposerLabel(p),
             displayStatus,
             `${p.numOptions}`,
             `${voteCount}`,
@@ -261,6 +288,7 @@ export const listHandler = {
             p.proposalId,
             'dd',
             p.title || p.metadata?.description?.substring(0, 40) || 'Untitled',
+            proposerLabel(p),
             ddDisplayStatus,
             `${p.numOptions}`,
             `${voteCount}`,
@@ -278,7 +306,7 @@ export const listHandler = {
       }
 
       output.table(
-        ['ID', 'Type', 'Title', 'Status', 'Options', 'Votes', 'Winner', 'Ends'],
+        ['ID', 'Type', 'Title', 'By', 'Status', 'Options', 'Votes', 'Winner', 'Ends'],
         rows
       );
 
@@ -305,6 +333,33 @@ export const listHandler = {
           for (const line of configLines) console.log(`  ${line}`);
         }
 
+        // Voting-class drift. Each proposal snapshots the HybridVoting classVersion it was
+        // created under (subgraph #195), so a live config change mid-flight means the shown
+        // threshold/quorum line is NOT the rule those proposals will be tallied against.
+        const liveClassVersion = org.hybridVoting?.classVersion;
+        if (liveClassVersion != null && (argv.type === 'all' || argv.type === 'hybrid')) {
+          // Must apply the SAME filters the table above used, or the warning counts proposals
+          // the operator cannot see (e.g. `--status Executed` reporting on Active ones).
+          const stale = (org.hybridVoting?.proposals || []).filter(
+            (p: any) => p.status === 'Active'
+              && !(argv.status && p.status !== argv.status)
+              && !(argv.unvoted && hasVoted(p))
+              && p.classesVersion != null
+              && String(p.classesVersion) !== String(liveClassVersion)
+          );
+          if (stale.length > 0) {
+            // classVersion is a BLOCK NUMBER, and stale proposals nearly always share one, so
+            // dedupe rather than repeating the same 8-digit value per proposal.
+            const versions = [...new Set(stale.map((p: any) => String(p.classesVersion)))];
+            console.log(
+              `\n  ⚠️  ${stale.length} active proposal(s) were created under an older voting-class `
+              + `config (v${versions.join(', v')} vs live v${liveClassVersion}).`
+            );
+            console.log('     Their class weights/strategies are the ones in force at creation.');
+            console.log('     (Support threshold and quorum are separate live values, not versioned by this.)');
+          }
+        }
+
         const refIso = new Date(chainNow * 1000).toISOString();
         console.log(`\n  Chain time: ${refIso} (block.timestamp)`);
 
@@ -323,8 +378,12 @@ export const listHandler = {
       }
     } catch (err: any) {
       spin.stop();
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
       output.error(err.message);
-      process.exit(1);
+      process.exit(EXIT.USAGE);
     }
   },
 };

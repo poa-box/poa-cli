@@ -25,15 +25,12 @@ const RUNTIME_GENERATED = new Set<string>([
 ]);
 
 /**
- * TODO(D2+D3 docs restructure): fix or restore these targets, then delete
- * this list. docs/cross-chain-agent-deployment.md was committed on
- * agent/sprint-3 (b00624e) but never merged to main, so two links in
- * docs/agents/brain-layer-setup.md dangle on this branch. Warned, not failed.
+ * Targets known to be missing, warned instead of failed. Empty since the
+ * cross-chain-agent-deployment links were removed from brain-layer-setup.md
+ * (the doc only ever existed on agent/sprint-3); keep the mechanism for the
+ * next restructure.
  */
-const KNOWN_MISSING_LINK_TARGETS = new Set<string>([
-  // Only exists on agent/sprint-3; referenced by agent-ops runbooks.
-  'docs/agents/cross-chain-agent-deployment.md',
-]);
+const KNOWN_MISSING_LINK_TARGETS = new Set<string>([]);
 
 /** Generated/historical data that must not gate CI (mirror of the spec's exclude list). */
 const SCAN_EXCLUDES: RegExp[] = [
@@ -150,11 +147,19 @@ function checkDocPathReferences(files: string[]): Problem[] {
 
 function main(): void {
   const mdFiles: string[] = [];
-  for (const name of ['README.md', 'ABOUT.md', 'CONTRIBUTING.md', path.join('reports', 'README.md')]) {
+  for (const name of [
+    'README.md', 'ABOUT.md', 'CONTRIBUTING.md', 'AGENTS.md',
+    path.join('reports', 'README.md'),
+    path.join('packages', 'agent', 'README.md'),
+    path.join('packages', 'agent', 'CLAUDE.md'),
+  ]) {
     const full = path.join(ROOT, name);
     if (fs.existsSync(full)) mdFiles.push(full);
   }
   mdFiles.push(...walk(path.join(ROOT, 'docs'), '.md'));
+  // The agent package's docs moved here in the @poa/cli / @poa/agent split —
+  // they broke silently because this scan did not follow them.
+  mdFiles.push(...walk(path.join(ROOT, 'packages', 'agent', 'docs'), '.md'));
 
   const codeFiles: string[] = [
     ...walk(path.join(ROOT, 'src'), '.ts'),

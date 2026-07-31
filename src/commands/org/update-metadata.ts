@@ -16,7 +16,8 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
-import { pinJson, pinFile } from '../../lib/ipfs';
+import { ethers } from 'ethers';
+import { pinJson, pinFile, fetchJson } from '../../lib/ipfs';
 import { stringToBytes, ipfsCidToBytes32 } from '../../lib/encoding';
 import { query } from '../../lib/subgraph';
 import { getWriteContext, confirmWrite, finishWrite } from '../../lib/command';
@@ -83,10 +84,44 @@ export const updateMetadataHandler = {
         throw new CliError('Could not resolve OrgRegistry address from subgraph', EXIT.INFRA);
       }
 
-      // Fetch existing metadata to preserve fields not being updated
+      // Fetch existing metadata to preserve fields not being updated.
       const existing = await query<{ organization: any }>(FETCH_ORG_FULL_DATA, { orgId: ctx.orgId }, argv.chain);
-      const currentMeta = existing.organization?.metadata || {};
-      const currentName = existing.organization?.name || '';
+      if (!existing.organization) {
+        throw new CliError(
+          `Organization ${ctx.orgId} is not indexed on this chain.`,
+          EXIT.INFRA,
+          'This write overwrites the org name and metadata wholesale; refusing to send it against '
+            + 'an unknown org would otherwise blank both. Check --chain, or retry once indexed.'
+        );
+      }
+      const subgraphMeta = existing.organization.metadata || {};
+      const currentName = existing.organization.name || '';
+      const currentMetadataHash = existing.organization.metadataHash;
+
+      // The RAW IPFS doc — not the subgraph's typed projection — is the merge base.
+      //
+      // updateOrgMetaAsAdmin replaces the whole metadata pointer, so any key absent from what we
+      // re-pin is destroyed. The subgraph entity only carries the fields schema.graphql declares,
+      // so merging over it silently drops everything else the org stores — including
+      // `zkEmailAllowlist` (the staged {cid, root, entryCount} the web settings editor writes and
+      // reads back). The frontend avoids this by spreading the fetched doc; do the same, so this
+      // command is robust to keys the CLI has never heard of.
+      let rawMeta: any = null;
+      if (currentMetadataHash && currentMetadataHash !== ethers.constants.HashZero) {
+        spin.text = 'Fetching current metadata from IPFS...';
+        try {
+          rawMeta = await fetchJson<any>(currentMetadataHash);
+        } catch { /* handled below */ }
+      }
+      if (!rawMeta && Object.keys(subgraphMeta).length > 0) {
+        throw new CliError(
+          'Could not fetch the org\'s current metadata from IPFS, so unknown fields cannot be preserved.',
+          EXIT.INFRA,
+          'This write is a full overwrite — proceeding would drop any metadata key the CLI does not '
+            + 'model. Retry once IPFS responds.'
+        );
+      }
+      const currentMeta: any = rawMeta ?? subgraphMeta;
 
       // Upload logo to IPFS if provided
       let logoCid: string | null = null;
@@ -107,16 +142,33 @@ export const updateMetadataHandler = {
         links = links.map((l: any, i: number) => ({ ...l, index: i }));
       }
 
-      // Build metadata JSON — merge provided flags over existing values.
-      // Key order MUST match the frontend for subgraph/UI compatibility.
+      // Build metadata JSON — spread the fetched doc, then override only what was passed.
+      //
+      // Spreading first is what makes this robust: unknown keys survive, and re-assigning an
+      // existing key keeps its original position, so a doc written by the frontend retains the
+      // frontend's key order (the subgraph/UI compatibility rule in CLAUDE.md). The explicit
+      // keys below then pin the canonical order for a doc that lacks them entirely.
       const metadata: any = {
+        ...currentMeta,
         description: argv.description !== undefined ? argv.description : (currentMeta.description || ''),
         links,
         template: currentMeta.template || 'default',
         logo: logoCid || currentMeta.logo || null,
         backgroundColor: argv.backgroundColor !== undefined ? argv.backgroundColor : (currentMeta.backgroundColor || null),
         hideTreasury: argv.hideTreasury !== undefined ? argv.hideTreasury : (currentMeta.hideTreasury || false),
+        useTokenSymbol: currentMeta.useTokenSymbol === true,
+        taskPayoutHoursOnly: currentMeta.taskPayoutHoursOnly === true,
+        // BigDecimal arrives from the SUBGRAPH as a STRING ("12.5") while the raw IPFS doc holds
+        // a number. The metadata handler only reads this key when it is JSONValueKind.NUMBER, so
+        // echoing a string back would silently drop the rate. Coerce whichever form we got.
+        taskPayoutHourlyRate: currentMeta.taskPayoutHourlyRate != null
+          && Number.isFinite(Number(currentMeta.taskPayoutHourlyRate))
+          ? Number(currentMeta.taskPayoutHourlyRate)
+          : null,
       };
+      // Subgraph-entity bookkeeping that is not part of the IPFS document. Only reachable when
+      // the IPFS fetch was skipped because the org has no metadata pointer yet.
+      for (const k of ['id', 'indexedAt', 'organization', '__typename']) delete metadata[k];
 
       // If --name not provided, keep the current name (full-overwrite write).
       const nameToSend = argv.name || currentName;

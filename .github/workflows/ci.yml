@@ -25,6 +25,9 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: yarn
+          cache-dependency-path: |
+            yarn.lock
+            packages/agent/yarn.lock
 
       - name: Install dependencies
         run: yarn install --frozen-lockfile
@@ -32,8 +35,26 @@ jobs:
       - name: Build (tsc)
         run: yarn build
 
+      # The agent package must exist BEFORE the root suite runs:
+      # cli-agent-surface.test.ts spawns packages/agent/dist/pop-agent.js.
+      - name: Agent package — install (links @poa/cli)
+        run: yarn --cwd packages/agent install --frozen-lockfile
+
+      - name: Agent package — build
+        run: yarn --cwd packages/agent build
+
       - name: Test (vitest)
         run: yarn test
 
       - name: Docs (generated reference + link check)
         run: yarn docs:check
+
+      - name: Agent package — test
+        run: yarn --cwd packages/agent test
+
+      - name: Guard — agent build must not emit into src/
+        run: |
+          strays=$(find src \( -name '*.js' -o -name '*.d.ts' \) | wc -l)
+          if [ "$strays" -ne 0 ]; then
+            echo "compiled artifacts leaked into src/ — they shadow .ts at resolve time"; exit 1
+          fi

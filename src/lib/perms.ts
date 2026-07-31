@@ -101,3 +101,28 @@ export function describeMask(mask: number): string[] {
   }
   return sentences;
 }
+
+/**
+ * EligibilityModule vouch-config flag bits (EligibilityModule.sol:156-157).
+ * Packed into the `flags` byte of the VouchConfig tuple returned by getVouchConfig.
+ */
+export const VOUCH_FLAG_ENABLED = 0x01;
+export const VOUCH_FLAG_COMBINE_HIERARCHY = 0x02;
+
+/**
+ * Would enabling vouching and default-eligibility on the same hat conflict?
+ *
+ * Audit M-03 made these mutually exclusive in BOTH directions: a hat that everyone is eligible
+ * for by default makes a vouch quorum a no-op, so the contract reverts
+ * DefaultEligibilityConflictsWithVouch. The guard only fires when vouching is enabled AND
+ * combineWithHierarchy is set — vouching alone, or without combine, is fine.
+ */
+export function vouchConflictsWithDefaultEligibility(
+  vouchFlags: number,
+  vouchQuorum: number,
+  defaultEligible: boolean
+): boolean {
+  const enabled = (vouchFlags & VOUCH_FLAG_ENABLED) !== 0 && vouchQuorum > 0;
+  const combine = (vouchFlags & VOUCH_FLAG_COMBINE_HIERARCHY) !== 0;
+  return enabled && combine && defaultEligible;
+}

@@ -17,9 +17,9 @@ Command reference generated from the yargs command tree. Regenerate with `yarn d
 | `treasury` | Treasury & distributions | 14 | [treasury.md](treasury.md) |
 | `paymaster` | Gas sponsorship (ERC-4337) | 3 | [paymaster.md](paymaster.md) |
 | `role` | Role applications | 6 | [role.md](role.md) |
+| `zkemail` | ZK Email role invites (allowlists) | 6 | [zkemail.md](zkemail.md) |
 | `config` | View and validate configuration | 2 | [config.md](config.md) |
-| `agent` | Agent operations & monitoring | 10 | [agent.md](agent.md) |
-| `brain` | P2P CRDT brain layer (live-sync knowledge) | 25 | [brain.md](brain.md) |
+| `mcp` | Serve the CLI as an MCP server for AI integrations | 1 | [mcp.md](mcp.md) |
 
 ## Top-level commands
 
@@ -51,6 +51,7 @@ Available on every command:
 - `--chain` — Chain ID override (number)
 - `--rpc` — RPC URL override (string)
 - `--json` — Output JSON for machine consumption (boolean, default: false)
+- `--address` — Observe as this address for identity-scoped reads (or set POP_ADDRESS) — no key needed (string)
 - `--private-key` — Private key (hex) (string)
 - `--dry-run` — Simulate without sending transactions (boolean, default: false)
 - `--yes`, `-y` — Skip confirmations (boolean, default: false)

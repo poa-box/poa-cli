@@ -35,6 +35,37 @@ function expectSigs(abiName: string, expected: string[]) {
 }
 
 describe('ABI sync canary (contracts origin/main)', () => {
+  /**
+   * ethers v5 writes "duplicate definition - X()" to STDOUT (not stderr) when an ABI carries
+   * two fragments with the same signature, which corrupts any --json output the command then
+   * prints. DirectDemocracyVotingNew.json shipped with a duplicate LengthMismatch() and broke
+   * `pop vote list --json`; scripts/extract-abis.mjs now dedupes, but only on `yarn sync-abis`,
+   * so a hand-edit or merge could reintroduce it. Lock the invariant here.
+   */
+  it('no ABI file contains duplicate fragment signatures', () => {
+    // Recurse: src/abi/external/* and ERC20.json are hand-maintained and never pass through
+    // scripts/extract-abis.mjs, so the generator's dedupe does not protect them.
+    const abiFiles: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        if (e.isDirectory()) walk(path.join(dir, e.name));
+        else if (e.name.endsWith('.json')) abiFiles.push(path.join(dir, e.name));
+      }
+    };
+    walk(ABI_DIR);
+    expect(abiFiles.length).toBeGreaterThan(0);
+
+    for (const file of abiFiles) {
+      const abi = JSON.parse(readFileSync(file, 'utf-8'));
+      if (!Array.isArray(abi)) continue;
+      const sigs = abi
+        .filter((i: any) => i.type && i.name)
+        .map((i: any) => `${i.type} ${i.name}(${(i.inputs || []).map((x: any) => x.type).join(',')})`);
+      const dupes = [...new Set(sigs.filter((s2, i) => sigs.indexOf(s2) !== i))];
+      expect(dupes, `${path.relative(ABI_DIR, file)} has duplicate fragments: ${dupes.join('; ')}`).toEqual([]);
+    }
+  });
+
   it('every ABI file parses as a bare array', () => {
     for (const file of readdirSync(ABI_DIR).filter((f) => f.endsWith('.json'))) {
       const parsed = JSON.parse(readFileSync(path.join(ABI_DIR, file), 'utf-8'));

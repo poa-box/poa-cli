@@ -4,12 +4,26 @@
  * The PaymasterHub is a singleton shared across all orgs (one proxy per
  * chain), so its address comes from the infrastructure query, not the org's
  * module list.
+ *
+ * Two ways to read an org's paymaster config, and the difference matters:
+ *
+ *   readPaymasterOrgConfig()               — authoritative eth_call. Use it
+ *     wherever the answer decides whether a transaction gets broadcast
+ *     (deposit's OrgNotRegistered gate). Subgraph lag there means knowingly
+ *     sending a doomed tx.
+ *   readPaymasterOrgConfigPreferSubgraph() — subgraph first, but ONLY trusts a
+ *     POSITIVE "registered" answer; a negative one is always re-confirmed on
+ *     chain before anything is written. The subgraph can lag behind a fresh
+ *     registration, it can never invent one, so a positive is safe to trust and
+ *     a negative is not.
  */
 
 import { ethers } from 'ethers';
-import { query } from '../../lib/subgraph';
+import { query, queryWithFieldFallback } from '../../lib/subgraph';
 import { FETCH_INFRASTRUCTURE_ADDRESSES } from '../../queries/infrastructure';
 import type { InfrastructureAddresses } from '../../queries/infrastructure';
+import { FETCH_PAYMASTER_STATE_TIERS } from '../../queries/paymaster';
+import type { PaymasterStateResponse } from '../../queries/paymaster';
 import { createReadContract } from '../../lib/contracts';
 import { PreconditionError } from '../../lib/errors';
 
@@ -41,9 +55,176 @@ export interface PaymasterOrgConfig {
   registered: boolean;
 }
 
+/** Fee caps in raw contract units (wei per gas / gas units). */
+export interface PaymasterFeeCaps {
+  maxFeePerGas: ethers.BigNumber;
+  maxPriorityFeePerGas: ethers.BigNumber;
+  maxCallGas: number;
+  maxVerificationGas: number;
+  maxPreVerificationGas: number;
+}
+
+/** One budget row as the subgraph has it. `totalUsed` is null on the legacy tier. */
+export interface PaymasterBudgetRecord {
+  subjectKey: string;
+  capPerEpoch: ethers.BigNumber;
+  usedInEpoch: ethers.BigNumber;
+  epochLen: number;
+  epochStart: number;
+  totalUsed: ethers.BigNumber | null;
+}
+
+export interface PaymasterSubgraphState {
+  /** Hub address the indexer knows about — cross-check before trusting the rest. */
+  hubAddress: string | null;
+  /** Checksummed to match what ENTRY_POINT() would have returned. */
+  entryPoint: string | null;
+  orgConfig: PaymasterOrgConfig | null;
+  /**
+   * All-zero when the org row exists but has no PaymasterFeeCaps edge — that is
+   * the contract's "never configured" default, verified against getFeeCaps() on
+   * five orgs across both live deployments. Null only when the org row itself is
+   * missing, in which case the caller must fall back to RPC.
+   */
+  feeCaps: PaymasterFeeCaps | null;
+  /** Null (not empty) when the org row is missing, so "no budgets" stays distinguishable. */
+  budgets: PaymasterBudgetRecord[] | null;
+}
+
+const EMPTY_STATE: PaymasterSubgraphState = {
+  hubAddress: null,
+  entryPoint: null,
+  orgConfig: null,
+  feeCaps: null,
+  budgets: null,
+};
+
+const ZERO_FEE_CAPS: PaymasterFeeCaps = {
+  maxFeePerGas: ethers.BigNumber.from(0),
+  maxPriorityFeePerGas: ethers.BigNumber.from(0),
+  maxCallGas: 0,
+  maxVerificationGas: 0,
+  maxPreVerificationGas: 0,
+};
+
+/**
+ * Read the hub state the subgraph can serve accurately: the immutable
+ * ENTRY_POINT, the org's OrgConfig, its fee caps and ALL of its budgets.
+ *
+ * Never throws — every failure (unreachable subgraph, chain with no deployment,
+ * unindexed org) degrades to nulls so the caller falls back to eth_calls.
+ *
+ * Financials and the solidarity fund are deliberately NOT here; see the header
+ * of src/queries/paymaster.ts for the measurements that disqualified them.
+ */
+export async function fetchPaymasterSubgraphState(
+  orgId: string,
+  chainId?: number
+): Promise<PaymasterSubgraphState> {
+  let data: PaymasterStateResponse;
+  try {
+    const result = await queryWithFieldFallback<PaymasterStateResponse>(
+      FETCH_PAYMASTER_STATE_TIERS.map(q => ({ query: q, variables: { orgId: orgId.toLowerCase() } })),
+      { chainId }
+    );
+    data = result.data;
+  } catch {
+    return EMPTY_STATE;
+  }
+
+  const hub = data?.paymasterHubContracts?.[0];
+  const row = data?.paymasterOrgConfigs?.[0];
+
+  let entryPoint: string | null = null;
+  if (hub?.entryPoint) {
+    // The subgraph stores Bytes lowercased; ENTRY_POINT() returns a checksummed
+    // address. Re-checksum so --json output is byte-identical either way.
+    try {
+      const checksummed = ethers.utils.getAddress(hub.entryPoint);
+      // The zero address is a documented PLACEHOLDER, not an answer. The mapping
+      // seeds hub.entryPoint = Address.zero() in getOrCreateHub, and the deploy
+      // path only fills it via a try_ENTRY_POINT() call that falls back to zero
+      // (PaymasterInitialized fires before InfrastructureDeployed, so
+      // handlePaymasterInitialized never runs for the initial deploy).
+      //
+      // getAddress() happily accepts it, so without this guard a placeholder
+      // becomes a non-null `entryPoint` that status.ts then uses as an eth_call
+      // TARGET: balanceOf against address(0) returns '0x', decodeFunctionResult
+      // throws CALL_EXCEPTION and the whole command exits 1 instead of degrading.
+      // It would also publish a wrong address on the pinned --json `entryPoint`
+      // key. null makes status.ts fall back to the ENTRY_POINT() read it already
+      // implements.
+      entryPoint = checksummed === ethers.constants.AddressZero ? null : checksummed;
+    } catch {
+      entryPoint = null;
+    }
+  }
+
+  if (!row) {
+    return { ...EMPTY_STATE, hubAddress: hub?.id ?? null, entryPoint };
+  }
+
+  let orgConfig: PaymasterOrgConfig | null = null;
+  try {
+    const adminHatId = ethers.BigNumber.from(row.adminHatId);
+    orgConfig = {
+      adminHatId,
+      operatorHatId: ethers.BigNumber.from(row.operatorHatId),
+      paused: Boolean(row.isPaused),
+      registeredAt: Number(row.registeredAt ?? 0) || 0,
+      bannedFromSolidarity: Boolean(row.isBannedFromSolidarity),
+      // Derived exactly like PaymasterHub._registerOrg does it.
+      registered: !adminHatId.isZero(),
+    };
+  } catch {
+    return { ...EMPTY_STATE, hubAddress: hub?.id ?? null, entryPoint };
+  }
+
+  const feeCaps: PaymasterFeeCaps = row.feeCaps
+    ? {
+      maxFeePerGas: ethers.BigNumber.from(row.feeCaps.maxFeePerGas),
+      maxPriorityFeePerGas: ethers.BigNumber.from(row.feeCaps.maxPriorityFeePerGas),
+      maxCallGas: Number(row.feeCaps.maxCallGas ?? 0),
+      maxVerificationGas: Number(row.feeCaps.maxVerificationGas ?? 0),
+      maxPreVerificationGas: Number(row.feeCaps.maxPreVerificationGas ?? 0),
+    }
+    : ZERO_FEE_CAPS;
+
+  const budgets: PaymasterBudgetRecord[] = (row.budgets ?? []).map(b => ({
+    subjectKey: b.subjectKey,
+    capPerEpoch: ethers.BigNumber.from(b.capPerEpoch),
+    usedInEpoch: ethers.BigNumber.from(b.usedInEpoch),
+    epochLen: Number(b.epochLen ?? 0),
+    epochStart: Number(b.epochStart ?? 0),
+    totalUsed: b.totalUsed !== undefined && b.totalUsed !== null
+      ? ethers.BigNumber.from(b.totalUsed)
+      : null,
+  }));
+
+  return {
+    hubAddress: row.paymasterHub?.id ?? hub?.id ?? null,
+    entryPoint,
+    orgConfig,
+    feeCaps,
+    budgets,
+  };
+}
+
+/**
+ * True when the indexed hub is the hub we independently resolved. A mismatch
+ * (redeployed hub the indexer has not caught up with, a hand-set
+ * POP_*_SUBGRAPH pointing at another network) means the org row describes a
+ * different contract, so the caller must ignore the whole state object.
+ */
+export function subgraphMatchesHub(state: PaymasterSubgraphState, hubAddress: string): boolean {
+  return !!state.hubAddress && state.hubAddress.toLowerCase() === hubAddress.toLowerCase();
+}
+
 /**
  * Read the hub's OrgConfig for an org. `registered` is derived the same way
  * the contract does it (adminHatId != 0 — see PaymasterHub._registerOrg).
+ *
+ * Authoritative eth_call. Keep using this one for revert-predicting gates.
  */
 export async function readPaymasterOrgConfig(
   provider: ethers.providers.Provider,
@@ -61,6 +242,28 @@ export async function readPaymasterOrgConfig(
     bannedFromSolidarity: Boolean(cfg.bannedFromSolidarity),
     registered: !adminHatId.isZero(),
   };
+}
+
+/**
+ * Registration read for callers that may go on to WRITE.
+ *
+ * Asymmetric on purpose: an indexed registration is trusted (saves the eth_call
+ * on the common "already registered" path), an absent one is re-read on chain
+ * before any decision is made. The subgraph only ever lags reality, so a
+ * false-negative is possible and a false-positive is not — re-confirming just
+ * the negative keeps revert prediction exactly as strong as pure RPC.
+ */
+export async function readPaymasterOrgConfigPreferSubgraph(
+  provider: ethers.providers.Provider,
+  hubAddress: string,
+  orgId: string,
+  chainId?: number
+): Promise<{ config: PaymasterOrgConfig; source: 'subgraph' | 'rpc' }> {
+  const state = await fetchPaymasterSubgraphState(orgId, chainId);
+  if (state.orgConfig?.registered && subgraphMatchesHub(state, hubAddress)) {
+    return { config: state.orgConfig, source: 'subgraph' };
+  }
+  return { config: await readPaymasterOrgConfig(provider, hubAddress, orgId), source: 'rpc' };
 }
 
 /** Subject key for a hat-scoped paymaster budget: the hat ID as bytes32. */

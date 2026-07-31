@@ -24,13 +24,6 @@ export const FETCH_PROJECTS_DATA = `
             cap
           }
           createdAt
-          rolePermissions {
-            hatId
-            canCreate
-            canClaim
-            canReview
-            canAssign
-          }
           tasks(first: 1000, orderBy: taskId, orderDirection: desc) {
             id
             taskId
@@ -43,8 +36,10 @@ export const FETCH_PROJECTS_DATA = `
               id
               name
               description
+              location
               difficulty
               estimatedHours
+              dueDate
               submission
               rejection
             }
@@ -58,6 +53,10 @@ export const FETCH_PROJECTS_DATA = `
             payout
             bountyToken
             bountyPayout
+            completionWindow
+            absoluteDeadline
+            claimDeadline
+            reclaimCount
             status
             assignee
             assigneeUsername
@@ -87,3 +86,15 @@ export const FETCH_PROJECTS_DATA = `
     }
   }
 `;
+
+/**
+ * FETCH_PROJECTS_DATA without the TaskManager v6 deadline fields (subgraph #192).
+ *
+ * A GraphQL document validates as a whole, so one unknown field fails the entire query. When
+ * this tier serves, callers fall back to reading deadlines on-chain via the task lens.
+ * Derived by deletion so the two cannot drift apart.
+ */
+export const FETCH_PROJECTS_DATA_LEGACY = FETCH_PROJECTS_DATA
+  .split('\n')
+  .filter((line) => !/^\s*(completionWindow|absoluteDeadline|claimDeadline|reclaimCount)\s*$/.test(line))
+  .join('\n');

@@ -37,7 +37,7 @@ Do **NOT** use this for:
 
 ## Why this exists
 
-From `agent/artifacts/research/single-whale-capture-cluster.md` v1.2:
+From `packages/agent/artifacts/research/single-whale-capture-cluster.md` v1.2:
 
 > Our top-voter-share numbers for Curve/Balancer/Frax/Convex/Beethoven X
 > come from Snapshot spaces. Snapshot captures off-chain **signaling** votes,

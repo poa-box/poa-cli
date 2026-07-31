@@ -313,3 +313,112 @@ describe('pop task create — v6/legacy signature selection', () => {
     expect(mocks.executeTx.mock.calls[1][3]).toEqual({ dryRun: true });
   });
 });
+
+/**
+ * Payout derivation vs the org payout config (FETCH_ORG_PAYOUT_CONFIG).
+ *
+ * The payout goes on-chain, so when --payout is omitted the command must
+ * DERIVE it from the org's convention — and REFUSE when that convention
+ * cannot be read (subgraph down, or org row not yet indexed). Deriving from
+ * the hard-coded default in those cases would silently misprice the task.
+ * An org row with NULL metadata is different: that org never configured
+ * pricing, and default pricing is correct. An explicit --payout never
+ * depends on the config, so a failed fetch must not block it.
+ *
+ * argv uses force:true + a 0x…(66) project ID, so the ONLY subgraph query
+ * the handler issues is the payout-config one — mocks.query targets it
+ * unambiguously.
+ */
+describe('pop task create — payout derivation vs org payout config', () => {
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new ExitError(code ?? 0);
+    }) as never);
+
+    mocks.createSigner.mockReturnValue({
+      signer: new ethers.VoidSigner(WALLET),
+      provider: {},
+      address: WALLET,
+      chainId: 11155111,
+    });
+    mocks.resolveOrgModules.mockResolvedValue({
+      orgId: ORG_ID,
+      taskManagerAddress: TM_ADDR,
+      participationTokenAddress: '',
+    });
+    mocks.pinJson.mockResolvedValue(CID);
+    mocks.checkIdempotencyCache.mockReturnValue(null);
+    mocks.detectTaskManagerFeatures.mockResolvedValue(V6_FEATURES);
+    mocks.executeTx.mockResolvedValue({
+      success: true,
+      txHash: '0xhash',
+      explorerUrl: 'https://explorer/tx/0xhash',
+      logs: [{ name: 'TaskCreated', args: { id: ethers.BigNumber.from(42) } }],
+    });
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+  });
+
+  it('--payout omitted + config query rejects: refuses (EXIT.PRECONDITION) BEFORE any pin or tx', async () => {
+    mocks.query.mockRejectedValue(new Error('subgraph unreachable'));
+
+    await expect(createHandler.handler(baseArgv({ payout: undefined }))).rejects.toBeInstanceOf(ExitError);
+
+    expect(exitSpy.mock.calls[0][0]).toBe(EXIT.PRECONDITION);
+    expect(output.error).toHaveBeenCalledWith(
+      expect.stringContaining('payout cannot be derived safely'),
+      expect.objectContaining({ suggestion: expect.stringContaining('--payout') }),
+    );
+    expect(mocks.executeTx).not.toHaveBeenCalled();
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+    expect(mocks.recordIdempotentResult).not.toHaveBeenCalled();
+  });
+
+  it('--payout omitted + query resolves {organization: null} (indexer lag): same refusal', async () => {
+    // A successful query with NO org row is indistinguishable from "no pricing
+    // configured" only by accident — it must be treated like a failed fetch.
+    mocks.query.mockResolvedValue({ organization: null });
+
+    await expect(createHandler.handler(baseArgv({ payout: undefined }))).rejects.toBeInstanceOf(ExitError);
+
+    expect(exitSpy.mock.calls[0][0]).toBe(EXIT.PRECONDITION);
+    expect(output.error).toHaveBeenCalledWith(
+      expect.stringContaining('payout cannot be derived safely'),
+      expect.objectContaining({ suggestion: expect.stringContaining('--payout') }),
+    );
+    expect(mocks.executeTx).not.toHaveBeenCalled();
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+  });
+
+  it('--payout omitted + org row present with null metadata: derives default pricing (medium/0h → 4)', async () => {
+    // A real org that never configured pricing — the LEGIT default case.
+    mocks.query.mockResolvedValue({ organization: { metadata: null, participationToken: null } });
+
+    await createHandler.handler(baseArgv({ payout: undefined }));
+
+    expect(mocks.executeTx).toHaveBeenCalledTimes(1);
+    const [, method, args] = mocks.executeTx.mock.calls[0];
+    expect(method).toBe('createTask');
+    // DIFFICULTY_CONFIG.medium: base 4 + 24 x 0h = 4 (frontend convention)
+    expect(args[0].toString()).toBe(ethers.utils.parseUnits('4', 18).toString());
+    expect(output.error).not.toHaveBeenCalled();
+    expect(output.success).toHaveBeenCalledWith('Task created', expect.objectContaining({ taskId: '42' }));
+  });
+
+  it('explicit --payout + config query rejects: proceeds — the config is advisory there', async () => {
+    mocks.query.mockRejectedValue(new Error('subgraph unreachable'));
+
+    await createHandler.handler(baseArgv({ payout: 5 }));
+
+    expect(mocks.executeTx).toHaveBeenCalledTimes(1);
+    const [, , args] = mocks.executeTx.mock.calls[0];
+    expect(args[0].toString()).toBe(ethers.utils.parseUnits('5', 18).toString());
+    expect(output.error).not.toHaveBeenCalled();
+    expect(output.success).toHaveBeenCalledWith('Task created', expect.objectContaining({ taskId: '42' }));
+  });
+});

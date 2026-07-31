@@ -16,6 +16,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
+  queryWithFieldFallback: vi.fn(),
   resolveOrgId: vi.fn(),
   resolveNetworkConfig: vi.fn(),
   detectTaskManagerFeatures: vi.fn(),
@@ -28,7 +29,10 @@ const mocks = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
-vi.mock('../../src/lib/subgraph', () => ({ query: mocks.query }));
+vi.mock('../../src/lib/subgraph', () => ({
+  query: mocks.query,
+  queryWithFieldFallback: mocks.queryWithFieldFallback,
+}));
 vi.mock('../../src/lib/resolve', () => ({
   resolveOrgId: mocks.resolveOrgId,
   resolveOrgModules: vi.fn(),
@@ -187,6 +191,12 @@ describe('pop task list — v6 deadline enrichment + filters', () => {
     mocks.isJsonMode.mockReturnValue(false);
     mocks.resolveOrgId.mockResolvedValue(ORG_ID);
     mocks.query.mockResolvedValue(subgraphFixture());
+    // Default to the LEGACY tier (index 1): a subgraph that predates the v6 deadline fields,
+    // which is what forces the on-chain lens path these tests exercise.
+    mocks.queryWithFieldFallback.mockImplementation(async () => ({
+      data: subgraphFixture(),
+      tierIndex: 1,
+    }));
     mocks.resolveNetworkConfig.mockReturnValue({ chainId: 100, resolvedRpc: 'http://127.0.0.1:1', resolvedSubgraph: 'http://127.0.0.1:2' });
     mocks.detectTaskManagerFeatures.mockResolvedValue(V6_FEATURES);
     mocks.enrichTasksWithDeadlines.mockResolvedValue(lensFixture());
@@ -194,6 +204,50 @@ describe('pop task list — v6 deadline enrichment + filters', () => {
 
   afterEach(() => {
     exitSpy.mockRestore();
+  });
+
+  it('indexed deadlines (subgraph-pop #192) are used directly, with NO on-chain lens call', async () => {
+    // The modern tier serves absoluteDeadline/claimDeadline/completionWindow per task, so the
+    // per-task multicall this command used to make on its hottest path must not run at all.
+    mocks.queryWithFieldFallback.mockImplementation(async () => {
+      const fixture = subgraphFixture();
+      const tasks = fixture.organization.taskManager.projects[0].tasks;
+      // #2 is a CLAIMED task whose claim deadline has already passed.
+      tasks[1].claimDeadline = String(NOW - HOUR);
+      tasks[1].absoluteDeadline = String(NOW - HOUR);
+      tasks[1].completionWindow = '3600';
+      // #3 is a CLAIMED task still comfortably on track.
+      tasks[2].claimDeadline = String(NOW + 30 * HOUR);
+      tasks[2].absoluteDeadline = String(NOW + 30 * HOUR);
+      tasks[2].completionWindow = '3600';
+      return { data: fixture, tierIndex: 0 };
+    });
+
+    await listHandler.handler(baseArgv());
+
+    expect(mocks.enrichTasksWithDeadlines).not.toHaveBeenCalled();
+
+    const [headers] = mocks.table.mock.calls[0];
+    expect(headers).toContain('Deadline');
+  });
+
+  it('an expired indexed claim still satisfies --claimable without any RPC', async () => {
+    mocks.queryWithFieldFallback.mockImplementation(async () => {
+      const fixture = subgraphFixture();
+      const tasks = fixture.organization.taskManager.projects[0].tasks;
+      tasks[1].claimDeadline = String(NOW - HOUR); // expired -> takeover-able
+      tasks[2].claimDeadline = String(NOW + 30 * HOUR); // on track -> excluded
+      return { data: fixture, tierIndex: 0 };
+    });
+
+    await listHandler.handler({ ...baseArgv(), claimable: true } as any);
+
+    expect(mocks.enrichTasksWithDeadlines).not.toHaveBeenCalled();
+    const [, rows] = mocks.table.mock.calls[0];
+    const ids = rows.map((r: string[]) => r[0]);
+    expect(ids).toContain('1'); // UNCLAIMED
+    expect(ids).toContain('2'); // CLAIMED but expired
+    expect(ids).not.toContain('3'); // CLAIMED, on track
   });
 
   it('v6 org: enriches non-terminal tasks only and renders Deadline + Age columns', async () => {

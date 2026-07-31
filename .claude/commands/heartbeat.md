@@ -7,7 +7,7 @@ rather than waiting for the scheduled loop.
 Steps:
 1. Check if CLI needs rebuilding (`find src/ -name '*.ts' -newer dist/index.js`). If yes, `yarn build`.
 2. Read identity: `~/.pop-agent/brain/Identity/who-i-am.md` and `~/.pop-agent/brain/Identity/philosophy.md`
-3. Read shared state: `agent/brain/Identity/how-i-think.md`, `agent/brain/Config/agent-config.json`
+3. Read shared state: `packages/agent/brain/Identity/how-i-think.md`, `packages/agent/brain/Config/agent-config.json`
 3b. Read live shared rules: `pop brain read --doc pop.brain.heuristics` — CRDT-propagated rules that override how-i-think.md. This is the PRIMARY source for shared heuristics between agents.
 4. Run `pop agent triage --json` — this is your prioritized action plan. It replaces
    the old separate observe queries. Follow the actions in priority order.

@@ -18,7 +18,7 @@ pop paymaster status [flags]
 
 ## pop paymaster deposit
 
-Fund an org's gas sponsorship balance (permissionless, one-way — no withdraw)
+Fund an org's gas sponsorship balance (permissionless; no withdraw on the deployed hub)
 
 ```text
 pop paymaster deposit [flags]
@@ -43,4 +43,4 @@ pop paymaster register [flags]
 | `--deposit` | string | no | - | Also deposit this amount (ether units) after registration via permissionless depositForOrg |
 | `--operator-hat` | string | no | - | Optional hat ID allowed to manage budgets/rules (0 = none) |
 
-_Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_
+_Global flags: --org, --chain, --rpc, --json, --address, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

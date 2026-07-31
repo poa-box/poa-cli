@@ -24,9 +24,9 @@ import { registerTokenCommands } from '../../src/commands/token';
 import { registerTreasuryCommands } from '../../src/commands/treasury';
 import { registerPaymasterCommands } from '../../src/commands/paymaster';
 import { registerRoleCommands } from '../../src/commands/role';
+import { registerZkEmailCommands } from '../../src/commands/zkemail';
 import { registerConfigCommands } from '../../src/commands/config';
-import { registerAgentCommands } from '../../src/commands/agent';
-import { registerBrainCommands } from '../../src/commands/brain';
+import { registerMcpCommands } from '../../src/commands/mcp/serve';
 import { initHandler } from '../../src/commands/init';
 
 export interface OptSpec {
@@ -74,6 +74,7 @@ export const GLOBAL_FLAGS: Record<string, OptSpec> = {
   chain: { name: 'chain', type: 'number', description: 'Chain ID override' },
   rpc: { name: 'rpc', type: 'string', description: 'RPC URL override' },
   json: { name: 'json', type: 'boolean', default: false, description: 'Output JSON for machine consumption' },
+  address: { name: 'address', type: 'string', description: 'Observe as this address for identity-scoped reads (or set POP_ADDRESS) — no key needed' },
   'private-key': { name: 'private-key', type: 'string', description: 'Private key (hex)' },
   'dry-run': { name: 'dry-run', type: 'boolean', default: false, description: 'Simulate without sending transactions' },
   yes: { name: 'yes', type: 'boolean', aliases: ['y'], default: false, description: 'Skip confirmations' },
@@ -95,9 +96,9 @@ const DOMAINS: Array<{ domain: string; description: string; register: (y: any) =
   { domain: 'treasury', description: 'Treasury & distributions', register: registerTreasuryCommands },
   { domain: 'paymaster', description: 'Gas sponsorship (ERC-4337)', register: registerPaymasterCommands },
   { domain: 'role', description: 'Role applications', register: registerRoleCommands },
+  { domain: 'zkemail', description: 'ZK Email role invites (allowlists)', register: registerZkEmailCommands },
   { domain: 'config', description: 'View and validate configuration', register: registerConfigCommands },
-  { domain: 'agent', description: 'Agent operations & monitoring', register: registerAgentCommands },
-  { domain: 'brain', description: 'P2P CRDT brain layer (live-sync knowledge)', register: registerBrainCommands },
+  { domain: 'mcp', description: 'Serve the CLI as an MCP server for AI integrations', register: registerMcpCommands },
 ];
 
 /**

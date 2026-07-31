@@ -1,0 +1,3660 @@
+{
+  "package": "@poa/cli",
+  "schemaVersion": 1,
+  "notes": [
+    "readOnly means \"cannot broadcast a transaction\". A readOnly command may still have sideEffects — ipfs-pin(--pin) publishes publicly and irreversibly when --pin is passed.",
+    "destructive commands require an explicit --yes (or POP_ASSUME_YES=1) in every non-interactive context; --json is never consent.",
+    "POP_READONLY=1 makes the process structurally unable to sign or pin. POP_ADDRESS/--address serves identity-scoped reads without a key.",
+    "The agent runtime commands (pop agent, pop brain) live in @poa/agent and are not covered here."
+  ],
+  "globalFlags": {
+    "org": {
+      "type": "string",
+      "description": "Organization ID or name (or set POP_DEFAULT_ORG)"
+    },
+    "chain": {
+      "type": "number",
+      "description": "Chain ID override"
+    },
+    "rpc": {
+      "type": "string",
+      "description": "RPC URL override"
+    },
+    "json": {
+      "type": "boolean",
+      "description": "Output JSON for machine consumption",
+      "default": false
+    },
+    "address": {
+      "type": "string",
+      "description": "Observe as this address for identity-scoped reads (or set POP_ADDRESS) — no key needed"
+    },
+    "private-key": {
+      "type": "string",
+      "description": "Private key (hex)"
+    },
+    "dry-run": {
+      "type": "boolean",
+      "description": "Simulate without sending transactions",
+      "default": false
+    },
+    "yes": {
+      "type": "boolean",
+      "description": "Skip confirmations",
+      "default": false,
+      "aliases": [
+        "y"
+      ]
+    },
+    "verbose": {
+      "type": "boolean",
+      "description": "Debug output",
+      "default": false,
+      "aliases": [
+        "v"
+      ]
+    },
+    "quiet": {
+      "type": "boolean",
+      "description": "Suppress non-essential output",
+      "default": false,
+      "aliases": [
+        "q"
+      ]
+    },
+    "preflight": {
+      "type": "boolean",
+      "description": "Run pre-flight checks before writes (--no-preflight to skip)",
+      "default": true
+    }
+  },
+  "commands": [
+    {
+      "name": "task create",
+      "kind": "command",
+      "description": "Create a new task",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "bounty-amount": {
+          "type": "number",
+          "description": "Bounty payout amount"
+        },
+        "bounty-token": {
+          "type": "string",
+          "description": "Bounty ERC20 token address"
+        },
+        "completion-window": {
+          "type": "string",
+          "description": "Time a claimer has to submit after claiming (v6 orgs only)"
+        },
+        "deadline": {
+          "type": "string",
+          "description": "Absolute claim deadline — no claims after this time (v6 orgs only)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Task description",
+          "required": true
+        },
+        "difficulty": {
+          "type": "string",
+          "description": "Difficulty (easy/medium/hard)",
+          "default": "medium"
+        },
+        "est-hours": {
+          "type": "number",
+          "description": "Estimated hours",
+          "default": 0
+        },
+        "force": {
+          "type": "boolean",
+          "description": "Skip duplicate check",
+          "default": false
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Task #369 (HB#213): explicit idempotency key. Two calls with the same orgId + this key within 15 minutes return the same taskId without re-submitting. Default: auto-derived from a hash of the full argv."
+        },
+        "location": {
+          "type": "string",
+          "description": "Location",
+          "default": ""
+        },
+        "name": {
+          "type": "string",
+          "description": "Task name",
+          "required": true
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit a new task.",
+          "default": false
+        },
+        "payout": {
+          "type": "number",
+          "description": "Payout amount. Omit to price the task the way the web app would, from the org's payout convention plus --difficulty/--est-hours"
+        },
+        "project": {
+          "type": "string",
+          "description": "Project ID",
+          "required": true
+        },
+        "requires-application": {
+          "type": "boolean",
+          "description": "Require applications",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "task create-batch",
+      "kind": "command",
+      "description": "Create tasks from JSONL file",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "completion-window": {
+          "type": "string",
+          "description": "Time a claimer has to submit after claiming (v6 orgs only; batch-wide default, rows may override)"
+        },
+        "continue-on-error": {
+          "type": "boolean",
+          "description": "Skip failed tasks instead of stopping (legacy orgs only — v6 batches are all-or-nothing)",
+          "default": false
+        },
+        "deadline": {
+          "type": "string",
+          "description": "Absolute claim deadline — no claims after this time (v6 orgs only; batch-wide default, rows may override)"
+        },
+        "file": {
+          "type": "string",
+          "description": "JSONL file (one task JSON per line)",
+          "required": true
+        },
+        "project": {
+          "type": "string",
+          "description": "Project ID (shared for all tasks)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task list",
+      "kind": "command",
+      "description": "List tasks",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "assignee": {
+          "type": "string",
+          "description": "Filter by assignee address"
+        },
+        "claimable": {
+          "type": "boolean",
+          "description": "Only tasks you could claim right now: unclaimed tasks plus claimed tasks whose deadline expired (v6 takeover)"
+        },
+        "expiring": {
+          "type": "string",
+          "description": "Only tasks whose governing deadline falls within this window (e.g. \"24h\", \"7d\"; default 24h)"
+        },
+        "fast": {
+          "type": "boolean",
+          "description": "Skip on-chain deadline enrichment (subgraph data only)",
+          "default": false
+        },
+        "for-review": {
+          "type": "boolean",
+          "description": "Shortcut for --status Submitted"
+        },
+        "limit": {
+          "type": "number",
+          "description": "Max results to show"
+        },
+        "mine": {
+          "type": "boolean",
+          "description": "Show only tasks assigned to me"
+        },
+        "open": {
+          "type": "boolean",
+          "description": "Shortcut for --status Open"
+        },
+        "project": {
+          "type": "string",
+          "description": "Filter by project ID"
+        },
+        "sort-by": {
+          "type": "string",
+          "description": "Sort field",
+          "default": "id",
+          "choices": [
+            "id",
+            "payout",
+            "status",
+            "created"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "description": "Filter by status (Open/Assigned/Submitted/Completed/Cancelled)"
+        }
+      }
+    },
+    {
+      "name": "task view",
+      "kind": "command",
+      "description": "View task details",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "task": {
+          "type": "string",
+          "description": "Task ID",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task claim",
+      "kind": "command",
+      "description": "Claim a task",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "idempotency-key": {
+          "type": "string",
+          "description": "Task #370 (HB#214): explicit idempotency key. Two claims for the same task within 15 minutes return the same result without re-submitting. Default: auto-derived from argv."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        },
+        "task": {
+          "type": "string",
+          "description": "Task ID",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task submit",
+      "kind": "command",
+      "description": "Submit work for a task",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "commit": {
+          "type": "boolean",
+          "description": "Task #355 (HB#185): after a successful submission, run git add + git commit on the files passed via --commit-files. The commit message references the task id and tx hash. Pre-commit hook failures are surfaced as warnings — the on-chain submission is the source of truth and is never rolled back.",
+          "default": false
+        },
+        "commit-files": {
+          "type": "string",
+          "description": "Comma-separated list of files to git add + commit when --commit is set. Required if --commit is true; ignored otherwise. Use specific paths only — never . or -A — to avoid sweeping in cross-agent in-flight work."
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Task #370 (HB#214): explicit idempotency key. Two submits of the same task within 15 minutes return the same result without re-submitting or re-pinning."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        },
+        "submission": {
+          "type": "string",
+          "description": "Submission text",
+          "required": true
+        },
+        "task": {
+          "type": "string",
+          "description": "Task ID",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task review",
+      "kind": "command",
+      "description": "Approve or reject a submitted task",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "action": {
+          "type": "string",
+          "description": "Approve or reject",
+          "choices": [
+            "approve",
+            "reject"
+          ],
+          "required": true
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Task #374 (HB#215): explicit idempotency key. Two reviews of the same task within 15 minutes return the same result without re-submitting."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        },
+        "reason": {
+          "type": "string",
+          "description": "Rejection reason (required for reject)"
+        },
+        "task": {
+          "type": "string",
+          "description": "Task ID",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task cancel",
+      "kind": "command",
+      "description": "Cancel an unclaimed task",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key. Two cancels of the same task within 15 minutes return the same result without re-submitting. Default: auto-derived from argv."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        },
+        "task": {
+          "type": "string",
+          "description": "Task ID",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task assign",
+      "kind": "command",
+      "description": "Assign a task to a user",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "assignee": {
+          "type": "string",
+          "description": "Address to assign to"
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key. Two assigns of the same task within 15 minutes return the same result without re-submitting. Default: auto-derived from argv."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        },
+        "task": {
+          "type": "string",
+          "description": "Task ID",
+          "required": true
+        },
+        "username": {
+          "type": "string",
+          "description": "Username to assign to (resolves to address)"
+        }
+      }
+    },
+    {
+      "name": "task apply",
+      "kind": "command",
+      "description": "Apply for a task",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "experience": {
+          "type": "string",
+          "description": "Relevant experience"
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key. Two applications for the same task within 15 minutes return the same result without re-submitting or re-pinning. Default: auto-derived from argv."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        },
+        "notes": {
+          "type": "string",
+          "description": "Application notes"
+        },
+        "task": {
+          "type": "string",
+          "description": "Task ID",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task approve-app",
+      "kind": "command",
+      "description": "Approve a task application",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "applicant": {
+          "type": "string",
+          "description": "Applicant address to approve",
+          "required": true
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key. Two approvals for the same task within 15 minutes return the same result without re-submitting. Default: auto-derived from argv."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        },
+        "task": {
+          "type": "string",
+          "description": "Task ID",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task stats",
+      "kind": "command",
+      "description": "Show per-member contribution analytics",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "task update",
+      "kind": "command",
+      "description": "Update task fields — read-then-merge full edit (payout, metadata, bounty, deadlines; v6)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "bounty-amount": {
+          "type": "number",
+          "description": "New bounty payout amount (0 clears)"
+        },
+        "bounty-token": {
+          "type": "string",
+          "description": "New bounty ERC20 token address (\"none\" clears the bounty)"
+        },
+        "completion-window": {
+          "type": "string",
+          "description": "New per-claim submission window, e.g. \"48h\" (\"0\" = none)"
+        },
+        "deadline": {
+          "type": "string",
+          "description": "New absolute claim deadline (\"0\" = none; a PAST value opens a claimed task to takeover)"
+        },
+        "description": {
+          "type": "string",
+          "description": "New task description (re-pins metadata)"
+        },
+        "name": {
+          "type": "string",
+          "description": "New task name (re-pins metadata)"
+        },
+        "payout": {
+          "type": "number",
+          "description": "New PT payout amount"
+        },
+        "task": {
+          "type": "string",
+          "description": "Task ID",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task edit-meta",
+      "kind": "command",
+      "description": "Edit only a task's name/description (post-claim safe; v5+)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "description": {
+          "type": "string",
+          "description": "New task description"
+        },
+        "name": {
+          "type": "string",
+          "description": "New task name"
+        },
+        "task": {
+          "type": "string",
+          "description": "Task ID",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task perms",
+      "kind": "group",
+      "description": "Show and manage task permission masks (show / set / propose-global)",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [
+        {
+          "name": "sub",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "options": {}
+    },
+    {
+      "name": "task perms show",
+      "kind": "command",
+      "description": "Show global + per-project task permission masks",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "project": {
+          "type": "string",
+          "description": "Also show this project's per-hat overrides (ID or name)"
+        }
+      }
+    },
+    {
+      "name": "task perms set",
+      "kind": "command",
+      "description": "Set a hat's permission mask on one project (direct tx; creator-hat/executor)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "hat": {
+          "type": "string",
+          "description": "Hat ID whose project mask to set",
+          "required": true
+        },
+        "perms": {
+          "type": "string",
+          "description": "Comma-separated permission list (create, claim, review, assign, self-review, budget, edit-meta, edit-full) or \"none\" to remove the override",
+          "required": true
+        },
+        "project": {
+          "type": "string",
+          "description": "Project ID (bytes32) or name",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task perms propose-global",
+      "kind": "command",
+      "description": "Propose an org-wide permission mask change (governance vote)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Vote duration in minutes",
+          "default": 60
+        },
+        "hat": {
+          "type": "string",
+          "description": "Hat ID whose GLOBAL mask to set",
+          "required": true
+        },
+        "perms": {
+          "type": "string",
+          "description": "Comma-separated permission list (create, claim, review, assign, self-review, budget, edit-meta, edit-full) or \"none\" to revoke",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task folders",
+      "kind": "group",
+      "description": "Show and update the org folder-tree root (show / set)",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [
+        {
+          "name": "sub",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "options": {}
+    },
+    {
+      "name": "task folders show",
+      "kind": "command",
+      "description": "Show the org folder-tree root (bytes32 + CIDv0)",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "task folders set",
+      "kind": "command",
+      "description": "Publish a new folder-tree root (CAS-guarded; organizer hat/executor)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "new-root": {
+          "type": "string",
+          "description": "New folder-tree root: Qm… CIDv0, 0x-prefixed bytes32, or \"clear\"",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "project create",
+      "kind": "command",
+      "description": "Create a new project (direct tx; creator-hat/executor)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "assign-hats": {
+          "type": "string",
+          "description": "Comma-separated hat IDs for assign permission"
+        },
+        "bounty-caps": {
+          "type": "string",
+          "description": "Comma-separated bounty caps (wei)"
+        },
+        "bounty-tokens": {
+          "type": "string",
+          "description": "Comma-separated bounty token addresses"
+        },
+        "cap": {
+          "type": "number",
+          "description": "PT cap (0 = unlimited)",
+          "default": 0
+        },
+        "claim-hats": {
+          "type": "string",
+          "description": "Comma-separated hat IDs for claim permission"
+        },
+        "create-hats": {
+          "type": "string",
+          "description": "Comma-separated hat IDs for create permission"
+        },
+        "description": {
+          "type": "string",
+          "description": "Project description"
+        },
+        "managers": {
+          "type": "string",
+          "description": "Comma-separated manager addresses"
+        },
+        "name": {
+          "type": "string",
+          "description": "Project name",
+          "required": true
+        },
+        "review-hats": {
+          "type": "string",
+          "description": "Comma-separated hat IDs for review permission"
+        }
+      }
+    },
+    {
+      "name": "project propose",
+      "kind": "command",
+      "description": "Propose a new project via governance vote",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "assign-hats": {
+          "type": "string",
+          "description": "Hat IDs for task assign permission"
+        },
+        "cap": {
+          "type": "number",
+          "description": "PT budget cap (0 = unlimited)",
+          "default": 0
+        },
+        "claim-hats": {
+          "type": "string",
+          "description": "Hat IDs for task claim permission"
+        },
+        "create-hats": {
+          "type": "string",
+          "description": "Hat IDs for task creation permission"
+        },
+        "description": {
+          "type": "string",
+          "description": "Project description"
+        },
+        "duration": {
+          "type": "number",
+          "description": "Vote duration in minutes (default 24h)",
+          "default": 1440
+        },
+        "name": {
+          "type": "string",
+          "description": "Project name",
+          "required": true
+        },
+        "review-hats": {
+          "type": "string",
+          "description": "Hat IDs for task review permission"
+        }
+      }
+    },
+    {
+      "name": "project list",
+      "kind": "command",
+      "description": "List projects",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "project delete",
+      "kind": "command",
+      "description": "Delete a project (destructive; creator-hat/executor)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "project": {
+          "type": "string",
+          "description": "Project ID (bytes32 or decimal) or name",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "org list",
+      "kind": "command",
+      "description": "List organizations",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "chain": {
+          "type": "number",
+          "description": "Chain ID (omit to search all chains)"
+        },
+        "member": {
+          "type": "string",
+          "description": "Filter by member address"
+        }
+      }
+    },
+    {
+      "name": "org view",
+      "kind": "command",
+      "description": "View organization details",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "org status",
+      "kind": "command",
+      "description": "Quick org health summary",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "fast": {
+          "type": "boolean",
+          "description": "Skip the on-chain module version check (subgraph summary only)",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "org activity",
+      "kind": "command",
+      "description": "Recent org activity (agent heartbeat)",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "since": {
+          "type": "number",
+          "description": "Unix timestamp — show changes since this time (default: 30 minutes ago)"
+        }
+      }
+    },
+    {
+      "name": "org update-metadata",
+      "kind": "command",
+      "description": "Update organization metadata",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "background-color": {
+          "type": "string",
+          "description": "Background color hex"
+        },
+        "description": {
+          "type": "string",
+          "description": "Org description"
+        },
+        "hide-treasury": {
+          "type": "boolean",
+          "description": "Hide treasury in UI"
+        },
+        "links": {
+          "type": "string",
+          "description": "JSON array of {name, url} links"
+        },
+        "logo": {
+          "type": "string",
+          "description": "Path to logo image file"
+        },
+        "name": {
+          "type": "string",
+          "description": "New org name"
+        }
+      }
+    },
+    {
+      "name": "org set-metadata-admin",
+      "kind": "command",
+      "description": "Propose changing the org metadata-admin hat (governance vote)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Vote duration in minutes",
+          "default": 60
+        },
+        "hat": {
+          "type": "string",
+          "description": "Hat ID that may edit org metadata directly (0 = clear; topHat fallback applies)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "org deploy",
+      "kind": "command",
+      "description": "Deploy a new organization",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "config": {
+          "type": "string",
+          "description": "Path to org deploy config JSON file",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "org deploy-config",
+      "kind": "command",
+      "description": "Generate a deploy config file",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": true,
+      "sideEffects": [
+        "local-file"
+      ],
+      "positionals": [],
+      "options": {
+        "description": {
+          "type": "string",
+          "description": "Organization description",
+          "default": ""
+        },
+        "name": {
+          "type": "string",
+          "description": "Organization name",
+          "required": true
+        },
+        "output": {
+          "type": "string",
+          "description": "Output file path",
+          "default": "org-deploy-config.json"
+        },
+        "template": {
+          "type": "string",
+          "description": "Config template",
+          "default": "standard",
+          "choices": [
+            "standard",
+            "minimal"
+          ]
+        },
+        "username": {
+          "type": "string",
+          "description": "Deployer username",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "org roles",
+      "kind": "command",
+      "description": "List org roles with hat IDs and vouch requirements",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "org members",
+      "kind": "command",
+      "description": "List org members with activity metrics",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "org audit",
+      "kind": "command",
+      "description": "Generate governance transparency audit",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "org explore",
+      "kind": "command",
+      "description": "Scan all POP orgs across chains",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "chain": {
+          "type": "number",
+          "description": "Filter to specific chain"
+        },
+        "detail": {
+          "type": "string",
+          "description": "Deep-scan a specific org by name"
+        },
+        "opportunities": {
+          "type": "boolean",
+          "description": "Show actionable opportunities for Argus",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "org health-score",
+      "kind": "command",
+      "description": "Compute org health score (0-100)",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "org audit-external",
+      "kind": "command",
+      "description": "Generate governance audit for any POP org",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin(--pin)"
+      ],
+      "positionals": [],
+      "options": {
+        "chain": {
+          "type": "number",
+          "description": "Chain ID (omit to search all)"
+        },
+        "pin": {
+          "type": "boolean",
+          "description": "Pin report to IPFS",
+          "default": false
+        },
+        "target": {
+          "type": "string",
+          "description": "Org name to audit",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "org audit-all",
+      "kind": "command",
+      "description": "Ecosystem health report — audit all POP orgs",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin(--pin)"
+      ],
+      "positionals": [],
+      "options": {
+        "pin": {
+          "type": "boolean",
+          "description": "Pin ecosystem report to IPFS",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "org outreach",
+      "kind": "command",
+      "description": "Generate engagement message for a target org",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "snapshot": {
+          "type": "string",
+          "description": "Snapshot space ID (e.g. ens.eth) — use audit-snapshot instead of POP audit"
+        },
+        "target": {
+          "type": "string",
+          "description": "Target org name to generate outreach for",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "org audit-snapshot",
+      "kind": "command",
+      "description": "Audit governance for any Snapshot DAO",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin(--pin)"
+      ],
+      "positionals": [],
+      "options": {
+        "pin": {
+          "type": "boolean",
+          "description": "Pin report to IPFS",
+          "default": false
+        },
+        "space": {
+          "type": "string",
+          "description": "Snapshot space ID (e.g. ens.eth)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "org audit-safe",
+      "kind": "command",
+      "description": "Audit treasury for any Safe multisig",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin(--pin)"
+      ],
+      "positionals": [],
+      "options": {
+        "address": {
+          "type": "string",
+          "description": "Safe multisig address",
+          "required": true
+        },
+        "pin": {
+          "type": "boolean",
+          "description": "Pin report to IPFS",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "org audit-full",
+      "kind": "command",
+      "description": "Combined governance + treasury audit for any DAO",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin(--pin)"
+      ],
+      "positionals": [],
+      "options": {
+        "name": {
+          "type": "string",
+          "description": "DAO name for report",
+          "required": true
+        },
+        "pin": {
+          "type": "boolean",
+          "description": "Pin report to IPFS",
+          "default": false
+        },
+        "safe": {
+          "type": "string",
+          "description": "Safe multisig address",
+          "required": true
+        },
+        "snapshot": {
+          "type": "string",
+          "description": "Snapshot space ID (e.g. ens.eth)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "org audit-governor",
+      "kind": "command",
+      "description": "Audit on-chain Governor DAO governance",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin(--pin)"
+      ],
+      "positionals": [],
+      "options": {
+        "address": {
+          "type": "string",
+          "description": "Governor contract address",
+          "required": true
+        },
+        "blocks": {
+          "type": "number",
+          "description": "Number of blocks to scan for events",
+          "default": 500000
+        },
+        "pin": {
+          "type": "boolean",
+          "description": "Pin report to IPFS",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "org gaas-status",
+      "kind": "command",
+      "description": "GaaS pipeline dashboard — audits, distribution, revenue",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "org publish",
+      "kind": "command",
+      "description": "Convert IPFS content to shareable HTML page with Open Graph tags",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "cid": {
+          "type": "string",
+          "description": "IPFS CID of content to publish",
+          "required": true
+        },
+        "description": {
+          "type": "string",
+          "description": "Page description for social sharing",
+          "default": ""
+        },
+        "title": {
+          "type": "string",
+          "description": "Page title",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "org leaderboard",
+      "kind": "command",
+      "description": "Governance health leaderboard — rank multiple DAOs",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin(--pin)"
+      ],
+      "positionals": [],
+      "options": {
+        "pin": {
+          "type": "boolean",
+          "description": "Pin leaderboard to IPFS",
+          "default": false
+        },
+        "spaces": {
+          "type": "string",
+          "description": "Comma-separated Snapshot space IDs (e.g. aave.eth,comp-vote.eth)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "org audit-request",
+      "kind": "command",
+      "description": "Generate a governance audit request with pricing",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin(--pin)"
+      ],
+      "positionals": [],
+      "options": {
+        "concerns": {
+          "type": "string",
+          "description": "Specific governance concerns to investigate"
+        },
+        "members": {
+          "type": "number",
+          "description": "Approximate member count"
+        },
+        "org-name": {
+          "type": "string",
+          "description": "Name of the DAO to audit",
+          "required": true
+        },
+        "pin": {
+          "type": "boolean",
+          "description": "Pin request to IPFS",
+          "default": false
+        },
+        "platform": {
+          "type": "string",
+          "description": "Governance platform",
+          "choices": [
+            "snapshot",
+            "pop",
+            "governor",
+            "moloch"
+          ],
+          "required": true
+        },
+        "space": {
+          "type": "string",
+          "description": "Snapshot space ID (e.g. ens.eth)"
+        },
+        "type": {
+          "type": "string",
+          "description": "Audit tier",
+          "default": "standard",
+          "choices": [
+            "free",
+            "standard",
+            "deep"
+          ]
+        }
+      }
+    },
+    {
+      "name": "org portfolio",
+      "kind": "command",
+      "description": "Generate shareable HTML audit portfolio page",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin(--pin)"
+      ],
+      "positionals": [],
+      "options": {
+        "csv": {
+          "type": "boolean",
+          "description": "Emit audit DB as CSV to stdout (skips HTML + IPFS)",
+          "default": false
+        },
+        "pin": {
+          "type": "boolean",
+          "description": "Pin HTML page to IPFS",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "org share",
+      "kind": "command",
+      "description": "Generate platform-ready posts from IPFS content",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "cid": {
+          "type": "string",
+          "description": "IPFS CID of content to share",
+          "required": true
+        },
+        "platform": {
+          "type": "string",
+          "description": "Target platform",
+          "choices": [
+            "reddit",
+            "twitter",
+            "forum",
+            "all"
+          ],
+          "required": true
+        },
+        "title": {
+          "type": "string",
+          "description": "Override title"
+        }
+      }
+    },
+    {
+      "name": "org publications",
+      "kind": "command",
+      "description": "Index all shareable IPFS content from completed tasks",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "limit": {
+          "type": "number",
+          "description": "Max tasks to scan",
+          "default": 50
+        },
+        "project": {
+          "type": "string",
+          "description": "Filter by project name"
+        },
+        "since": {
+          "type": "string",
+          "description": "Unix timestamp — only tasks completed after this time"
+        }
+      }
+    },
+    {
+      "name": "org compare",
+      "kind": "command",
+      "description": "Head-to-head governance comparison of two Snapshot DAOs",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "a": {
+          "type": "string",
+          "description": "First Snapshot space (e.g. aave.eth)",
+          "required": true
+        },
+        "b": {
+          "type": "string",
+          "description": "Second Snapshot space (e.g. compound.eth)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "org compare-time-window",
+      "kind": "command",
+      "description": "Re-audit a stored AUDIT_DB entry and report drift (codifies the asymmetric-drift research finding)",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "all": {
+          "type": "boolean",
+          "description": "Compare ALL stored spaces in SPACE_TO_NAME mapping. Mutually exclusive with --space.",
+          "default": false
+        },
+        "space": {
+          "type": "string",
+          "description": "Snapshot space id (e.g. aavedao.eth). Mutually exclusive with --all."
+        },
+        "threshold": {
+          "type": "number",
+          "description": "Absolute Gini delta to count as drift (default 0.01, slightly above Aavegotchi noise floor)",
+          "default": 0.01
+        }
+      }
+    },
+    {
+      "name": "org probe-access",
+      "kind": "command",
+      "description": "Burner-callStatic access-control probe — map a contract's gating model in <5 min, zero gas",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "abi": {
+          "type": "string",
+          "description": "Path to the ABI JSON file. If omitted, will try src/abi/<contract>.json by name guess; otherwise required."
+        },
+        "address": {
+          "type": "string",
+          "description": "Contract address to probe",
+          "required": true
+        },
+        "expected-name": {
+          "type": "string",
+          "description": "HB#385 (task #390): expected substring in the contract's name() return value. Case-insensitive substring match — 'Compound' matches 'Compound Governor Bravo'. When set, the tool calls name() on the target before probing and warns (non-fatal) if the result doesn't match. Prevents the HB#384 class of error where an audit labeled 'Gitcoin Governor Bravo' was actually probing Uniswap's contract. The name() call always runs even without this flag — result is recorded as contractName in JSON output."
+        },
+        "selectors": {
+          "type": "string",
+          "description": "Comma-separated function names or 4-byte selectors to probe. If omitted, probes ALL external/payable functions."
+        },
+        "skip-code-check": {
+          "type": "boolean",
+          "description": "Skip the on-chain selector existence check. Use when probing behind a proxy (EIP-1967) where the runtime code does not contain the implementation selectors, or when you know the ABI matches the target.",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "org audit-vetoken",
+      "kind": "command",
+      "description": "On-chain top-holder probe for veCRV-family VotingEscrow contracts (task #383)",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "chain": {
+          "type": "number",
+          "description": "Chain ID (default: Ethereum mainnet)",
+          "default": 1
+        },
+        "chunk": {
+          "type": "number",
+          "description": "getLogs pagination chunk size in blocks. Default 10000 (most RPCs cap here).",
+          "default": 10000
+        },
+        "enumerate": {
+          "type": "boolean",
+          "description": "Scan recent Deposit events to discover candidate holders. Defaults to the last 50,000 blocks (~7 days on Ethereum). Override with --from-block / --to-block / --chunk.",
+          "default": false
+        },
+        "enumerate-transfers": {
+          "type": "boolean",
+          "description": "Task #389 (HB#456): contract-agnostic holder discovery via the underlying ERC20's Transfer(from, to) events filtered to (to == escrow). Catches dormant lockers and works for non-veCRV-family contracts (CvxLockerV2, Convex, etc.). More RPC-expensive per block than --enumerate, so use narrower --from-block windows.",
+          "default": false
+        },
+        "escrow": {
+          "type": "string",
+          "description": "VotingEscrow contract address (veCRV, veBAL, veFXS, …)",
+          "required": true
+        },
+        "from-block": {
+          "type": "number",
+          "description": "Enumeration lower bound (inclusive). Default: latest - 50000."
+        },
+        "holders": {
+          "type": "string",
+          "description": "Comma-separated list of candidate holder addresses to rank. Optional when --enumerate is passed. The two modes can be combined — enumerated addresses are union-ed with the explicit list."
+        },
+        "rpc": {
+          "type": "string",
+          "description": "RPC URL override"
+        },
+        "to-block": {
+          "type": "number",
+          "description": "Enumeration upper bound (inclusive). Default: latest block."
+        },
+        "top": {
+          "type": "number",
+          "description": "Limit output to the top N holders by current veBalance",
+          "default": 10
+        },
+        "underlying": {
+          "type": "string",
+          "description": "Override the underlying ERC20 token address for --enumerate-transfers. If omitted, reads VotingEscrow.token() to get it automatically."
+        }
+      }
+    },
+    {
+      "name": "org audit-participation",
+      "kind": "command",
+      "description": "Governance participation metrics for external Governor contracts (task #422)",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "address": {
+          "type": "string",
+          "description": "Governor contract address",
+          "required": true
+        },
+        "chain": {
+          "type": "number",
+          "description": "Chain ID (default: POP_DEFAULT_CHAIN or 1)"
+        },
+        "chunk": {
+          "type": "number",
+          "description": "getLogs pagination chunk size (default: chain-aware)"
+        },
+        "from-block": {
+          "type": "number",
+          "description": "Start block for VoteCast event scan (default: latest - 500000)"
+        },
+        "json": {
+          "type": "boolean",
+          "default": false
+        },
+        "rpc": {
+          "type": "string",
+          "description": "RPC URL override"
+        },
+        "to-block": {
+          "type": "number",
+          "description": "End block for event scan (default: latest)"
+        },
+        "top": {
+          "type": "number",
+          "description": "Show top N voters by participation frequency",
+          "default": 10
+        }
+      }
+    },
+    {
+      "name": "vote create",
+      "kind": "command",
+      "description": "Create a proposal",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "calls": {
+          "type": "string",
+          "description": "JSON array of execution calls for option 0: [{\"target\":\"0x...\",\"value\":\"0\",\"data\":\"0x...\"}]"
+        },
+        "description": {
+          "type": "string",
+          "description": "Proposal description",
+          "required": true
+        },
+        "duration": {
+          "type": "number",
+          "description": "Duration in minutes",
+          "required": true
+        },
+        "hat-ids": {
+          "type": "string",
+          "description": "Comma-separated hat IDs for restricted voting"
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Task #369 (HB#213): explicit idempotency key. Two calls with the same orgId + this key within 15 minutes return the same proposalId without re-submitting. Default: auto-derived from a hash of the full argv (transient fields like --private-key and --dry-run excluded). Use --no-idempotency to opt out entirely."
+        },
+        "name": {
+          "type": "string",
+          "description": "Proposal title",
+          "required": true
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit a new proposal. Use only when you intentionally want a duplicate write.",
+          "default": false
+        },
+        "options": {
+          "type": "string",
+          "description": "Comma-separated option names",
+          "required": true
+        },
+        "type": {
+          "type": "string",
+          "description": "Voting type",
+          "choices": [
+            "hybrid",
+            "dd"
+          ],
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "vote cast",
+      "kind": "command",
+      "description": "Cast a vote",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "idempotency-key": {
+          "type": "string",
+          "description": "Task #370 (HB#214): explicit idempotency key. Two casts of the same vote within 15 minutes return the same result without re-submitting."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        },
+        "options": {
+          "type": "string",
+          "description": "Comma-separated option indices to vote for",
+          "required": true
+        },
+        "proposal": {
+          "type": "string",
+          "description": "Proposal ID (number) or fuzzy title query (e.g. \"bridge retry\")",
+          "required": true
+        },
+        "type": {
+          "type": "string",
+          "description": "Voting type",
+          "choices": [
+            "hybrid",
+            "dd"
+          ],
+          "required": true
+        },
+        "weights": {
+          "type": "string",
+          "description": "Comma-separated weights (must sum to 100)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "vote list",
+      "kind": "command",
+      "description": "List proposals",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "status": {
+          "type": "string",
+          "description": "Status filter",
+          "choices": [
+            "Active",
+            "Ended",
+            "Executed"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "description": "Voting type filter",
+          "default": "all",
+          "choices": [
+            "hybrid",
+            "dd",
+            "all"
+          ]
+        },
+        "unvoted": {
+          "type": "boolean",
+          "description": "Only show proposals where I have not voted (requires key)"
+        }
+      }
+    },
+    {
+      "name": "vote announce",
+      "kind": "command",
+      "description": "Announce proposal winner",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "force": {
+          "type": "boolean",
+          "description": "Skip pre-flight check and announce anyway",
+          "default": false
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Task #375 (HB#217) idempotency cache."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache.",
+          "default": false
+        },
+        "proposal": {
+          "type": "string",
+          "description": "Proposal ID (number) or fuzzy title query",
+          "required": true
+        },
+        "type": {
+          "type": "string",
+          "description": "Voting type",
+          "choices": [
+            "hybrid",
+            "dd"
+          ],
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "vote execute",
+      "kind": "command",
+      "description": "Execute a passed proposal's calls",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "idempotency-key": {
+          "type": "string",
+          "description": "Task #375 (HB#217) idempotency cache."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache.",
+          "default": false
+        },
+        "proposal": {
+          "type": "string",
+          "description": "Proposal ID (number) or fuzzy title query",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "vote announce-all",
+      "kind": "command",
+      "description": "Announce all ended proposals",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key for the batch (default: derived from argv)."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always re-run the batch.",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "vote propose-quorum",
+      "kind": "command",
+      "description": "Create a proposal to change voting quorum",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Vote duration in minutes",
+          "default": 60
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key (default: derived from argv)."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        },
+        "quorum": {
+          "type": "number",
+          "description": "New quorum value (minimum voter COUNT, not a percentage)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "vote propose-config",
+      "kind": "command",
+      "description": "Create a proposal to change a governance config parameter",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Vote duration in minutes",
+          "default": 60
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key (default: derived from argv)."
+        },
+        "key": {
+          "type": "string",
+          "description": "Configuration parameter name",
+          "choices": [
+            "threshold",
+            "quorum",
+            "target-allowed",
+            "executor",
+            "hat-allowed"
+          ],
+          "required": true
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        },
+        "value": {
+          "type": "string",
+          "description": "New value",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "vote analyze",
+      "kind": "command",
+      "description": "Analyze a hybrid vote — power breakdown and counterfactuals",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "proposal": {
+          "type": "number",
+          "description": "Proposal ID to analyze",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "vote results",
+      "kind": "command",
+      "description": "Show vote results with option names and rankings",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "proposal": {
+          "type": "string",
+          "description": "Proposal ID (number) or fuzzy title query",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "vote classes",
+      "kind": "group",
+      "description": "Show or propose the hybrid voting class configuration (show / propose)",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [
+        {
+          "name": "sub",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "options": {}
+    },
+    {
+      "name": "vote classes show",
+      "kind": "command",
+      "description": "Show the hybrid voting class config + support threshold and quorum",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "proposal": {
+          "type": "string",
+          "description": "Show the class snapshot frozen for one proposal (ID or fuzzy title query) instead of the live config"
+        }
+      }
+    },
+    {
+      "name": "vote classes propose",
+      "kind": "command",
+      "description": "Propose replacing the voting classes via setClasses (governance vote)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Vote duration in minutes",
+          "default": 60
+        },
+        "file": {
+          "type": "string",
+          "description": "Path to a ClassConfig[] JSON file (strategy, slicePct, quadratic, minBalance, asset, hatIds)",
+          "required": true
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key (default: derived from argv)."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "user register",
+      "kind": "command",
+      "description": "Register a username on the account registry",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "username": {
+          "type": "string",
+          "description": "Username (3-32 chars, alphanumeric + underscores)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "user join",
+      "kind": "command",
+      "description": "Join an organization (registers your username first if needed)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key. Two joins for the same org within the TTL return the same result without re-submitting. Default: auto-derived from argv."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        },
+        "username": {
+          "type": "string",
+          "description": "Username to register (only needed if not already registered)"
+        }
+      }
+    },
+    {
+      "name": "user claim-hats",
+      "kind": "command",
+      "description": "Claim additional role hats after joining (e.g. a hat you were vouched for)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "hats": {
+          "type": "string",
+          "description": "Comma-separated hat IDs to claim (decimal or 0x-hex), e.g. after being vouched for a role",
+          "required": true
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key. Two identical claims within the TTL return the same result without re-submitting. Default: auto-derived from argv."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "user whoami",
+      "kind": "command",
+      "description": "Show signer identity: address, username, gas balance, and org standing",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "on-chain": {
+          "type": "boolean",
+          "description": "Re-verify membership with a live Hats.balanceOf call instead of the subgraph's indexed hat state (slower; catches a dynamically revoked eligibility that burned no token)",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "user profile",
+      "kind": "command",
+      "description": "View user profile",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "address": {
+          "type": "string",
+          "description": "User address (defaults to signer)"
+        }
+      }
+    },
+    {
+      "name": "user update-profile",
+      "kind": "command",
+      "description": "Update profile (bio, avatar, links) or change your username",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "avatar": {
+          "type": "string",
+          "description": "Avatar IPFS CID (Qm...)"
+        },
+        "bio": {
+          "type": "string",
+          "description": "Profile bio (max 280 chars)"
+        },
+        "github": {
+          "type": "string",
+          "description": "GitHub username"
+        },
+        "twitter": {
+          "type": "string",
+          "description": "Twitter/X handle"
+        },
+        "username": {
+          "type": "string",
+          "description": "New username (DESTRUCTIVE: releases the old name for anyone to claim)"
+        },
+        "website": {
+          "type": "string",
+          "description": "Website URL"
+        }
+      }
+    },
+    {
+      "name": "education create",
+      "kind": "command",
+      "description": "Create a learning module that rewards PT on completion",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "answers": {
+          "type": "string",
+          "description": "JSON array of option arrays: '[[\"A\",\"B\"],[\"C\",\"D\"]]'"
+        },
+        "correct-answer": {
+          "type": "number",
+          "description": "Index of correct answer (0-based; PERMANENT — updateModule cannot change it)",
+          "required": true
+        },
+        "description": {
+          "type": "string",
+          "description": "Module description"
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key. Two identical creates within the TTL return the same result without re-submitting. Default: auto-derived from argv."
+        },
+        "link": {
+          "type": "string",
+          "description": "External learning resource URL"
+        },
+        "name": {
+          "type": "string",
+          "description": "Module title",
+          "required": true
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit a new module.",
+          "default": false
+        },
+        "payout": {
+          "type": "number",
+          "description": "PT reward for completion (must be > 0)",
+          "required": true
+        },
+        "quiz": {
+          "type": "string",
+          "description": "JSON array of question strings: '[\"Q1?\", \"Q2?\"]'"
+        }
+      }
+    },
+    {
+      "name": "education list",
+      "kind": "command",
+      "description": "List education modules",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "education update",
+      "kind": "command",
+      "description": "Update a module's payout/metadata — read-then-merge full edit",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "answers": {
+          "type": "string",
+          "description": "New JSON array of option arrays (note: the correct answer is fixed at creation)"
+        },
+        "description": {
+          "type": "string",
+          "description": "New module description (re-pins metadata)"
+        },
+        "link": {
+          "type": "string",
+          "description": "New external learning resource URL (re-pins metadata)"
+        },
+        "module": {
+          "type": "string",
+          "description": "Module ID",
+          "required": true
+        },
+        "name": {
+          "type": "string",
+          "description": "New module title (re-pins metadata)"
+        },
+        "payout": {
+          "type": "number",
+          "description": "New PT reward for completion (must be > 0)"
+        },
+        "quiz": {
+          "type": "string",
+          "description": "New JSON array of question strings (note: the correct answer is fixed at creation)"
+        }
+      }
+    },
+    {
+      "name": "education remove",
+      "kind": "command",
+      "description": "Permanently remove a module (destructive — no undo)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "module": {
+          "type": "string",
+          "description": "Module ID to remove (permanent — no undo)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "education complete",
+      "kind": "command",
+      "description": "Complete a module's quiz and claim its PT reward",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "answer": {
+          "type": "number",
+          "description": "Answer index (0-based)",
+          "required": true
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key. Two identical completions within the TTL return the same result without re-submitting. Default: auto-derived from argv."
+        },
+        "module": {
+          "type": "string",
+          "description": "Module ID",
+          "required": true
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "vouch for",
+      "kind": "command",
+      "description": "Vouch for a user to claim a role",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "address": {
+          "type": "string",
+          "description": "Address of the user to vouch for",
+          "required": true
+        },
+        "hat": {
+          "type": "string",
+          "description": "Hat ID of the role"
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key. Repeat vouches for the same wearer+hat within the TTL return the prior result without re-submitting."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        },
+        "role": {
+          "type": "string",
+          "description": "Role name (e.g. MEMBER, Agent) — resolves to hat ID"
+        }
+      }
+    },
+    {
+      "name": "vouch revoke",
+      "kind": "command",
+      "description": "Revoke a vouch",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "address": {
+          "type": "string",
+          "description": "Address whose vouch to revoke",
+          "required": true
+        },
+        "hat": {
+          "type": "string",
+          "description": "Hat ID of the role",
+          "required": true
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key (repeat calls within the TTL return the prior result)."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "vouch claim",
+      "kind": "command",
+      "description": "Claim a role after receiving enough vouches",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "hat": {
+          "type": "string",
+          "description": "Hat ID to claim",
+          "required": true
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key (repeat claims within the TTL return the prior result)."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "vouch list",
+      "kind": "command",
+      "description": "List active vouches for an org",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "hat": {
+          "type": "string",
+          "description": "Filter by hat ID"
+        }
+      }
+    },
+    {
+      "name": "vouch status",
+      "kind": "command",
+      "description": "Check vouch status for a user and role (plus your own daily quota)",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "address": {
+          "type": "string",
+          "description": "Wearer address to check",
+          "required": true
+        },
+        "hat": {
+          "type": "string",
+          "description": "Hat ID to check",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "vouch config",
+      "kind": "group",
+      "description": "Show or set a hat's vouching config (show / set; set is superAdmin-only)",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [
+        {
+          "name": "sub",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "options": {}
+    },
+    {
+      "name": "vouch config show",
+      "kind": "command",
+      "description": "Show a hat's vouching config (quorum, membership hat, rate limit)",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "hat": {
+          "type": "string",
+          "description": "Hat ID whose vouching config to show",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "vouch config set",
+      "kind": "command",
+      "description": "Configure vouching for a hat (superAdmin-only)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "combine-hierarchy": {
+          "type": "boolean",
+          "description": "Also honor hierarchy eligibility and let hat admins vouch",
+          "default": false
+        },
+        "hat": {
+          "type": "string",
+          "description": "Hat ID to configure vouching for",
+          "required": true
+        },
+        "membership-hat": {
+          "type": "string",
+          "description": "Hat whose wearers are allowed to vouch",
+          "required": true
+        },
+        "quorum": {
+          "type": "number",
+          "description": "Vouches required to become claimable (0 disables vouching)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "vouch reset",
+      "kind": "command",
+      "description": "Reset vouches for a hat or one wearer (superAdmin-only, destructive)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "hat": {
+          "type": "string",
+          "description": "Hat ID whose vouch state to reset",
+          "required": true
+        },
+        "wearer": {
+          "type": "string",
+          "description": "Only clear this wearer's vouches (surgical; hat config kept)"
+        }
+      }
+    },
+    {
+      "name": "token request",
+      "kind": "command",
+      "description": "Request participation tokens (members only; minted on approval)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "amount": {
+          "type": "number",
+          "description": "Amount of PT to request",
+          "required": true
+        },
+        "reason": {
+          "type": "string",
+          "description": "Reason for the request (pinned to IPFS)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "token approve",
+      "kind": "command",
+      "description": "Approve a token request — MINTS the requested PT to the requester",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "request": {
+          "type": "number",
+          "description": "Request ID to approve",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "token cancel",
+      "kind": "command",
+      "description": "Cancel a pending token request (requester or approver)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "request": {
+          "type": "number",
+          "description": "Request ID to cancel",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "token requests",
+      "kind": "command",
+      "description": "List token requests",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "status": {
+          "type": "string",
+          "description": "Filter by status",
+          "default": "pending",
+          "choices": [
+            "pending",
+            "all"
+          ]
+        }
+      }
+    },
+    {
+      "name": "token balance",
+      "kind": "command",
+      "description": "Check participation token balance",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "address": {
+          "type": "string",
+          "description": "Address to check (defaults to signer)"
+        }
+      }
+    },
+    {
+      "name": "treasury view",
+      "kind": "command",
+      "description": "View treasury overview",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "treasury balance",
+      "kind": "command",
+      "description": "Show token holdings",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "treasury deposit",
+      "kind": "command",
+      "description": "Deposit ERC20 tokens to treasury",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "amount": {
+          "type": "number",
+          "description": "Amount to deposit (human token units)",
+          "required": true
+        },
+        "token": {
+          "type": "string",
+          "description": "ERC20 token address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "treasury propose-swap",
+      "kind": "command",
+      "description": "Propose a token swap via governance vote",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "amount": {
+          "type": "number",
+          "description": "Amount to swap (human units of from-token)",
+          "required": true
+        },
+        "duration": {
+          "type": "number",
+          "description": "Vote duration in minutes",
+          "default": 1440
+        },
+        "from-index": {
+          "type": "number",
+          "description": "Curve coin index for from-token (0 or 1)",
+          "required": true
+        },
+        "from-token": {
+          "type": "string",
+          "description": "Token to sell (address)",
+          "required": true
+        },
+        "min-out": {
+          "type": "number",
+          "description": "Minimum output amount in to-token units (default: 95% of the pool quote)"
+        },
+        "pool": {
+          "type": "string",
+          "description": "Curve pool address",
+          "required": true
+        },
+        "to-index": {
+          "type": "number",
+          "description": "Curve coin index for to-token (0 or 1)",
+          "required": true
+        },
+        "to-token": {
+          "type": "string",
+          "description": "Token to receive (address)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "treasury claim",
+      "kind": "command",
+      "description": "Claim from a distribution with a manual amount + proof (prefer claim-mine)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "amount": {
+          "type": "string",
+          "description": "Your allocated amount in TOKEN UNITS (e.g. 12.5) — must match the merkle leaf exactly; use --wei for the raw integer",
+          "required": true
+        },
+        "distribution": {
+          "type": "number",
+          "description": "Distribution ID",
+          "required": true
+        },
+        "proof": {
+          "type": "string",
+          "description": "JSON array of merkle proof bytes32 hashes"
+        },
+        "proof-file": {
+          "type": "string",
+          "description": "Path to a JSON file with the proof array (or an allocation object with a \"proof\" field, as in merkle-distribution.json)"
+        },
+        "wei": {
+          "type": "boolean",
+          "description": "Treat --amount as the raw integer (wei-level) value instead of decimal token units",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "treasury distributions",
+      "kind": "command",
+      "description": "List distributions with finalized/finalizable state",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "status": {
+          "type": "string",
+          "description": "Filter by status",
+          "choices": [
+            "Active",
+            "Finalized"
+          ]
+        }
+      }
+    },
+    {
+      "name": "treasury opt-out",
+      "kind": "command",
+      "description": "Opt out of distributions",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "treasury opt-in",
+      "kind": "command",
+      "description": "Opt back into distributions",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "treasury compute-merkle",
+      "kind": "command",
+      "description": "Compute merkle tree for PT-based distribution",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [
+        "local-file"
+      ],
+      "positionals": [],
+      "options": {
+        "amount": {
+          "type": "string",
+          "description": "Total distribution amount (in token units, e.g. \"40\" for 40 BREAD)",
+          "required": true
+        },
+        "output": {
+          "type": "string",
+          "description": "Output file for proofs",
+          "default": "merkle-distribution.json"
+        },
+        "token": {
+          "type": "string",
+          "description": "Payout token address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "treasury propose-distribution",
+      "kind": "command",
+      "description": "Propose a distribution via governance vote",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Vote duration in minutes",
+          "default": 1440
+        },
+        "merkle-file": {
+          "type": "string",
+          "description": "Path to merkle-distribution.json from compute-merkle",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "treasury claim-mine",
+      "kind": "command",
+      "description": "Auto-claim from all unclaimed distributions (recommended claim path)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "treasury send",
+      "kind": "command",
+      "description": "Propose a transfer from Executor via governance",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "amount": {
+          "type": "number",
+          "description": "Amount to send (single recipient)"
+        },
+        "duration": {
+          "type": "number",
+          "description": "Vote duration in minutes",
+          "default": 60
+        },
+        "recipients": {
+          "type": "string",
+          "description": "JSON array for batch: [{\"to\":\"0x...\",\"amount\":5},...] (max 8)"
+        },
+        "to": {
+          "type": "string",
+          "description": "Recipient address (single recipient)"
+        },
+        "token": {
+          "type": "string",
+          "description": "Token address or \"native\" for the chain's gas token",
+          "default": "native"
+        }
+      }
+    },
+    {
+      "name": "treasury propose-sdai",
+      "kind": "command",
+      "description": "Propose depositing xDAI into sDAI for yield",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "amount": {
+          "type": "number",
+          "description": "xDAI amount to deposit into sDAI",
+          "required": true
+        },
+        "duration": {
+          "type": "number",
+          "description": "Vote duration in minutes",
+          "default": 60
+        }
+      }
+    },
+    {
+      "name": "treasury propose-finalize",
+      "kind": "command",
+      "description": "Propose closing a distribution via governance (returns unclaimed funds to the treasury)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "distribution": {
+          "type": "number",
+          "description": "Distribution ID to finalize",
+          "required": true
+        },
+        "duration": {
+          "type": "number",
+          "description": "Vote duration in minutes",
+          "default": 60
+        },
+        "min-claim-blocks": {
+          "type": "number",
+          "description": "On-chain guard: execution reverts until this many blocks have passed since the distribution's CHECKPOINT block (0 = no extra guard beyond the vote duration)",
+          "default": 0
+        }
+      }
+    },
+    {
+      "name": "paymaster status",
+      "kind": "command",
+      "description": "View paymaster registration, balance, budgets, and solidarity state",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "hat": {
+          "type": "string",
+          "description": "Additional hat ID(s) whose sponsorship budgets to show (admin/operator hats are probed automatically)"
+        }
+      }
+    },
+    {
+      "name": "paymaster deposit",
+      "kind": "command",
+      "description": "Fund an org's gas sponsorship balance (permissionless; no withdraw on the deployed hub)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "amount": {
+          "type": "string",
+          "description": "Amount to deposit, in ether units of the native gas token (e.g. 0.05 = 0.05 xDAI on Gnosis)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "paymaster register",
+      "kind": "command",
+      "description": "Register an org with the PaymasterHub (sends via PoaManager owner, or prints the exact registrar call)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "admin-hat": {
+          "type": "string",
+          "description": "Hat ID that will administer the org's paymaster config (usually the org top hat)",
+          "required": true
+        },
+        "config": {
+          "type": "string",
+          "description": "JSON file with initial fee caps (gwei), rules, and budgets (ether caps) — uses registerAndConfigureOrg"
+        },
+        "deposit": {
+          "type": "string",
+          "description": "Also deposit this amount (ether units) after registration via permissionless depositForOrg"
+        },
+        "operator-hat": {
+          "type": "string",
+          "description": "Optional hat ID allowed to manage budgets/rules (0 = none)"
+        }
+      }
+    },
+    {
+      "name": "role apply",
+      "kind": "command",
+      "description": "Apply for a role",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "experience": {
+          "type": "string",
+          "description": "Relevant experience"
+        },
+        "hat": {
+          "type": "string",
+          "description": "Hat ID of the role to apply for",
+          "required": true
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key (repeat applies within the TTL return the prior result)."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        },
+        "notes": {
+          "type": "string",
+          "description": "Application notes"
+        }
+      }
+    },
+    {
+      "name": "role applications",
+      "kind": "command",
+      "description": "List role applications",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "hat": {
+          "type": "string",
+          "description": "Filter by hat ID"
+        },
+        "mine": {
+          "type": "boolean",
+          "description": "Show only my applications"
+        }
+      }
+    },
+    {
+      "name": "role withdraw-application",
+      "kind": "command",
+      "description": "Withdraw your pending role application",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "hat": {
+          "type": "string",
+          "description": "Hat ID whose application to withdraw",
+          "required": true
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key (repeat withdrawals within the TTL return the prior result)."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "role create",
+      "kind": "command",
+      "description": "Create a new role hat (superAdmin-only)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "default-eligible": {
+          "type": "boolean",
+          "description": "Wearers eligible by default",
+          "default": false
+        },
+        "default-standing": {
+          "type": "boolean",
+          "description": "Wearers in good standing by default",
+          "default": false
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key (repeat creates within the TTL return the prior result)."
+        },
+        "image": {
+          "type": "string",
+          "description": "Hat image URI (optional)"
+        },
+        "max-supply": {
+          "type": "number",
+          "description": "Max simultaneous wearers (uint32)",
+          "default": 1000
+        },
+        "mint-to": {
+          "type": "string",
+          "description": "Comma-separated addresses to mint the new hat to immediately"
+        },
+        "mutable": {
+          "type": "boolean",
+          "description": "Allow the hat's properties to be changed later",
+          "default": false
+        },
+        "name": {
+          "type": "string",
+          "description": "Role name (stored as the hat details)",
+          "required": true
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        },
+        "parent-hat": {
+          "type": "string",
+          "description": "Parent hat ID the new role hangs under",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role eligibility",
+      "kind": "group",
+      "description": "Manage wearer/default eligibility (set / clear / set-default; superAdmin-only)",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [
+        {
+          "name": "sub",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "options": {}
+    },
+    {
+      "name": "role eligibility set",
+      "kind": "command",
+      "description": "Set a wearer's eligibility/standing (or batch via --file); superAdmin-only",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "eligible": {
+          "type": "boolean",
+          "description": "Wearer is eligible (--no-eligible to unset)",
+          "default": true
+        },
+        "file": {
+          "type": "string",
+          "description": "Batch JSON file: [{\"wearer\": \"0x…\", \"eligible\": true, \"standing\": true}, …]"
+        },
+        "hat": {
+          "type": "string",
+          "description": "Hat ID whose eligibility to set",
+          "required": true
+        },
+        "standing": {
+          "type": "boolean",
+          "description": "Wearer is in good standing (--no-standing to unset)",
+          "default": true
+        },
+        "wearer": {
+          "type": "string",
+          "description": "Wearer address (single-wearer mode)"
+        }
+      }
+    },
+    {
+      "name": "role eligibility clear",
+      "kind": "command",
+      "description": "Clear a wearer-specific rule so hat defaults apply; superAdmin-only",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "hat": {
+          "type": "string",
+          "description": "Hat ID",
+          "required": true
+        },
+        "wearer": {
+          "type": "string",
+          "description": "Wearer whose specific rule to clear (hat defaults apply again)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role eligibility set-default",
+      "kind": "command",
+      "description": "Set the hat-wide default eligibility/standing; superAdmin-only",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "eligible": {
+          "type": "boolean",
+          "description": "Wearers eligible by default (--no-eligible to unset)",
+          "default": true
+        },
+        "hat": {
+          "type": "string",
+          "description": "Hat ID whose defaults to set",
+          "required": true
+        },
+        "standing": {
+          "type": "boolean",
+          "description": "Wearers in good standing by default (--no-standing to unset)",
+          "default": true
+        }
+      }
+    },
+    {
+      "name": "role admin",
+      "kind": "group",
+      "description": "Module superAdmin operations (transfer / mint / pause / unpause / set-join-time)",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [
+        {
+          "name": "sub",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "options": {}
+    },
+    {
+      "name": "role admin transfer",
+      "kind": "command",
+      "description": "Transfer the module superAdmin (DESTRUCTIVE — hands over the whole module)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "to": {
+          "type": "string",
+          "description": "New superAdmin address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role admin mint",
+      "kind": "command",
+      "description": "Mint a hat to one or more wearers (superAdmin-only)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "hat": {
+          "type": "string",
+          "description": "Hat ID to mint",
+          "required": true
+        },
+        "wearer": {
+          "type": "string",
+          "description": "Recipient address (comma-separate for several)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role admin pause",
+      "kind": "command",
+      "description": "Pause the eligibility module (superAdmin-only)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "role admin unpause",
+      "kind": "command",
+      "description": "Unpause the eligibility module (superAdmin-only)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "role admin set-join-time",
+      "kind": "command",
+      "description": "Set a user's join time for the vouching grace period (superAdmin-only)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "timestamp": {
+          "type": "number",
+          "description": "Unix seconds (omit to use the current block time via setUserJoinTimeNow)"
+        },
+        "user": {
+          "type": "string",
+          "description": "User whose join time to set",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "zkemail status",
+      "kind": "command",
+      "description": "Module wiring, active allowlist root/CID, and dormancy",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "zkemail allowlist",
+      "kind": "command",
+      "description": "List who is invited and which role hats they get",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "verify": {
+          "type": "boolean",
+          "description": "Fetch the allowlist file from IPFS and recompute its merkle root against the on-chain commit",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "zkemail check",
+      "kind": "command",
+      "description": "Check whether a domain/address is invited and can still claim",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [
+        {
+          "name": "identifier",
+          "type": "string",
+          "description": "A domain (anthropic.com) or address (alice@org.com)",
+          "required": true
+        }
+      ],
+      "options": {
+        "proof": {
+          "type": "boolean",
+          "description": "Also emit the merkle proof for this entry",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "zkemail claims",
+      "kind": "command",
+      "description": "Who has claimed a role via a ZK Email invite",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "limit": {
+          "type": "number",
+          "description": "Maximum claims to show (most recent first)",
+          "default": 50
+        }
+      }
+    },
+    {
+      "name": "zkemail build-allowlist",
+      "kind": "command",
+      "description": "Compute an allowlist doc + merkle root, optionally pin to IPFS",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [
+        "ipfs-pin(--pin)"
+      ],
+      "positionals": [],
+      "options": {
+        "domain": {
+          "type": "string",
+          "description": "Invite a whole domain, e.g. --domain anthropic.com (repeatable)"
+        },
+        "email": {
+          "type": "string",
+          "description": "Invite a specific address, e.g. --email alice@org.com (repeatable)"
+        },
+        "file": {
+          "type": "string",
+          "description": "JSON file of allowlist entries (or an existing allowlist doc to re-publish)"
+        },
+        "hat": {
+          "type": "string",
+          "description": "Hat ID(s) granted to every --domain/--email entry (repeatable)"
+        },
+        "out": {
+          "type": "string",
+          "description": "Write the allowlist JSON to this path"
+        },
+        "pin": {
+          "type": "boolean",
+          "description": "Pin the allowlist to IPFS (otherwise compute locally only)",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "zkemail propose-allowlist",
+      "kind": "command",
+      "description": "Propose committing an allowlist root + CID (executor-gated)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [
+        "ipfs-pin"
+      ],
+      "positionals": [],
+      "options": {
+        "cid": {
+          "type": "string",
+          "description": "IPFS CIDv0 of the pinned allowlist file",
+          "required": true
+        },
+        "duration": {
+          "type": "number",
+          "description": "Voting window in minutes (default 24h)",
+          "default": 1440
+        },
+        "root": {
+          "type": "string",
+          "description": "Merkle root from pop zkemail build-allowlist",
+          "required": true
+        },
+        "skip-verify": {
+          "type": "boolean",
+          "description": "Skip fetching the pinned file to confirm it reproduces --root (not recommended)",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "config show",
+      "kind": "command",
+      "description": "Show active configuration",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "config validate",
+      "kind": "command",
+      "description": "Test RPC and subgraph connectivity",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "mcp serve",
+      "kind": "command",
+      "description": "Serve the CLI as an MCP (Model Context Protocol) stdio server",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [
+        "spawns-cli-subprocesses"
+      ],
+      "positionals": [],
+      "options": {
+        "allow-destructive": {
+          "type": "boolean",
+          "description": "Also expose destructive writes — implies --allow-writes (or POP_MCP_ALLOW_DESTRUCTIVE=1)",
+          "default": false
+        },
+        "allow-writes": {
+          "type": "boolean",
+          "description": "Expose non-destructive write commands as tools (or POP_MCP_ALLOW_WRITES=1)",
+          "default": false
+        }
+      }
+    },
+    {
+      "name": "init",
+      "kind": "command",
+      "description": "Interactive setup: wallet, chain, default org, .env",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [
+        "local-file"
+      ],
+      "positionals": [],
+      "options": {
+        "chain": {
+          "type": "number",
+          "description": "Chain ID to configure (100 Gnosis, 42161 Arbitrum, 11155111 Sepolia, 84532 Base Sepolia)"
+        },
+        "file": {
+          "type": "string",
+          "description": "Write to this exact path (testing)"
+        },
+        "force": {
+          "type": "boolean",
+          "description": "Overwrite an existing target .env file",
+          "default": false
+        },
+        "generate-key": {
+          "type": "boolean",
+          "description": "Generate a fresh wallet non-interactively (prints the mnemonic once)",
+          "default": false
+        },
+        "global": {
+          "type": "boolean",
+          "description": "Write ~/.pop/.env (per-user) instead of ./.env (project-local)",
+          "default": false
+        },
+        "org": {
+          "type": "string",
+          "description": "Default org name or hex ID (POP_DEFAULT_ORG)"
+        }
+      }
+    }
+  ]
+}

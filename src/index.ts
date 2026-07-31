@@ -24,13 +24,73 @@ import { registerTokenCommands } from './commands/token';
 import { registerTreasuryCommands } from './commands/treasury';
 import { registerPaymasterCommands } from './commands/paymaster';
 import { registerRoleCommands } from './commands/role';
+import { registerZkEmailCommands } from './commands/zkemail';
 import { registerConfigCommands } from './commands/config';
-import { registerAgentCommands } from './commands/agent';
-import { registerBrainCommands } from './commands/brain';
+import { registerMcpCommands } from './commands/mcp/serve';
 import { initHandler } from './commands/init';
 import { applyDefaultOrgFallback } from './lib/default-org';
 
+/**
+ * The agent surface (`pop agent`, `pop brain`) lives in @poa/agent — a separate
+ * package carrying the heavy p2p/CRDT dependency tree (libp2p, helia,
+ * automerge). A human `npm install @poa/cli` never fetches any of it; in this
+ * repo, or on a host that installed both packages, the probe finds it and the
+ * commands work exactly as before.
+ *
+ * Visibility is separate from availability: the groups are HIDDEN from
+ * `pop --help` unless POP_AGENT_MODE=1 (the `pop-agent` bin sets it), but they
+ * always EXECUTE when invoked explicitly — every skill and script calling
+ * `pop agent triage` or `pop brain read` keeps working unchanged. A yargs
+ * command registered with a `false` description is exactly that: invocable,
+ * unlisted.
+ */
+interface AgentPlugin {
+  registerAgentCommands: (y: any) => any;
+  registerBrainCommands: (y: any) => any;
+}
+
+function loadAgentPlugin(): AgentPlugin | null {
+  const candidates = [
+    '@poa/agent', // installed alongside @poa/cli
+    require('path').join(__dirname, '..', 'packages', 'agent', 'dist'), // in-repo build
+  ];
+  for (const spec of candidates) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = require(spec);
+      if (mod?.registerAgentCommands && mod?.registerBrainCommands) return mod;
+    } catch { /* not installed / not built — the human surface stands alone */ }
+  }
+  return null;
+}
+
+/**
+ * When @poa/agent is not installed, every invocation shape must reach the
+ * install hint — `pop brain read --doc x` as much as bare `pop brain`. The
+ * builder disables strict parsing for the group (unknown flags would
+ * otherwise die with a yargs options dump before any handler runs) and the
+ * group-level handler prints the hint.
+ */
+function agentUnavailableBuilder() {
+  return (y: any) => y.strict(false);
+}
+function agentUnavailableHandler(group: string) {
+  return () => {
+    output.error(`'pop ${group}' needs the @poa/agent package, which is not installed.`, {
+      suggestion: 'In this repo: yarn --cwd packages/agent install && yarn --cwd packages/agent build. '
+        + '(@poa/agent is not yet published to npm — in-repo build is the only install.)',
+    });
+    process.exit(1);
+  };
+}
+
 async function main() {
+  const agentPlugin = loadAgentPlugin();
+  // Hidden from human help; `pop-agent` (or POP_AGENT_MODE=1) reveals them.
+  // yargs accepts `false` as "register but do not list"; @types/yargs models
+  // that as a separate overload a union type cannot select, hence the cast.
+  const agentDesc = (s: string): string =>
+    (process.env.POP_AGENT_MODE === '1' ? s : (false as unknown as string));
   const cli = yargs(hideBin(process.argv))
     .scriptName('pop')
     .usage('$0 <domain> <action> [options]')
@@ -45,9 +105,15 @@ async function main() {
     .command('treasury <action>', 'Treasury & distributions', registerTreasuryCommands)
     .command('paymaster <action>', 'Gas sponsorship (ERC-4337)', registerPaymasterCommands)
     .command('role <action>', 'Role applications', registerRoleCommands)
+    .command('zkemail <action>', 'ZK Email role invites (allowlists)', registerZkEmailCommands)
     .command('config <action>', 'View and validate configuration', registerConfigCommands)
-    .command('agent <action>', 'Agent operations & monitoring', registerAgentCommands)
-    .command('brain <action>', 'P2P CRDT brain layer (live-sync knowledge)', registerBrainCommands)
+    .command('mcp <action>', 'Serve the CLI as an MCP server for AI integrations', registerMcpCommands)
+    .command('agent <action>', agentDesc('Agent operations & monitoring'),
+      agentPlugin ? agentPlugin.registerAgentCommands : agentUnavailableBuilder(),
+      agentPlugin ? undefined : agentUnavailableHandler('agent'))
+    .command('brain <action>', agentDesc('P2P CRDT brain layer (live-sync knowledge)'),
+      agentPlugin ? agentPlugin.registerBrainCommands : agentUnavailableBuilder(),
+      agentPlugin ? undefined : agentUnavailableHandler('brain'))
     // Top-level onboarding wizard. Registered before the global --org option so
     // it is clearly not an org-scoped command; its handler never resolves an
     // org, so the POP_DEFAULT_ORG middleware fallback below never blocks it.
@@ -76,6 +142,11 @@ async function main() {
     .option('private-key', {
       type: 'string',
       description: 'Private key (hex)',
+      global: true,
+    })
+    .option('address', {
+      type: 'string',
+      description: 'Observe as this address for identity-scoped reads (or set POP_ADDRESS) — no key needed',
       global: true,
     })
     .option('dry-run', {
@@ -124,8 +195,21 @@ async function main() {
     .strict()
     .demandCommand(1, 'Please specify a command')
     .completion('completion', 'Generate shell completion script')
+    .epilogue(
+      'AI agents: read AGENTS.md (interface choice, safety contract, traps) and the machine-readable '
+      + 'command manifest at docs/reference/cli/manifest.json before your first write. '
+      + 'Read-only mode: POP_READONLY=1. Identity reads without a key: --address/POP_ADDRESS.'
+    )
     .help()
-    .version('0.1.0')
+    // The real package version — hardcoding it means every published bump
+    // lies to consumers trying to correlate behavior with a CLI version.
+    // Resolved at runtime relative to dist/ so it works installed and in-repo.
+    .version((() => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        return String(require(require('path').join(__dirname, '..', 'package.json')).version);
+      } catch { return '0.0.0'; }
+    })())
     .wrap(Math.min(110, yargs.terminalWidth()));
 
   try {

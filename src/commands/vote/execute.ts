@@ -23,9 +23,11 @@
  *      CallFailed/ProposalExecutionFailed while the OUTER tx succeeds, so
  *      "tx mined" alone is not success
  *
- * If a proposal was announced but its execution reverted (executionFailed=true),
- * that terminal state is final. The call data lives in the proposal creation tx
- * and the protocol does not expose a retry path. The fix is a new proposal.
+ * A proposal announced whose execution REVERTED (executionFailed=true) is retryable
+ * since audit H-05: the contract releases the in-flight `executed` lock in its catch
+ * branch, so re-running announceWinner replays the batch. This command warns and then
+ * lets the callStatic pre-flight decide, which keeps it correct against both the
+ * upgraded and the pre-audit contracts.
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
@@ -101,17 +103,27 @@ export const executeHandler = {
       }
 
       if (proposal.executionFailed) {
-        spin.stop();
-        output.error(
-          `Proposal #${proposalId} was announced but execution reverted on-chain. ` +
-          `This is a terminal state — the protocol has no retry path. ` +
-          `Create a new proposal to retry the intended action.`
+        // NOT terminal. Audit H-05 (contracts #185) resets `p.executed = false` in the catch
+        // branch specifically "so this finalize can be retried once the revert cause is fixed"
+        // (HybridVotingCore._announceWinner; DirectDemocracyVoting._finalize only sets executed
+        // inside the successful try). Re-running announceWinner IS the intended fix path.
+        //
+        // Deliberately not version-gated: the callStatic probe below is the arbiter. On a
+        // pre-#185 contract the retry reverts AlreadyExecuted and the probe reports that
+        // cleanly; on #185 it proceeds. Blocking here would deny the retry on both.
+        output.warn(
+          `Proposal #${proposalId} was announced but its execution reverted on-chain. `
+          + 'Since the security audit this is RETRYABLE — fix the cause (target paused, quote '
+          + 'expired, executor underfunded) and re-run this command. On an older deployment the '
+          + 'pre-flight below will report AlreadyExecuted, and a new proposal is the only route.'
         );
-        process.exit(EXIT.TX_FAILED);
-        return;
       }
 
-      if (proposal.winnerAnnouncedAt) {
+      // executionFailed proposals ARE announced — the announce succeeded and the
+      // execution reverted. Returning here made the H-05 retry unreachable: the
+      // warning above promised "re-run this command" and this gate then said
+      // "Nothing to do". Let the callStatic pre-flight arbitrate the retry.
+      if (proposal.winnerAnnouncedAt && !proposal.executionFailed) {
         spin.stop();
         output.info(
           `Proposal #${proposalId} winner is already announced (valid=${proposal.isValid}). ` +

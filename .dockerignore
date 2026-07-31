@@ -1,0 +1,7 @@
+node_modules
+dist
+packages/agent/node_modules
+packages/agent/dist
+.git
+out
+*.log

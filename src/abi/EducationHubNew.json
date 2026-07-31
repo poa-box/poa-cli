@@ -735,6 +735,11 @@
   },
   {
     "type": "error",
+    "name": "TokenNotWired",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ZeroAddress",
     "inputs": []
   },

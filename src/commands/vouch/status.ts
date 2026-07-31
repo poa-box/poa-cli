@@ -11,19 +11,27 @@
  * ("Account too new — vouching unlocks in 1d"). Reads verified against
  * contracts origin/main src/EligibilityModule.sol (canUserVouch mirrors
  * _checkVouchingRateLimit: join-grace then daily limit, UTC-day buckets).
+ *
+ * READ SOURCING: this command never writes, so the wearer side is served
+ * SUBGRAPH-FIRST (VouchConfig + a count of active Vouch rows) with the
+ * on-chain getters kept as fallback — three eth_calls become zero on the happy
+ * path. The signer-side gate has no subgraph equivalent at all
+ * (canUserVouch / getCurrentDailyVouchCount / getMaxDailyVouches have no
+ * field, UserJoinTime has zero live rows) so it stays on RPC, now batched
+ * through Multicall3 into a single round-trip.
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { createProvider } from '../../lib/signer';
-import { createReadContract } from '../../lib/contracts';
+import { createProvider , resolveIdentityAddress } from '../../lib/signer';
 import { requireAddress } from '../../lib/validation';
 import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 import {
   resolveEligibilityModule,
-  decodeVouchConfig,
+  parseHatId,
+  readWearerVouchState,
   readVoucherGate,
   vouchRestriction,
   vouchQuotaLabel,
@@ -39,12 +47,19 @@ interface StatusArgs {
   'private-key'?: string;
 }
 
-/** Resolve the signer address from --private-key/POP_PRIVATE_KEY without requiring one. */
+/**
+ * Resolve the VOUCHER identity (POP_ADDRESS/key) without requiring one.
+ *
+ * Deliberately excludes argv.address: this command's own --address means
+ * "the WEARER to check" (pre-existing, demanded option), not "observe as".
+ * Passing it through resolveIdentityAddress would silently evaluate the
+ * voucher gate as the wearer.
+ */
 function optionalSignerAddress(argv: { 'private-key'?: string }): string | null {
-  const key = (argv['private-key'] as string) || (argv as any).privateKey || process.env.POP_PRIVATE_KEY;
-  if (!key) return null;
   try {
-    return new ethers.Wallet(key).address;
+    return resolveIdentityAddress({
+      privateKey: (argv as any)['private-key'] ?? (argv as any).privateKey,
+    });
   } catch {
     return null;
   }
@@ -62,24 +77,29 @@ export const statusHandler = {
     spin.start();
 
     try {
+      const hatId = parseHatId(argv.hat);
       const { eligibilityModuleAddress } = await resolveEligibilityModule(argv.org, argv.chain);
       const provider = createProvider({ chainId: argv.chain, rpcUrl: argv.rpc as string });
-      const contract = createReadContract(eligibilityModuleAddress, 'EligibilityModuleNew', provider);
       const signerAddress = optionalSignerAddress(argv);
 
-      const [vouchCount, isEnabled, rawConfig, gate] = await Promise.all([
-        contract.currentVouchCount(argv.hat, wearer),
-        contract.isVouchingEnabled(argv.hat),
-        contract.vouchConfigs(argv.hat),
+      const [wearerState, gate] = await Promise.all([
+        // Subgraph-first; an explicit --rpc means "read from that node", so it
+        // pins this back to the on-chain getters.
+        readWearerVouchState(provider, eligibilityModuleAddress, hatId, wearer, {
+          chainId: argv.chain,
+          preferSubgraph: !argv.rpc,
+        }),
         signerAddress
           ? readVoucherGate(provider, eligibilityModuleAddress, signerAddress)
           : Promise.resolve(null as VoucherGate | null),
       ]);
 
       spin.stop();
+      output.debug(`vouch progress read from ${wearerState.source}`);
 
-      const config = decodeVouchConfig(rawConfig);
-      const count = ethers.BigNumber.from(vouchCount);
+      const config = wearerState.state.config;
+      const isEnabled = config.enabled;
+      const count = ethers.BigNumber.from(wearerState.state.currentCount);
       const quorum = ethers.BigNumber.from(config.quorum);
       const restriction = gate ? vouchRestriction(gate) : null;
 

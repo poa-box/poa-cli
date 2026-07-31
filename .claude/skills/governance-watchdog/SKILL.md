@@ -58,7 +58,7 @@ For each metric, compute the delta and assign a status:
 
 ## Step 3: Flag Anomalies
 
-Check the Research → Action Tracker in `agent/brain/Knowledge/shared.md`:
+Check the Research → Action Tracker in `packages/agent/brain/Knowledge/shared.md`:
 - Any items stuck in TODO for >3 heartbeats?
 - Any PROPOSED items that haven't been executed?
 - Any new findings that should be added?

@@ -1,4 +1,5 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
+import { resolveIdentityAddress } from '../../lib/signer';
 import { ethers } from 'ethers';
 import { query } from '../../lib/subgraph';
 import { FETCH_USERNAME, FETCH_USER_DATA } from '../../queries/user';
@@ -27,11 +28,7 @@ export const profileHandler = {
     spin.start();
 
     try {
-      const address = argv.address || (() => {
-        const key = argv.privateKey as string || process.env.POP_PRIVATE_KEY;
-        if (!key) throw new Error('Provide --address or --private-key to identify user');
-        return new ethers.Wallet(key).address;
-      })();
+      const address = resolveIdentityAddress(argv, { required: true, purpose: 'user profile' })!;
 
       // Fetch account info from home chain (best-effort — Gateway may require domain auth)
       let account: any = null;

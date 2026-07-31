@@ -15,7 +15,7 @@ import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { execFileSync } from 'child_process';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
-import { pinJson } from '../../lib/ipfs';
+import { pinJson, fetchJson } from '../../lib/ipfs';
 import { parseTaskId, ipfsCidToBytes32 } from '../../lib/encoding';
 import { formatCountdown } from '../../lib/format';
 import { getTaskOnChain, deriveClaimState, TASK_STATUS, TaskOnChain } from '../../lib/task-lens';
@@ -26,6 +26,7 @@ import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import { query } from '../../lib/subgraph';
 import { FETCH_PROJECTS_DATA } from '../../queries/task';
+import { findSubgraphTask } from './helpers';
 import * as output from '../../lib/output';
 
 interface SubmitArgs {
@@ -107,18 +108,33 @@ export const submitHandler = {
         }
 
         // ── 2. Fetch existing metadata so the submission preserves it ────
+        // This is a FULL OVERWRITE of the metadata pointer: the subgraph re-points
+        // task.metadata at the submission JSON we pin below, so anything missing here is
+        // destroyed on-chain. Match on the PARSED numeric id (`pop task list --json` prints
+        // the composite `<taskManager>-<id>` form, which never matched the raw argument), and
+        // fall back to IPFS before giving up — same ladder as task update / edit-meta.
         spin.text = 'Fetching task metadata...';
-        const taskData = await query<any>(FETCH_PROJECTS_DATA, { orgId: ctx.orgId }, argv.chain);
-        const projects = taskData.organization?.taskManager?.projects || [];
-        let existingMeta: any = null;
-        for (const project of projects) {
-          for (const task of project.tasks || []) {
-            if (task.taskId === argv.task || task.id.endsWith(`-${argv.task}`)) {
-              existingMeta = task.metadata;
-              break;
-            }
-          }
-          if (existingMeta) break;
+        let subgraphTask: any = null;
+        try {
+          const taskData = await query<any>(FETCH_PROJECTS_DATA, { orgId: ctx.orgId }, argv.chain);
+          subgraphTask = findSubgraphTask(taskData.organization?.taskManager?.projects || [], parsedTaskId);
+        } catch { /* handled below */ }
+
+        let existingMeta: any = subgraphTask?.metadata || null;
+        if (!existingMeta && subgraphTask?.metadataHash) {
+          try {
+            existingMeta = await fetchJson(subgraphTask.metadataHash);
+          } catch { /* handled below */ }
+        }
+
+        if (!existingMeta) {
+          spin.stop();
+          output.error(
+            `Task ${argv.task} metadata is not indexed yet (subgraph lag) — submitting now would `
+            + 'overwrite the task\'s name, description and due date with blanks.',
+            { suggestion: 'Retry in a few seconds. The submission itself is unaffected once metadata resolves.' }
+          );
+          process.exit(EXIT.INFRA);
         }
 
         // Merge submission into existing metadata (preserves name, description, difficulty, etc.)
@@ -129,6 +145,12 @@ export const submitHandler = {
           difficulty: existingMeta?.difficulty || '',
           estHours: existingMeta?.estimatedHours ? parseFloat(existingMeta.estimatedHours) : 0,
           submission: argv.submission,
+          // The subgraph re-points task.metadata at THIS submission JSON, so a
+          // dueDate omitted here is gone for good. Mirrors the frontend, which
+          // appends the key last and only when set.
+          ...(existingMeta?.dueDate
+            ? { dueDate: Math.floor(Number(existingMeta.dueDate)) }
+            : {}),
         };
 
         // ── 3. Pin, THEN send ─────────────────────────────────────────────

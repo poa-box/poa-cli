@@ -21,6 +21,9 @@ import { EXIT } from '../../lib/exit-codes';
 import { getTokenDecimals } from '../../config/tokens';
 import * as output from '../../lib/output';
 import { resolveOrgContracts } from './helpers';
+import { calculatePayout, payoutConfigFromMetadata, type PayoutConfig } from '../../lib/payout';
+import { FETCH_ORG_PAYOUT_CONFIG } from '../../queries/org';
+import { query } from '../../lib/subgraph';
 
 interface BatchArgs {
   org?: string;
@@ -40,7 +43,7 @@ interface BatchArgs {
 interface TaskLine {
   name: string;
   description: string;
-  payout: number;
+  payout?: number;
   difficulty?: string;
   estHours?: number;
   location?: string;
@@ -54,6 +57,10 @@ interface TaskLine {
 }
 
 interface ParsedTask extends TaskLine {
+  /** Resolved payout — the row's own value, or one derived from the org's payout convention. */
+  payout: number;
+  /** True when the JSONL row supplied `payout` explicitly (so 0 stays 0). */
+  payoutProvided: boolean;
   /** Resolved absolute deadline (unix seconds; 0 = none) */
   absoluteDeadline: number;
   /** Resolved completion window (seconds; 0 = none) */
@@ -116,8 +123,8 @@ export const createBatchHandler = {
     for (let i = 0; i < lines.length; i++) {
       try {
         const task = JSON.parse(lines[i]) as TaskLine;
-        if (!task.name || !task.description || task.payout === undefined) {
-          throw new Error('Missing required fields: name, description, payout');
+        if (!task.name || !task.description) {
+          throw new Error('Missing required fields: name, description');
         }
         const absoluteDeadline = task.deadline !== undefined
           ? parseDeadline(String(task.deadline))
@@ -127,6 +134,8 @@ export const createBatchHandler = {
           : defaultWindow;
         tasks.push({
           ...task,
+          payout: task.payout ?? 0,
+          payoutProvided: task.payout !== undefined,
           absoluteDeadline,
           completionWindowSecs,
           deadlineSet: batchDeadlineSet || task.deadline !== undefined || task.completionWindow !== undefined,
@@ -147,7 +156,48 @@ export const createBatchHandler = {
     output.info(`Creating ${tasks.length} tasks...`);
 
     try {
-      const { taskManagerAddress } = await resolveOrgContracts(argv.org as string, argv.chain);
+      const { taskManagerAddress, orgId } = await resolveOrgContracts(argv.org as string, argv.chain);
+
+      // Same pricing convention as `pop task create`: a row may omit `payout` and be priced
+      // from the org's payout config + its difficulty/estHours.
+      let payoutConfig: PayoutConfig & { useTokenSymbol: boolean } = {
+        hoursOnly: false, hourlyRate: null, useTokenSymbol: false,
+      };
+      let payoutConfigError: unknown = null;
+      try {
+        const cfg = await query<any>(FETCH_ORG_PAYOUT_CONFIG, { orgId }, argv.chain);
+        // No org row (indexer lag) must not silently price from defaults —
+        // only an org row with null metadata legitimately means default pricing.
+        if (!cfg.organization) throw new Error('organization not indexed');
+        payoutConfig = payoutConfigFromMetadata(cfg.organization?.metadata);
+      } catch (err) {
+        // Only fatal when a row needs its payout DERIVED — rows with explicit
+        // payouts do not depend on org pricing.
+        payoutConfigError = err;
+      }
+      const needsDerivation = tasks.filter((t) => !t.payoutProvided);
+      if (needsDerivation.length > 0 && payoutConfigError) {
+        // Pricing from the hard-coded default would silently misprice every derived
+        // row for an org with hours-only or custom hourly pricing — and the payouts
+        // go on-chain. Refuse rather than guess.
+        throw new Error(
+          `Could not read the org payout config (subgraph unreachable), and ${needsDerivation.length} `
+          + `row(s) omit "payout": ${needsDerivation.map((t) => t.name).join(', ')}. `
+          + 'Add explicit payouts to those rows, or retry when the subgraph is reachable.'
+        );
+      }
+      for (const t of tasks) {
+        if (!t.payoutProvided) {
+          t.payout = calculatePayout(t.difficulty || 'medium', t.estHours || 0, payoutConfig);
+        }
+      }
+      const unpriced = tasks.filter((t) => !t.payoutProvided && t.payout <= 0);
+      if (unpriced.length > 0) {
+        throw new Error(
+          `${unpriced.length} row(s) could not be priced (no "payout", and difficulty/estHours `
+          + `derive to 0): ${unpriced.map((t) => t.name).join(', ')}`
+        );
+      }
       const { signer, provider, chainId } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
       const pid = parseProjectId(argv.project);
 

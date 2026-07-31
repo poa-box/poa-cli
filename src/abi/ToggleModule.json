@@ -37,6 +37,19 @@
   },
   {
     "type": "function",
+    "name": "eligibilityModule",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getHatStatus",
     "inputs": [
       {
@@ -142,6 +155,25 @@
       },
       {
         "name": "newAdmin",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EligibilityModuleSet",
+    "inputs": [
+      {
+        "name": "oldModule",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newModule",
         "type": "address",
         "indexed": true,
         "internalType": "address"

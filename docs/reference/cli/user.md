@@ -52,6 +52,10 @@ Show signer identity: address, username, gas balance, and org standing
 pop user whoami [flags]
 ```
 
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--on-chain` | boolean | no | `false` | Re-verify membership with a live Hats.balanceOf call instead of the subgraph's indexed hat state (slower; catches a dynamically revoked eligibility that burned no token) |
+
 ## pop user profile
 
 View user profile
@@ -81,4 +85,4 @@ pop user update-profile [flags]
 | `--username` | string | no | - | New username (DESTRUCTIVE: releases the old name for anyone to claim) |
 | `--website` | string | no | - | Website URL |
 
-_Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_
+_Global flags: --org, --chain, --rpc, --json, --address, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

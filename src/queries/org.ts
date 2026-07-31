@@ -52,6 +52,9 @@ export const FETCH_ORG_BY_ID = `
       paymentManager {
         id
       }
+      zkEmailInvites {
+        id
+      }
       users {
         id
         address
@@ -91,6 +94,9 @@ export const FETCH_ORG_FULL_DATA = `
         backgroundColor
         logo
         hideTreasury
+        useTokenSymbol
+        taskPayoutHoursOnly
+        taskPayoutHourlyRate
         links {
           name
           url
@@ -118,6 +124,9 @@ export const FETCH_ORG_FULL_DATA = `
         id
         thresholdPct
         quorum
+      }
+      zkEmailInvites {
+        id
       }
       taskManager {
         id
@@ -214,6 +223,28 @@ export const FETCH_USER_ORGANIZATIONS = `
         participationToken {
           symbol
         }
+      }
+    }
+  }
+`;
+
+/**
+ * Just the org's payout convention + token symbol.
+ *
+ * Deliberately narrow: `pop task create` needs it on every invocation to price a task the way
+ * the web app would, and FETCH_ORG_FULL_DATA pulls every user, role, task and proposal.
+ */
+export const FETCH_ORG_PAYOUT_CONFIG = `
+  query FetchOrgPayoutConfig($orgId: Bytes!) {
+    organization(id: $orgId) {
+      id
+      metadata {
+        useTokenSymbol
+        taskPayoutHoursOnly
+        taskPayoutHourlyRate
+      }
+      participationToken {
+        symbol
       }
     }
   }

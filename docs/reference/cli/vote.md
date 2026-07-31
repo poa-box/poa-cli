@@ -192,4 +192,4 @@ pop vote classes propose [flags]
 | `--idempotency-key` | string | no | - | Explicit idempotency key (default: derived from argv). |
 | `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
 
-_Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_
+_Global flags: --org, --chain, --rpc, --json, --address, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

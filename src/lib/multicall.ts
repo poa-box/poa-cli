@@ -49,17 +49,21 @@ function isMulticallAvailable(provider: ethers.providers.Provider): Promise<bool
  * getEthBalance calls target Multicall3 itself, so without the deployment
  * they are answered from eth_getBalance instead of eth_call.
  */
-async function fallbackCall(provider: ethers.providers.Provider, call: Call): Promise<CallResult> {
+async function fallbackCall(
+  provider: ethers.providers.Provider,
+  call: Call,
+  blockTag?: number
+): Promise<CallResult> {
   try {
     if (
       call.to.toLowerCase() === MULTICALL3.toLowerCase() &&
       call.data.slice(0, 10).toLowerCase() === MULTICALL3_IFACE.getSighash('getEthBalance').toLowerCase()
     ) {
       const [addr] = MULTICALL3_IFACE.decodeFunctionData('getEthBalance', call.data);
-      const balance = await provider.getBalance(addr);
+      const balance = await provider.getBalance(addr, blockTag);
       return { success: true, returnData: ethers.utils.defaultAbiCoder.encode(['uint256'], [balance]) };
     }
-    const returnData = await provider.call({ to: call.to, data: call.data });
+    const returnData = await provider.call({ to: call.to, data: call.data }, blockTag);
     return { success: true, returnData };
   } catch {
     return { success: false, returnData: '0x' };
@@ -75,7 +79,8 @@ async function fallbackCall(provider: ethers.providers.Provider, call: Call): Pr
  */
 export async function tryAggregate(
   provider: ethers.providers.Provider,
-  calls: Call[]
+  calls: Call[],
+  opts?: { blockTag?: number }
 ): Promise<CallResult[]> {
   if (calls.length === 0) return [];
 
@@ -85,7 +90,7 @@ export async function tryAggregate(
         false,
         calls.map((c) => [c.to, c.data]),
       ]);
-      const raw = await provider.call({ to: MULTICALL3, data });
+      const raw = await provider.call({ to: MULTICALL3, data }, opts?.blockTag);
       const [results] = MULTICALL3_IFACE.decodeFunctionResult('tryAggregate', raw);
       return results.map((r: { success: boolean; returnData: string }) => ({
         success: r.success,
@@ -96,7 +101,7 @@ export async function tryAggregate(
     }
   }
 
-  return Promise.all(calls.map((call) => fallbackCall(provider, call)));
+  return Promise.all(calls.map((call) => fallbackCall(provider, call, opts?.blockTag)));
 }
 
 /** Calldata for Multicall3.getEthBalance(address), for batching native-balance reads. */

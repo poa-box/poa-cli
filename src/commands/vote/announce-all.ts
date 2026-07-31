@@ -15,9 +15,11 @@ import { createSigner } from '../../lib/signer';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { resolveOrgId } from '../../lib/resolve';
-import { query } from '../../lib/subgraph';
-import { FETCH_VOTING_DATA } from '../../queries/voting';
+import { queryWithFieldFallback } from '../../lib/subgraph';
+import { FETCH_VOTING_DATA, FETCH_VOTING_DATA_LEGACY } from '../../queries/voting';
 import { withIdempotency } from '../../lib/command';
+import { CliError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 import { resolveVotingContracts } from './helpers';
 
@@ -42,13 +44,18 @@ export const announceAllHandler = {
 
     try {
       const orgId = await resolveOrgId(argv.org, argv.chain);
-      const result = await query<any>(FETCH_VOTING_DATA, { orgId }, argv.chain);
+      // A GraphQL document validates as a whole, so one unknown field fails the entire query.
+      // Fall back to the pre-#195 field set rather than hard-failing (announcing must keep working against a pre-#195 subgraph).
+      const { data: result } = await queryWithFieldFallback<any>([
+        { query: FETCH_VOTING_DATA, variables: { orgId } },
+        { query: FETCH_VOTING_DATA_LEGACY, variables: { orgId } },
+      ], { chainId: argv.chain });
       const org = result.organization;
 
       if (!org) throw new Error('Organization not found');
 
       // Find all Ended proposals (not yet announced/executed)
-      const toAnnounce: Array<{ id: string; type: 'hybrid' | 'dd'; title: string }> = [];
+      const toAnnounce: Array<{ id: string; type: 'hybrid' | 'dd'; title: string; retry: boolean }> = [];
 
       const now = Math.floor(Date.now() / 1000);
 
@@ -58,21 +65,38 @@ export const announceAllHandler = {
       // Exclude "Executed" (already announced)
       const hybridProposals = org.hybridVoting?.proposals || [];
       for (const p of hybridProposals) {
-        if (p.status === 'Executed' || p.winningOption != null) continue; // already announced
+        // A FAILED execution is not "done". Audit H-05 releases the in-flight `executed` lock
+        // in the catch branch, so the proposal is re-announceable — but it already has a
+        // winningOption (Winner is emitted regardless), so the plain already-announced test
+        // would skip it forever and silently. Nothing else surfaces a stuck-but-fixable batch.
+        const alreadyDone = (p.status === 'Executed' || p.winningOption != null) && !p.executionFailed;
+        if (alreadyDone) continue;
         const ended = p.status === 'Ended' ||
           (p.status === 'Active' && p.endTimestamp && parseInt(p.endTimestamp) < now);
         if (ended) {
-          toAnnounce.push({ id: p.proposalId, type: 'hybrid', title: p.title || `Proposal #${p.proposalId}` });
+          toAnnounce.push({
+            id: p.proposalId,
+            type: 'hybrid',
+            title: p.title || `Proposal #${p.proposalId}`,
+            retry: Boolean(p.executionFailed),
+          });
         }
       }
 
       const ddProposals = org.directDemocracyVoting?.ddvProposals || [];
       for (const p of ddProposals) {
-        if (p.status === 'Executed' || p.winningOption != null) continue; // already announced
+        // Same H-05 retry case as hybrid above.
+        const alreadyDone = (p.status === 'Executed' || p.winningOption != null) && !p.executionFailed;
+        if (alreadyDone) continue;
         const ended = p.status === 'Ended' ||
           (p.status === 'Active' && p.endTimestamp && parseInt(p.endTimestamp) < now);
         if (ended) {
-          toAnnounce.push({ id: p.proposalId, type: 'dd', title: p.title || `DD Proposal #${p.proposalId}` });
+          toAnnounce.push({
+            id: p.proposalId,
+            type: 'dd',
+            title: p.title || `DD Proposal #${p.proposalId}`,
+            retry: Boolean(p.executionFailed),
+          });
         }
       }
 
@@ -93,7 +117,7 @@ export const announceAllHandler = {
         spin.start();
         spin.text = `Announcing ${toAnnounce.length} proposal(s)...`;
 
-        const results: Array<{ id: string; type: string; title: string; success: boolean; txHash?: string; error?: string }> = [];
+        const results: Array<{ id: string; type: string; title: string; retry: boolean; success: boolean; txHash?: string; error?: string }> = [];
 
         for (const proposal of toAnnounce) {
           const isHybrid = proposal.type === 'hybrid';
@@ -159,8 +183,12 @@ export const announceAllHandler = {
       }
     } catch (err: any) {
       spin.stop();
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
       output.error(err.message);
-      process.exit(1);
+      process.exit(EXIT.USAGE);
     }
   },
 };

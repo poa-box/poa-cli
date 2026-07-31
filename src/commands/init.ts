@@ -43,8 +43,14 @@ interface InitArgs {
   json?: boolean;
 }
 
-/** The POP-deployed chains, in a stable menu order (mainnets first). */
-const POP_CHAIN_IDS = [100, 42161, 11155111, 84532] as const;
+/**
+ * The POP-deployed chains, in a stable menu order (mainnets first).
+ *
+ * Sepolia (11155111) and Base Sepolia (84532) are deliberately absent: their subgraph
+ * deployments no longer exist, so picking one from the wizard produced a wallet configured
+ * for a chain where every subgraph-backed command fails.
+ */
+const POP_CHAIN_IDS = [100, 42161] as const;
 
 type KeyChoice = 'generate' | 'import' | 'skip';
 

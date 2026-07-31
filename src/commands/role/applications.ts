@@ -1,4 +1,5 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
+import { resolveIdentityAddress } from '../../lib/signer';
 import { ethers } from 'ethers';
 import { query } from '../../lib/subgraph';
 import { resolveOrgModules, requireModule } from '../../lib/resolve';
@@ -32,9 +33,7 @@ export const applicationsHandler = {
       let applications: any[];
 
       if (argv.mine) {
-        const key = argv.privateKey as string || process.env.POP_PRIVATE_KEY;
-        if (!key) throw new Error('--mine requires a private key');
-        const address = new ethers.Wallet(key).address.toLowerCase();
+        const address = resolveIdentityAddress(argv, { required: true, purpose: '--mine' })!.toLowerCase();
 
         const result = await query<any>(
           FETCH_USER_ROLE_APPLICATIONS,

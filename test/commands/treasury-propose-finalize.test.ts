@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   runPreflight: vi.fn(),
   checkGasBalance: vi.fn(),
   pinJson: vi.fn(),
+  query: vi.fn(),
 }));
 
 vi.mock('../../src/lib/tx', () => ({ executeTx: mocks.executeTx }));
@@ -35,6 +36,7 @@ vi.mock('../../src/lib/preflight', () => ({
   checkGasBalance: mocks.checkGasBalance,
 }));
 vi.mock('../../src/lib/ipfs', () => ({ pinJson: mocks.pinJson }));
+vi.mock('../../src/lib/subgraph', () => ({ query: mocks.query }));
 vi.mock('../../src/lib/output', () => {
   const makeSpinner = () => {
     const s: any = { text: '' };
@@ -136,6 +138,9 @@ describe('pop treasury propose-finalize — calldata + gates', () => {
     mocks.runPreflight.mockResolvedValue(undefined);
     mocks.checkGasBalance.mockReturnValue({ label: 'gas balance' });
     mocks.pinJson.mockResolvedValue(CID);
+    // Indexed Distribution: createdAtBlock is AFTER checkpointBlock, as it always is on live
+    // data (the tree is built at the checkpoint, then governance votes).
+    mocks.query.mockResolvedValue({ distribution: { createdAtBlock: '41050000' } });
     mocks.executeTx.mockResolvedValue({
       success: true,
       txHash: '0xabc',
@@ -211,5 +216,132 @@ describe('pop treasury propose-finalize — calldata + gates', () => {
     expect(exitSpy.mock.calls[0][0]).toBe(EXIT.PRECONDITION);
     expect(mocks.executeTx).not.toHaveBeenCalled();
     expect(output.error).toHaveBeenCalledWith(expect.stringContaining('already finalized'), expect.anything());
+  });
+});
+
+/**
+ * The ClaimPeriodNotExpired warning must anchor on the distribution's CREATION block.
+ *
+ * PaymentManager.getDistribution returns exactly
+ * (payoutToken, totalAmount, checkpointBlock, merkleRoot, totalClaimed, finalized) — there is no
+ * `createdAtBlock` on that struct, and `creationBlock` is private with no getter. Reading
+ * `dist.createdAtBlock` off the on-chain result therefore yielded `undefined` on every call, so
+ * the ternary always fell to checkpointBlock and the M-08 re-anchoring never happened. The
+ * subgraph is the only source, and these tests fail if the on-chain object is trusted again.
+ */
+/**
+ * The claim-window anchor is the CHECKPOINT block, because that is what the
+ * deployed contract uses. Verified by eth_call against live Gnosis PaymentManager
+ * 0x409f51250dc5c66bb1d6952f947d841192f1140e, distribution 4 (checkpointBlock
+ * 45623101, indexed createdAtBlock 45623935):
+ *
+ *   finalizeDistribution(4, N) with checkpoint+N passed but creation+N in the
+ *   future  -> returns '0x'        (no revert — the window HAS cleared)
+ *   finalizeDistribution(4, huge)                -> returns 0x4dece07e
+ *                                                   (ClaimPeriodNotExpired)
+ *
+ * Audit M-08 proposes re-anchoring on the creation block, but that build is not
+ * deployed. These tests previously asserted the creation anchor, which pinned a
+ * warning that fires for windows that have ALREADY cleared and prints a clearance
+ * block ~800-1500 blocks too late on every live org.
+ */
+describe('pop treasury propose-finalize — the claim-window anchor is the checkpoint block', () => {
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+  let pmRead: { getDistribution: ReturnType<typeof vi.fn> };
+  let getBlockNumber: ReturnType<typeof vi.fn>;
+
+  const CHECKPOINT = 41000000;
+  const CREATED = 41050000; // 50k blocks later — the window the contract actually enforces
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _clearWriteContextCacheForTest();
+    _setStreamsForTest(undefined, undefined, false);
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new ExitError(code ?? 0);
+    }) as never);
+
+    getBlockNumber = vi.fn().mockResolvedValue(CHECKPOINT + 30000);
+    mocks.createSigner.mockReturnValue({
+      signer: new ethers.VoidSigner(WALLET),
+      provider: { getBlockNumber },
+      address: WALLET,
+      chainId: 100,
+    });
+    mocks.resolveOrgModules.mockResolvedValue({
+      orgId: ORG_ID,
+      paymentManagerAddress: PM_ADDR,
+      hybridVotingAddress: VOTING_ADDR,
+    });
+    pmRead = {
+      getDistribution: vi.fn().mockResolvedValue(
+        distFixture({ checkpointBlock: ethers.BigNumber.from(CHECKPOINT) })
+      ),
+    };
+    mocks.createReadContract.mockReturnValue(pmRead);
+    mocks.runPreflight.mockResolvedValue(undefined);
+    mocks.checkGasBalance.mockReturnValue({ label: 'gas balance' });
+    mocks.pinJson.mockResolvedValue(CID);
+    mocks.query.mockResolvedValue({ distribution: { createdAtBlock: String(CREATED) } });
+    mocks.executeTx.mockResolvedValue({
+      success: true,
+      txHash: '0xabc',
+      explorerUrl: 'https://explorer/tx/0xabc',
+      logs: [{ name: 'NewProposal', args: { id: ethers.BigNumber.from(7) } }],
+    });
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+    _setStreamsForTest();
+  });
+
+  it('stays silent when the CHECKPOINT-anchored window has already cleared', async () => {
+    // 20k window: clear from the CHECKPOINT (41,020,000 < 41,030,000 now) but not from
+    // creation (41,070,000 > now). The contract gate is checkpoint-anchored, so the
+    // window really HAS cleared and warning here would be a false positive on every
+    // live org.
+    await proposeFinalizeHandler.handler(baseArgv({ minClaimBlocks: 20000 }));
+
+    expect(output.warn).not.toHaveBeenCalled();
+  });
+
+  it('warns using checkpointBlock + minClaimBlocks when the window is genuinely open', async () => {
+    await proposeFinalizeHandler.handler(baseArgv({ minClaimBlocks: 60000 }));
+
+    expect(output.warn).toHaveBeenCalledWith(expect.stringContaining(String(CHECKPOINT + 60000)));
+    expect(output.warn).not.toHaveBeenCalledWith(expect.stringContaining(String(CREATED + 60000)));
+  });
+
+  it('needs no subgraph round-trip at all — checkpointBlock is on the struct', async () => {
+    await proposeFinalizeHandler.handler(baseArgv({ minClaimBlocks: 60000 }));
+
+    // getDistribution() already returns checkpointBlock, so the extra
+    // Distribution(id:) query the creation anchor required is gone.
+    expect(mocks.query).not.toHaveBeenCalled();
+    expect(output.warn).toHaveBeenCalledWith(expect.stringContaining(String(CHECKPOINT + 60000)));
+  });
+
+  it('describes the window as checkpoint-anchored in the pinned proposal metadata', async () => {
+    // This text is pinned to IPFS and read by voters; it cannot be edited later.
+    await proposeFinalizeHandler.handler(baseArgv({ minClaimBlocks: 60000 }));
+
+    const pinned = JSON.parse(mocks.pinJson.mock.calls[0][0]);
+    expect(pinned.description).toContain('blocks from the checkpoint block');
+    expect(pinned.description).not.toContain('distribution creation block');
+  });
+
+  it('skips the block read entirely when --min-claim-blocks is 0', async () => {
+    await proposeFinalizeHandler.handler(baseArgv({ minClaimBlocks: 0 }));
+
+    expect(output.warn).not.toHaveBeenCalled();
+  });
+
+  it('a getBlockNumber outage degrades to no warning, never to a failed proposal', async () => {
+    getBlockNumber.mockRejectedValue(new Error('502 bad gateway'));
+
+    await proposeFinalizeHandler.handler(baseArgv({ minClaimBlocks: 20000 }));
+
+    expect(mocks.executeTx).toHaveBeenCalledTimes(1);
   });
 });

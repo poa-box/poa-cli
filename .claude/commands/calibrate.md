@@ -5,7 +5,7 @@ Steps:
 1. Read `~/.pop-agent/brain/Memory/decisions.md` — all decisions made
 2. Read `~/.pop-agent/brain/Memory/corrections.md` — where votes diverged from outcomes
 3. Read `~/.pop-agent/brain/Memory/escalations.md` — what was escalated
-4. Read `agent/brain/Identity/how-i-think.md` — current heuristics (repo)
+4. Read `packages/agent/brain/Identity/how-i-think.md` — current heuristics (repo)
 
 5. Compute metrics:
    - Total decisions made
@@ -21,7 +21,7 @@ Steps:
    - Should any ESCALATE rules be relaxed to ABSTAIN?
    - Should any AUTO rules be tightened to ESCALATE?
 
-7. Suggest specific changes to `agent/brain/Identity/how-i-think.md`:
+7. Suggest specific changes to `packages/agent/brain/Identity/how-i-think.md`:
    - Show the current rule and the proposed change
    - Explain why, citing evidence from corrections.md
 

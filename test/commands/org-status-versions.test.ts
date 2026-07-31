@@ -95,6 +95,7 @@ function modulesFixture(overrides: Partial<OrgModules> = {}): OrgModules {
     quickJoinAddress: null,
     eligibilityModuleAddress: null,
     paymentManagerAddress: null,
+    zkEmailInvitesAddress: null,
     ...overrides,
   };
 }
@@ -239,9 +240,12 @@ describe('buildVersionPanel — impl vs latest comparison', () => {
   });
 
   it('MODULE_TYPES typeNames match the verified PoaManager contract-type strings', () => {
+    // Each string must be a real PoaManager contract type, i.e. keccak256(typeName) must be a
+    // registered beacon typeId. Verified against the live Gnosis beacon set.
     const verified = new Set([
       'TaskManager', 'HybridVoting', 'DirectDemocracyVoting', 'ParticipationToken',
       'EducationHub', 'PaymentManager', 'QuickJoin', 'EligibilityModule',
+      'ZkEmailInvites',
     ]);
     for (const m of MODULE_TYPES) {
       expect(verified.has(m.typeName), `unverified typeName ${m.typeName}`).toBe(true);

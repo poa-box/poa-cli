@@ -30,6 +30,7 @@ import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import { query } from '../../lib/subgraph';
 import { FETCH_PROJECTS_DATA } from '../../queries/task';
+import { findSubgraphTask } from './helpers';
 import * as output from '../../lib/output';
 
 interface EditMetaArgs {
@@ -43,15 +44,6 @@ interface EditMetaArgs {
   'dry-run'?: boolean;
   yes?: boolean;
   preflight?: boolean;
-}
-
-function findSubgraphTask(projects: any[], taskId: string): any | null {
-  for (const project of projects) {
-    for (const task of project.tasks || []) {
-      if (task.taskId === taskId || task.id?.endsWith(`-${taskId}`)) return task;
-    }
-  }
-  return null;
 }
 
 function delta(oldValue: string, newValue: string): string {
@@ -157,6 +149,9 @@ export const editMetaHandler = {
         difficulty: metadata?.difficulty || 'medium',
         estHours: metadata?.estimatedHours || metadata?.estHours || 0,
         submission: metadata?.submission || '',
+        // Soft due date is metadata-borne; a re-pin that drops it deletes it.
+        // Frontend appends this key last and only when set.
+        ...(metadata?.dueDate ? { dueDate: Math.floor(Number(metadata.dueDate)) } : {}),
       };
 
       // Pre-flight — allowed statuses verified: any non-terminal.

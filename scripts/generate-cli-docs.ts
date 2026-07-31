@@ -21,6 +21,7 @@ import {
   CliDomain,
   OptSpec,
 } from './lib/cli-tree';
+import { safetyFor } from './lib/safety-map';
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'docs', 'reference', 'cli');
@@ -167,6 +168,89 @@ function renderIndexPage(tree: CliDomain[], topLevel: CliCommand[]): string {
 // Main
 // ---------------------------------------------------------------------------
 
+function manifestOption(spec: OptSpec): Record<string, unknown> {
+  const out: Record<string, unknown> = { type: spec.type ?? 'string' };
+  if (spec.description) out.description = spec.description;
+  if (spec.default !== undefined) out.default = spec.default;
+  if (spec.choices && spec.choices.length) out.choices = spec.choices;
+  if (spec.required) out.required = true;
+  if (spec.aliases && spec.aliases.length) out.aliases = spec.aliases;
+  return out;
+}
+
+function manifestCommand(domain: string, cmd: CliCommand, entries: any[]): void {
+  const isGroup = (cmd.subcommands?.length ?? 0) > 0;
+  const safety = safetyFor(cmd.fullName.replace(/^pop /, ''));
+  const broadcasts = safety?.broadcasts ?? false;
+  entries.push({
+    name: cmd.fullName.replace(/^pop /, ''),
+    kind: isGroup ? 'group' : 'command',
+    description: cmd.description,
+    // readOnly = cannot broadcast a transaction. Check sideEffects too: a
+    // readOnly command may still publish to IPFS via --pin, or write files.
+    readOnly: !broadcasts,
+    broadcasts,
+    destructive: safety?.destructive ?? false,
+    sideEffects: safety?.sideEffects ?? [],
+    positionals: cmd.positionals.map((pSpec) => ({
+      name: pSpec.name,
+      type: pSpec.type ?? 'string',
+      ...(pSpec.description ? { description: pSpec.description } : {}),
+      ...(pSpec.required ? { required: true } : {}),
+    })),
+    options: Object.fromEntries(
+      Object.entries(cmd.options)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([name, spec]) => [name, manifestOption(spec)])
+    ),
+  });
+  for (const sub of cmd.subcommands ?? []) manifestCommand(domain, sub, entries);
+}
+
+/**
+ * The machine-readable command manifest. The read/write split here is the
+ * CURATED one from scripts/lib/safety-map.ts, drift-checked against the
+ * source by test/docs/manifest-safety.test.ts — integrators should consume
+ * this instead of re-deriving it (and getting `vote announce-all` wrong).
+ */
+function renderManifest(tree: CliDomain[], topLevel: CliCommand[]): string {
+  const commands: any[] = [];
+  for (const domain of tree) {
+    for (const cmd of domain.commands) manifestCommand(domain.domain, cmd, commands);
+  }
+  for (const cmd of topLevel) {
+    const safety = safetyFor(cmd.name);
+    commands.push({
+      name: cmd.name,
+      kind: 'command',
+      description: cmd.description,
+      readOnly: !(safety?.broadcasts ?? false),
+      broadcasts: safety?.broadcasts ?? false,
+      destructive: safety?.destructive ?? false,
+      sideEffects: safety?.sideEffects ?? [],
+      positionals: [],
+      options: Object.fromEntries(
+        Object.entries(cmd.options).sort(([a], [b]) => a.localeCompare(b)).map(([n, sp]) => [n, manifestOption(sp)])
+      ),
+    });
+  }
+  const manifest = {
+    package: '@poa/cli',
+    schemaVersion: 1,
+    notes: [
+      'readOnly means "cannot broadcast a transaction". A readOnly command may still have sideEffects — ipfs-pin(--pin) publishes publicly and irreversibly when --pin is passed.',
+      'destructive commands require an explicit --yes (or POP_ASSUME_YES=1) in every non-interactive context; --json is never consent.',
+      'POP_READONLY=1 makes the process structurally unable to sign or pin. POP_ADDRESS/--address serves identity-scoped reads without a key.',
+      'The agent runtime commands (pop agent, pop brain) live in @poa/agent and are not covered here.',
+    ],
+    globalFlags: Object.fromEntries(
+      Object.entries(GLOBAL_FLAGS).map(([n, sp]) => [n, manifestOption(sp)])
+    ),
+    commands,
+  };
+  return JSON.stringify(manifest, null, 2) + '\n';
+}
+
 function generate(): Map<string, string> {
   const tree = buildCliTree();
   const topLevel = buildTopLevelCommands();
@@ -175,6 +259,7 @@ function generate(): Map<string, string> {
   for (const domain of tree) {
     files.set(`${domain.domain}.md`, renderDomainPage(domain));
   }
+  files.set('manifest.json', renderManifest(tree, topLevel));
   return files;
 }
 
@@ -194,10 +279,14 @@ function main(): void {
     // Stale pages (e.g. a removed domain) count as drift too.
     if (fs.existsSync(OUT_DIR)) {
       for (const entry of fs.readdirSync(OUT_DIR)) {
-        if (entry.endsWith('.md') && !files.has(entry)) {
+        if ((entry.endsWith('.md') || entry === 'manifest.json') && !files.has(entry)) {
           drifted.push(path.relative(ROOT, path.join(OUT_DIR, entry)));
         }
       }
+    }
+    const generatedTarget = path.join(ROOT, 'src', 'generated', 'cli-manifest.json');
+    if (!fs.existsSync(generatedTarget) || fs.readFileSync(generatedTarget, 'utf8') !== files.get('manifest.json')) {
+      drifted.push(path.relative(ROOT, generatedTarget));
     }
     if (drifted.length > 0) {
       for (const name of drifted.sort()) console.error(name);
@@ -211,6 +300,16 @@ function main(): void {
   }
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
+  // Mirror for runtime consumers (pop mcp): imported via resolveJsonModule so
+  // tsc emits it into dist/generated/.
+  const generatedDir = path.join(ROOT, 'src', 'generated');
+  fs.mkdirSync(generatedDir, { recursive: true });
+  const manifestContent = files.get('manifest.json')!;
+  const generatedTarget = path.join(generatedDir, 'cli-manifest.json');
+  if (!fs.existsSync(generatedTarget) || fs.readFileSync(generatedTarget, 'utf8') !== manifestContent) {
+    fs.writeFileSync(generatedTarget, manifestContent);
+    console.log(`wrote ${path.relative(ROOT, generatedTarget)}`);
+  }
   let written = 0;
   for (const [name, content] of files) {
     const target = path.join(OUT_DIR, name);
@@ -220,7 +319,7 @@ function main(): void {
     written += 1;
   }
   for (const entry of fs.readdirSync(OUT_DIR)) {
-    if (entry.endsWith('.md') && !files.has(entry)) {
+    if ((entry.endsWith('.md') || entry === 'manifest.json') && !files.has(entry)) {
       fs.unlinkSync(path.join(OUT_DIR, entry));
       console.log(`removed ${path.relative(ROOT, path.join(OUT_DIR, entry))}`);
       written += 1;

@@ -24,6 +24,15 @@ import {
   checkIdempotencyCache,
   recordIdempotentResult,
 } from '../../lib/idempotency';
+import {
+  calculatePayout,
+  payoutConfigFromMetadata,
+  resolveTokenLabel,
+  normalizeHourlyRate,
+  formatEstTime,
+  type PayoutConfig,
+} from '../../lib/payout';
+import { FETCH_ORG_PAYOUT_CONFIG } from '../../queries/org';
 import * as output from '../../lib/output';
 import { tokenize, jaccard } from '../../lib/similarity';
 import { resolveOrgContracts } from './helpers';
@@ -35,7 +44,7 @@ interface CreateArgs {
   project: string;
   name: string;
   description: string;
-  payout: number;
+  payout?: number;
   difficulty?: string;
   'est-hours'?: number;
   location?: string;
@@ -60,7 +69,11 @@ export const createHandler = {
     .option('project', { type: 'string', demandOption: true, describe: 'Project ID' })
     .option('name', { type: 'string', demandOption: true, describe: 'Task name' })
     .option('description', { type: 'string', demandOption: true, describe: 'Task description' })
-    .option('payout', { type: 'number', demandOption: true, describe: 'PT payout amount' })
+    .option('payout', {
+      type: 'number',
+      describe: 'Payout amount. Omit to price the task the way the web app would, from the org\'s '
+        + 'payout convention plus --difficulty/--est-hours',
+    })
     .option('difficulty', { type: 'string', default: 'medium', describe: 'Difficulty (easy/medium/hard)' })
     .option('est-hours', { type: 'number', default: 0, describe: 'Estimated hours' })
     .option('location', { type: 'string', default: '', describe: 'Location' })
@@ -188,7 +201,57 @@ export const createHandler = {
         }
       }
 
-      const payoutWei = ethers.utils.parseUnits(argv.payout.toString(), 18);
+      // Price the task. TaskManager stores whatever payout it is handed, so pricing is a
+      // convention shared with the web app rather than an on-chain rule — when --payout is
+      // omitted, derive it exactly as the UI does so a CLI-created task is not visibly
+      // mispriced next to an identical one created in the browser.
+      let payoutConfig: PayoutConfig & { useTokenSymbol: boolean } = {
+        hoursOnly: false, hourlyRate: null, useTokenSymbol: false,
+      };
+      let tokenSymbol: string | null = null;
+      let payoutConfigError: unknown = null;
+      try {
+        const cfg = await query<any>(FETCH_ORG_PAYOUT_CONFIG, { orgId }, argv.chain);
+        if (!cfg.organization) {
+          // A successful query with NO org row (indexer lag on a fresh org) is
+          // indistinguishable from "no pricing configured" only by accident —
+          // treat it like a failed fetch so derivation refuses to guess.
+          // An org row with null metadata is DIFFERENT: that is a real org that
+          // never configured pricing, and default pricing is correct for it.
+          throw new Error('organization not indexed');
+        }
+        payoutConfig = payoutConfigFromMetadata(cfg.organization?.metadata);
+        tokenSymbol = cfg.organization?.participationToken?.symbol ?? null;
+      } catch (err) {
+        // Only fatal when a payout must be DERIVED. An explicit --payout does not
+        // depend on org pricing, so the subgraph being down must not block it.
+        payoutConfigError = err;
+      }
+      const tokenLabel = resolveTokenLabel({ useTokenSymbol: payoutConfig.useTokenSymbol, symbol: tokenSymbol });
+
+      let derivedPayout: number | null = null;
+      if (argv.payout === undefined) {
+        if (payoutConfigError) {
+          // Deriving from the hard-coded default config would silently misprice the
+          // task for any org with hours-only or custom hourly pricing — and the
+          // payout goes on-chain. Refuse rather than guess.
+          throw new CliError(
+            'Could not read the org payout config (subgraph unreachable), so a payout cannot be derived safely.',
+            EXIT.PRECONDITION,
+            'Pass --payout explicitly, or retry when the subgraph is reachable.'
+          );
+        }
+        derivedPayout = calculatePayout(argv.difficulty || 'medium', argv.estHours || 0, payoutConfig);
+        if (derivedPayout <= 0) {
+          throw new CliError(
+            'Could not derive a payout: the org pays by hours only and --est-hours is 0.',
+            EXIT.USAGE,
+            'Pass --est-hours, or set --payout explicitly.'
+          );
+        }
+      }
+      const payoutAmount = argv.payout ?? derivedPayout!;
+      const payoutWei = ethers.utils.parseUnits(payoutAmount.toString(), 18);
 
       const bountyToken = argv.bountyToken || ethers.constants.AddressZero;
       let bountyPayoutWei: ethers.BigNumber | number = 0;
@@ -205,7 +268,12 @@ export const createHandler = {
       await confirmWrite(argv, {
         project: String(argv.project),
         name: argv.name,
-        payout: formatToken(payoutWei, 18, 'PT'),
+        payout: formatToken(payoutWei, 18, tokenLabel)
+          + (derivedPayout !== null
+            ? payoutConfig.hoursOnly
+              ? ` (derived: ${normalizeHourlyRate(payoutConfig.hourlyRate)}/h x ${formatEstTime(argv.estHours || 0)})`
+              : ` (derived: ${argv.difficulty || 'medium'} x ${formatEstTime(argv.estHours || 0)})`
+            : ''),
         bounty: typeof bountyPayoutWei !== 'number'
           ? `${formatToken(bountyPayoutWei, getTokenDecimals(bountyToken))} of ${bountyToken}`
           : undefined,

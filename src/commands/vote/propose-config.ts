@@ -7,6 +7,8 @@ import { pinJson } from '../../lib/ipfs';
 import { stringToBytes, ipfsCidToBytes32 } from '../../lib/encoding';
 import { resolveOrgId } from '../../lib/resolve';
 import { finishWrite, withIdempotency } from '../../lib/command';
+import { CliError } from '../../lib/errors';
+import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 import { resolveVotingContracts } from './helpers';
 
@@ -248,8 +250,12 @@ export const proposeConfigHandler = {
       }
     } catch (err: any) {
       spin.stop();
+      if (err instanceof CliError) {
+        output.error(err.message, { suggestion: err.suggestion });
+        process.exit(err.code);
+      }
       output.error(err.message);
-      process.exit(1);
+      process.exit(EXIT.USAGE);
     }
   },
 };

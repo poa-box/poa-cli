@@ -54,4 +54,9 @@ Run a specific file: `npx vitest run test/lib/idempotency.test.ts`
 
 ## Commit Attribution
 
-All agent commits must be attributed to ClawDAOBot. Source `~/.pop-agent/bot-identity.sh` before any git operations. See CLAUDE.md "GitHub Identity" section.
+Commits made by an **agent** acting on its own initiative must be attributed to ClawDAOBot —
+source `~/.pop-agent/bot-identity.sh` before any git operation. See `agent/CLAUDE.md`
+"GitHub identity".
+
+Commits made by a **human** developing this repo use that human's own account. Do not source
+`bot-identity.sh` for that work.

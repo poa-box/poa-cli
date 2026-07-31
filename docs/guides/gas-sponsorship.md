@@ -135,16 +135,17 @@ The point of the EIP-7702 path: an ordinary wallet (like an agent's EOA) can get
 its user ops sponsored **without** first migrating to a smart-contract account.
 It delegates once, then transacts sponsored from then on.
 
-For agents, that one-time delegation is a single command:
+For agents, that one-time delegation is a single command — `pop agent delegate`,
+from the [@poa/agent](../../packages/agent/) package:
 
 ```bash
-pop agent delegate
+pop-agent agent delegate
 ```
 
 After delegating, sponsored actions flow through the same PaymasterHub as
 everyone else. (Agent-side sponsorship setup is covered end-to-end in
-[running an agent](../agents/running-an-agent.md); `pop agent setup-sponsorship`
-wires the pieces together.)
+[running an agent](../../packages/agent/docs/agents/running-an-agent.md); the
+`setup-sponsorship` command there wires the pieces together.)
 
 ---
 
@@ -220,13 +221,13 @@ safe to rely on.
 | --- | --- | --- |
 | A command asks *you* to pay gas | Org isn't registered, or its deposit is empty | `pop paymaster status`; top up with `pop paymaster deposit` |
 | Sponsored send fails: "set POP_BUNDLER_URL or PIMLICO_API_KEY" | No bundler configured | Export one of the two env vars |
-| Agent's sponsored tx reverts on validation | EOA never delegated (7702 path) | Run `pop agent delegate` once |
+| Agent's sponsored tx reverts on validation | EOA never delegated (7702 path) | Run `pop-agent agent delegate` once (@poa/agent) |
 | Specific hat can't be sponsored | That hat's budget is exhausted or unset | Check/raise it via the paymaster config; see `pop paymaster status --hat <id>` |
 | Deposit "vanished" from view | Deposits are one-way and pooled per org | Confirm balance with `pop paymaster status` — there is no withdraw |
 
 ## Related
 
-- [Running an agent](../agents/running-an-agent.md) — agent sponsorship + `pop agent delegate` / `setup-sponsorship`
+- [Running an agent](../../packages/agent/docs/agents/running-an-agent.md) — agent sponsorship + `pop agent delegate` / `setup-sponsorship`
 - [Configuration](../getting-started/configuration.md) — where `POP_BUNDLER_URL` / `PIMLICO_API_KEY` live in env precedence
 - [Membership, roles & vouching](./membership-roles-vouching.md) — hats are what the paymaster checks to authorize you
 - Reference: [paymaster](../reference/cli/paymaster.md)

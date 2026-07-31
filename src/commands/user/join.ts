@@ -18,6 +18,16 @@
  * Pre-flight (skippable with --no-preflight): gas balance always; when
  * registering, checkUsernameFree fails fast (exit 4) if the name is taken
  * (UAR.registerAccount would revert UsernameTaken).
+ *
+ * Steps 1 and 2 used to be two STRICTLY SEQUENTIAL eth_calls — getUsername
+ * could not start until accountRegistry() returned the address to call. Both
+ * now come from a single subgraph round-trip
+ * (QuickJoinContract.accountRegistry + Account.username), with the eth_calls
+ * kept as the fallback. The indexed username is only believed when the
+ * indexed account lives on the SAME registry this QuickJoin consults and is
+ * not tombstoned; anything else falls through to the live read, so the
+ * indexer can never talk this command into the 1-tx path for an account that
+ * has no username on-chain.
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
@@ -25,6 +35,13 @@ import { createReadContract, createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { requireModule } from '../../lib/resolve';
 import { requireValidUsername } from '../../lib/validation';
+import { query } from '../../lib/subgraph';
+import {
+  FETCH_QUICKJOIN_ACCOUNT,
+  isAccountAuthoritative,
+  IndexedAccount,
+  IndexedQuickJoin,
+} from '../../queries/user';
 import { runPreflight, checkGasBalance, checkUsernameFree } from '../../lib/preflight';
 import { getWriteContext, confirmWrite, finishWrite, withIdempotency } from '../../lib/command';
 import { isInteractive, input } from '../../lib/prompt';
@@ -80,13 +97,60 @@ export const joinHandler = {
 
       // The registry QuickJoin actually consults on join — registering on any
       // other registry would leave quickJoinWithUser reverting NoUsername.
-      const quickJoin = createReadContract(quickJoinAddr, 'QuickJoinNew', ctx.provider);
-      let registryAddr: string;
-      let existingUsername: string;
+      let indexedRegistry: string | undefined;
+      let indexedUsername: string | undefined;
+
+      // Subgraph first: one round-trip for the registry pointer AND the
+      // caller's account, collapsing the two sequential eth_calls.
       try {
+        const indexed = await query<{
+          quickJoinContract: IndexedQuickJoin | null;
+          account: IndexedAccount | null;
+        }>(
+          FETCH_QUICKJOIN_ACCOUNT,
+          { quickJoinAddress: quickJoinAddr.toLowerCase(), accountID: ctx.address.toLowerCase() },
+          argv.chain
+        );
+        if (indexed?.quickJoinContract?.accountRegistry) {
+          indexedRegistry = indexed.quickJoinContract.accountRegistry;
+          // Only a live account on THIS registry can stand in for
+          // getUsername. Missing/deleted/foreign-registry all fall through to
+          // the chain, so a lagging indexer can only ever cost an extra read
+          // — never a doomed 1-tx join.
+          if (isAccountAuthoritative(indexed.account, indexedRegistry)) {
+            indexedUsername = indexed.account!.username;
+          }
+        }
+      } catch (err: any) {
+        output.debug(`subgraph account lookup failed, falling back to RPC (${err?.message || err})`);
+      }
+
+      // The registry pointer is read LIVE, always. It is a write target — the
+      // 2-tx path sends registerAccount to it — and QuickJoin.updateAddresses
+      // (onlyExecutor) can re-point it at any time. Trusting the indexed pointer
+      // through a re-point window is unrecoverable in both directions:
+      //   * 1-tx path: indexer still shows the OLD registry, the indexed Account
+      //     row is on the OLD registry, so the authority guard PASSES (both sides
+      //     come from the same stale snapshot — it cannot detect this) and
+      //     quickJoinWithUser reverts NoUsername against the NEW registry.
+      //   * 2-tx path: registerAccount lands on the OLD registry — a tx that
+      //     SUCCEEDS, burns gas and squats the username where QuickJoin will never
+      //     look. Gas estimation cannot catch that, because it does not revert.
+      // The subgraph is still worth querying: when its pointer agrees with the
+      // chain, the indexed username stands in for the getUsername() read. A zero
+      // address from the indexer (the documented placeholder between deploy and
+      // AddressesUpdated) simply fails the comparison and falls through.
+      let registryAddr: string;
+      let existingUsername = indexedUsername as string;
+      try {
+        const quickJoin = createReadContract(quickJoinAddr, 'QuickJoinNew', ctx.provider);
         registryAddr = await quickJoin.accountRegistry();
-        const registry = createReadContract(registryAddr, 'UniversalAccountRegistry', ctx.provider);
-        existingUsername = await registry.getUsername(ctx.address);
+        const indexedPointerIsCurrent = !!indexedRegistry
+          && indexedRegistry.toLowerCase() === registryAddr.toLowerCase();
+        if (!indexedPointerIsCurrent || indexedUsername === undefined) {
+          const registry = createReadContract(registryAddr, 'UniversalAccountRegistry', ctx.provider);
+          existingUsername = await registry.getUsername(ctx.address);
+        }
       } catch (err: any) {
         throw new CliError(
           `Could not read the account registry via QuickJoin at ${quickJoinAddr}: ${err?.message || err}`,

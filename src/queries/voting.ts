@@ -64,6 +64,7 @@ export const FETCH_VOTING_DATA = `
         id
         thresholdPct
         quorum
+        classVersion
         votingClasses(where: { isActive: true }, orderBy: classIndex, orderDirection: asc) {
           id
           classIndex
@@ -97,6 +98,10 @@ export const FETCH_VOTING_DATA = `
           executionError
           isHatRestricted
           restrictedHatIds
+          proposer
+          proposerUsername
+          creatorUsername
+          classesVersion
           votes {
             voter
             voterUsername
@@ -131,6 +136,8 @@ export const FETCH_VOTING_DATA = `
           executionError
           isHatRestricted
           restrictedHatIds
+          proposer
+          proposerUsername
           votes {
             voter
             optionIndexes
@@ -141,3 +148,17 @@ export const FETCH_VOTING_DATA = `
     }
   }
 `;
+
+/**
+ * FETCH_VOTING_DATA without the subgraph #195 attribution fields.
+ *
+ * A GraphQL document is validated as a whole, so a single unknown field fails the entire
+ * query — not just that selection. `pop vote announce-all` (a WRITE that announces winners)
+ * shares this document, so against a subgraph pinned before #195 the org would lose the
+ * ability to announce ANY proposal. Derived from the full query by deletion so the two
+ * cannot drift apart.
+ */
+export const FETCH_VOTING_DATA_LEGACY = FETCH_VOTING_DATA
+  .split('\n')
+  .filter((line) => !/^\s*(proposer|proposerUsername|creatorUsername|classesVersion|classVersion)\s*$/.test(line))
+  .join('\n');

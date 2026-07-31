@@ -218,7 +218,10 @@ const EXPIRING_SOON_WINDOW_SECONDS = 24 * 60 * 60;
  * over `absoluteDeadline`; zero/undefined deadlines mean "no deadline".
  * A deadline strictly in the past means the claim is forfeitable.
  */
-export function deriveClaimState(task: TaskOnChain, now?: number): ClaimState {
+export function deriveClaimState(
+  task: Pick<TaskOnChain, 'status' | 'claimDeadline' | 'absoluteDeadline'>,
+  now?: number
+): ClaimState {
   if (task.status !== TASK_STATUS.CLAIMED) return 'none';
   const deadline = task.claimDeadline || task.absoluteDeadline;
   if (!deadline) return 'none';

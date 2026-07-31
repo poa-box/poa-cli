@@ -157,6 +157,7 @@ const MODULE_LABELS: Array<{ key: keyof OrgModules; label: string; abi: string }
   { key: 'quickJoinAddress', label: 'QuickJoin', abi: 'QuickJoinNew' },
   { key: 'eligibilityModuleAddress', label: 'EligibilityModule', abi: 'EligibilityModuleNew' },
   { key: 'paymentManagerAddress', label: 'PaymentManager', abi: 'PaymentManager' },
+  { key: 'zkEmailInvitesAddress', label: 'ZkEmailInvites', abi: 'ZkEmailInvites' },
 ];
 
 /** Fallback ABIs scanned when the target is not a known org module. */

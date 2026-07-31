@@ -1,7 +1,7 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { resolveNetworkConfig } from '../../config/networks';
-import { query } from '../../lib/subgraph';
+import { query, getTransportStatus } from '../../lib/subgraph';
 import { FETCH_INFRASTRUCTURE_ADDRESSES } from '../../queries/infrastructure';
 import * as output from '../../lib/output';
 
@@ -34,6 +34,28 @@ export const validateHandler = {
         results.push({ check: 'RPC', status: 'OK', detail: `Block #${blockNumber}` });
       } catch (e: any) {
         results.push({ check: 'RPC', status: 'FAIL', detail: e.message });
+      }
+    }
+
+    // Which subgraph transport will serve reads (free Studio vs paid gateway),
+    // and whether GRAPH_API_KEY was detected. Local-only, no network call, and
+    // never prints the key. Deliberately never FAILs — an unusable transport
+    // already shows up as a Subgraph FAIL below, and this row is diagnostic.
+    //
+    // Computed here but APPENDED after Gas: the --json payload is a positional
+    // array that pre-dates this row, so the new row must not shift the indexes
+    // of Subgraph/Wallet/Gas for any out-of-tree consumer.
+    let transportRow: { check: string; status: string; detail?: string } | undefined;
+    if (chainId) {
+      try {
+        const t = getTransportStatus(chainId);
+        transportRow = {
+          check: 'Transport',
+          status: t.activeTier ? 'OK' : 'WARN',
+          detail: t.summary,
+        };
+      } catch (e: any) {
+        transportRow = { check: 'Transport', status: 'SKIP', detail: e.message };
       }
     }
 
@@ -82,6 +104,8 @@ export const validateHandler = {
         results.push({ check: 'Gas', status: 'SKIP', detail: 'Could not query balance' });
       }
     }
+
+    if (transportRow) results.push(transportRow);
 
     // Output
     if (output.isJsonMode()) {

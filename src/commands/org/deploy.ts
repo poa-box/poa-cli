@@ -133,6 +133,28 @@ function indicesToBitmap(indices: number[]): ethers.BigNumber {
   return bitmap;
 }
 
+/**
+ * Reject role indices that do not name a role in the config.
+ *
+ * RoleResolver reverts UnregisteredRole(roleIdx) when a bitmap bit has no registered hat
+ * (audit M-09) — previously hat 0 was silently stored as an "authorized" hat and the deploy
+ * succeeded with a broken allowlist. Either way the config is wrong, and we know roles.length
+ * here, so name the offending field instead of surfacing a bare index from gas estimation
+ * (older deployers) or an aborted deploy (upgraded ones).
+ */
+function assertRoleIndices(field: string, indices: number[] | undefined, roleCount: number): void {
+  for (const i of indices ?? []) {
+    if (!Number.isInteger(i) || i < 0 || i >= roleCount) {
+      throw new CliError(
+        `${field} references role index ${i}, but the config defines ${roleCount} role(s) (valid: 0-${roleCount - 1}).`,
+        EXIT.USAGE,
+        'Role indices are positions in the config\'s `roles` array — renumber them after adding '
+          + 'or removing a role.'
+      );
+    }
+  }
+}
+
 export const deployHandler = {
   builder: (yargs: Argv) => yargs
     .option('config', {
@@ -277,6 +299,20 @@ export const deployHandler = {
 
       // Build role assignment bitmaps
       const ra = config.roleAssignments;
+
+      // Every index must name a real role BEFORE anything is broadcast — a stale index is
+      // trivially produced by editing `roles` without renumbering `roleAssignments`.
+      const roleCount = config.roles.length;
+      assertRoleIndices('roleAssignments.quickJoinRoles', ra.quickJoinRoles, roleCount);
+      assertRoleIndices('roleAssignments.tokenMemberRoles', ra.tokenMemberRoles, roleCount);
+      assertRoleIndices('roleAssignments.tokenApproverRoles', ra.tokenApproverRoles, roleCount);
+      assertRoleIndices('roleAssignments.taskCreatorRoles', ra.taskCreatorRoles, roleCount);
+      assertRoleIndices('roleAssignments.educationCreatorRoles', ra.educationCreatorRoles, roleCount);
+      assertRoleIndices('roleAssignments.educationMemberRoles', ra.educationMemberRoles, roleCount);
+      assertRoleIndices('roleAssignments.hybridProposalCreatorRoles', ra.hybridProposalCreatorRoles, roleCount);
+      assertRoleIndices('roleAssignments.ddVotingRoles', ra.ddVotingRoles, roleCount);
+      assertRoleIndices('roleAssignments.ddCreatorRoles', ra.ddCreatorRoles, roleCount);
+
       const roleAssignments = [
         indicesToBitmap(ra.quickJoinRoles),
         indicesToBitmap(ra.tokenMemberRoles),

@@ -39,8 +39,34 @@ export interface NetworkConfig {
    */
   defaultLogsChunkBlocks?: number;
   subgraphUrl: string;
+  /**
+   * Subgraph ID on The Graph's DECENTRALISED network (the "paid" gateway tier).
+   *
+   * `subgraphUrl` above points at Graph Studio, which is free but capped at
+   * 3K queries/day. The same deployment is also published to the gateway,
+   * where it is addressed by this base58 subgraph ID and billed against
+   * `GRAPH_API_KEY`. lib/subgraph.ts uses Studio first and switches here when
+   * the free quota is spent — see `getGatewaySubgraphUrl` below.
+   *
+   * Leave undefined when the deployment has not been published to the
+   * decentralised network; the chain then has no paid tier unless the
+   * operator supplies one via `POP_<NET>_SUBGRAPH_GATEWAY` /
+   * `POP_<NET>_SUBGRAPH_ID`.
+   */
+  gatewaySubgraphId?: string;
   bountyTokens: Record<string, string>;
 }
+
+/**
+ * Base URL for The Graph's decentralised gateway. A full endpoint is
+ * `${base}/${gatewaySubgraphId}`. Override with POP_GRAPH_GATEWAY_URL to point
+ * at a self-hosted or regional gateway.
+ *
+ * NOTE: the LEGACY gateway form embedded the API key in the path
+ * (`/api/<KEY>/subgraphs/id/<ID>`). This modern form does not — the key travels
+ * in the Authorization header instead, so the URL is safe to print.
+ */
+export const DEFAULT_GRAPH_GATEWAY_URL = 'https://gateway.thegraph.com/api/subgraphs/id';
 
 export const NETWORKS: Record<string, NetworkConfig> = {
   arbitrum: {
@@ -52,6 +78,9 @@ export const NETWORKS: Record<string, NetworkConfig> = {
     blockExplorer: 'https://arbiscan.io',
     isTestnet: false,
     subgraphUrl: 'https://api.studio.thegraph.com/query/73367/poa-arb-v-1/version/latest',
+    // No gatewaySubgraphId: the Arbitrum deployment has not been published to
+    // the decentralised network (or its ID is not known here), so Arbitrum has
+    // no paid tier by default. Set POP_ARBITRUM_SUBGRAPH_ID once it is published.
     bountyTokens: {
       USDC: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
     },
@@ -64,6 +93,9 @@ export const NETWORKS: Record<string, NetworkConfig> = {
     blockExplorer: 'https://gnosisscan.io',
     isTestnet: false,
     subgraphUrl: 'https://api.studio.thegraph.com/query/73367/poa-gnosis-v-1/version/latest',
+    // Verified against the live gateway: this ID serves the same deployment as
+    // the Studio URL above (identical `_meta.block` within one block).
+    gatewaySubgraphId: '576YA6oF16nA2uG5Q9KFfBSvJm4ZNKzWZkwh8eWXaxJs',
     bountyTokens: {
       BREAD: '0xa555d5344f6FB6c65da19e403Cb4c1eC4a1a5Ee3',
       USDC: '0xDDAfbb505ad214D7b80b1f830fcCc89B60fB7A83',
@@ -78,7 +110,11 @@ export const NETWORKS: Record<string, NetworkConfig> = {
     rpcUrl: 'https://ethereum-sepolia-rpc.publicnode.com',
     blockExplorer: 'https://sepolia.etherscan.io',
     isTestnet: true,
-    subgraphUrl: 'https://api.studio.thegraph.com/query/73367/poa-sepolia/version/latest',
+    // No POP subgraph is deployed here — the Graph Studio deployment was removed (the frontend
+    // dropped these endpoints in its PR #441; the URL now answers "deployment does not exist").
+    // Empty means "RPC-only chain": getAllSubgraphUrls() filters on truthiness, and
+    // lib/subgraph.ts turns a subgraph-backed command into one actionable error.
+    subgraphUrl: '',
     bountyTokens: {
       USDC: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
     },
@@ -90,7 +126,8 @@ export const NETWORKS: Record<string, NetworkConfig> = {
     rpcUrl: 'https://base-sepolia-rpc.publicnode.com',
     blockExplorer: 'https://sepolia.basescan.org',
     isTestnet: true,
-    subgraphUrl: 'https://api.studio.thegraph.com/query/73367/poa-base-sepolia/version/latest',
+    // No POP subgraph deployed — see the Sepolia note above.
+    subgraphUrl: '',
     bountyTokens: {
       USDC: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
     },
@@ -175,6 +212,47 @@ export function getSubgraphUrl(chainId: number): string {
   return getNetworkByChainId(chainId)?.subgraphUrl || NETWORKS[HOME_NETWORK].subgraphUrl;
 }
 
+/**
+ * UPPER_SNAKE env-var infix for a chain: 84532 -> "BASE_SEPOLIA".
+ * Single source of truth for the `POP_<NET>_*` env convention so the RPC,
+ * subgraph and gateway lookups can never drift apart.
+ */
+export function getEnvInfixByChainId(chainId: number): string | null {
+  const name = getNetworkNameByChainId(chainId);
+  return name ? name.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase() : null;
+}
+
+/**
+ * Resolve the PAID (decentralised gateway) subgraph endpoint for a chain, or
+ * undefined when none is configured. Requires `GRAPH_API_KEY` at request time —
+ * this function only resolves the URL, it does not check for the key.
+ *
+ * Precedence (first non-empty wins):
+ *   1. `POP_<NET>_SUBGRAPH_GATEWAY`   — explicit full URL
+ *   2. `POP_<NET>_SUBGRAPH_FALLBACK`  — legacy name for the same thing
+ *   3. `POP_<NET>_SUBGRAPH_ID`        — just the base58 ID, joined to the base
+ *   4. `NetworkConfig.gatewaySubgraphId` joined to the base
+ *
+ * The base is `POP_GRAPH_GATEWAY_URL` or DEFAULT_GRAPH_GATEWAY_URL. This
+ * replaces the old one-ad-hoc-env-var-per-chain arrangement where only Gnosis
+ * could ever reach the gateway.
+ */
+export function getGatewaySubgraphUrl(chainId: number): string | undefined {
+  const infix = getEnvInfixByChainId(chainId);
+  if (!infix) return undefined;
+
+  const explicit = (process.env[`POP_${infix}_SUBGRAPH_GATEWAY`] || '').trim()
+    || (process.env[`POP_${infix}_SUBGRAPH_FALLBACK`] || '').trim();
+  if (explicit) return explicit;
+
+  const id = (process.env[`POP_${infix}_SUBGRAPH_ID`] || '').trim()
+    || (getNetworkByChainId(chainId)?.gatewaySubgraphId || '').trim();
+  if (!id) return undefined;
+
+  const base = ((process.env.POP_GRAPH_GATEWAY_URL || '').trim() || DEFAULT_GRAPH_GATEWAY_URL).replace(/\/+$/, '');
+  return `${base}/${id}`;
+}
+
 export function getAllSubgraphUrls(): Array<{ chainId: number; url: string; name: string }> {
   // External chains (Ethereum mainnet, Optimism, Base, Polygon) have no
   // POP subgraph and are read-only probe targets only. Filter them out
@@ -202,14 +280,24 @@ export function resolveNetworkConfig(chainIdOverride?: number): NetworkConfig & 
   }
 
   // Convert camelCase to UPPER_SNAKE: baseSepolia → BASE_SEPOLIA
-  const networkName = getNetworkNameByChainId(chainId)!.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
+  const networkName = getEnvInfixByChainId(chainId)!;
 
-  const resolvedRpc = process.env[`POP_${networkName}_RPC`]
-    || (chainIdOverride ? undefined : process.env.POP_RPC_URL)
+  // An override that is present-but-empty (`POP_SUBGRAPH_URL=` on its own line,
+  // which is exactly what the shipped .env templates contain) must NOT shadow
+  // the built-in default. `''` is already falsy, but trim first so a stray
+  // space or CR from a hand-edited .env behaves the same way.
+  const envUrl = (name: string): string | undefined => {
+    const raw = process.env[name];
+    const trimmed = typeof raw === 'string' ? raw.trim() : '';
+    return trimmed || undefined;
+  };
+
+  const resolvedRpc = envUrl(`POP_${networkName}_RPC`)
+    || (chainIdOverride ? undefined : envUrl('POP_RPC_URL'))
     || network.rpcUrl;
 
-  const resolvedSubgraph = process.env[`POP_${networkName}_SUBGRAPH`]
-    || (chainIdOverride ? undefined : process.env.POP_SUBGRAPH_URL)
+  const resolvedSubgraph = envUrl(`POP_${networkName}_SUBGRAPH`)
+    || (chainIdOverride ? undefined : envUrl('POP_SUBGRAPH_URL'))
     || network.subgraphUrl;
 
   return { ...network, resolvedRpc, resolvedSubgraph };

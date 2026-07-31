@@ -1,8 +1,10 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
+import { StandardMerkleTree } from '@openzeppelin/merkle-tree';
 import * as fs from 'fs';
 import { query } from '../../lib/subgraph';
 import { resolveOrgModules } from '../../lib/resolve';
+import { tryAggregate, Call } from '../../lib/multicall';
 import { resolveNetworkConfig } from '../../config/networks';
 import * as output from '../../lib/output';
 
@@ -28,71 +30,30 @@ interface MerkleResult {
   tokenAddress: string;
   checkpointBlock: number;
   memberCount: number;
+  /** 'ok' | 'partial' | 'failed' — whether the opt-out filter fully ran. Additive field. */
+  optOutCheck: string;
+  /** Probes that could not be read (those members are INCLUDED). Additive field. */
+  optOutProbeFailures: number;
+  /** Members excluded because they opted out. Additive field. */
+  excludedOptedOut: number;
   allocations: Array<MemberAllocation & { proof: string[] }>;
 }
 
-// --- Merkle tree using ethers v5 crypto primitives ---
-
-function hashLeaf(address: string, amount: ethers.BigNumber): string {
-  // OZ v5 double-hash: keccak256(bytes.concat(keccak256(abi.encode(address, uint256))))
-  // Uses abi.encode (32-byte padded), NOT encodePacked
-  const inner = ethers.utils.keccak256(
-    ethers.utils.defaultAbiCoder.encode(['address', 'uint256'], [address, amount])
-  );
-  return ethers.utils.keccak256(inner);
-}
-
-function hashPair(a: string, b: string): string {
-  // Sort pair to ensure deterministic tree (OpenZeppelin convention)
-  const [left, right] = a < b ? [a, b] : [b, a];
-  return ethers.utils.solidityKeccak256(['bytes32', 'bytes32'], [left, right]);
-}
-
-function buildMerkleTree(leaves: string[]): string[][] {
-  if (leaves.length === 0) return [[]];
-
-  // Sort leaves for deterministic ordering
-  const sorted = [...leaves].sort();
-  const layers: string[][] = [sorted];
-
-  let current = sorted;
-  while (current.length > 1) {
-    const next: string[] = [];
-    for (let i = 0; i < current.length; i += 2) {
-      if (i + 1 < current.length) {
-        next.push(hashPair(current[i], current[i + 1]));
-      } else {
-        // Odd leaf promoted as-is
-        next.push(current[i]);
-      }
-    }
-    layers.push(next);
-    current = next;
-  }
-
-  return layers;
-}
-
-function getMerkleProof(layers: string[][], leaf: string): string[] {
-  const proof: string[] = [];
-  let index = layers[0].indexOf(leaf);
-
-  if (index === -1) return [];
-
-  for (let i = 0; i < layers.length - 1; i++) {
-    const layer = layers[i];
-    const isRight = index % 2 === 1;
-    const siblingIndex = isRight ? index - 1 : index + 1;
-
-    if (siblingIndex < layer.length) {
-      proof.push(layer[siblingIndex]);
-    }
-
-    index = Math.floor(index / 2);
-  }
-
-  return proof;
-}
+/**
+ * Merkle tree — OpenZeppelin StandardMerkleTree, matching PaymentManager on-chain.
+ *
+ * PaymentManager.claim recomputes the leaf as
+ *   keccak256(bytes.concat(keccak256(abi.encode(msg.sender, claimAmount))))
+ * and verifies it with OZ `MerkleProof.verify`, so the tree must be built exactly the way the
+ * OZ library builds it.
+ *
+ * This previously used a hand-rolled tree that paired leaves left-to-right per layer and
+ * promoted an odd trailing leaf unchanged. That agrees with OZ for 1, 2, 3, 4, 6 and 8 leaves
+ * but DIVERGES at 5 and 7 (OZ builds a complete 2n-1 tree and pairs by node index). For an org
+ * with 5 or 7 members the computed root and proofs were rejected by MerkleProof.verify, so a
+ * distribution created from them could never be claimed. Pinned by
+ * test/commands/treasury-compute-merkle.test.ts.
+ */
 
 // --- Subgraph query for members ---
 
@@ -151,13 +112,80 @@ export const computeMerkleHandler = {
       }
 
       // Filter to active members with PT > 0
-      const activeMembers = org.users.filter((u: any) =>
+      const ptHolders = org.users.filter((u: any) =>
         u.membershipStatus === 'Active' &&
         ethers.BigNumber.from(u.participationTokenBalance).gt(0)
       );
 
-      if (activeMembers.length === 0) {
+      if (ptHolders.length === 0) {
         throw new Error('No active members with PT balance');
+      }
+
+      // Exclude members who have opted out of payouts.
+      //
+      // THIS IS THE ONLY ENFORCEMENT POINT. PaymentManager.claim deliberately does not check
+      // opt-out (audit L-19): membership in a distribution's tree is fixed at creation, and
+      // opting out afterwards must not strand already-allocated funds. The contract's own
+      // comment says opt-out "is honored off-chain when the executor builds the next
+      // distribution's merkle tree" — this command is that builder. Allocating to an opted-out
+      // member here silently defeats their opt-out.
+      //
+      // Read on-chain rather than from the subgraph's OptOutToggle log: this decides who gets
+      // money, so it uses the authoritative getter the contract points at. One multicall
+      // round-trip for the whole member set.
+      const paymentManagerAddress = modules.paymentManagerAddress;
+      let optedOut = new Set<string>();
+      let optOutProbeFailures = 0;
+      if (paymentManagerAddress) {
+        spin.text = `Checking opt-out status for ${ptHolders.length} members...`;
+        const pmIface = new ethers.utils.Interface([
+          'function isOptedOut(address account) view returns (bool)',
+        ]);
+        // NOTE the shape: tryAggregate takes { to, data } (lib/multicall Call), not the
+        // raw Multicall3 tuple names { target, callData }. This site once used the tuple
+        // names — `ptHolders` is untyped JSON so `.map` returned any[] and the mistake
+        // compiled — and every probe silently failed, which meant NO ONE was excluded.
+        const optOutCalls: Call[] = ptHolders.map((m: any) => ({
+          to: paymentManagerAddress,
+          data: pmIface.encodeFunctionData('isOptedOut', [ethers.utils.getAddress(m.address)]),
+        }));
+        // Pinned to checkpointBlock: the tree's membership snapshot and the
+        // opt-out snapshot must describe the SAME moment, or claim-mine's
+        // block-pinned reconstruction can legitimately disagree with the
+        // committed root over a toggle that landed between the two reads.
+        const results = await tryAggregate(provider, optOutCalls, { blockTag: checkpointBlock });
+        results.forEach((r, i) => {
+          if (!r.success) { optOutProbeFailures++; return; } // fail open, they stay in the tree
+          try {
+            if (pmIface.decodeFunctionResult('isOptedOut', r.returnData)[0] === true) {
+              optedOut.add(String(ptHolders[i].address).toLowerCase());
+            }
+          } catch { optOutProbeFailures++; /* malformed — treat as not opted out */ }
+        });
+        // Per-member fail-open is deliberate, but any probe failing means an
+        // opted-out member could be silently paid — say so for EVERY failure,
+        // not only the all-failed case, and record it in the output so
+        // propose-distribution (and its operator) can see the tree was built
+        // with an incomplete filter.
+        if (optOutProbeFailures > 0) {
+          output.warn(
+            `Opt-out status could not be read for ${optOutProbeFailures} of ${ptHolders.length} `
+              + 'member(s) — they are INCLUDED in the tree and may have opted out. '
+              + 'Verify before proposing this distribution.'
+          );
+        }
+      }
+
+      const activeMembers = ptHolders.filter(
+        (m: any) => !optedOut.has(String(m.address).toLowerCase())
+      );
+
+      if (activeMembers.length === 0) {
+        throw new Error(
+          optedOut.size > 0
+            ? `All ${ptHolders.length} PT-holding member(s) have opted out of payouts.`
+            : 'No active members with PT balance'
+        );
       }
 
       // Parse distribution amount
@@ -200,17 +228,18 @@ export const computeMerkleHandler = {
       // Build merkle tree
       spin.text = 'Building merkle tree...';
 
-      const leaves = allocations.map(a =>
-        hashLeaf(a.address, ethers.BigNumber.from(a.allocation))
+      // StandardMerkleTree hashes each value pair itself (double-keccak over abi.encode) and
+      // sorts leaves internally, so proofs are looked up by the ORIGINAL value, not by index.
+      const tree = StandardMerkleTree.of(
+        allocations.map(a => [a.address, a.allocation]),
+        ['address', 'uint256']
       );
-
-      const layers = buildMerkleTree(leaves);
-      const merkleRoot = layers[layers.length - 1][0];
+      const merkleRoot = tree.root;
 
       // Generate proofs for each member
-      const allocationsWithProofs = allocations.map((a, i) => ({
+      const allocationsWithProofs = allocations.map(a => ({
         ...a,
-        proof: getMerkleProof(layers, leaves[i]),
+        proof: tree.getProof([a.address, a.allocation]),
       }));
 
       // Build output
@@ -220,6 +249,11 @@ export const computeMerkleHandler = {
         tokenAddress: argv.token,
         checkpointBlock,
         memberCount: allocations.length,
+        optOutCheck: optOutProbeFailures === 0
+          ? 'ok'
+          : optOutProbeFailures >= ptHolders.length ? 'failed' : 'partial',
+        optOutProbeFailures,
+        excludedOptedOut: optedOut.size,
         allocations: allocationsWithProofs,
       };
 

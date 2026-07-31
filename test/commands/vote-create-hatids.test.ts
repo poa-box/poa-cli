@@ -71,6 +71,9 @@ vi.mock('../../src/lib/output', () => ({
   error: vi.fn(),
   info: vi.fn(),
   warn: vi.fn(),
+  // The MAX_POLL_HATS cap check logs here when the constant is unreadable (older contract or,
+  // as in these tests, a stubbed provider). Omitting it turns a soft skip into a hard exit.
+  debug: vi.fn(),
 }));
 
 import { createHandler } from '../../src/commands/vote/create';

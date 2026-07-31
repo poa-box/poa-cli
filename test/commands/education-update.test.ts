@@ -306,6 +306,53 @@ describe('pop education update — read-then-merge', () => {
     expect(exitSpy.mock.calls[0][0]).toBe(EXIT.USAGE);
     expect(mocks.executeTx).not.toHaveBeenCalled();
   });
+
+  /**
+   * EducationModule.payout IS indexed and populated on live Gnosis, so serving `currentPayout`
+   * from the subgraph looks free. It is not: updateModule is a FULL OVERWRITE, so a payout the
+   * subgraph has not caught up with would be written straight back, silently reverting whoever
+   * raised it. The on-chain read stays — it is also the ModuleUnknown existence gate — but the
+   * two reads no longer wait on each other.
+   */
+  it('the on-chain payout read and the subgraph read are issued concurrently', async () => {
+    let queryIssuedBeforeGetModuleResolved = false;
+    let releaseGetModule: () => void = () => {};
+    const getModuleGate = new Promise<void>((resolve) => { releaseGetModule = resolve; });
+
+    mocks.createReadContract.mockImplementation((_addr: string, abiName: string) => {
+      if (abiName === 'EducationHubNew') {
+        return {
+          getModule: async () => {
+            await getModuleGate;
+            return [CHAIN_PAYOUT, true];
+          },
+        };
+      }
+      throw new Error(`unexpected read contract: ${abiName}`);
+    });
+    mocks.query.mockImplementation(async () => {
+      // Reached while getModule is still pending → the two were started together.
+      queryIssuedBeforeGetModuleResolved = true;
+      releaseGetModule();
+      return { organization: { id: ORG_ID, educationHub: { id: HUB_ADDR, modules: [subgraphModuleFixture()] } } };
+    });
+
+    await updateModuleHandler.handler(baseArgv({ payout: 10 }));
+
+    expect(queryIssuedBeforeGetModuleResolved).toBe(true);
+  });
+
+  it('a subgraph outage no longer masks the on-chain ModuleUnknown gate', async () => {
+    mocks.query.mockRejectedValue(new Error('502 bad gateway'));
+    mocks.createReadContract.mockImplementation(() => ({
+      getModule: async () => { throw new Error('call revert exception'); },
+    }));
+
+    await expect(updateModuleHandler.handler(baseArgv({ payout: 10 }))).rejects.toBeInstanceOf(ExitError);
+
+    expect(exitSpy.mock.calls[0][0]).toBe(EXIT.PRECONDITION);
+    expect(mocks.executeTx).not.toHaveBeenCalled();
+  });
 });
 
 describe('pop education create — metadata pin parity', () => {
