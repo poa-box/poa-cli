@@ -39,7 +39,8 @@ yarn test
 
 ## Publishing note
 
-The `@poa/cli` dependency is declared as `link:../..`, which only resolves
-inside this repository. Publishing `@poa/agent` to npm requires swapping it
-for a real version range (e.g. `"@poa/cli": "^0.1.0"`) in the packed
-manifest — a release script concern, deliberately not wired up yet.
+The `@poa/cli` dependency is declared as `link:../..` for in-repo
+development. The `prepack` lifecycle script swaps it to a real version range
+(`^0.1.0`) for the packed manifest and `postpack` restores the link, so
+`npm publish --access public` just works — no manual steps. Bump the range
+here when the CLI's major/minor changes.

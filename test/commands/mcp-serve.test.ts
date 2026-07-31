@@ -76,6 +76,10 @@ describe('pop mcp serve', () => {
     expect(tools.has('pop_vote_execute')).toBe(false);
     // an always-pinning "read" is a publish — excluded by default
     expect(tools.has('pop_org_publish')).toBe(false);
+    // the server must not expose ITSELF (a nested stdio server hangs the
+    // call), nor the interactive init wizard (prompts hang without a TTY)
+    expect(tools.has('pop_mcp_serve')).toBe(false);
+    expect(tools.has('pop_init')).toBe(false);
     // optional-pin read included, but WITHOUT the pin property
     const leaderboard = replies.find((r) => r.id === 2)!.result.tools.find((t: any) => t.name === 'pop_org_leaderboard');
     expect(leaderboard).toBeDefined();

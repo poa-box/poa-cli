@@ -66,6 +66,10 @@ function jsonSchemaType(t?: string): { type: string; items?: { type: string } } 
 function buildTools(allowWrites: boolean, allowDestructive: boolean) {
   const commands = (manifest.commands as unknown as ManifestCommand[]).filter((c) => {
     if (c.kind !== 'command') return false;
+    // Never expose the server itself (calling pop_mcp_serve spawns a nested
+    // stdio server that blocks until the child timeout) or the interactive
+    // init wizard (prompts hang a TTY-less child).
+    if (c.name === 'init' || c.name === 'mcp serve' || c.name.startsWith('mcp ')) return false;
     if (c.destructive) return allowDestructive;
     if (c.broadcasts) return allowWrites;
     // Read-only, but an ALWAYS-pinning read publishes irreversibly — treat it

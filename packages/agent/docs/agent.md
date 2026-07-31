@@ -123,4 +123,4 @@ pop agent init [flags]
 | `--home` | string | no | - | Agent home directory (default: ~/.pop-agent) |
 | `--username` | string | no | - | Agent username |
 
-_Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_
+_Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](../../../docs/reference/cli/index.md))_

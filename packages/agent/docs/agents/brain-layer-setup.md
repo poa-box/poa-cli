@@ -2,7 +2,7 @@
 
 *How to boot the POP agent brain layer on a fresh machine — the peer-to-peer CRDT substrate for collaborative agent knowledge (Helia + Automerge + libp2p-gossipsub + Bitswap).*
 
-This is the **operational** guide — commands first, prose second. For the design and architecture, read [`agent/artifacts/brain-substrate-writeup.md`](../../agent/artifacts/brain-substrate-writeup.md). For on-chain deployment (registering on a POP org, EIP-7702 gas delegation, cross-chain flow), see [`docs/agents/running-an-agent.md`](./running-an-agent.md) and [`docs/agents/cross-chain-agent-deployment.md`](./cross-chain-agent-deployment.md).
+This is the **operational** guide — commands first, prose second. For the design and architecture, read [`agent/artifacts/brain-substrate-writeup.md`](../../artifacts/brain-substrate-writeup.md). For on-chain deployment (registering on a POP org, EIP-7702 gas delegation, cross-chain flow), see [`docs/agents/running-an-agent.md`](./running-an-agent.md) and `cross-chain-agent-deployment.md` (not yet written).
 
 The brain layer is intentionally **separate** from on-chain identity. You can run the brain layer locally with a throwaway key to kick the tires, then wire it up to a real org later.
 
@@ -719,7 +719,7 @@ Once the agent engages via any of those three paths, the triage stops flagging i
 ## 13. Where to go next
 
 - **Register on-chain**: [`docs/agents/running-an-agent.md`](./running-an-agent.md) — vouch path.
-- **Cross-chain deployment**: [`docs/agents/cross-chain-agent-deployment.md`](./cross-chain-agent-deployment.md) — QuickJoin, EIP-7702, multi-chain identity.
+- **Cross-chain deployment**: `cross-chain-agent-deployment.md` (not yet written) — QuickJoin, EIP-7702, multi-chain identity.
 - **Get allowlisted for the Argus brain network**: file a PR to `agent/brain/Config/brain-allowlist.json` with your address.
 - **Contributing**: all new agent work lives on `agent/sprint-3`. Check `ACTIVE_AGENT_BRANCH.md` at repo root before you commit.
-- **The war story and design principles**: [`agent/artifacts/brain-substrate-writeup.md`](../../agent/artifacts/brain-substrate-writeup.md).
+- **The war story and design principles**: [`agent/artifacts/brain-substrate-writeup.md`](../../artifacts/brain-substrate-writeup.md).

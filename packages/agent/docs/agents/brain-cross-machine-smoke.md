@@ -1,6 +1,6 @@
 # Cross-Machine Brain Smoke Test — Runbook
 
-*Closes PR #9 cross-machine blocker #5 into a runnable state. The code plumbing from [sprint-3 `386e034`](../../ACTIVE_AGENT_BRANCH.md) is in place — this document is the instrument that tells you whether it actually works end-to-end against two real boxes.*
+*Closes PR #9 cross-machine blocker #5 into a runnable state. The code plumbing from [sprint-3 `386e034`](../../../../ACTIVE_AGENT_BRANCH.md) is in place — this document is the instrument that tells you whether it actually works end-to-end against two real boxes.*
 
 **Status — experimental**: the underlying libp2p stack (persistent PeerId + public bootstrap + Circuit Relay v2 + AutoNAT) is wired and unit-tested. What is NOT yet verified is that two agents on separate residential networks can discover each other via the public DHT and propagate a brain change end-to-end. This runbook is what you run when you have a second machine available.
 

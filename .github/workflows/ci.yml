@@ -35,17 +35,19 @@ jobs:
       - name: Build (tsc)
         run: yarn build
 
-      - name: Test (vitest)
-        run: yarn test
-
-      - name: Docs (generated reference + link check)
-        run: yarn docs:check
-
+      # The agent package must exist BEFORE the root suite runs:
+      # cli-agent-surface.test.ts spawns packages/agent/dist/pop-agent.js.
       - name: Agent package — install (links @poa/cli)
         run: yarn --cwd packages/agent install --frozen-lockfile
 
       - name: Agent package — build
         run: yarn --cwd packages/agent build
+
+      - name: Test (vitest)
+        run: yarn test
+
+      - name: Docs (generated reference + link check)
+        run: yarn docs:check
 
       - name: Agent package — test
         run: yarn --cwd packages/agent test

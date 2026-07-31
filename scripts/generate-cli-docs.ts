@@ -173,7 +173,7 @@ function manifestOption(spec: OptSpec): Record<string, unknown> {
   if (spec.description) out.description = spec.description;
   if (spec.default !== undefined) out.default = spec.default;
   if (spec.choices && spec.choices.length) out.choices = spec.choices;
-  if (spec.demandOption) out.required = true;
+  if (spec.required) out.required = true;
   if (spec.aliases && spec.aliases.length) out.aliases = spec.aliases;
   return out;
 }
@@ -196,7 +196,7 @@ function manifestCommand(domain: string, cmd: CliCommand, entries: any[]): void 
       name: pSpec.name,
       type: pSpec.type ?? 'string',
       ...(pSpec.description ? { description: pSpec.description } : {}),
-      ...(pSpec.demandOption ? { required: true } : {}),
+      ...(pSpec.required ? { required: true } : {}),
     })),
     options: Object.fromEntries(
       Object.entries(cmd.options)

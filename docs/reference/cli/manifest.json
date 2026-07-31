@@ -99,7 +99,8 @@
         },
         "description": {
           "type": "string",
-          "description": "Task description"
+          "description": "Task description",
+          "required": true
         },
         "difficulty": {
           "type": "string",
@@ -127,7 +128,8 @@
         },
         "name": {
           "type": "string",
-          "description": "Task name"
+          "description": "Task name",
+          "required": true
         },
         "no-idempotency": {
           "type": "boolean",
@@ -140,7 +142,8 @@
         },
         "project": {
           "type": "string",
-          "description": "Project ID"
+          "description": "Project ID",
+          "required": true
         },
         "requires-application": {
           "type": "boolean",
@@ -176,11 +179,13 @@
         },
         "file": {
           "type": "string",
-          "description": "JSONL file (one task JSON per line)"
+          "description": "JSONL file (one task JSON per line)",
+          "required": true
         },
         "project": {
           "type": "string",
-          "description": "Project ID (shared for all tasks)"
+          "description": "Project ID (shared for all tasks)",
+          "required": true
         }
       }
     },
@@ -260,7 +265,8 @@
       "options": {
         "task": {
           "type": "string",
-          "description": "Task ID"
+          "description": "Task ID",
+          "required": true
         }
       }
     },
@@ -285,7 +291,8 @@
         },
         "task": {
           "type": "string",
-          "description": "Task ID"
+          "description": "Task ID",
+          "required": true
         }
       }
     },
@@ -321,11 +328,13 @@
         },
         "submission": {
           "type": "string",
-          "description": "Submission text"
+          "description": "Submission text",
+          "required": true
         },
         "task": {
           "type": "string",
-          "description": "Task ID"
+          "description": "Task ID",
+          "required": true
         }
       }
     },
@@ -347,7 +356,8 @@
           "choices": [
             "approve",
             "reject"
-          ]
+          ],
+          "required": true
         },
         "idempotency-key": {
           "type": "string",
@@ -364,7 +374,8 @@
         },
         "task": {
           "type": "string",
-          "description": "Task ID"
+          "description": "Task ID",
+          "required": true
         }
       }
     },
@@ -389,7 +400,8 @@
         },
         "task": {
           "type": "string",
-          "description": "Task ID"
+          "description": "Task ID",
+          "required": true
         }
       }
     },
@@ -418,7 +430,8 @@
         },
         "task": {
           "type": "string",
-          "description": "Task ID"
+          "description": "Task ID",
+          "required": true
         },
         "username": {
           "type": "string",
@@ -457,7 +470,8 @@
         },
         "task": {
           "type": "string",
-          "description": "Task ID"
+          "description": "Task ID",
+          "required": true
         }
       }
     },
@@ -473,7 +487,8 @@
       "options": {
         "applicant": {
           "type": "string",
-          "description": "Applicant address to approve"
+          "description": "Applicant address to approve",
+          "required": true
         },
         "idempotency-key": {
           "type": "string",
@@ -486,7 +501,8 @@
         },
         "task": {
           "type": "string",
-          "description": "Task ID"
+          "description": "Task ID",
+          "required": true
         }
       }
     },
@@ -543,7 +559,8 @@
         },
         "task": {
           "type": "string",
-          "description": "Task ID"
+          "description": "Task ID",
+          "required": true
         }
       }
     },
@@ -569,7 +586,8 @@
         },
         "task": {
           "type": "string",
-          "description": "Task ID"
+          "description": "Task ID",
+          "required": true
         }
       }
     },
@@ -584,7 +602,8 @@
       "positionals": [
         {
           "name": "sub",
-          "type": "string"
+          "type": "string",
+          "required": true
         }
       ],
       "options": {}
@@ -619,15 +638,18 @@
       "options": {
         "hat": {
           "type": "string",
-          "description": "Hat ID whose project mask to set"
+          "description": "Hat ID whose project mask to set",
+          "required": true
         },
         "perms": {
           "type": "string",
-          "description": "Comma-separated permission list (create, claim, review, assign, self-review, budget, edit-meta, edit-full) or \"none\" to remove the override"
+          "description": "Comma-separated permission list (create, claim, review, assign, self-review, budget, edit-meta, edit-full) or \"none\" to remove the override",
+          "required": true
         },
         "project": {
           "type": "string",
-          "description": "Project ID (bytes32) or name"
+          "description": "Project ID (bytes32) or name",
+          "required": true
         }
       }
     },
@@ -648,11 +670,13 @@
         },
         "hat": {
           "type": "string",
-          "description": "Hat ID whose GLOBAL mask to set"
+          "description": "Hat ID whose GLOBAL mask to set",
+          "required": true
         },
         "perms": {
           "type": "string",
-          "description": "Comma-separated permission list (create, claim, review, assign, self-review, budget, edit-meta, edit-full) or \"none\" to revoke"
+          "description": "Comma-separated permission list (create, claim, review, assign, self-review, budget, edit-meta, edit-full) or \"none\" to revoke",
+          "required": true
         }
       }
     },
@@ -667,7 +691,8 @@
       "positionals": [
         {
           "name": "sub",
-          "type": "string"
+          "type": "string",
+          "required": true
         }
       ],
       "options": {}
@@ -695,7 +720,8 @@
       "options": {
         "new-root": {
           "type": "string",
-          "description": "New folder-tree root: Qm… CIDv0, 0x-prefixed bytes32, or \"clear\""
+          "description": "New folder-tree root: Qm… CIDv0, 0x-prefixed bytes32, or \"clear\"",
+          "required": true
         }
       }
     },
@@ -746,7 +772,8 @@
         },
         "name": {
           "type": "string",
-          "description": "Project name"
+          "description": "Project name",
+          "required": true
         },
         "review-hats": {
           "type": "string",
@@ -794,7 +821,8 @@
         },
         "name": {
           "type": "string",
-          "description": "Project name"
+          "description": "Project name",
+          "required": true
         },
         "review-hats": {
           "type": "string",
@@ -825,7 +853,8 @@
       "options": {
         "project": {
           "type": "string",
-          "description": "Project ID (bytes32 or decimal) or name"
+          "description": "Project ID (bytes32 or decimal) or name",
+          "required": true
         }
       }
     },
@@ -950,7 +979,8 @@
         },
         "hat": {
           "type": "string",
-          "description": "Hat ID that may edit org metadata directly (0 = clear; topHat fallback applies)"
+          "description": "Hat ID that may edit org metadata directly (0 = clear; topHat fallback applies)",
+          "required": true
         }
       }
     },
@@ -968,7 +998,8 @@
       "options": {
         "config": {
           "type": "string",
-          "description": "Path to org deploy config JSON file"
+          "description": "Path to org deploy config JSON file",
+          "required": true
         }
       }
     },
@@ -991,7 +1022,8 @@
         },
         "name": {
           "type": "string",
-          "description": "Organization name"
+          "description": "Organization name",
+          "required": true
         },
         "output": {
           "type": "string",
@@ -1009,7 +1041,8 @@
         },
         "username": {
           "type": "string",
-          "description": "Deployer username"
+          "description": "Deployer username",
+          "required": true
         }
       }
     },
@@ -1105,7 +1138,8 @@
         },
         "target": {
           "type": "string",
-          "description": "Org name to audit"
+          "description": "Org name to audit",
+          "required": true
         }
       }
     },
@@ -1144,7 +1178,8 @@
         },
         "target": {
           "type": "string",
-          "description": "Target org name to generate outreach for"
+          "description": "Target org name to generate outreach for",
+          "required": true
         }
       }
     },
@@ -1167,7 +1202,8 @@
         },
         "space": {
           "type": "string",
-          "description": "Snapshot space ID (e.g. ens.eth)"
+          "description": "Snapshot space ID (e.g. ens.eth)",
+          "required": true
         }
       }
     },
@@ -1185,7 +1221,8 @@
       "options": {
         "address": {
           "type": "string",
-          "description": "Safe multisig address"
+          "description": "Safe multisig address",
+          "required": true
         },
         "pin": {
           "type": "boolean",
@@ -1208,7 +1245,8 @@
       "options": {
         "name": {
           "type": "string",
-          "description": "DAO name for report"
+          "description": "DAO name for report",
+          "required": true
         },
         "pin": {
           "type": "boolean",
@@ -1217,11 +1255,13 @@
         },
         "safe": {
           "type": "string",
-          "description": "Safe multisig address"
+          "description": "Safe multisig address",
+          "required": true
         },
         "snapshot": {
           "type": "string",
-          "description": "Snapshot space ID (e.g. ens.eth)"
+          "description": "Snapshot space ID (e.g. ens.eth)",
+          "required": true
         }
       }
     },
@@ -1239,7 +1279,8 @@
       "options": {
         "address": {
           "type": "string",
-          "description": "Governor contract address"
+          "description": "Governor contract address",
+          "required": true
         },
         "blocks": {
           "type": "number",
@@ -1278,7 +1319,8 @@
       "options": {
         "cid": {
           "type": "string",
-          "description": "IPFS CID of content to publish"
+          "description": "IPFS CID of content to publish",
+          "required": true
         },
         "description": {
           "type": "string",
@@ -1287,7 +1329,8 @@
         },
         "title": {
           "type": "string",
-          "description": "Page title"
+          "description": "Page title",
+          "required": true
         }
       }
     },
@@ -1310,7 +1353,8 @@
         },
         "spaces": {
           "type": "string",
-          "description": "Comma-separated Snapshot space IDs (e.g. aave.eth,comp-vote.eth)"
+          "description": "Comma-separated Snapshot space IDs (e.g. aave.eth,comp-vote.eth)",
+          "required": true
         }
       }
     },
@@ -1336,7 +1380,8 @@
         },
         "org-name": {
           "type": "string",
-          "description": "Name of the DAO to audit"
+          "description": "Name of the DAO to audit",
+          "required": true
         },
         "pin": {
           "type": "boolean",
@@ -1351,7 +1396,8 @@
             "pop",
             "governor",
             "moloch"
-          ]
+          ],
+          "required": true
         },
         "space": {
           "type": "string",
@@ -1405,7 +1451,8 @@
       "options": {
         "cid": {
           "type": "string",
-          "description": "IPFS CID of content to share"
+          "description": "IPFS CID of content to share",
+          "required": true
         },
         "platform": {
           "type": "string",
@@ -1415,7 +1462,8 @@
             "twitter",
             "forum",
             "all"
-          ]
+          ],
+          "required": true
         },
         "title": {
           "type": "string",
@@ -1460,11 +1508,13 @@
       "options": {
         "a": {
           "type": "string",
-          "description": "First Snapshot space (e.g. aave.eth)"
+          "description": "First Snapshot space (e.g. aave.eth)",
+          "required": true
         },
         "b": {
           "type": "string",
-          "description": "Second Snapshot space (e.g. compound.eth)"
+          "description": "Second Snapshot space (e.g. compound.eth)",
+          "required": true
         }
       }
     },
@@ -1510,7 +1560,8 @@
         },
         "address": {
           "type": "string",
-          "description": "Contract address to probe"
+          "description": "Contract address to probe",
+          "required": true
         },
         "expected-name": {
           "type": "string",
@@ -1559,7 +1610,8 @@
         },
         "escrow": {
           "type": "string",
-          "description": "VotingEscrow contract address (veCRV, veBAL, veFXS, …)"
+          "description": "VotingEscrow contract address (veCRV, veBAL, veFXS, …)",
+          "required": true
         },
         "from-block": {
           "type": "number",
@@ -1600,7 +1652,8 @@
       "options": {
         "address": {
           "type": "string",
-          "description": "Governor contract address"
+          "description": "Governor contract address",
+          "required": true
         },
         "chain": {
           "type": "number",
@@ -1651,11 +1704,13 @@
         },
         "description": {
           "type": "string",
-          "description": "Proposal description"
+          "description": "Proposal description",
+          "required": true
         },
         "duration": {
           "type": "number",
-          "description": "Duration in minutes"
+          "description": "Duration in minutes",
+          "required": true
         },
         "hat-ids": {
           "type": "string",
@@ -1667,7 +1722,8 @@
         },
         "name": {
           "type": "string",
-          "description": "Proposal title"
+          "description": "Proposal title",
+          "required": true
         },
         "no-idempotency": {
           "type": "boolean",
@@ -1676,7 +1732,8 @@
         },
         "options": {
           "type": "string",
-          "description": "Comma-separated option names"
+          "description": "Comma-separated option names",
+          "required": true
         },
         "type": {
           "type": "string",
@@ -1684,7 +1741,8 @@
           "choices": [
             "hybrid",
             "dd"
-          ]
+          ],
+          "required": true
         }
       }
     },
@@ -1709,11 +1767,13 @@
         },
         "options": {
           "type": "string",
-          "description": "Comma-separated option indices to vote for"
+          "description": "Comma-separated option indices to vote for",
+          "required": true
         },
         "proposal": {
           "type": "string",
-          "description": "Proposal ID (number) or fuzzy title query (e.g. \"bridge retry\")"
+          "description": "Proposal ID (number) or fuzzy title query (e.g. \"bridge retry\")",
+          "required": true
         },
         "type": {
           "type": "string",
@@ -1721,11 +1781,13 @@
           "choices": [
             "hybrid",
             "dd"
-          ]
+          ],
+          "required": true
         },
         "weights": {
           "type": "string",
-          "description": "Comma-separated weights (must sum to 100)"
+          "description": "Comma-separated weights (must sum to 100)",
+          "required": true
         }
       }
     },
@@ -1790,7 +1852,8 @@
         },
         "proposal": {
           "type": "string",
-          "description": "Proposal ID (number) or fuzzy title query"
+          "description": "Proposal ID (number) or fuzzy title query",
+          "required": true
         },
         "type": {
           "type": "string",
@@ -1798,7 +1861,8 @@
           "choices": [
             "hybrid",
             "dd"
-          ]
+          ],
+          "required": true
         }
       }
     },
@@ -1823,7 +1887,8 @@
         },
         "proposal": {
           "type": "string",
-          "description": "Proposal ID (number) or fuzzy title query"
+          "description": "Proposal ID (number) or fuzzy title query",
+          "required": true
         }
       }
     },
@@ -1876,7 +1941,8 @@
         },
         "quorum": {
           "type": "number",
-          "description": "New quorum value (minimum voter COUNT, not a percentage)"
+          "description": "New quorum value (minimum voter COUNT, not a percentage)",
+          "required": true
         }
       }
     },
@@ -1910,7 +1976,8 @@
             "target-allowed",
             "executor",
             "hat-allowed"
-          ]
+          ],
+          "required": true
         },
         "no-idempotency": {
           "type": "boolean",
@@ -1919,7 +1986,8 @@
         },
         "value": {
           "type": "string",
-          "description": "New value"
+          "description": "New value",
+          "required": true
         }
       }
     },
@@ -1935,7 +2003,8 @@
       "options": {
         "proposal": {
           "type": "number",
-          "description": "Proposal ID to analyze"
+          "description": "Proposal ID to analyze",
+          "required": true
         }
       }
     },
@@ -1951,7 +2020,8 @@
       "options": {
         "proposal": {
           "type": "string",
-          "description": "Proposal ID (number) or fuzzy title query"
+          "description": "Proposal ID (number) or fuzzy title query",
+          "required": true
         }
       }
     },
@@ -1966,7 +2036,8 @@
       "positionals": [
         {
           "name": "sub",
-          "type": "string"
+          "type": "string",
+          "required": true
         }
       ],
       "options": {}
@@ -2006,7 +2077,8 @@
         },
         "file": {
           "type": "string",
-          "description": "Path to a ClassConfig[] JSON file (strategy, slicePct, quadratic, minBalance, asset, hatIds)"
+          "description": "Path to a ClassConfig[] JSON file (strategy, slicePct, quadratic, minBalance, asset, hatIds)",
+          "required": true
         },
         "idempotency-key": {
           "type": "string",
@@ -2031,7 +2103,8 @@
       "options": {
         "username": {
           "type": "string",
-          "description": "Username (3-32 chars, alphanumeric + underscores)"
+          "description": "Username (3-32 chars, alphanumeric + underscores)",
+          "required": true
         }
       }
     },
@@ -2072,7 +2145,8 @@
       "options": {
         "hats": {
           "type": "string",
-          "description": "Comma-separated hat IDs to claim (decimal or 0x-hex), e.g. after being vouched for a role"
+          "description": "Comma-separated hat IDs to claim (decimal or 0x-hex), e.g. after being vouched for a role",
+          "required": true
         },
         "idempotency-key": {
           "type": "string",
@@ -2174,7 +2248,8 @@
         },
         "correct-answer": {
           "type": "number",
-          "description": "Index of correct answer (0-based; PERMANENT — updateModule cannot change it)"
+          "description": "Index of correct answer (0-based; PERMANENT — updateModule cannot change it)",
+          "required": true
         },
         "description": {
           "type": "string",
@@ -2190,7 +2265,8 @@
         },
         "name": {
           "type": "string",
-          "description": "Module title"
+          "description": "Module title",
+          "required": true
         },
         "no-idempotency": {
           "type": "boolean",
@@ -2199,7 +2275,8 @@
         },
         "payout": {
           "type": "number",
-          "description": "PT reward for completion (must be > 0)"
+          "description": "PT reward for completion (must be > 0)",
+          "required": true
         },
         "quiz": {
           "type": "string",
@@ -2244,7 +2321,8 @@
         },
         "module": {
           "type": "string",
-          "description": "Module ID"
+          "description": "Module ID",
+          "required": true
         },
         "name": {
           "type": "string",
@@ -2272,7 +2350,8 @@
       "options": {
         "module": {
           "type": "string",
-          "description": "Module ID to remove (permanent — no undo)"
+          "description": "Module ID to remove (permanent — no undo)",
+          "required": true
         }
       }
     },
@@ -2288,7 +2367,8 @@
       "options": {
         "answer": {
           "type": "number",
-          "description": "Answer index (0-based)"
+          "description": "Answer index (0-based)",
+          "required": true
         },
         "idempotency-key": {
           "type": "string",
@@ -2296,7 +2376,8 @@
         },
         "module": {
           "type": "string",
-          "description": "Module ID"
+          "description": "Module ID",
+          "required": true
         },
         "no-idempotency": {
           "type": "boolean",
@@ -2317,7 +2398,8 @@
       "options": {
         "address": {
           "type": "string",
-          "description": "Address of the user to vouch for"
+          "description": "Address of the user to vouch for",
+          "required": true
         },
         "hat": {
           "type": "string",
@@ -2350,11 +2432,13 @@
       "options": {
         "address": {
           "type": "string",
-          "description": "Address whose vouch to revoke"
+          "description": "Address whose vouch to revoke",
+          "required": true
         },
         "hat": {
           "type": "string",
-          "description": "Hat ID of the role"
+          "description": "Hat ID of the role",
+          "required": true
         },
         "idempotency-key": {
           "type": "string",
@@ -2379,7 +2463,8 @@
       "options": {
         "hat": {
           "type": "string",
-          "description": "Hat ID to claim"
+          "description": "Hat ID to claim",
+          "required": true
         },
         "idempotency-key": {
           "type": "string",
@@ -2420,11 +2505,13 @@
       "options": {
         "address": {
           "type": "string",
-          "description": "Wearer address to check"
+          "description": "Wearer address to check",
+          "required": true
         },
         "hat": {
           "type": "string",
-          "description": "Hat ID to check"
+          "description": "Hat ID to check",
+          "required": true
         }
       }
     },
@@ -2439,7 +2526,8 @@
       "positionals": [
         {
           "name": "sub",
-          "type": "string"
+          "type": "string",
+          "required": true
         }
       ],
       "options": {}
@@ -2456,7 +2544,8 @@
       "options": {
         "hat": {
           "type": "string",
-          "description": "Hat ID whose vouching config to show"
+          "description": "Hat ID whose vouching config to show",
+          "required": true
         }
       }
     },
@@ -2477,15 +2566,18 @@
         },
         "hat": {
           "type": "string",
-          "description": "Hat ID to configure vouching for"
+          "description": "Hat ID to configure vouching for",
+          "required": true
         },
         "membership-hat": {
           "type": "string",
-          "description": "Hat whose wearers are allowed to vouch"
+          "description": "Hat whose wearers are allowed to vouch",
+          "required": true
         },
         "quorum": {
           "type": "number",
-          "description": "Vouches required to become claimable (0 disables vouching)"
+          "description": "Vouches required to become claimable (0 disables vouching)",
+          "required": true
         }
       }
     },
@@ -2501,7 +2593,8 @@
       "options": {
         "hat": {
           "type": "string",
-          "description": "Hat ID whose vouch state to reset"
+          "description": "Hat ID whose vouch state to reset",
+          "required": true
         },
         "wearer": {
           "type": "string",
@@ -2523,11 +2616,13 @@
       "options": {
         "amount": {
           "type": "number",
-          "description": "Amount of PT to request"
+          "description": "Amount of PT to request",
+          "required": true
         },
         "reason": {
           "type": "string",
-          "description": "Reason for the request (pinned to IPFS)"
+          "description": "Reason for the request (pinned to IPFS)",
+          "required": true
         }
       }
     },
@@ -2543,7 +2638,8 @@
       "options": {
         "request": {
           "type": "number",
-          "description": "Request ID to approve"
+          "description": "Request ID to approve",
+          "required": true
         }
       }
     },
@@ -2559,7 +2655,8 @@
       "options": {
         "request": {
           "type": "number",
-          "description": "Request ID to cancel"
+          "description": "Request ID to cancel",
+          "required": true
         }
       }
     },
@@ -2634,11 +2731,13 @@
       "options": {
         "amount": {
           "type": "number",
-          "description": "Amount to deposit (human token units)"
+          "description": "Amount to deposit (human token units)",
+          "required": true
         },
         "token": {
           "type": "string",
-          "description": "ERC20 token address"
+          "description": "ERC20 token address",
+          "required": true
         }
       }
     },
@@ -2656,7 +2755,8 @@
       "options": {
         "amount": {
           "type": "number",
-          "description": "Amount to swap (human units of from-token)"
+          "description": "Amount to swap (human units of from-token)",
+          "required": true
         },
         "duration": {
           "type": "number",
@@ -2665,11 +2765,13 @@
         },
         "from-index": {
           "type": "number",
-          "description": "Curve coin index for from-token (0 or 1)"
+          "description": "Curve coin index for from-token (0 or 1)",
+          "required": true
         },
         "from-token": {
           "type": "string",
-          "description": "Token to sell (address)"
+          "description": "Token to sell (address)",
+          "required": true
         },
         "min-out": {
           "type": "number",
@@ -2677,15 +2779,18 @@
         },
         "pool": {
           "type": "string",
-          "description": "Curve pool address"
+          "description": "Curve pool address",
+          "required": true
         },
         "to-index": {
           "type": "number",
-          "description": "Curve coin index for to-token (0 or 1)"
+          "description": "Curve coin index for to-token (0 or 1)",
+          "required": true
         },
         "to-token": {
           "type": "string",
-          "description": "Token to receive (address)"
+          "description": "Token to receive (address)",
+          "required": true
         }
       }
     },
@@ -2701,11 +2806,13 @@
       "options": {
         "amount": {
           "type": "string",
-          "description": "Your allocated amount in TOKEN UNITS (e.g. 12.5) — must match the merkle leaf exactly; use --wei for the raw integer"
+          "description": "Your allocated amount in TOKEN UNITS (e.g. 12.5) — must match the merkle leaf exactly; use --wei for the raw integer",
+          "required": true
         },
         "distribution": {
           "type": "number",
-          "description": "Distribution ID"
+          "description": "Distribution ID",
+          "required": true
         },
         "proof": {
           "type": "string",
@@ -2778,7 +2885,8 @@
       "options": {
         "amount": {
           "type": "string",
-          "description": "Total distribution amount (in token units, e.g. \"40\" for 40 BREAD)"
+          "description": "Total distribution amount (in token units, e.g. \"40\" for 40 BREAD)",
+          "required": true
         },
         "output": {
           "type": "string",
@@ -2787,7 +2895,8 @@
         },
         "token": {
           "type": "string",
-          "description": "Payout token address"
+          "description": "Payout token address",
+          "required": true
         }
       }
     },
@@ -2810,7 +2919,8 @@
         },
         "merkle-file": {
           "type": "string",
-          "description": "Path to merkle-distribution.json from compute-merkle"
+          "description": "Path to merkle-distribution.json from compute-merkle",
+          "required": true
         }
       }
     },
@@ -2875,7 +2985,8 @@
       "options": {
         "amount": {
           "type": "number",
-          "description": "xDAI amount to deposit into sDAI"
+          "description": "xDAI amount to deposit into sDAI",
+          "required": true
         },
         "duration": {
           "type": "number",
@@ -2898,7 +3009,8 @@
       "options": {
         "distribution": {
           "type": "number",
-          "description": "Distribution ID to finalize"
+          "description": "Distribution ID to finalize",
+          "required": true
         },
         "duration": {
           "type": "number",
@@ -2940,7 +3052,8 @@
       "options": {
         "amount": {
           "type": "string",
-          "description": "Amount to deposit, in ether units of the native gas token (e.g. 0.05 = 0.05 xDAI on Gnosis)"
+          "description": "Amount to deposit, in ether units of the native gas token (e.g. 0.05 = 0.05 xDAI on Gnosis)",
+          "required": true
         }
       }
     },
@@ -2956,7 +3069,8 @@
       "options": {
         "admin-hat": {
           "type": "string",
-          "description": "Hat ID that will administer the org's paymaster config (usually the org top hat)"
+          "description": "Hat ID that will administer the org's paymaster config (usually the org top hat)",
+          "required": true
         },
         "config": {
           "type": "string",
@@ -2990,7 +3104,8 @@
         },
         "hat": {
           "type": "string",
-          "description": "Hat ID of the role to apply for"
+          "description": "Hat ID of the role to apply for",
+          "required": true
         },
         "idempotency-key": {
           "type": "string",
@@ -3039,7 +3154,8 @@
       "options": {
         "hat": {
           "type": "string",
-          "description": "Hat ID whose application to withdraw"
+          "description": "Hat ID whose application to withdraw",
+          "required": true
         },
         "idempotency-key": {
           "type": "string",
@@ -3096,7 +3212,8 @@
         },
         "name": {
           "type": "string",
-          "description": "Role name (stored as the hat details)"
+          "description": "Role name (stored as the hat details)",
+          "required": true
         },
         "no-idempotency": {
           "type": "boolean",
@@ -3105,7 +3222,8 @@
         },
         "parent-hat": {
           "type": "string",
-          "description": "Parent hat ID the new role hangs under"
+          "description": "Parent hat ID the new role hangs under",
+          "required": true
         }
       }
     },
@@ -3120,7 +3238,8 @@
       "positionals": [
         {
           "name": "sub",
-          "type": "string"
+          "type": "string",
+          "required": true
         }
       ],
       "options": {}
@@ -3146,7 +3265,8 @@
         },
         "hat": {
           "type": "string",
-          "description": "Hat ID whose eligibility to set"
+          "description": "Hat ID whose eligibility to set",
+          "required": true
         },
         "standing": {
           "type": "boolean",
@@ -3171,11 +3291,13 @@
       "options": {
         "hat": {
           "type": "string",
-          "description": "Hat ID"
+          "description": "Hat ID",
+          "required": true
         },
         "wearer": {
           "type": "string",
-          "description": "Wearer whose specific rule to clear (hat defaults apply again)"
+          "description": "Wearer whose specific rule to clear (hat defaults apply again)",
+          "required": true
         }
       }
     },
@@ -3196,7 +3318,8 @@
         },
         "hat": {
           "type": "string",
-          "description": "Hat ID whose defaults to set"
+          "description": "Hat ID whose defaults to set",
+          "required": true
         },
         "standing": {
           "type": "boolean",
@@ -3216,7 +3339,8 @@
       "positionals": [
         {
           "name": "sub",
-          "type": "string"
+          "type": "string",
+          "required": true
         }
       ],
       "options": {}
@@ -3233,7 +3357,8 @@
       "options": {
         "to": {
           "type": "string",
-          "description": "New superAdmin address"
+          "description": "New superAdmin address",
+          "required": true
         }
       }
     },
@@ -3249,11 +3374,13 @@
       "options": {
         "hat": {
           "type": "string",
-          "description": "Hat ID to mint"
+          "description": "Hat ID to mint",
+          "required": true
         },
         "wearer": {
           "type": "string",
-          "description": "Recipient address (comma-separate for several)"
+          "description": "Recipient address (comma-separate for several)",
+          "required": true
         }
       }
     },
@@ -3295,7 +3422,8 @@
         },
         "user": {
           "type": "string",
-          "description": "User whose join time to set"
+          "description": "User whose join time to set",
+          "required": true
         }
       }
     },
@@ -3339,7 +3467,8 @@
         {
           "name": "identifier",
           "type": "string",
-          "description": "A domain (anthropic.com) or address (alice@org.com)"
+          "description": "A domain (anthropic.com) or address (alice@org.com)",
+          "required": true
         }
       ],
       "options": {
@@ -3420,7 +3549,8 @@
       "options": {
         "cid": {
           "type": "string",
-          "description": "IPFS CIDv0 of the pinned allowlist file"
+          "description": "IPFS CIDv0 of the pinned allowlist file",
+          "required": true
         },
         "duration": {
           "type": "number",
@@ -3429,7 +3559,8 @@
         },
         "root": {
           "type": "string",
-          "description": "Merkle root from pop zkemail build-allowlist"
+          "description": "Merkle root from pop zkemail build-allowlist",
+          "required": true
         },
         "skip-verify": {
           "type": "boolean",

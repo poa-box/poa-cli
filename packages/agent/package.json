@@ -1,7 +1,7 @@
 {
   "name": "@poa/agent",
   "version": "0.1.0",
-  "description": "Autonomous governance agent runtime for the POP protocol \u2014 agent + brain (P2P CRDT) command surface over @poa/cli",
+  "description": "Autonomous governance agent runtime for the POP protocol — agent + brain (P2P CRDT) command surface over @poa/cli",
   "main": "dist/index.js",
   "bin": {
     "pop-agent": "./dist/pop-agent.js"
@@ -11,7 +11,8 @@
     "docs",
     "scripts",
     ".env.agent.template",
-    "README.md"
+    "README.md",
+    "brain"
   ],
   "scripts": {
     "build": "rm -rf dist && tsc",
@@ -21,11 +22,14 @@
     "test:xmachine-smoke": "yarn build && POP_BRAIN_HOME=${POP_BRAIN_HOME:-/tmp/brain-xmachine-loopback} POP_PRIVATE_KEY=${POP_PRIVATE_KEY:-$(grep -h '^POP_PRIVATE_KEY=' ~/.pop-agent/.env 2>/dev/null | head -1 | cut -d= -f2)} sh -c 'ROLE=publish node test/scripts/brain-cross-machine-smoke.js && ROLE=verify node test/scripts/brain-cross-machine-smoke.js'",
     "onboard": "bash scripts/onboard.sh",
     "apply": "bash scripts/apply.sh",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "prepack": "npm pkg set 'dependencies.@poa/cli=^0.1.0'",
+    "postpack": "npm pkg set 'dependencies.@poa/cli=link:../..'"
   },
   "dependencies": {
     "@poa/cli": "link:../..",
     "ethers": "5.7.2",
+    "viem": "^2.47.12",
     "yargs": "^17.7.2"
   },
   "optionalDependencies": {

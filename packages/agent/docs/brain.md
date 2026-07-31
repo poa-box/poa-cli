@@ -557,4 +557,4 @@ pop brain retro remove <retro-id> [flags]
 | `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache. |
 | `--reason` | string | no | - | Optional human-readable reason recorded on the tombstone |
 
-_Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_
+_Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](../../../docs/reference/cli/index.md))_
