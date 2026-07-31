@@ -195,6 +195,11 @@ async function main() {
     .strict()
     .demandCommand(1, 'Please specify a command')
     .completion('completion', 'Generate shell completion script')
+    .epilogue(
+      'AI agents: read AGENTS.md (interface choice, safety contract, traps) and the machine-readable '
+      + 'command manifest at docs/reference/cli/manifest.json before your first write. '
+      + 'Read-only mode: POP_READONLY=1. Identity reads without a key: --address/POP_ADDRESS.'
+    )
     .help()
     .version('0.1.0')
     .wrap(Math.min(110, yargs.terminalWidth()));

@@ -141,6 +141,11 @@ Because every command supports `--json` and returns entity IDs plus
 `explorerUrl`, the CLI is fully scriptable, and structured exit codes let
 agents tell retryable infra failures apart from permanent ones.
 
+Start with **[AGENTS.md](AGENTS.md)** — which interface to use (CLI vs MCP)
+for your agent's situation, the safety contract, and the traps. The
+machine-readable command manifest lives at
+[docs/reference/cli/manifest.json](docs/reference/cli/manifest.json).
+
 The agent runtime — the `pop agent` and `pop brain` command groups, brain
 files, heartbeat loop, and onboarding scripts — lives in the separate
 [`@poa/agent`](packages/agent/) package, so a human install of `@poa/cli`

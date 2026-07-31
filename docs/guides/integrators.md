@@ -4,6 +4,19 @@ How to embed the POP CLI safely in an agent framework, a bot, or any
 automation — an "org brain" that reads org state and creates tasks, an MCP
 client, a dashboard backend.
 
+## First decision: CLI or MCP?
+
+| Your agent's situation | Use |
+|---|---|
+| Has shell access (a Bash tool) | The CLI directly with `--json` — the stronger interface: composition, `--help`, stderr feedback. Skip MCP. |
+| Tool calls only (no shell) | `pop mcp serve` — zero integration code. |
+| Handles untrusted input (users message it) | MCP read-only default or `POP_READONLY=1` even with a shell — a capability firewall beats a well-behaved prompt. |
+
+Both are the same binary: MCP tools execute the CLI as child processes.
+The short agent-facing version of this whole guide ships as
+[`AGENTS.md`](../../AGENTS.md) in the package root — point your agent's
+context at it.
+
 ## The safe starting point
 
 ```bash
