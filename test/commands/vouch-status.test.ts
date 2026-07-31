@@ -408,11 +408,17 @@ describe('pop vouch status — subgraph-first wearer progress', () => {
   });
 
   it('legacy deployment without the epoch mirror is still served from the subgraph', async () => {
+    const reader = fakeReader();
+    mocks.createReadContract.mockReturnValue(reader);
     mockLegacy(legacySubgraphPayload());
 
     await statusHandler.handler(baseArgv());
 
     expect((output.json as any).mock.calls[0][0].currentVouches).toBe('2');
+    // The RPC fixture answers 2 as well, so asserting the number alone cannot tell a
+    // working tier-1 read from a total fallback. Pin the SOURCE.
+    expect(reader.currentVouchCount).not.toHaveBeenCalled();
+    expect(reader.vouchConfigs).not.toHaveBeenCalled();
   });
 
   it('missing VouchConfig row is ambiguous → falls back to the on-chain getters', async () => {

@@ -124,7 +124,11 @@ export const FETCH_ORG_ACTIVITY = `
       votes { voter optionIndexes optionWeights }
     }
 
-    # Active vouches — top-level query (validated in vouch.ts)
+    # Active vouches — top-level query (validated in vouch.ts). isActive carries the
+    # epoch filter: deployments that index the vouch epoch flip it false for every vouch
+    # a configureVouching/resetVouches/clearWearerVouches voided, so this listing needs no
+    # extra field. Older deployments still list superseded vouches — stale rather than
+    # wrong, which is fine for an activity feed but NOT for quorum maths (see vouch.ts).
     activeVouches: vouches(
       where: { eligibilityModule: $eligibilityModuleId, isActive: true }
       orderBy: createdAt

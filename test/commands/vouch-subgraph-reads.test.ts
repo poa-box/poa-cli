@@ -428,12 +428,23 @@ describe('subgraph vouch readers', () => {
   });
 
   it('legacy tier: a vouch older than the config update is the epoch ambiguity → null', async () => {
+    // ALL rows older than the config update, so the guard's direction is pinned: an
+    // inverted comparison would find no match here and wrongly return a count.
     legacyDeployment({
       vouchConfigs: [{ ...ROW, updatedAtBlock: '500' }],
-      vouches: [{ id: 'a', createdAtBlock: '400' }, { id: 'b', createdAtBlock: '600' }],
+      vouches: [{ id: 'a', createdAtBlock: '400' }, { id: 'b', createdAtBlock: '450' }],
     });
 
     expect(await fetchWearerVouchStateFromSubgraph(EM_ADDR, HAT, WEARER, 100)).toBeNull();
+  });
+
+  it('legacy tier: vouches all NEWER than the config update are unambiguous → counted', async () => {
+    legacyDeployment({
+      vouchConfigs: [{ ...ROW, updatedAtBlock: '500' }],
+      vouches: [{ id: 'a', createdAtBlock: '600' }, { id: 'b', createdAtBlock: '700' }],
+    });
+
+    expect((await fetchWearerVouchStateFromSubgraph(EM_ADDR, HAT, WEARER, 100))?.currentCount).toBe(2);
   });
 
   it('sends the hat id as a decimal BigInt string', async () => {
