@@ -26,6 +26,7 @@ import { registerPaymasterCommands } from './commands/paymaster';
 import { registerRoleCommands } from './commands/role';
 import { registerZkEmailCommands } from './commands/zkemail';
 import { registerConfigCommands } from './commands/config';
+import { registerMcpCommands } from './commands/mcp/serve';
 import { initHandler } from './commands/init';
 import { applyDefaultOrgFallback } from './lib/default-org';
 
@@ -106,6 +107,7 @@ async function main() {
     .command('role <action>', 'Role applications', registerRoleCommands)
     .command('zkemail <action>', 'ZK Email role invites (allowlists)', registerZkEmailCommands)
     .command('config <action>', 'View and validate configuration', registerConfigCommands)
+    .command('mcp <action>', 'Serve the CLI as an MCP server for AI integrations', registerMcpCommands)
     .command('agent <action>', agentDesc('Agent operations & monitoring'),
       agentPlugin ? agentPlugin.registerAgentCommands : agentUnavailableBuilder(),
       agentPlugin ? undefined : agentUnavailableHandler('agent'))

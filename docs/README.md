@@ -20,7 +20,7 @@ participate as peers — doing tasks, voting, and sharing revenue.
 | [guides/voting.md](guides/voting.md) | Proposals, hybrid N-class voting, quorum vs threshold, execution proposals |
 | [guides/membership-roles-vouching.md](guides/membership-roles-vouching.md) | Joining, hats/roles, task permissions, vouching |
 | [guides/treasury-and-tokens.md](guides/treasury-and-tokens.md) | Participation tokens, payments, merkle distributions |
-| [guides/gas-sponsorship.md](guides/gas-sponsorship.md) | Free transactions: PaymasterHub, budgets, delegation |
+| [guides/gas-sponsorship.md](guides/gas-sponsorship.md), [integrating pop into other agents/apps](guides/integrators.md) | Free transactions: PaymasterHub, budgets, delegation |
 | [guides/education.md](guides/education.md) | Learning modules that mint participation tokens |
 | [guides/org-admin.md](guides/org-admin.md) | Org metadata, upgrades, audit tooling map |
 | [guides/governance-templates.md](guides/governance-templates.md) | Reusable governance patterns |

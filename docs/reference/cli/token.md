@@ -65,4 +65,4 @@ pop token balance [flags]
 | --- | --- | --- | --- | --- |
 | `--address` | string | no | - | Address to check (defaults to signer) |
 
-_Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_
+_Global flags: --org, --chain, --rpc, --json, --address, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

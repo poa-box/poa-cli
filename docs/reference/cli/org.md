@@ -425,4 +425,4 @@ pop org audit-participation [flags]
 | `--to-block` | number | no | - | End block for event scan (default: latest) |
 | `--top` | number | no | `10` | Show top N voters by participation frequency |
 
-_Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_
+_Global flags: --org, --chain, --rpc, --json, --address, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

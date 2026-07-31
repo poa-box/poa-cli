@@ -126,4 +126,4 @@ pop vouch reset [flags]
 | `--hat` | string | yes | - | Hat ID whose vouch state to reset |
 | `--wearer` | string | no | - | Only clear this wearer's vouches (surgical; hat config kept) |
 
-_Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_
+_Global flags: --org, --chain, --rpc, --json, --address, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

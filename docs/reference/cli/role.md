@@ -189,4 +189,4 @@ pop role admin set-join-time [flags]
 | `--timestamp` | number | no | - | Unix seconds (omit to use the current block time via setUserJoinTimeNow) |
 | `--user` | string | yes | - | User whose join time to set |
 
-_Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_
+_Global flags: --org, --chain, --rpc, --json, --address, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

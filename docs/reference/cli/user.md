@@ -85,4 +85,4 @@ pop user update-profile [flags]
 | `--username` | string | no | - | New username (DESTRUCTIVE: releases the old name for anyone to claim) |
 | `--website` | string | no | - | Website URL |
 
-_Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_
+_Global flags: --org, --chain, --rpc, --json, --address, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

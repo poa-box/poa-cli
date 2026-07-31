@@ -174,4 +174,4 @@ pop treasury propose-finalize [flags]
 | `--duration` | number | no | `60` | Vote duration in minutes |
 | `--min-claim-blocks` | number | no | `0` | On-chain guard: execution reverts until this many blocks have passed since the distribution's CHECKPOINT block (0 = no extra guard beyond the vote duration) |
 
-_Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_
+_Global flags: --org, --chain, --rpc, --json, --address, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

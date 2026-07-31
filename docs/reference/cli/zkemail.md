@@ -84,4 +84,4 @@ pop zkemail propose-allowlist [flags]
 | `--root` | string | yes | - | Merkle root from pop zkemail build-allowlist |
 | `--skip-verify` | boolean | no | `false` | Skip fetching the pinned file to confirm it reproduces --root (not recommended) |
 
-_Global flags: --org, --chain, --rpc, --json, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_
+_Global flags: --org, --chain, --rpc, --json, --address, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_
