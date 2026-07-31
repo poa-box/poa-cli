@@ -193,7 +193,15 @@ const configSetHandler = {
                 `Hat ${hatId} is default-eligible — everyone already qualifies — so this vouch `
                   + 'quorum will have no practical effect. This module accepts the write anyway.'
               );
-            } catch {
+            } catch (simErr: any) {
+              // Only a CONTRACT revert proves the module enforces M-03. A transport
+              // failure (server error, timeout) proves nothing — blocking a valid
+              // write on an RPC blip is the same false positive this simulation
+              // exists to prevent. Degrade like every other pre-flight read: note
+              // it and let estimateGas be the real gate.
+              if (simErr?.code !== 'CALL_EXCEPTION' && simErr?.code !== 'UNPREDICTABLE_GAS_LIMIT') {
+                output.debug(`M-03 simulation unavailable (${simErr?.code || simErr?.message}) — proceeding`);
+              } else
               throw new PreconditionError(
                 `Hat ${hatId} is default-eligible — everyone already qualifies — so a vouch quorum `
                   + 'combined with the hat hierarchy would have no effect, and the module rejects it.',

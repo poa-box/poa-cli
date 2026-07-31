@@ -212,6 +212,14 @@ export const createHandler = {
       let payoutConfigError: unknown = null;
       try {
         const cfg = await query<any>(FETCH_ORG_PAYOUT_CONFIG, { orgId }, argv.chain);
+        if (!cfg.organization) {
+          // A successful query with NO org row (indexer lag on a fresh org) is
+          // indistinguishable from "no pricing configured" only by accident —
+          // treat it like a failed fetch so derivation refuses to guess.
+          // An org row with null metadata is DIFFERENT: that is a real org that
+          // never configured pricing, and default pricing is correct for it.
+          throw new Error('organization not indexed');
+        }
         payoutConfig = payoutConfigFromMetadata(cfg.organization?.metadata);
         tokenSymbol = cfg.organization?.participationToken?.symbol ?? null;
       } catch (err) {

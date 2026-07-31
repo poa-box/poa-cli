@@ -36,3 +36,10 @@ yarn install   # in this directory — links @poa/cli from the repo root
 yarn build
 yarn test
 ```
+
+## Publishing note
+
+The `@poa/cli` dependency is declared as `link:../..`, which only resolves
+inside this repository. Publishing `@poa/agent` to npm requires swapping it
+for a real version range (e.g. `"@poa/cli": "^0.1.0"`) in the packed
+manifest — a release script concern, deliberately not wired up yet.

@@ -308,7 +308,15 @@ const eligibilitySetDefaultHandler = {
                 `Hat ${hatId} uses vouching with combine-hierarchy (quorum ${vc.quorum}); making it `
                   + 'default-eligible makes that quorum a no-op. This module accepts the write anyway.'
               );
-            } catch {
+            } catch (simErr: any) {
+              // Only a CONTRACT revert proves the module enforces M-03. A transport
+              // failure (server error, timeout) proves nothing — blocking a valid
+              // write on an RPC blip is the same false positive this simulation
+              // exists to prevent. Degrade like every other pre-flight read: note
+              // it and let estimateGas be the real gate.
+              if (simErr?.code !== 'CALL_EXCEPTION' && simErr?.code !== 'UNPREDICTABLE_GAS_LIMIT') {
+                output.debug(`M-03 simulation unavailable (${simErr?.code || simErr?.message}) — proceeding`);
+              } else
               throw new PreconditionError(
                 `Hat ${hatId} uses vouching with combine-hierarchy (quorum ${vc.quorum}). Making it `
                   + 'default-eligible would make that quorum a no-op, so the module rejects it.',

@@ -166,6 +166,9 @@ export const createBatchHandler = {
       let payoutConfigError: unknown = null;
       try {
         const cfg = await query<any>(FETCH_ORG_PAYOUT_CONFIG, { orgId }, argv.chain);
+        // No org row (indexer lag) must not silently price from defaults —
+        // only an org row with null metadata legitimately means default pricing.
+        if (!cfg.organization) throw new Error('organization not indexed');
         payoutConfig = payoutConfigFromMetadata(cfg.organization?.metadata);
       } catch (err) {
         // Only fatal when a row needs its payout DERIVED — rows with explicit
