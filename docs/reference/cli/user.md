@@ -52,6 +52,10 @@ Show signer identity: address, username, gas balance, and org standing
 pop user whoami [flags]
 ```
 
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--on-chain` | boolean | no | `false` | Re-verify membership with a live Hats.balanceOf call instead of the subgraph's indexed hat state (slower; catches a dynamically revoked eligibility that burned no token) |
+
 ## pop user profile
 
 View user profile

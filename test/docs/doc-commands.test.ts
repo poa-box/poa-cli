@@ -317,8 +317,9 @@ describe('doc-commands: documented CLI invocations match the command tree', () =
   const topLevelNames = new Set(topLevel.keys());
 
   it('buildCliTree() produces the expected shape', () => {
-    expect(tree).toHaveLength(14);
+    expect(tree).toHaveLength(15);
     expect(domains.get('task')?.commands.has('create')).toBe(true);
+    expect(domains.get('zkemail')?.commands.has('build-allowlist')).toBe(true);
     expect(GLOBAL_FLAGS.org).toBeDefined();
     const retro = domains.get('brain')?.commands.get('retro');
     expect(retro?.subcommands?.some((s) => s.name === 'show')).toBe(true);

@@ -285,7 +285,17 @@ const VOTING_IFACE = new ethers.utils.Interface([
   'function proposalsCount() view returns (uint256 count)',
 ]);
 
-/** Proposal ID exists on the voting contract (proposalsCount() > id). */
+/**
+ * Proposal ID exists on the voting contract (proposalsCount() > id).
+ *
+ * Kept on RPC on purpose. Counting Proposal/DDVProposal rows in the subgraph
+ * would be semantically equivalent, but it saves nothing and costs something:
+ * this check's `call` rides inside the SAME Multicall3 batch as the gas-balance
+ * check that every write already performs, so dropping it removes zero RPC
+ * round-trips while adding a subgraph round-trip. Worse, the propose→cast
+ * sequence agents run means the proposal is frequently seconds old, and an
+ * un-indexed row would block a perfectly legitimate vote. Net: strictly worse.
+ */
 export function checkProposalActive(votingAddr: string, proposalId: number): PreflightCheck {
   return {
     label: `proposal ${proposalId}`,

@@ -24,6 +24,7 @@ import { registerTokenCommands } from '../../src/commands/token';
 import { registerTreasuryCommands } from '../../src/commands/treasury';
 import { registerPaymasterCommands } from '../../src/commands/paymaster';
 import { registerRoleCommands } from '../../src/commands/role';
+import { registerZkEmailCommands } from '../../src/commands/zkemail';
 import { registerConfigCommands } from '../../src/commands/config';
 import { registerAgentCommands } from '../../src/commands/agent';
 import { registerBrainCommands } from '../../src/commands/brain';
@@ -95,6 +96,7 @@ const DOMAINS: Array<{ domain: string; description: string; register: (y: any) =
   { domain: 'treasury', description: 'Treasury & distributions', register: registerTreasuryCommands },
   { domain: 'paymaster', description: 'Gas sponsorship (ERC-4337)', register: registerPaymasterCommands },
   { domain: 'role', description: 'Role applications', register: registerRoleCommands },
+  { domain: 'zkemail', description: 'ZK Email role invites (allowlists)', register: registerZkEmailCommands },
   { domain: 'config', description: 'View and validate configuration', register: registerConfigCommands },
   { domain: 'agent', description: 'Agent operations & monitoring', register: registerAgentCommands },
   { domain: 'brain', description: 'P2P CRDT brain layer (live-sync knowledge)', register: registerBrainCommands },

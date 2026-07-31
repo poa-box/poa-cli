@@ -59,6 +59,42 @@
   },
   {
     "type": "function",
+    "name": "addGuardian",
+    "inputs": [
+      {
+        "name": "newGuardian",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "approveRecovery",
+    "inputs": [
+      {
+        "name": "credentialId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "pubKeyX",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "pubKeyY",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "cancelRecovery",
     "inputs": [
       {
@@ -82,6 +118,35 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "computeRecoveryProposalId",
+    "inputs": [
+      {
+        "name": "credentialId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "pubKeyX",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "pubKeyY",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "proposalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -209,6 +274,19 @@
   },
   {
     "type": "function",
+    "name": "getGuardians",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getRecoveryRequest",
     "inputs": [
       {
@@ -268,6 +346,30 @@
   },
   {
     "type": "function",
+    "name": "hasApprovedRecovery",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "guardianAddr",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "initialize",
     "inputs": [
       {
@@ -289,16 +391,6 @@
         "name": "pubKeyY",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "guardian_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "recoveryDelay_",
-        "type": "uint48",
-        "internalType": "uint48"
       }
     ],
     "outputs": [],
@@ -306,26 +398,41 @@
   },
   {
     "type": "function",
-    "name": "initiateRecovery",
+    "name": "isGuardian",
     "inputs": [
       {
-        "name": "credentialId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
       {
-        "name": "pubKeyX",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "recoveryApprovalCount",
+    "inputs": [
       {
-        "name": "pubKeyY",
+        "name": "proposalId",
         "type": "bytes32",
         "internalType": "bytes32"
       }
     ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -342,12 +449,38 @@
   },
   {
     "type": "function",
+    "name": "recoveryThreshold",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "removeCredential",
     "inputs": [
       {
         "name": "credentialId",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "removeGuardian",
+    "inputs": [
+      {
+        "name": "oldGuardian",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -373,12 +506,12 @@
   },
   {
     "type": "function",
-    "name": "setGuardian",
+    "name": "setRecoveryDelay",
     "inputs": [
       {
-        "name": "newGuardian",
-        "type": "address",
-        "internalType": "address"
+        "name": "newDelay",
+        "type": "uint48",
+        "internalType": "uint48"
       }
     ],
     "outputs": [],
@@ -386,12 +519,12 @@
   },
   {
     "type": "function",
-    "name": "setRecoveryDelay",
+    "name": "setRecoveryThreshold",
     "inputs": [
       {
-        "name": "newDelay",
-        "type": "uint48",
-        "internalType": "uint48"
+        "name": "newThreshold",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -570,6 +703,32 @@
   },
   {
     "type": "event",
+    "name": "GuardianAdded",
+    "inputs": [
+      {
+        "name": "guardian",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "GuardianRemoved",
+    "inputs": [
+      {
+        "name": "guardian",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "GuardianUpdated",
     "inputs": [
       {
@@ -596,6 +755,31 @@
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RecoveryApproved",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "guardian",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "approvals",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -683,6 +867,30 @@
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "RecoveryThresholdUpdated",
+    "inputs": [
+      {
+        "name": "oldThreshold",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "newThreshold",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AlreadyApproved",
+    "inputs": []
+  },
+  {
     "type": "error",
     "name": "ArrayLengthMismatch",
     "inputs": []
@@ -714,7 +922,22 @@
   },
   {
     "type": "error",
+    "name": "GuardianAlreadyExists",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "GuardianDoesNotExist",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidInitialization",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidPublicKey",
     "inputs": []
   },
   {
@@ -725,6 +948,11 @@
   {
     "type": "error",
     "name": "MaxCredentialsReached",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotAGuardian",
     "inputs": []
   },
   {
@@ -764,7 +992,17 @@
   },
   {
     "type": "error",
+    "name": "RecoveryDisabled",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "RecoveryNotPending",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ThresholdExceedsGuardianCount",
     "inputs": []
   },
   {

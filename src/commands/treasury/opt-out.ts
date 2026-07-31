@@ -39,6 +39,15 @@ async function runOptToggle(argv: ArgumentsCamelCase<OptArgs>, optOut: boolean):
 
     // ── Pre-flight (skippable with --no-preflight) ──────────────────────
     // optOut(bool) is idempotent on-chain; skip the tx when it would no-op.
+    //
+    // Deliberately NOT served from the subgraph's OptOutToggle entity, for two reasons:
+    //   1. That table is empty on every live deployment (zero OptOutToggled events have ever
+    //      been emitted on Gnosis, verified across all nine PaymentManagers), so the mapping is
+    //      unexercised and no live row proves it indexes correctly.
+    //   2. This read GATES a write. Reading a stale "already opted out" right after an opt-in
+    //      would short-circuit and silently leave the wallet in the wrong state — the one
+    //      outcome this pre-flight exists to prevent. It is also the command's only read, so
+    //      converting it would trade an eth_call for a GraphQL round-trip, not remove one.
     if (argv.preflight !== false) {
       const pmRead = createReadContract(paymentManagerAddress, 'PaymentManager', ctx.provider);
       const currentlyOptedOut: boolean = await pmRead.isOptedOut(ctx.address);

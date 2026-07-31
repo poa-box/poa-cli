@@ -1,6 +1,11 @@
 /**
  * pop user claim-hats — claim additional role hats after joining.
  *
+ * Since audit H-03, QuickJoin REFUSES an openly-claimable hat (one the Hats eligibility
+ * module says everyone qualifies for) and reverts HatOpenlyClaimable — the inverse of the old
+ * "ineligible reverts" model. The pre-flight below replicates the contract's own sentinel probe
+ * so it reports the real condition on both the upgraded and pre-audit QuickJoin.
+ *
  * QuickJoin.claimHatsWithUser(uint256[] claimHatIds) — verified against
  * contracts origin/main src/QuickJoin.sol and src/abi/QuickJoinNew.json:
  * the vouch-first flow. The caller must already have a username (the
@@ -11,18 +16,61 @@
  *
  * Hat IDs are uint256 (Hats Protocol IDs exceed Number.MAX_SAFE_INTEGER),
  * so they are parsed with BigNumber — never parseInt.
+ *
+ * Read strategy. Only the ADDRESSES come from the subgraph
+ * (QuickJoinContract.accountRegistry / .hatsContract, byte-verified against
+ * the live accountRegistry()/hats() eth_calls on Gnosis and Arbitrum); the
+ * pre-flight probes themselves stay on-chain deliberately. getUsername
+ * predicts NoUsername, MAX_HATS_PER_MINT predicts the executor's batch-cap
+ * revert, and isEligible predicts HatOpenlyClaimable — answering any of them
+ * from a lagging indexer means knowingly broadcasting a doomed transaction,
+ * or blocking a valid one. What DID change: the N strictly sequential
+ * isEligible awaits (one round-trip per hat) plus the username and cap reads
+ * are now a single Multicall3 batch — one round-trip for the whole
+ * pre-flight instead of N+2.
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { createReadContract, createWriteContract } from '../../lib/contracts';
+import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { requireModule } from '../../lib/resolve';
+import { query } from '../../lib/subgraph';
+import { FETCH_QUICKJOIN_MODULES, IndexedQuickJoin } from '../../queries/user';
+import { tryAggregate, Call, CallResult } from '../../lib/multicall';
 import { runPreflight, checkGasBalance } from '../../lib/preflight';
 import { getWriteContext, confirmWrite, finishWrite, withIdempotency } from '../../lib/command';
 import { CliError, PreconditionError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
+
+const QUICKJOIN_IFACE = new ethers.utils.Interface([
+  'function accountRegistry() view returns (address)',
+  'function hats() view returns (address)',
+]);
+const UAR_IFACE = new ethers.utils.Interface([
+  'function getUsername(address user) view returns (string)',
+]);
+const EXECUTOR_IFACE = new ethers.utils.Interface([
+  'function MAX_HATS_PER_MINT() view returns (uint8)',
+]);
+const HATS_IFACE = new ethers.utils.Interface([
+  'function isEligible(address wearer, uint256 hatId) view returns (bool)',
+]);
+
+/** keccak256("poa.quickjoin.claim.probe") truncated to an address — QuickJoin._CLAIM_PROBE. */
+const CLAIM_PROBE = ethers.utils.getAddress(
+  '0x' + ethers.utils.id('poa.quickjoin.claim.probe').slice(-40)
+);
+
+function decodeOrNull<T>(fn: () => T, result: CallResult | undefined): T | null {
+  if (!result?.success || !result.returnData || result.returnData === '0x') return null;
+  try {
+    return fn();
+  } catch {
+    return null;
+  }
+}
 
 interface ClaimHatsArgs {
   org: string;
@@ -90,25 +138,135 @@ export const claimHatsHandler = {
       const quickJoinAddr = requireModule(ctx.modules, 'quickJoinAddress');
 
       // ── Pre-flight (skippable with --no-preflight) ────────────────────
-      // claimHatsWithUser reverts NoUsername for unregistered accounts —
-      // fail fast with the fix instead of burning gas estimation.
       if (argv.preflight !== false) {
+        // Step 1: module addresses. Subgraph-first — these are static
+        // deploy-time pointers, verified byte-identical to the live
+        // accountRegistry()/hats() reads on Gnosis and Arbitrum. The RPC
+        // fallback now asks for BOTH pointers in one batch instead of
+        // re-instantiating QuickJoin for each.
+        let registryAddr: string | null = null;
+        let hatsAddr: string | null = null;
         try {
-          const quickJoin = createReadContract(quickJoinAddr, 'QuickJoinNew', ctx.provider);
-          const registryAddr = await quickJoin.accountRegistry();
-          const registry = createReadContract(registryAddr, 'UniversalAccountRegistry', ctx.provider);
-          const username: string = await registry.getUsername(ctx.address);
-          if (username.length === 0) {
+          const indexed = await query<{ quickJoinContract: IndexedQuickJoin | null }>(
+            FETCH_QUICKJOIN_MODULES,
+            { quickJoinAddress: quickJoinAddr.toLowerCase() },
+            argv.chain
+          );
+          registryAddr = indexed?.quickJoinContract?.accountRegistry ?? null;
+          hatsAddr = indexed?.quickJoinContract?.hatsContract ?? null;
+        } catch (err: any) {
+          output.debug(`subgraph QuickJoin lookup failed, falling back to RPC (${err?.message || err})`);
+        }
+        if (!registryAddr || !hatsAddr) {
+          const pointers = await tryAggregate(ctx.provider, [
+            { to: quickJoinAddr, data: QUICKJOIN_IFACE.encodeFunctionData('accountRegistry') },
+            { to: quickJoinAddr, data: QUICKJOIN_IFACE.encodeFunctionData('hats') },
+          ]).catch(() => [] as CallResult[]);
+          registryAddr = registryAddr ?? decodeOrNull<string>(
+            () => QUICKJOIN_IFACE.decodeFunctionResult('accountRegistry', pointers[0]?.returnData)[0],
+            pointers[0]
+          );
+          hatsAddr = hatsAddr ?? decodeOrNull<string>(
+            () => QUICKJOIN_IFACE.decodeFunctionResult('hats', pointers[1]?.returnData)[0],
+            pointers[1]
+          );
+        }
+
+        // Step 2: every probe in ONE Multicall3 round-trip. All three stay
+        // on-chain on purpose — each one predicts a specific revert, and a
+        // lagging indexer would either broadcast a doomed tx or block a
+        // valid one.
+        const calls: Call[] = [];
+        let usernameIdx = -1;
+        let capIdx = -1;
+        let probeBase = -1;
+        if (registryAddr) {
+          usernameIdx = calls.length;
+          calls.push({ to: registryAddr, data: UAR_IFACE.encodeFunctionData('getUsername', [ctx.address]) });
+        }
+        const executorAddr = ctx.modules?.executorAddress;
+        if (executorAddr) {
+          capIdx = calls.length;
+          calls.push({ to: executorAddr, data: EXECUTOR_IFACE.encodeFunctionData('MAX_HATS_PER_MINT') });
+        }
+        if (hatsAddr) {
+          probeBase = calls.length;
+          for (const hatId of hatIds) {
+            calls.push({ to: hatsAddr, data: HATS_IFACE.encodeFunctionData('isEligible', [CLAIM_PROBE, hatId]) });
+          }
+        }
+
+        const results: CallResult[] = calls.length > 0
+          ? await tryAggregate(ctx.provider, calls).catch(() => [] as CallResult[])
+          : [];
+        const batchAnswered = results.length === calls.length;
+
+        // claimHatsWithUser reverts NoUsername for unregistered accounts —
+        // fail fast with the fix instead of burning gas estimation.
+        if (batchAnswered && usernameIdx >= 0) {
+          const username = decodeOrNull<string>(
+            () => UAR_IFACE.decodeFunctionResult('getUsername', results[usernameIdx].returnData)[0],
+            results[usernameIdx]
+          );
+          if (username === null) {
+            output.debug('username pre-check skipped (registry read failed)');
+          } else if (username.length === 0) {
             throw new PreconditionError(
               `${ctx.address} has no registered username — claimHatsWithUser would revert NoUsername.`,
               'Join first (pop user join --username <name>), or register with pop user register.'
             );
           }
-        } catch (err: any) {
-          if (err instanceof CliError) throw err;
-          output.debug(`username pre-check skipped (registry read failed: ${err?.message || err})`);
+        } else {
+          output.debug('username pre-check skipped (account registry unreadable)');
+        }
+
+        // Batch cap (audit L-60): Executor.mintHatsForUser rejects more than MAX_HATS_PER_MINT
+        // hats to bound gas. Read the live constant rather than hard-coding 20 — an older
+        // Executor has no such getter and simply has no cap. NOT available from the
+        // subgraph: ExecutorContract indexes no such field (reported as a gap).
+        if (batchAnswered && capIdx >= 0) {
+          const capRaw = decodeOrNull<number>(
+            () => EXECUTOR_IFACE.decodeFunctionResult('MAX_HATS_PER_MINT', results[capIdx].returnData)[0],
+            results[capIdx]
+          );
+          const cap = capRaw === null ? null : Number(capRaw);
+          if (cap !== null && cap > 0 && hatIds.length > cap) {
+            throw new PreconditionError(
+              `${hatIds.length} hats requested but the executor mints at most ${cap} per call.`,
+              `Split into batches of ${cap} or fewer.`
+            );
+          }
+        }
+
+        // Open-hat gate (audit H-03). QuickJoin now refuses to mint a hat that ANYONE is
+        // eligible for, closing a self-mint vector. Detect the CONDITION rather than the contract
+        // version by running the contract's own probe: it asks the Hats contract whether a
+        // domain-separated sentinel address is eligible, and treats "yes" — or a reverting probe —
+        // as open. Replicated here so the answer is right on both the upgraded and old QuickJoin.
+        if (batchAnswered && probeBase >= 0) {
+          const open: string[] = [];
+          hatIds.forEach((hatId, i) => {
+            const probeEligible = decodeOrNull<boolean>(
+              () => HATS_IFACE.decodeFunctionResult('isEligible', results[probeBase + i].returnData)[0],
+              results[probeBase + i]
+            );
+            // A reverting probe fails CLOSED, exactly as the contract does.
+            if (probeEligible === null || probeEligible) open.push(hatId.toString());
+          });
+          if (open.length > 0) {
+            throw new PreconditionError(
+              `Hat(s) ${open.join(', ')} are openly claimable — anyone is eligible for them — so `
+                + 'QuickJoin refuses to mint them (reverts HatOpenlyClaimable).',
+              'Gate the hat first: pop role eligibility set-default --hat <id> --no-eligible, then '
+                + 'grant per-wearer eligibility or configure vouching. An org admin can also mint '
+                + 'it directly with pop role admin mint.'
+            );
+          }
+        } else {
+          output.debug('open-hat pre-check skipped (hats address unreadable)');
         }
       }
+
       await runPreflight(ctx.provider, [checkGasBalance(ctx.address)], { skip: argv.preflight === false });
       spin.stop();
 

@@ -124,6 +124,54 @@ default: `POP_GNOSIS_RPC`, `POP_ARBITRUM_RPC`, `POP_SEPOLIA_RPC`,
 `POP_BASE_SEPOLIA_RPC` (and matching `*_SUBGRAPH` variants). See
 [`.env.example`](../../.env.example) for the full list.
 
+An override that is present but empty (`POP_SUBGRAPH_URL=` on its own line, as
+shipped in `.env.example`) is ignored — it does **not** shadow the built-in
+default.
+
+### Subgraph transport: free Studio vs paid gateway
+
+Every POP subgraph can be reached two ways:
+
+| Transport | Endpoint | Cost |
+| --- | --- | --- |
+| **free** ("Studio") | `api.studio.thegraph.com/…` — the built-in default | free, capped at 3K queries/day on a rolling 24h window |
+| **paid** ("gateway") | `gateway.thegraph.com/api/subgraphs/id/<id>` | billed against `GRAPH_API_KEY`, sent as an `Authorization` header |
+
+The CLI detects which transports you have and routes accordingly:
+
+| You have | Behaviour |
+| --- | --- |
+| both | Studio first; switch to the gateway when Studio is exhausted |
+| paid only | straight to the gateway, Studio is never probed |
+| free only | Studio; on exhaustion, an error naming `GRAPH_API_KEY` |
+| neither | the "no subgraph on this chain" precondition error |
+
+When Studio rate-limits, the exhausted state is written to
+`$POP_AGENT_HOME/subgraph-tier-state.json` (default `~/.pop-agent/`) so the
+*next* command skips the doomed Studio round-trip. The pin is deliberately
+short — about 15 minutes, never "until midnight" — because a transient burst
+limit and a spent daily quota look identical from a single 429. A corrupt or
+unreadable state file is ignored, never fatal.
+
+| Variable | Purpose |
+| --- | --- |
+| `GRAPH_API_KEY` | Graph gateway API key. Its presence is what enables the paid transport. Never printed by the CLI. |
+| `POP_SUBGRAPH_TIER` | `free` \| `paid` \| `auto`. Default `auto` (detect and route as above). Force a tier to pin billing behaviour. |
+| `POP_<NET>_SUBGRAPH_GATEWAY` | Full gateway URL for one chain, e.g. `POP_ARBITRUM_SUBGRAPH_GATEWAY`. (`POP_<NET>_SUBGRAPH_FALLBACK` is the older name for the same thing and still works.) |
+| `POP_<NET>_SUBGRAPH_ID` | Just the decentralised-network subgraph ID; joined to the gateway base. Simplest way to give a chain a paid tier. |
+| `POP_GRAPH_GATEWAY_URL` | Gateway base URL, if you use a regional or self-hosted gateway. |
+| `POP_SUBGRAPH_STATE_FILE` | Explicit path for the exhaustion state file (otherwise `$POP_AGENT_HOME/subgraph-tier-state.json`). |
+
+Gnosis ships with a built-in gateway subgraph ID, so setting `GRAPH_API_KEY`
+alone is enough to enable the paid tier there. Arbitrum has none yet — give it
+one with `POP_ARBITRUM_SUBGRAPH_ID` once the deployment is published.
+
+`pop config show` and `pop config validate` both report the active transport:
+
+```
+subgraph tier    free tier active; mode auto (both); GRAPH_API_KEY detected
+```
+
 ### Behavior
 
 | Variable | Purpose |

@@ -212,9 +212,13 @@ cycle is parallel, never blocking.
 
 **HB#368+: source the bot identity FIRST.** Every agent git/gh operation
 must be attributed to ClawDAOBot, not the human operator. Before the fix,
-commits were silently authored as the human — see `CLAUDE.md` "GitHub
-Identity" section for the full root cause. The script is idempotent, safe
+commits were silently authored as the human — see `agent/CLAUDE.md`
+"GitHub identity" for the full root cause. The script is idempotent, safe
 to source multiple times per session.
+
+Exception: when Hudson has directed the work explicitly rather than the
+agent acting on its own initiative, commits go to **his** account — do not
+source this, and confirm with `gh api user` first.
 
 ```bash
 source ~/.pop-agent/bot-identity.sh

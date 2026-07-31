@@ -42,6 +42,8 @@ export interface OrgModules {
   quickJoinAddress: string | null;
   eligibilityModuleAddress: string | null;
   paymentManagerAddress: string | null;
+  /** ZkEmailInvites proxy — null for orgs deployed without the optional ZK Email module. */
+  zkEmailInvitesAddress: string | null;
 }
 
 /**
@@ -62,6 +64,7 @@ export async function resolveOrgModules(orgIdOrName: string | undefined, chainId
       quickJoin: { id: string } | null;
       eligibilityModule: { id: string } | null;
       paymentManager: { id: string } | null;
+      zkEmailInvites: { id: string } | null;
     } | null;
   }>(FETCH_ORG_BY_ID, { id: orgId }, chainId);
 
@@ -81,6 +84,7 @@ export async function resolveOrgModules(orgIdOrName: string | undefined, chainId
     quickJoinAddress: org.quickJoin?.id || null,
     eligibilityModuleAddress: org.eligibilityModule?.id || null,
     paymentManagerAddress: org.paymentManager?.id || null,
+    zkEmailInvitesAddress: org.zkEmailInvites?.id || null,
   };
 }
 

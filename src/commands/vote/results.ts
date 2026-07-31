@@ -12,7 +12,7 @@
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import * as output from '../../lib/output';
-import { query } from '../../lib/subgraph';
+import { queryWithFieldFallback } from '../../lib/subgraph';
 import { resolveOrgModules } from '../../lib/resolve';
 import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
@@ -43,21 +43,33 @@ export const resultsHandler = {
 
       const proposalId = await resolveProposalId(String(argv.proposal), modules.hybridVotingAddress, argv.chain);
 
-      const q = `{
+      // Two tiers: the #195 attribution/provenance fields, then the pre-#195 field set. A
+      // GraphQL document validates as a whole, so without the fallback an endpoint that
+      // predates #195 would lose the rankings and voter breakdown this command existed to
+      // show — a strict regression. The legacy tier is spelled out rather than derived so a
+      // reformat cannot silently turn it into a copy of the modern one.
+      const proposalCore = 'proposalId title status';
+      const buildQuery = (modern: boolean) => `{
         organization(id: "${orgId}") {
           hybridVoting {
             thresholdPct
             quorum
+            ${modern ? 'classVersion' : ''}
             proposals(where: {proposalId: ${proposalId}}) {
-              proposalId title status
-              metadata { description optionNames }
+              ${proposalCore}
+              ${modern ? 'proposer proposerUsername creatorUsername' : ''}
+              ${modern ? 'classesVersion winnerAnnouncedAt executedAt executedCallsCount' : ''}
+              metadata { description optionNames${modern ? ' actionSummaries promotedFrom' : ''} }
               votes { voterUsername optionIndexes optionWeights }
             }
           }
         }
       }`;
 
-      const result = await query<any>(q, {}, argv.chain);
+      const { data: result } = await queryWithFieldFallback<any>([
+        { query: buildQuery(true) },
+        { query: buildQuery(false) },
+      ], { chainId: argv.chain });
       const hybridVoting = result.organization?.hybridVoting;
       const proposal = hybridVoting?.proposals?.[0];
       if (!proposal) throw new Error(`Proposal #${proposalId} not found`);
@@ -101,10 +113,36 @@ export const resultsHandler = {
         return { voter: v.voterUsername || 'unknown', allocations };
       });
 
+      // Attribution: subgraph #195. proposer* are the current names; creator* the older aliases
+      // populated identically from transaction.from.
+      //
+      // proposedBy is an IDENTITY or null — never an address. Most proposers are Executor or
+      // smart-account addresses with no username, and returning the address here would make
+      // `proposedBy === 'someone'` silently false for them while looking like a resolved name.
+      // The address is always available separately as proposerAddress.
+      const proposedBy = proposal.proposerUsername || proposal.creatorUsername || null;
+      // A proposal is tallied against the voting-class config in force when it was CREATED, so
+      // a live config change mid-flight makes the org-level threshold/quorum shown here stale.
+      const classVersionAtCreation = proposal.classesVersion != null ? String(proposal.classesVersion) : null;
+      const liveClassVersion = hybridVoting.classVersion != null ? String(hybridVoting.classVersion) : null;
+      const classConfigDrifted = Boolean(
+        classVersionAtCreation && liveClassVersion && classVersionAtCreation !== liveClassVersion
+      );
+
       const report: any = {
         proposalId: proposal.proposalId,
         title: proposal.title,
         status: proposal.status,
+        proposedBy,
+        proposerAddress: proposal.proposer || null,
+        classVersionAtCreation,
+        liveClassVersion,
+        classConfigDrifted,
+        winnerAnnouncedAt: proposal.winnerAnnouncedAt ? Number(proposal.winnerAnnouncedAt) : null,
+        executedAt: proposal.executedAt ? Number(proposal.executedAt) : null,
+        executedCallsCount: proposal.executedCallsCount != null ? Number(proposal.executedCallsCount) : null,
+        actionSummaries: proposal.metadata?.actionSummaries || [],
+        promotedFrom: proposal.metadata?.promotedFrom || null,
         totalVoters: votes.length,
         supportThresholdPct,
         quorumVoterCount,
@@ -119,7 +157,25 @@ export const resultsHandler = {
         output.json(report);
       } else {
         console.log(`\n  Proposal #${proposal.proposalId}: ${proposal.title}`);
-        console.log(`  Status: ${proposal.status} | Voters: ${votes.length}`);
+        console.log(`  Status: ${proposal.status} | Voters: ${votes.length}${proposedBy ? ` | Proposed by: ${proposedBy}` : ''}`);
+        if (report.promotedFrom) console.log(`  Promoted from: ${report.promotedFrom}`);
+        if (report.actionSummaries.length) {
+          console.log('  Enacts:');
+          for (const a of report.actionSummaries) console.log(`    - ${a}`);
+        }
+        if (report.executedAt) {
+          console.log(`  Executed: ${new Date(report.executedAt * 1000).toISOString()}`
+            + (report.executedCallsCount != null ? ` (${report.executedCallsCount} call(s))` : ''));
+        }
+        if (classConfigDrifted) {
+          console.log(
+            `  ⚠️  Created under voting-class config v${classVersionAtCreation}, live is v${liveClassVersion} —`
+          );
+          // classVersion versions the voting-CLASS array (weights/strategies) only. thresholdPct
+          // and quorum are written by separate events and are NOT snapshotted per proposal, so
+          // the values printed below remain the applicable ones — do not impugn them here.
+          console.log('     its class weights/strategies are those in force at creation.');
+        }
         if (supportThresholdPct !== undefined || quorumVoterCount !== undefined) {
           const parts: string[] = [];
           if (supportThresholdPct !== undefined) parts.push(`Support threshold: ${supportThresholdPct}% of weighted power`);

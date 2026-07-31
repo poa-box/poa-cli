@@ -67,7 +67,10 @@ export const depositHandler = {
     .example('pop paymaster deposit --amount 0.05', 'Top up the default org\'s sponsorship balance by 0.05 xDAI')
     .example('pop paymaster deposit --amount 0.1 --org someorg', 'Fund another org — depositForOrg is permissionless')
     .epilogue(
-      'Deposits are one-way: the PaymasterHub has no withdraw function. Funds draw down '
+      // Scoped to the deployed hub deliberately: contracts PR #185 (audit M-04) adds an
+      // org-admin-gated withdrawOrgDeposit, so stating this as a permanent protocol property
+      // would silently become false the moment that ships.
+      'Deposits are one-way: the DEPLOYED PaymasterHub has no withdraw function. Funds draw down '
       + 'as sponsored UserOperations consume them. Check the balance with: pop paymaster status'
     ),
 
@@ -105,7 +108,7 @@ export const depositHandler = {
         org: argv.org,
         paymasterHub: paymasterHubAddress,
         chain: ctx.networkName,
-        note: 'one-way: no withdraw — funds draw down via gas sponsorship',
+        note: 'one-way on the deployed hub: no withdraw — funds draw down via gas sponsorship',
       }, { actionLabel: 'About to deposit to the org\'s gas sponsorship balance' });
 
       const txSpin = output.spinner('Depositing to PaymasterHub...');

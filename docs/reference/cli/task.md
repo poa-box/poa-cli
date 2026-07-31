@@ -26,7 +26,7 @@ pop task create [flags]
 | `--location` | string | no | `""` | Location |
 | `--name` | string | yes | - | Task name |
 | `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit a new task. |
-| `--payout` | number | yes | - | PT payout amount |
+| `--payout` | number | no | - | Payout amount. Omit to price the task the way the web app would, from the org's payout convention plus --difficulty/--est-hours |
 | `--project` | string | yes | - | Project ID |
 | `--requires-application` | boolean | no | `false` | Require applications |
 

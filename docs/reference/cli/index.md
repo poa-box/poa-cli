@@ -17,6 +17,7 @@ Command reference generated from the yargs command tree. Regenerate with `yarn d
 | `treasury` | Treasury & distributions | 14 | [treasury.md](treasury.md) |
 | `paymaster` | Gas sponsorship (ERC-4337) | 3 | [paymaster.md](paymaster.md) |
 | `role` | Role applications | 6 | [role.md](role.md) |
+| `zkemail` | ZK Email role invites (allowlists) | 6 | [zkemail.md](zkemail.md) |
 | `config` | View and validate configuration | 2 | [config.md](config.md) |
 | `agent` | Agent operations & monitoring | 10 | [agent.md](agent.md) |
 | `brain` | P2P CRDT brain layer (live-sync knowledge) | 25 | [brain.md](brain.md) |

@@ -6,9 +6,9 @@
  * matches the on-chain root, and derives your exact amount + proof — no
  * manual --amount/--proof needed (that escape hatch is pop treasury claim).
  *
- * Pre-flight (skippable with --no-preflight) mirrors the contract's claim
- * gates before any gas is spent: isOptedOut fails fast, and per-distribution
- * hasClaimed reads skip claims the subgraph hasn't indexed yet.
+ * Pre-flight (skippable with --no-preflight): per-distribution hasClaimed reads
+ * skip claims the subgraph hasn't indexed yet. Opt-out only WARNS — audit L-19
+ * removed that gate from the claim path so it cannot strand allocated funds.
  *
  * Amounts display in the payout token's human units — address(0) is the
  * chain's native token (verified against contracts origin/main
@@ -17,9 +17,11 @@
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
+import { StandardMerkleTree } from '@openzeppelin/merkle-tree';
 import { createReadContract, createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { query } from '../../lib/subgraph';
+import { FETCH_ACTIVE_DISTRIBUTIONS } from '../../queries/treasury';
 import { requireModule } from '../../lib/resolve';
 import { getWriteContext, confirmWrite } from '../../lib/command';
 import { runPreflight, checkGasBalance } from '../../lib/preflight';
@@ -40,51 +42,29 @@ interface ClaimMineArgs {
 }
 
 // OZ v5 double-hash leaf
-function hashLeaf(address: string, amount: ethers.BigNumber): string {
-  const inner = ethers.utils.keccak256(
-    ethers.utils.defaultAbiCoder.encode(['address', 'uint256'], [address, amount])
-  );
-  return ethers.utils.keccak256(inner);
-}
+/**
+ * Merkle reconstruction — OpenZeppelin StandardMerkleTree, identical to
+ * src/commands/treasury/compute-merkle.ts and to what PaymentManager verifies on-chain.
+ *
+ * This file previously hand-rolled the tree, pairing leaves left-to-right per layer and
+ * promoting an odd trailing leaf unchanged. That agrees with OZ for 1, 2, 3, 4, 6 and 8
+ * members but DIVERGES at 5 and 7, so for those org sizes the recomputed root never matched
+ * the on-chain one and every member was told "Root mismatch" for a perfectly valid
+ * distribution. compute-merkle.ts was fixed first; this is the other copy.
+ */
 
-function hashPair(a: string, b: string): string {
-  const [left, right] = a < b ? [a, b] : [b, a];
-  return ethers.utils.solidityKeccak256(['bytes32', 'bytes32'], [left, right]);
-}
-
-function buildTree(leaves: string[]): string[][] {
-  const sorted = [...leaves].sort();
-  const layers: string[][] = [sorted];
-  let current = sorted;
-  while (current.length > 1) {
-    const next: string[] = [];
-    for (let i = 0; i < current.length; i += 2) {
-      if (i + 1 < current.length) {
-        next.push(hashPair(current[i], current[i + 1]));
-      } else {
-        next.push(current[i]);
-      }
-    }
-    layers.push(next);
-    current = next;
-  }
-  return layers;
-}
-
-function getProof(layers: string[][], leaf: string): string[] {
-  const proof: string[] = [];
-  let index = layers[0].indexOf(leaf);
-  if (index === -1) return [];
-  for (let i = 0; i < layers.length - 1; i++) {
-    const siblingIndex = index % 2 === 1 ? index - 1 : index + 1;
-    if (siblingIndex < layers[i].length) proof.push(layers[i][siblingIndex]);
-    index = Math.floor(index / 2);
-  }
-  return proof;
-}
-
+/**
+ * Members AND opt-out state as of the distribution's checkpoint block.
+ *
+ * Both are block-scoped on purpose. `pop treasury compute-merkle` excludes opted-out members
+ * when it BUILDS the tree (the only place opt-out is enforced since audit L-19), so
+ * reconstructing that tree here has to reproduce the opt-out set as it was AT BUILD TIME.
+ * Using current opt-out state instead would rebuild a different tree the moment anyone toggles
+ * after a distribution is created, and every member would get "Root mismatch" for a valid
+ * distribution. compute-merkle sets checkpointBlock to the build block, so this is that state.
+ */
 const FETCH_MEMBERS_AT_BLOCK = `
-  query FetchMembersAtBlock($orgId: Bytes!, $block: Int!) {
+  query FetchMembersAtBlock($orgId: Bytes!, $block: Int!, $paymentManager: String!) {
     organization(id: $orgId, block: { number: $block }) {
       participationToken { totalSupply }
       users(orderBy: participationTokenBalance, orderDirection: desc, first: 1000) {
@@ -93,22 +73,16 @@ const FETCH_MEMBERS_AT_BLOCK = `
         membershipStatus
       }
     }
-  }
-`;
-
-const FETCH_DISTRIBUTIONS = `
-  query FetchDistributions($orgId: Bytes!) {
-    organization(id: $orgId) {
-      paymentManager {
-        distributions(where: { status: "Active" }, first: 50) {
-          distributionId
-          totalAmount
-          merkleRoot
-          checkpointBlock
-          payoutToken
-          claims { claimer }
-        }
-      }
+    optOutToggles(
+      block: { number: $block }
+      where: { paymentManager: $paymentManager }
+      first: 1000
+      orderBy: toggledAtBlock
+      orderDirection: asc
+    ) {
+      user
+      optedOut
+      toggledAtBlock
     }
   }
 `;
@@ -154,7 +128,7 @@ export const claimMineHandler = {
       const pmRead = createReadContract(paymentManagerAddress, 'PaymentManager', ctx.provider);
 
       // Get active distributions
-      const distResult = await query<any>(FETCH_DISTRIBUTIONS, { orgId: ctx.orgId }, argv.chain);
+      const distResult = await query<any>(FETCH_ACTIVE_DISTRIBUTIONS, { orgId: ctx.orgId }, argv.chain);
       const distributions = distResult.organization?.paymentManager?.distributions || [];
 
       if (distributions.length === 0) {
@@ -165,7 +139,18 @@ export const claimMineHandler = {
       }
 
       // ── Pre-flight (skippable with --no-preflight) ────────────────────
-      // Mirror the contract's global claim gate: OptedOut reverts every claim.
+      // Opt-out ABORTS. Audit L-19 proposes removing the OptedOut gate from the claim path,
+      // but that build is not deployed — the live Gnosis PaymentManager still anchors
+      // finalizeDistribution at checkpointBlock (verified by eth_call, see propose-finalize.ts),
+      // which makes it pre-L-19, and every source of that vintage reverts OptedOut in
+      // claimDistribution. Warning instead would build and confirm every claim in the loop and
+      // then fail at gas estimation — and output.warn is a no-op under --json, so an agent
+      // would see nothing at all. Fail closed until an L-19 hub can be feature-detected.
+      //
+      // Still an eth_call, deliberately. The indexed twin is OptOutToggle, whose live Gnosis
+      // table is EMPTY (verified 2026-07) — not because the field is unpopulated but because
+      // zero OptOutToggled events have ever been emitted on the chain, so the mapping has never
+      // run and no live row can prove it works. One call, once, outside the loop.
       if (argv.preflight !== false) {
         const optedOut = await pmRead.isOptedOut(ctx.address);
         if (optedOut) {
@@ -181,6 +166,22 @@ export const claimMineHandler = {
       const results: ClaimResult[] = [];
       const claimables: Claimable[] = [];
 
+      // Payout-token metadata is a pair of ERC20 eth_calls (decimals + symbol) that stays on
+      // RPC — the subgraph does not index arbitrary ERC20s — but orgs pay every distribution in
+      // the same one or two tokens (all five live Gnosis distributions use the same BREAD
+      // address), so resolving it once per DISTINCT address instead of once per iteration
+      // removes 2*(n-1) calls. Memoised on the promise so concurrent misses share one flight.
+      const tokenCache = new Map<string, Promise<PayoutTokenInfo>>();
+      const payoutToken = (address: string): Promise<PayoutTokenInfo> => {
+        const key = String(address ?? '').toLowerCase();
+        let pending = tokenCache.get(key);
+        if (!pending) {
+          pending = resolvePayoutTokenInfo(ctx.provider, address, ctx.chainId);
+          tokenCache.set(key, pending);
+        }
+        return pending;
+      };
+
       for (const dist of distributions) {
         // Skip if already claimed (subgraph view, then authoritative on-chain
         // read when pre-flight is enabled — the subgraph can lag).
@@ -194,17 +195,33 @@ export const claimMineHandler = {
         spin.text = `Recomputing merkle tree for distribution #${dist.distributionId}...`;
 
         // Get PT balances at checkpoint block
+        // optOutToggles is a TOP-LEVEL entity, so it MUST be scoped to this org's
+        // PaymentManager. Unfiltered it returns toggles from every PaymentManager the
+        // subgraph indexes (nine on Gnosis today), and any address that opted out of a
+        // DIFFERENT org would be dropped from this org's tree — producing a spurious
+        // "Root mismatch" that tells every member they cannot claim.
         const membersResult = await query<any>(FETCH_MEMBERS_AT_BLOCK, {
           orgId: ctx.orgId,
           block: parseInt(dist.checkpointBlock),
+          paymentManager: paymentManagerAddress.toLowerCase(),
         }, argv.chain);
 
         const org = membersResult.organization;
         if (!org) continue;
 
+        // Latest toggle per user wins — the log is ascending, so the last write for an
+        // address is its state at this block.
+        const optedOut = new Set<string>();
+        for (const t of membersResult.optOutToggles ?? []) {
+          const addr = String(t.user).toLowerCase();
+          if (t.optedOut) optedOut.add(addr);
+          else optedOut.delete(addr);
+        }
+
         const activeMembers = org.users.filter((u: any) =>
           u.membershipStatus === 'Active' &&
-          ethers.BigNumber.from(u.participationTokenBalance).gt(0)
+          ethers.BigNumber.from(u.participationTokenBalance).gt(0) &&
+          !optedOut.has(String(u.address).toLowerCase())
         );
 
         const totalAmount = ethers.BigNumber.from(dist.totalAmount);
@@ -227,12 +244,16 @@ export const claimMineHandler = {
         const dust = totalAmount.sub(allocated);
         if (dust.gt(0) && allocs.length > 0) allocs[0].amount = allocs[0].amount.add(dust);
 
-        // Build merkle tree
-        const leaves = allocs.map((a: any) => hashLeaf(a.address, a.amount));
-        const layers = buildTree(leaves);
-        const computedRoot = layers[layers.length - 1][0];
+        // Rebuild the exact tree the distribution committed to.
+        const tree = StandardMerkleTree.of(
+          allocs.map((a: any) => [a.address, a.amount.toString()]),
+          ['address', 'uint256']
+        );
+        const computedRoot = tree.root;
 
-        const token = await resolvePayoutTokenInfo(ctx.provider, dist.payoutToken, ctx.chainId);
+        // Resolved before the root/allocation checks because both failure results report
+        // `symbol` in --json; the cache means repeat tokens cost nothing.
+        const token = await payoutToken(dist.payoutToken);
 
         // Verify root matches on-chain
         if (computedRoot !== dist.merkleRoot) {
@@ -247,8 +268,13 @@ export const claimMineHandler = {
           continue;
         }
 
-        const myLeaf = hashLeaf(myAlloc.address, myAlloc.amount);
-        claimables.push({ distId: dist.distributionId, amount: myAlloc.amount, proof: getProof(layers, myLeaf), token });
+        claimables.push({
+          distId: dist.distributionId,
+          amount: myAlloc.amount,
+          // Looked up by VALUE, not index — StandardMerkleTree sorts leaves internally.
+          proof: tree.getProof([myAlloc.address, myAlloc.amount.toString()]),
+          token,
+        });
       }
 
       spin.stop();

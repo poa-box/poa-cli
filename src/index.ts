@@ -24,6 +24,7 @@ import { registerTokenCommands } from './commands/token';
 import { registerTreasuryCommands } from './commands/treasury';
 import { registerPaymasterCommands } from './commands/paymaster';
 import { registerRoleCommands } from './commands/role';
+import { registerZkEmailCommands } from './commands/zkemail';
 import { registerConfigCommands } from './commands/config';
 import { registerAgentCommands } from './commands/agent';
 import { registerBrainCommands } from './commands/brain';
@@ -45,6 +46,7 @@ async function main() {
     .command('treasury <action>', 'Treasury & distributions', registerTreasuryCommands)
     .command('paymaster <action>', 'Gas sponsorship (ERC-4337)', registerPaymasterCommands)
     .command('role <action>', 'Role applications', registerRoleCommands)
+    .command('zkemail <action>', 'ZK Email role invites (allowlists)', registerZkEmailCommands)
     .command('config <action>', 'View and validate configuration', registerConfigCommands)
     .command('agent <action>', 'Agent operations & monitoring', registerAgentCommands)
     .command('brain <action>', 'P2P CRDT brain layer (live-sync knowledge)', registerBrainCommands)

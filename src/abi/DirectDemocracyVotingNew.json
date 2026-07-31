@@ -45,6 +45,19 @@
   },
   {
     "type": "function",
+    "name": "MAX_POLL_HATS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MIN_DURATION_MIN",
     "inputs": [],
     "outputs": [
@@ -316,6 +329,25 @@
         "name": "",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "proposalEndTimestamp",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -816,11 +848,6 @@
   },
   {
     "type": "error",
-    "name": "LengthMismatch",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "NotInitializing",
     "inputs": []
   },
@@ -847,6 +874,11 @@
   {
     "type": "error",
     "name": "TooManyOptions",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooManyPollHats",
     "inputs": []
   },
   {
@@ -912,12 +944,12 @@
   },
   {
     "type": "error",
-    "name": "TargetSelf",
+    "name": "TooManyClasses",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "TooManyClasses",
+    "name": "TargetSelf",
     "inputs": []
   }
 ]

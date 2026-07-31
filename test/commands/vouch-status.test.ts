@@ -12,6 +12,10 @@
  * createReadContract is the mocked seam so the REAL helpers
  * (readVoucherGate, vouchRestriction, decodeVouchConfig) run against
  * fixture reads.
+ *
+ * Wearer-side sourcing (subgraph migration): the config + vouch count come
+ * from the subgraph when it answers, and fall back to the on-chain getters
+ * when it does not. The signer-side gate is RPC-only either way.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -21,11 +25,15 @@ const mocks = vi.hoisted(() => ({
   createSigner: vi.fn(),
   resolveOrgModules: vi.fn(),
   createReadContract: vi.fn(),
+  query: vi.fn(),
 }));
 
 vi.mock('../../src/lib/signer', () => ({
   createProvider: mocks.createProvider,
   createSigner: mocks.createSigner,
+}));
+vi.mock('../../src/lib/subgraph', () => ({
+  query: mocks.query,
 }));
 vi.mock('../../src/lib/resolve', () => ({
   resolveOrgModules: mocks.resolveOrgModules,
@@ -54,6 +62,7 @@ vi.mock('../../src/lib/output', () => {
     keyValueBlock: vi.fn(),
     isJsonMode: vi.fn(() => false),
     subgraphLagWarning: vi.fn(),
+    debug: vi.fn(),
   };
 });
 
@@ -95,6 +104,25 @@ function fakeReader(overrides: Record<string, any> = {}) {
   };
 }
 
+/**
+ * Subgraph payload shaped like the live poa-gnosis-v-1 response, matching the
+ * on-chain fixture above (quorum 3, membership hat 45, 2 active vouches).
+ */
+function subgraphPayload(overrides: Record<string, any> = {}) {
+  return {
+    vouchConfigs: [{
+      id: `${EM_ADDR}-123`,
+      hatId: '123',
+      quorum: 3,
+      membershipHatId: '45',
+      enabled: true,
+      combinesWithHierarchy: false,
+    }],
+    vouches: [{ id: 'v1' }, { id: 'v2' }],
+    ...overrides,
+  };
+}
+
 function baseArgv(overrides: Record<string, any> = {}): any {
   return {
     _: [],
@@ -123,6 +151,9 @@ describe('pop vouch status — rate-limit awareness', () => {
     mocks.resolveOrgModules.mockResolvedValue({ orgId: ORG_ID, eligibilityModuleAddress: EM_ADDR });
     mocks.createProvider.mockReturnValue({});
     mocks.createReadContract.mockReturnValue(fakeReader());
+    // Default: subgraph unavailable, so the suite below exercises the RPC
+    // fallback path exactly as it did before the migration.
+    mocks.query.mockRejectedValue(new Error('subgraph down'));
     (output.isJsonMode as any).mockReturnValue(false);
   });
 
@@ -222,5 +253,141 @@ describe('pop vouch status — rate-limit awareness', () => {
 
     await expect(statusHandler.handler(baseArgv())).rejects.toBeInstanceOf(ExitError);
     expect(exitSpy.mock.calls[0][0]).toBe(EXIT.USAGE);
+  });
+});
+
+describe('pop vouch status — subgraph-first wearer progress', () => {
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+  let savedEnvKey: string | undefined;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    savedEnvKey = process.env.POP_PRIVATE_KEY;
+    delete process.env.POP_PRIVATE_KEY;
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new ExitError(code ?? 0);
+    }) as never);
+
+    mocks.resolveOrgModules.mockResolvedValue({ orgId: ORG_ID, eligibilityModuleAddress: EM_ADDR });
+    mocks.createProvider.mockReturnValue({});
+    mocks.createReadContract.mockReturnValue(fakeReader());
+    mocks.query.mockResolvedValue(subgraphPayload());
+    (output.isJsonMode as any).mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+    if (savedEnvKey === undefined) delete process.env.POP_PRIVATE_KEY;
+    else process.env.POP_PRIVATE_KEY = savedEnvKey;
+  });
+
+  it('serves config + vouch count from the subgraph, skipping the on-chain getters', async () => {
+    const reader = fakeReader();
+    mocks.createReadContract.mockReturnValue(reader);
+
+    await statusHandler.handler(baseArgv());
+
+    const payload = (output.json as any).mock.calls[0][0];
+    expect(payload).toMatchObject({
+      hat: '123',
+      wearer: WEARER,
+      vouchingEnabled: true,
+      currentVouches: '2',
+      requiredVouches: '3',
+      canClaim: false,
+      membershipHat: '45',
+      combineWithHierarchy: false,
+    });
+    // Wearer-side RPC reads eliminated entirely.
+    expect(reader.currentVouchCount).not.toHaveBeenCalled();
+    expect(reader.vouchConfigs).not.toHaveBeenCalled();
+    expect(reader.isVouchingEnabled).not.toHaveBeenCalled();
+    // Signer gate has no subgraph equivalent — still read on chain.
+    expect(reader.canUserVouch).toHaveBeenCalled();
+    expect(reader.getMaxDailyVouches).toHaveBeenCalled();
+  });
+
+  it('passes the module address, decimal hat id and wearer as query variables', async () => {
+    await statusHandler.handler(baseArgv({ hat: '0x7b' })); // 0x7b === 123
+
+    const [, variables] = mocks.query.mock.calls[0];
+    expect(variables).toEqual({
+      eligibilityModuleId: EM_ADDR,
+      hatId: '123',
+      wearer: WEARER,
+    });
+  });
+
+  it('quorum reached on the subgraph → canClaim true', async () => {
+    mocks.query.mockResolvedValue(subgraphPayload({
+      vouches: [{ id: 'v1' }, { id: 'v2' }, { id: 'v3' }],
+    }));
+
+    await statusHandler.handler(baseArgv());
+
+    expect((output.json as any).mock.calls[0][0].canClaim).toBe(true);
+  });
+
+  it('missing VouchConfig row is ambiguous → falls back to the on-chain getters', async () => {
+    const reader = fakeReader();
+    mocks.createReadContract.mockReturnValue(reader);
+    mocks.query.mockResolvedValue({ vouchConfigs: [], vouches: [] });
+
+    await statusHandler.handler(baseArgv());
+
+    expect(reader.vouchConfigs).toHaveBeenCalled();
+    expect(reader.currentVouchCount).toHaveBeenCalled();
+    const payload = (output.json as any).mock.calls[0][0];
+    expect(payload.currentVouches).toBe('2');
+    expect(payload.requiredVouches).toBe('3');
+  });
+
+  it('a full 1000-row page cannot be trusted as a count → falls back to RPC', async () => {
+    const reader = fakeReader();
+    mocks.createReadContract.mockReturnValue(reader);
+    mocks.query.mockResolvedValue(subgraphPayload({
+      vouches: Array.from({ length: 1000 }, (_, i) => ({ id: `v${i}` })),
+    }));
+
+    await statusHandler.handler(baseArgv());
+
+    expect(reader.currentVouchCount).toHaveBeenCalled();
+    expect((output.json as any).mock.calls[0][0].currentVouches).toBe('2');
+  });
+
+  it('subgraph error degrades to RPC without failing the command', async () => {
+    const reader = fakeReader();
+    mocks.createReadContract.mockReturnValue(reader);
+    mocks.query.mockRejectedValue(new Error('502 bad gateway'));
+
+    await statusHandler.handler(baseArgv());
+
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(reader.vouchConfigs).toHaveBeenCalled();
+    expect((output.json as any).mock.calls[0][0].currentVouches).toBe('2');
+  });
+
+  it('--rpc pins the read to that node and never queries the subgraph', async () => {
+    const reader = fakeReader();
+    mocks.createReadContract.mockReturnValue(reader);
+
+    await statusHandler.handler(baseArgv({ rpc: 'http://localhost:8545' }));
+
+    expect(mocks.query).not.toHaveBeenCalled();
+    expect(reader.vouchConfigs).toHaveBeenCalled();
+    expect(reader.currentVouchCount).toHaveBeenCalled();
+  });
+
+  it('subgraph and RPC agree on the same fixture (no --json shape drift)', async () => {
+    await statusHandler.handler(baseArgv());
+    const fromSubgraph = (output.json as any).mock.calls[0][0];
+
+    (output.json as any).mockClear();
+    mocks.query.mockRejectedValue(new Error('subgraph down'));
+    await statusHandler.handler(baseArgv());
+    const fromRpc = (output.json as any).mock.calls[0][0];
+
+    expect(Object.keys(fromSubgraph)).toEqual(Object.keys(fromRpc));
+    expect(fromSubgraph).toEqual(fromRpc);
   });
 });

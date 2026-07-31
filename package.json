@@ -6,6 +6,13 @@
     "pop": "./dist/index.js"
   },
   "main": "dist/index.js",
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE",
+    ".env.example"
+  ],
   "scripts": {
     "build": "tsc && mkdir -p dist/abi && cp src/abi/*.json dist/abi/",
     "dev": "tsx src/index.ts",
@@ -33,6 +40,7 @@
     "@libp2p/identify": "^3",
     "@libp2p/mdns": "^11",
     "@libp2p/tcp": "^10",
+    "@openzeppelin/merkle-tree": "^1.0.8",
     "@x402/evm": "^2.9.0",
     "@x402/fetch": "^2.9.0",
     "blockstore-fs": "^2",
@@ -48,6 +56,7 @@
     "libp2p": "^2.10.0",
     "ora": "^5.4.1",
     "permissionless": "^0.3.5",
+    "poseidon-lite": "^0.3.0",
     "viem": "^2.47.12",
     "yargs": "^17.7.2"
   },

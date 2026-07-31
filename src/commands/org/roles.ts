@@ -1,10 +1,14 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { query } from '../../lib/subgraph';
+import { queryWithFieldFallback } from '../../lib/subgraph';
 import { resolveOrgModules } from '../../lib/resolve';
 import { createProvider } from '../../lib/signer';
 import { createReadContract } from '../../lib/contracts';
-import { resolveNetworkConfig } from '../../config/networks';
+import { tryAggregate } from '../../lib/multicall';
+import {
+  FETCH_ROLES_MEMBERS_AND_VOUCH,
+  FETCH_ROLES_AND_MEMBERS,
+} from '../../queries/roles';
 import * as output from '../../lib/output';
 
 interface RolesArgs {
@@ -13,32 +17,10 @@ interface RolesArgs {
   rpc?: string;
 }
 
-const FETCH_ROLES_AND_MEMBERS = `
-  query FetchRolesAndMembers($id: Bytes!) {
-    organization(id: $id) {
-      roles(where: { isUserRole: true }) {
-        id
-        hatId
-        name
-        image
-        canVote
-        isUserRole
-      }
-      users {
-        address
-        participationTokenBalance
-        membershipStatus
-        currentHatIds
-        account {
-          username
-        }
-      }
-      eligibilityModule {
-        id
-      }
-    }
-  }
-`;
+interface VouchSummary {
+  enabled: boolean;
+  quorum: string;
+}
 
 export const rolesHandler = {
   builder: (yargs: Argv) => yargs,
@@ -49,7 +31,18 @@ export const rolesHandler = {
 
     try {
       const modules = await resolveOrgModules(argv.org, argv.chain);
-      const result = await query<any>(FETCH_ROLES_AND_MEMBERS, { id: modules.orgId }, argv.chain);
+
+      // Tier 0 carries Role.hat.vouchConfig (present + populated on Gnosis and
+      // Arbitrum). Tier 1 is the pre-vouchConfig schema; GraphQL validates the
+      // whole document, so the unknown-field fallback is what keeps older
+      // deployments working.
+      const { data: result, tierIndex } = await queryWithFieldFallback<any>(
+        [
+          { query: FETCH_ROLES_MEMBERS_AND_VOUCH, variables: { id: modules.orgId } },
+          { query: FETCH_ROLES_AND_MEMBERS, variables: { id: modules.orgId } },
+        ],
+        { chainId: argv.chain }
+      );
       const org = result.organization;
 
       if (!org) throw new Error('Organization not found');
@@ -58,36 +51,60 @@ export const rolesHandler = {
       const users = org.users || [];
       const eligibilityAddr = org.eligibilityModule?.id;
 
-      // Try to get vouch config for each role from the contract
-      let vouchConfigs: Record<string, { enabled: boolean; quorum: string }> = {};
-      if (eligibilityAddr) {
+      const vouchConfigs: Record<string, VouchSummary> = {};
+
+      // Subgraph-first. handleVouchConfigSet rewrites the row on every
+      // VouchConfigSet event (enable AND disable), and a null vouchConfig means
+      // vouching was never configured for that hat — verified on-chain to be
+      // isVouchingEnabled()==false / quorum==0, which is exactly what the '0'
+      // below renders. Roles resolved here cost zero eth_calls.
+      const needsRpc: any[] = [];
+      for (const r of roles) {
+        if (tierIndex === 0 && r.hat) {
+          const vc = r.hat.vouchConfig;
+          vouchConfigs[r.hatId] = {
+            enabled: vc?.enabled === true,
+            quorum: vc ? String(vc.quorum) : '0',
+          };
+        } else {
+          needsRpc.push(r);
+        }
+      }
+
+      // Fallback: only for roles the subgraph could not answer (old schema, or
+      // a role with no Hat entity). Batched through Multicall3 — one RPC
+      // round-trip for all 2N reads instead of 2N awaited calls.
+      if (needsRpc.length && eligibilityAddr) {
         try {
           const provider = createProvider({ chainId: argv.chain, rpcUrl: argv.rpc as string });
           const contract = createReadContract(eligibilityAddr, 'EligibilityModuleNew', provider);
+          const iface = contract.interface;
 
-          const configs = await Promise.all(
-            roles.map(async (r: any) => {
-              try {
-                const [isEnabled, config] = await Promise.all([
-                  contract.isVouchingEnabled(r.hatId),
-                  contract.vouchConfigs(r.hatId),
-                ]);
-                return {
-                  hatId: r.hatId,
-                  enabled: isEnabled,
-                  quorum: config?.quorum ? ethers.BigNumber.from(config.quorum).toString() : '0',
-                };
-              } catch {
-                return { hatId: r.hatId, enabled: false, quorum: '?' };
-              }
-            })
-          );
+          const calls = needsRpc.flatMap((r: any) => [
+            { to: eligibilityAddr, data: iface.encodeFunctionData('isVouchingEnabled', [r.hatId]) },
+            { to: eligibilityAddr, data: iface.encodeFunctionData('vouchConfigs', [r.hatId]) },
+          ]);
+          const results = await tryAggregate(provider, calls);
 
-          for (const c of configs) {
-            vouchConfigs[c.hatId] = { enabled: c.enabled, quorum: c.quorum };
-          }
+          needsRpc.forEach((r: any, i: number) => {
+            const enabledRes = results[i * 2];
+            const configRes = results[i * 2 + 1];
+            try {
+              if (!enabledRes?.success || !configRes?.success) throw new Error('call reverted');
+              const isEnabled = iface.decodeFunctionResult('isVouchingEnabled', enabledRes.returnData)[0];
+              const config: any = iface.decodeFunctionResult('vouchConfigs', configRes.returnData)[0];
+              vouchConfigs[r.hatId] = {
+                enabled: Boolean(isEnabled),
+                quorum: config?.quorum !== undefined && config?.quorum !== null
+                  ? ethers.BigNumber.from(config.quorum).toString()
+                  : '0',
+              };
+            } catch {
+              vouchConfigs[r.hatId] = { enabled: false, quorum: '?' };
+            }
+          });
         } catch {
-          // Eligibility module query failed — continue without vouch data
+          // Eligibility module read failed — continue without vouch data
         }
       }
 

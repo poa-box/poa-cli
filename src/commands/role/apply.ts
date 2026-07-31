@@ -7,10 +7,18 @@
  * application, and they don't already wear the hat. Pre-flight fails fast on
  * the first two BEFORE pinning to IPFS or spending gas. Applying is a
  * signaling mechanism only — it does not grant eligibility.
+ *
+ * READ SOURCING: BOTH pre-flight reads stay on chain. VouchConfig.enabled and
+ * RoleApplication.active are populated in the subgraph, but each read here
+ * exists purely to predict a revert (VouchingNotEnabled / duplicate
+ * application) — a stale answer either blocks a valid application or burns gas
+ * on a doomed one. They hit the same contract, so they now share ONE
+ * Multicall3 round-trip instead of two eth_calls.
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
-import { createWriteContract, createReadContract } from '../../lib/contracts';
+import { createWriteContract } from '../../lib/contracts';
+import { batchEligibilityReads } from '../vouch/helpers';
 import { executeTx } from '../../lib/tx';
 import { pinJson } from '../../lib/ipfs';
 import { ipfsCidToBytes32 } from '../../lib/encoding';
@@ -55,10 +63,9 @@ export const applyHandler = {
 
       // ── Pre-flight (skippable): vouching enabled + no active application ──
       if (argv.preflight !== false) {
-        const reader = createReadContract(eligibilityAddr, 'EligibilityModuleNew', ctx.provider);
-        const [enabled, alreadyApplied] = await Promise.all([
-          reader.isVouchingEnabled(argv.hat),
-          reader.hasActiveApplication(argv.hat, ctx.address),
+        const [enabled, alreadyApplied] = await batchEligibilityReads(ctx.provider, eligibilityAddr, [
+          { fn: 'isVouchingEnabled', args: [argv.hat] },
+          { fn: 'hasActiveApplication', args: [argv.hat, ctx.address] },
         ]);
         if (!enabled) {
           throw new PreconditionError(

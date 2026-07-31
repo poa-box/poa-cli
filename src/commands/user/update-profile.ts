@@ -15,6 +15,15 @@
  *
  * When both are requested, the username tx runs first; finishWrite exits on
  * failure so the metadata tx never runs after a failed rename.
+ *
+ * Reads: the registry address, the caller's current username and their
+ * existing profile metadata all come from ONE subgraph round-trip. They used
+ * to be three separate trips — two subgraph queries plus a standalone
+ * getUsername eth_call that was not even folded into the pre-flight batch
+ * against the same contract. The eth_call survives as a fallback for the one
+ * case the indexer cannot answer honestly: no indexed account, or a
+ * tombstoned one. There the chain, not the indexer, decides whether
+ * changeUsername would revert AccountUnknown.
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
@@ -24,6 +33,7 @@ import { executeTx } from '../../lib/tx';
 import { pinJson } from '../../lib/ipfs';
 import { ipfsCidToBytes32 } from '../../lib/encoding';
 import { query } from '../../lib/subgraph';
+import { FETCH_REGISTRY_AND_ACCOUNT, isAccountAuthoritative, IndexedAccount } from '../../queries/user';
 import { requireValidUsername } from '../../lib/validation';
 import { HOME_CHAIN_ID } from '../../config/networks';
 import { runPreflight, checkGasBalance, checkUsernameFree, PreflightCheck } from '../../lib/preflight';
@@ -91,9 +101,19 @@ export const updateProfileHandler = {
       // wrong registry. An explicit --chain still wins.
       const registryChainId = argv.chain ?? HOME_CHAIN_ID;
 
-      // Get UAR address
-      const uarResult = await query<any>(`{ universalAccountRegistries(first: 1) { id } }`, {}, registryChainId);
-      const uarAddr = uarResult.universalAccountRegistries?.[0]?.id;
+      const { signer, provider, address } = createSigner({
+        privateKey: argv['private-key'] as string | undefined,
+        chainId: registryChainId,
+        rpcUrl: argv.rpc,
+      });
+
+      // One round-trip: registry address + current username + existing
+      // profile metadata (previously two subgraph queries and an eth_call).
+      const indexed = await query<{
+        universalAccountRegistries: Array<{ id: string }>;
+        account: (IndexedAccount & { metadata?: Record<string, string> | null }) | null;
+      }>(FETCH_REGISTRY_AND_ACCOUNT, { accountID: address.toLowerCase() }, registryChainId);
+      const uarAddr = indexed.universalAccountRegistries?.[0]?.id;
       if (!uarAddr) {
         throw new CliError(
           'UniversalAccountRegistry not found on this chain.',
@@ -102,23 +122,27 @@ export const updateProfileHandler = {
         );
       }
 
-      const { signer, provider, address } = createSigner({
-        privateKey: argv['private-key'] as string | undefined,
-        chainId: registryChainId,
-        rpcUrl: argv.rpc,
-      });
-
-      // changeUsername reverts AccountUnknown without a registration — read
-      // the current name up front (also powers the confirm summary). A failed
-      // READ (null) is not "no username": continue and let the contract be
-      // the authority.
+      // changeUsername reverts AccountUnknown without a registration — the
+      // current name is needed up front (it also powers the confirm summary).
+      // The indexed account answers only when it is live; missing or
+      // tombstoned falls through to the chain, so the indexer can never be
+      // the one that decides "you have no username". A failed READ (null) is
+      // still not "no username": continue and let the contract be the
+      // authority.
       let currentUsername: string | null = null;
       if (usernameChanging) {
-        try {
-          const registry = createReadContract(uarAddr, 'UniversalAccountRegistry', provider);
-          currentUsername = await registry.getUsername(address);
-        } catch {
-          output.debug('could not read the current username — continuing (the contract enforces AccountUnknown)');
+        // The subgraph indexes exactly one registry per deployment and
+        // uarAddr came from that same document, so no registry constraint is
+        // needed here.
+        if (isAccountAuthoritative(indexed.account)) {
+          currentUsername = indexed.account!.username;
+        } else {
+          try {
+            const registry = createReadContract(uarAddr, 'UniversalAccountRegistry', provider);
+            currentUsername = await registry.getUsername(address);
+          } catch {
+            output.debug('could not read the current username — continuing (the contract enforces AccountUnknown)');
+          }
         }
         if (currentUsername === '') {
           throw new PreconditionError(
@@ -134,13 +158,7 @@ export const updateProfileHandler = {
       // Merge with existing metadata
       let metadata: Record<string, string> = {};
       if (metadataChanging) {
-        spin.text = 'Fetching current profile...';
-        const existingResult = await query<any>(
-          `{ account(id: "${address.toLowerCase()}") { metadata { bio avatar github twitter website } } }`,
-          {},
-          registryChainId
-        );
-        const existing = existingResult.account?.metadata || {};
+        const existing = indexed.account?.metadata || {};
 
         if (argv.bio !== undefined || existing.bio) metadata.bio = (argv.bio as string) ?? existing.bio ?? '';
         if (argv.avatar !== undefined || existing.avatar) metadata.avatar = (argv.avatar as string) ?? existing.avatar ?? '';

@@ -16,12 +16,25 @@ interface ViewArgs {
 }
 
 /**
- * Current metadata-admin hat via OrgRegistry.getOrgMetadataAdminHat (getter
- * verified in src/abi/OrgRegistry.json; 0 = unset → topHat fallback).
- * On-chain read is authoritative; subgraph metadataAdminHatId is the
- * fallback; null when neither source is reachable (never throws).
+ * Current metadata-admin hat (0 = unset → topHat fallback).
+ *
+ * Subgraph-first: Organization.metadataAdminHatId already comes back with
+ * FETCH_ORG_FULL_DATA, is rewritten by handleOrgMetadataAdminHatSet on every
+ * OrgMetadataAdminHatSet event, and is non-null on every live org (all 9 on
+ * Gnosis, the 1 on Arbitrum). Spot-checked against
+ * OrgRegistry.getOrgMetadataAdminHat on Gnosis: identical value. Serving it
+ * from the org document we already fetched removes both the extra
+ * infrastructure query (whose only purpose here was resolving the OrgRegistry
+ * address) and the eth_call.
+ *
+ * Only when the subgraph has no value do we resolve the OrgRegistry and read
+ * the on-chain getter (verified in src/abi/OrgRegistry.json). Returns null
+ * when neither source is reachable; never throws.
  */
 async function readMetadataAdminHat(org: any, chainId?: number): Promise<string | null> {
+  if (org.metadataAdminHatId !== undefined && org.metadataAdminHatId !== null) {
+    return String(org.metadataAdminHatId);
+  }
   try {
     const infra = await query<InfrastructureAddresses>(FETCH_INFRASTRUCTURE_ADDRESSES, {}, chainId);
     const orgRegistryAddr = infra.poaManagerContracts?.[0]?.orgRegistryProxy;
@@ -32,9 +45,7 @@ async function readMetadataAdminHat(org: any, chainId?: number): Promise<string 
     const hat = await registry.getOrgMetadataAdminHat(org.id);
     return hat.toString();
   } catch {
-    return org.metadataAdminHatId !== undefined && org.metadataAdminHatId !== null
-      ? String(org.metadataAdminHatId)
-      : null;
+    return null;
   }
 }
 
@@ -109,6 +120,7 @@ export const viewHandler = {
             quickJoin: org.quickJoin?.id,
             eligibilityModule: org.eligibilityModule?.id,
             paymentManager: org.paymentManager?.id,
+            zkEmailInvites: org.zkEmailInvites?.id,
           },
           tokenInfo: org.participationToken ? {
             name: org.participationToken.name,

@@ -19,3 +19,23 @@ export async function resolveOrgContracts(orgIdOrName: string, chainId?: number)
     participationTokenAddress: modules.participationTokenAddress || '',
   };
 }
+
+/**
+ * Find a task in a FETCH_PROJECTS_DATA result by its NUMERIC task id.
+ *
+ * The subgraph keys tasks by the composite `<taskManager>-<taskId>` while the contract (and
+ * `parseTaskId`) uses the bare number, so callers must pass the parsed id — matching on the raw
+ * `--task` argument silently misses whenever a user pastes the composite form back in.
+ *
+ * Shared because the write commands re-pin metadata from whatever this returns: a miss means
+ * they rebuild the doc from defaults and the full-overwrite write erases the task's real
+ * name/description/location/dueDate.
+ */
+export function findSubgraphTask(projects: any[], taskId: string): any | null {
+  for (const project of projects || []) {
+    for (const task of project.tasks || []) {
+      if (task.taskId === taskId || task.id?.endsWith(`-${taskId}`)) return task;
+    }
+  }
+  return null;
+}

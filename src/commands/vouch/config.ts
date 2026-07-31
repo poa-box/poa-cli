@@ -9,6 +9,14 @@
  *       — onlySuperAdmin (verified). `enabled` is DERIVED on-chain as
  *       quorum > 0, so --quorum 0 disables vouching for the hat. Configuring
  *       bumps the hat's vouch epoch, invalidating all existing vouches.
+ *
+ * READ SOURCING: `show` is display-only, so the config comes SUBGRAPH-FIRST
+ * from VouchConfig (verified populated on Gnosis + Arbitrum) with
+ * getVouchConfig() kept as fallback. getMaxDailyVouches() has NO subgraph
+ * field — EligibilityModuleContract exposes neither maxDailyVouches nor the
+ * MaxDailyVouchesSet event it emits — so that one read stays on chain.
+ * `set`'s pre-flight reads (superAdmin + getDefaultRules) both predict reverts
+ * and stay on chain, but now share a single Multicall3 round-trip.
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
@@ -18,7 +26,7 @@ import { executeTx } from '../../lib/tx';
 import { getWriteContext, confirmWrite, finishWrite } from '../../lib/command';
 import { runPreflight, checkGasBalance } from '../../lib/preflight';
 import { requireModule } from '../../lib/resolve';
-import { CliError } from '../../lib/errors';
+import { CliError, PreconditionError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 import {
@@ -26,6 +34,9 @@ import {
   parseHatId,
   decodeVouchConfig,
   requireSuperAdmin,
+  requireSuperAdminWithRead,
+  fetchVouchConfigFromSubgraph,
+  VouchConfigView,
 } from './helpers';
 
 // ────────────────────────────── show ──────────────────────────────
@@ -53,11 +64,16 @@ const configShowHandler = {
       const provider = createProvider({ chainId: argv.chain, rpcUrl: argv.rpc as string });
       const contract = createReadContract(eligibilityModuleAddress, 'EligibilityModuleNew', provider);
 
-      const [rawConfig, maxDailyVouches] = await Promise.all([
-        contract.getVouchConfig(hatId),
+      // Subgraph-first for the config (display only); an explicit --rpc pins
+      // the read back to that node. getMaxDailyVouches has no subgraph field.
+      const [subgraphConfig, maxDailyVouches] = await Promise.all([
+        argv.rpc
+          ? Promise.resolve(null as VouchConfigView | null)
+          : fetchVouchConfigFromSubgraph(eligibilityModuleAddress, hatId, argv.chain),
         contract.getMaxDailyVouches(),
       ]);
-      const config = decodeVouchConfig(rawConfig);
+      const config = subgraphConfig ?? decodeVouchConfig(await contract.getVouchConfig(hatId));
+      output.debug(`vouch config read from ${subgraphConfig ? 'subgraph' : 'rpc'}`);
 
       spin.stop();
 
@@ -145,7 +161,48 @@ const configSetHandler = {
       // configureVouching is onlySuperAdmin (verified): fail fast naming the
       // actual superAdmin BEFORE any gas is spent.
       if (argv.preflight !== false) {
-        await requireSuperAdmin(ctx.provider, eligibilityModuleAddress, ctx.address, 'configureVouching');
+        // Audit M-03 (reverse direction): enabling vouching WITH combine-hierarchy on a hat that
+        // is already default-eligible reverts DefaultEligibilityConflictsWithVouch — everyone is
+        // eligible anyway, so the quorum would be a no-op. Detect the state, not the contract
+        // version: on an older module this never fires and the write proceeds as before.
+        //
+        // Both reads predict a revert, so both stay on chain — but they hit the SAME contract and
+        // used to be two sequential eth_calls; Multicall3 makes it one round-trip.
+        const needsDefaultRules = combine && quorum > 0;
+        if (!needsDefaultRules) {
+          await requireSuperAdmin(ctx.provider, eligibilityModuleAddress, ctx.address, 'configureVouching');
+        } else {
+          const { extra, extraError } = await requireSuperAdminWithRead(
+            ctx.provider,
+            eligibilityModuleAddress,
+            ctx.address,
+            'configureVouching',
+            { fn: 'getDefaultRules', args: [hatId] }
+          );
+          if (extra === null) {
+            output.debug(`default-eligibility pre-check skipped (${extraError?.message || extraError})`);
+          } else if (Boolean(extra.eligible ?? extra[0])) {
+            // The STATE conflicts, but only a module implementing the M-03 revert rejects the
+            // write — the deployed v6 modules do NOT: eth_call of the exact configureVouching
+            // from the real superAdmin on live Gnosis SUCCEEDS on two default-eligible hats.
+            // Simulate the exact call instead — the only version-proof revert predictor.
+            const sim = createReadContract(eligibilityModuleAddress, 'EligibilityModuleNew', ctx.provider);
+            try {
+              await sim.callStatic.configureVouching(hatId, quorum, membershipHatId, combine, { from: ctx.address });
+              output.warn(
+                `Hat ${hatId} is default-eligible — everyone already qualifies — so this vouch `
+                  + 'quorum will have no practical effect. This module accepts the write anyway.'
+              );
+            } catch {
+              throw new PreconditionError(
+                `Hat ${hatId} is default-eligible — everyone already qualifies — so a vouch quorum `
+                  + 'combined with the hat hierarchy would have no effect, and the module rejects it.',
+                `Close the hat first: pop role eligibility set-default --hat ${hatId} --no-eligible, `
+                  + 'or re-run without --combine-hierarchy.',
+              );
+            }
+          }
+        }
       }
       await runPreflight(ctx.provider, [checkGasBalance(ctx.address)], { skip: !argv.preflight });
       spin.stop();

@@ -1005,6 +1005,17 @@
   },
   {
     "type": "error",
+    "name": "HatOpenlyClaimable",
+    "inputs": [
+      {
+        "name": "hatId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "InvalidAddress",
     "inputs": []
   },

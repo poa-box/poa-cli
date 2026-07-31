@@ -58,6 +58,19 @@
   },
   {
     "type": "function",
+    "name": "MAX_POLL_HATS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MIN_DURATION",
     "inputs": [],
     "outputs": [
@@ -412,6 +425,25 @@
         "name": "",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "proposalEndTimestamp",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -864,6 +896,11 @@
   },
   {
     "type": "error",
+    "name": "Overflow",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "RoleNotAllowed",
     "inputs": []
   },
@@ -1006,6 +1043,11 @@
     "inputs": []
   },
   {
+    "type": "error",
+    "name": "TooManyPollHats",
+    "inputs": []
+  },
+  {
     "type": "event",
     "name": "ClassesReplaced",
     "inputs": [
@@ -1086,11 +1128,6 @@
   {
     "type": "error",
     "name": "InvalidQuorum",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "Overflow",
     "inputs": []
   },
   {

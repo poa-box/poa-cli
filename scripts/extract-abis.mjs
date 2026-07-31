@@ -43,6 +43,7 @@ const MAPPING = {
   ToggleModule: 'ToggleModule',
   PasskeyAccount: 'PasskeyAccount',
   PasskeyAccountFactory: 'PasskeyAccountFactory',
+  ZkEmailInvites: 'ZkEmailInvites',
 };
 
 /**
@@ -68,6 +69,31 @@ const MERGE_COMPANIONS = {
 function itemSignature(item) {
   const inputs = (item.inputs || []).map((i) => i.type).join(',');
   return `${item.type} ${item.name}(${inputs})`;
+}
+
+/**
+ * Drop duplicate fragments by SIGNATURE (type + name + input types), keeping the first.
+ *
+ * Note this ignores `indexed`, `outputs` and `stateMutability`: two same-signature fragments
+ * that differ only in indexed-ness collapse to whichever came first. mergeCompanionAbi's own
+ * `seen` set has always behaved this way, so nothing regresses — but it means a companion
+ * library redeclaring an event with different indexing would be silently discarded rather
+ * than reported.
+ *
+ * forge can emit the same error twice when it is declared in two scopes that both get inlined
+ * (DirectDemocracyVoting's artifact carries LengthMismatch() twice). ethers v5 logs
+ * "duplicate definition - X" to STDOUT when such an ABI is loaded into an Interface, which
+ * corrupts any `--json` output the command later prints. Dedupe here so no consumer has to.
+ */
+function dedupeAbi(abi) {
+  const seen = new Set();
+  return abi.filter((item) => {
+    if (!item.type || !item.name) return true; // constructor / fallback / receive
+    const sig = itemSignature(item);
+    if (seen.has(sig)) return false;
+    seen.add(sig);
+    return true;
+  });
 }
 
 function mergeCompanionAbi(abi, contract, outDirPath) {
@@ -116,7 +142,7 @@ for (const [contract, fileBase] of Object.entries(MAPPING)) {
     failed++;
     continue;
   }
-  const abi = mergeCompanionAbi(artifact.abi, contract, outDir);
+  const abi = dedupeAbi(mergeCompanionAbi(artifact.abi, contract, outDir));
 
   const target = join(abiDir, `${fileBase}.json`);
   const next = JSON.stringify(abi, null, 2) + '\n';

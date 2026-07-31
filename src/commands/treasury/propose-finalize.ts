@@ -8,7 +8,9 @@
  *   - finalizeDistribution is onlyOwner, and the owner is the Executor
  *     (initialize doc: "typically the Executor") — hence the governance wrap.
  *   - Reverts DistributionNotFound (totalAmount == 0), AlreadyFinalized, and
- *     ClaimPeriodNotExpired when block.number < checkpointBlock + minClaimPeriodBlocks.
+ *     ClaimPeriodNotExpired when block.number < creationBlock + minClaimPeriodBlocks
+ *     (audit M-08 re-anchored this from checkpointBlock; creationBlock has no getter, so the
+ *     subgraph's Distribution.createdAtBlock supplies it).
  *   - On success the unclaimed remainder (totalAmount - totalClaimed) is
  *     returned to the owner (Executor treasury) and further claims are blocked.
  *
@@ -27,6 +29,8 @@ import { formatToken } from '../../lib/format';
 import { getWriteContext, confirmWrite, finishWrite } from '../../lib/command';
 import { runPreflight, checkGasBalance } from '../../lib/preflight';
 import { requireModule } from '../../lib/resolve';
+import { query } from '../../lib/subgraph';
+import { FETCH_DISTRIBUTION_BY_ID, distributionEntityId } from '../../queries/treasury';
 import { resolvePayoutTokenInfo } from './helpers';
 import { CliError, PreconditionError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
@@ -118,8 +122,23 @@ export const proposeFinalizeHandler = {
         const unclaimed = ethers.BigNumber.from(dist.totalAmount).sub(dist.totalClaimed);
         unclaimedLabel = formatToken(unclaimed, token.decimals, token.symbol);
 
-        // The guard is measured from the checkpoint block — warn when the
-        // proposal could pass its vote before the guard clears.
+        // Anchor on the CHECKPOINT block — that is what the deployed contract uses.
+        //
+        // Audit M-08 proposes re-anchoring the claim window on the creation block
+        // (`anchorBlock = creationBlock == 0 ? checkpointBlock : creationBlock`), but that
+        // build is NOT deployed. Verified against live Gnosis PaymentManager
+        // 0x409f51250dc5c66bb1d6952f947d841192f1140e, distribution 4
+        // (checkpointBlock 45623101, subgraph createdAtBlock 45623935): an eth_call of
+        // finalizeDistribution(4, N) with N chosen so checkpoint+N has passed but
+        // creation+N has not returns 0x — NO revert — while an N that clears neither
+        // returns 0x4dece07e (ClaimPeriodNotExpired). The gate is real and it is anchored
+        // at checkpointBlock.
+        //
+        // Anchoring on createdAtBlock therefore warns about windows that have ALREADY
+        // cleared and prints a clearance block ~800-1500 blocks too late. Since creation
+        // >= checkpoint always, a future M-08 hub would make this warning fire slightly
+        // early rather than wrongly — re-anchor here only once M-08 is actually deployed
+        // (and gate it behind a version probe, since both builds will be live at once).
         if (minClaimBlocks > 0) {
           try {
             const currentBlock = await ctx.provider.getBlockNumber();

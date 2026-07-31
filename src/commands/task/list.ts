@@ -1,13 +1,13 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { query } from '../../lib/subgraph';
+import { queryWithFieldFallback } from '../../lib/subgraph';
 import { resolveOrgId } from '../../lib/resolve';
 import { resolveNetworkConfig } from '../../config/networks';
-import { FETCH_PROJECTS_DATA } from '../../queries/task';
+import { FETCH_PROJECTS_DATA, FETCH_PROJECTS_DATA_LEGACY } from '../../queries/task';
 import { formatAddress, parseDurationSeconds } from '../../lib/encoding';
 import { formatCountdown, formatRelativeTime, statusColor } from '../../lib/format';
 import { detectTaskManagerFeatures } from '../../lib/version';
-import { enrichTasksWithDeadlines, deriveClaimState } from '../../lib/task-lens';
+import { enrichTasksWithDeadlines, deriveClaimState, TASK_STATUS } from '../../lib/task-lens';
 import type { ClaimState } from '../../lib/task-lens';
 import * as output from '../../lib/output';
 
@@ -45,6 +45,13 @@ interface TaskRow {
   completionWindow?: number;
   claimDeadline?: number;
   claimState?: ClaimState;
+  /**
+   * True once deadline data has actually been resolved for THIS row. The
+   * subgraph normalises the contract's 0 sentinel to null, so the deadline
+   * values alone cannot distinguish "no deadline set" from "never looked" —
+   * only this flag can, and the --json deadline block keys off it.
+   */
+  deadlinesResolved?: boolean;
 }
 
 /** Subgraph statuses that map to non-terminal on-chain states. */
@@ -101,7 +108,13 @@ export const listHandler = {
         : undefined;
 
       const orgId = await resolveOrgId(argv.org, argv.chain);
-      const result = await query<any>(FETCH_PROJECTS_DATA, { orgId }, argv.chain);
+      // Prefer the subgraph: it indexes the v6 deadline fields (subgraph #192), so the
+      // per-task on-chain lens below is only needed when this falls through to the legacy tier.
+      const { data: result, tierIndex } = await queryWithFieldFallback<any>([
+        { query: FETCH_PROJECTS_DATA, variables: { orgId } },
+        { query: FETCH_PROJECTS_DATA_LEGACY, variables: { orgId } },
+      ], { chainId: argv.chain });
+      const subgraphHasDeadlines = tierIndex === 0;
 
       if (!result.organization?.taskManager?.projects) {
         spin.stop();
@@ -152,6 +165,12 @@ export const listHandler = {
             project: project.title || 'Unknown',
             createdAt: task.createdAt || '0',
             rejections: rejCount.toString(),
+            // Indexed deadlines (subgraph #192). null = unset on-chain, so map to undefined
+            // rather than 0 — deriveClaimState treats both as "no deadline", but undefined
+            // also distinguishes "not indexed" for the fallback below.
+            absoluteDeadline: task.absoluteDeadline != null ? Number(task.absoluteDeadline) : undefined,
+            completionWindow: task.completionWindow != null ? Number(task.completionWindow) : undefined,
+            claimDeadline: task.claimDeadline != null ? Number(task.claimDeadline) : undefined,
           });
         }
       }
@@ -165,20 +184,44 @@ export const listHandler = {
         return parseInt(a.id) - parseInt(b.id);
       });
 
-      // v6 on-chain deadline enrichment. The deployed subgraph does not index
-      // deadlines/claimDeadline, so this data is chain-only via the task lens.
-      // Skipped with --fast, on pre-v6 orgs, and degraded gracefully on RPC
-      // failure (the list still renders, minus deadline data).
+      // Deadlines come from the SUBGRAPH (indexed since #192). The on-chain task lens is only
+      // a fallback for deployments that predate it — reading them per-task over RPC costs one
+      // multicall per non-terminal task on the CLI's hottest command.
       let enriched = false;
       let enrichmentNote: string | null = null;
-      if (argv.fast) {
+      if (subgraphHasDeadlines) {
+        // Scoped to non-terminal rows to match the RPC lens path exactly — that
+        // path only ever queried these, so widening it here would silently add
+        // deadline keys to terminal rows that never carried them.
+        for (const row of rows.filter(r => NON_TERMINAL_STATUSES.has(r.statusRaw.toLowerCase()))) {
+          // deriveClaimState only classifies CLAIMED tasks and takes the on-chain numeric
+          // status; the subgraph serves the enum name ("Assigned"), so map it across.
+          row.claimState = deriveClaimState({
+            status: CLAIMED_STATUSES.has(row.statusRaw.toLowerCase())
+              ? TASK_STATUS.CLAIMED
+              : TASK_STATUS.UNCLAIMED,
+            claimDeadline: row.claimDeadline,
+            absoluteDeadline: row.absoluteDeadline,
+          });
+          row.deadlinesResolved = true;
+        }
+        enriched = true;
+      } else if (argv.fast) {
         enrichmentNote = 'deadline data skipped (--fast)';
       } else if (rows.length > 0) {
         try {
           spin.text = 'Fetching on-chain deadlines...';
           const netConfig = resolveNetworkConfig(argv.chain);
           const provider = new ethers.providers.JsonRpcProvider(netConfig.resolvedRpc, netConfig.chainId);
-          const features = await detectTaskManagerFeatures(provider, taskManagerAddress, netConfig.chainId);
+          // orgId lets the feature probe read the proxy's beacon from the
+          // subgraph instead of walking the EIP-1967 slot (the implementation
+          // itself is still read from the beacon over RPC).
+          const features = await detectTaskManagerFeatures(
+            provider,
+            taskManagerAddress,
+            netConfig.chainId,
+            { orgId }
+          );
           if (features.deadlines) {
             const targets = rows.filter(r => NON_TERMINAL_STATUSES.has(r.statusRaw.toLowerCase()));
             const { tasks } = await enrichTasksWithDeadlines(
@@ -193,6 +236,7 @@ export const listHandler = {
               row.completionWindow = onChain.completionWindow;
               row.claimDeadline = onChain.claimDeadline;
               row.claimState = deriveClaimState(onChain);
+              row.deadlinesResolved = true;
             }
             enriched = true;
           }
@@ -252,11 +296,20 @@ export const listHandler = {
           Payout: r.payoutDisplay,
           Project: r.project,
           ...(r.createdAt !== '0' ? { createdAt: r.createdAt } : {}),
-          ...(r.absoluteDeadline !== undefined ? {
-            absoluteDeadline: r.absoluteDeadline,
-            completionWindow: r.completionWindow,
-            claimDeadline: r.claimDeadline,
-            claimState: r.claimState,
+          // Gate on whether deadline data was actually resolved for THIS row,
+          // NOT on `absoluteDeadline !== undefined`.
+          //
+          // The subgraph normalises the contract's 0 sentinel to null (-> undefined
+          // here), so the old gate silently DROPPED all four keys for every task
+          // with no deadline set — which is every task on live Test6. The RPC lens
+          // returns a literal 0 for that same state, so the pre-conversion output
+          // always carried them. Re-normalising null -> 0 keeps --json byte-identical
+          // and preserves the contract's own "0 means unset" convention.
+          ...(r.deadlinesResolved ? {
+            absoluteDeadline: r.absoluteDeadline ?? 0,
+            completionWindow: r.completionWindow ?? 0,
+            claimDeadline: r.claimDeadline ?? 0,
+            claimState: r.claimState ?? 'none',
           } : {}),
         })));
         return;

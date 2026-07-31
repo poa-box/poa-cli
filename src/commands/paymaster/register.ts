@@ -28,7 +28,7 @@ import { formatToken } from '../../lib/format';
 import { formatAddress } from '../../lib/encoding';
 import { getWriteContext, confirmWrite, finishWrite } from '../../lib/command';
 import { runPreflight, checkGasBalance } from '../../lib/preflight';
-import { resolvePaymasterInfra, readPaymasterOrgConfig } from './helpers';
+import { resolvePaymasterInfra, readPaymasterOrgConfigPreferSubgraph } from './helpers';
 import { parseDepositAmount } from './deposit';
 import { CliError, PreconditionError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
@@ -178,8 +178,17 @@ export const registerHandler = {
       const ctx = await getWriteContext(argv);
       const { paymasterHubAddress, poaManagerAddress } = await resolvePaymasterInfra(argv.chain);
 
-      // Already registered? (authoritative on-chain read)
-      const orgConfig = await readPaymasterOrgConfig(ctx.provider, paymasterHubAddress, ctx.orgId);
+      // Already registered? Subgraph first, but a NEGATIVE answer is always
+      // re-confirmed on chain before we act on it — the indexer can lag behind a
+      // fresh registration and never invents one, so trusting only the positive
+      // keeps this as strong a revert predictor as a pure eth_call while
+      // skipping the call entirely on the common re-run path.
+      const { config: orgConfig } = await readPaymasterOrgConfigPreferSubgraph(
+        ctx.provider,
+        paymasterHubAddress,
+        ctx.orgId,
+        argv.chain
+      );
       if (orgConfig.registered) {
         spin.stop();
         const fields = {
@@ -205,6 +214,12 @@ export const registerHandler = {
 
       // Is the signer the PoaManager owner? (the only key that can route
       // the registrar-gated call, via PoaManager.adminCall)
+      //
+      // Stays an eth_call: PoaManagerContract has no `owner` field in either live
+      // subgraph deployment (schema has id/registry/beaconCount/createdAt* and
+      // the five proxy addresses, nothing else), and this answer decides whether
+      // a transaction is broadcast — an owner transfer the indexer had not seen
+      // would mean sending a doomed adminCall.
       let poaOwner: string | null = null;
       if (poaManagerAddress) {
         try {

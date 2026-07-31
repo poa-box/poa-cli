@@ -32,9 +32,11 @@ const mocks = vi.hoisted(() => ({
   isInteractive: vi.fn(),
   input: vi.fn(),
   confirm: vi.fn(),
+  query: vi.fn(),
 }));
 
 vi.mock('../../src/lib/tx', () => ({ executeTx: mocks.executeTx }));
+vi.mock('../../src/lib/subgraph', () => ({ query: mocks.query }));
 vi.mock('../../src/lib/signer', () => ({ createSigner: mocks.createSigner }));
 vi.mock('../../src/lib/resolve', () => ({
   resolveOrgModules: mocks.resolveOrgModules,
@@ -118,7 +120,7 @@ function baseArgv(overrides: Record<string, any> = {}): any {
   };
 }
 
-/** Set what the org's account registry reports for the signer. */
+/** Set what the org's account registry reports for the signer (live eth_call). */
 function setRegistryUsername(username: string) {
   mocks.createReadContract.mockImplementation((_addr: string, abiName: string) => {
     if (abiName === 'QuickJoinNew') {
@@ -128,6 +130,24 @@ function setRegistryUsername(username: string) {
       return { getUsername: async (_who: string) => username };
     }
     throw new Error(`unexpected read contract: ${abiName}`);
+  });
+}
+
+/**
+ * Set what the subgraph reports. `account: null` (the default) means the
+ * indexer has nothing usable, so the command must fall back to the live
+ * getUsername read — that is the safe direction and the one every legacy
+ * test below exercises.
+ */
+function setIndexed(opts: { quickJoin?: any; account?: any } = {}) {
+  mocks.query.mockResolvedValue({
+    quickJoinContract: 'quickJoin' in opts ? opts.quickJoin : {
+      id: QJ_ADDR.toLowerCase(),
+      accountRegistry: REGISTRY_ADDR,
+      hatsContract: '0x6666666666666666666666666666666666666666',
+      memberHatIds: [],
+    },
+    account: opts.account ?? null,
   });
 }
 
@@ -163,6 +183,7 @@ describe('pop user join — register+join matrix', () => {
       logs: [],
     });
     setRegistryUsername('');
+    setIndexed();
   });
 
   afterEach(() => {
@@ -327,6 +348,149 @@ describe('pop user join — register+join matrix', () => {
 
     expect(exitSpy.mock.calls[0][0]).toBe(EXIT.TX_FAILED);
     expect(mocks.executeTx).toHaveBeenCalledTimes(1); // registerAccount only
+  });
+
+  it('indexed account on the SAME registry: skips getUsername, but STILL reads the registry pointer live', async () => {
+    // The chain would say "no username" — proving the username answer came from
+    // the indexer, not from getUsername().
+    //
+    // The accountRegistry() pointer is deliberately NOT skipped. It is a WRITE
+    // TARGET (registerAccount is sent to it) and QuickJoin.updateAddresses can
+    // re-point it at any time. Through a re-point window the indexed QuickJoin
+    // pointer and the indexed Account.registry are BOTH stale, so comparing them
+    // to each other passes vacuously — the guard cannot detect it. Consequences:
+    // a 1-tx join reverts NoUsername against the new registry, and a 2-tx join
+    // sends registerAccount to the OLD registry, which SUCCEEDS, burns gas and
+    // squats the username where QuickJoin will never look (gas estimation cannot
+    // catch a tx that does not revert).
+    setRegistryUsername('');
+    setIndexed({
+      account: {
+        id: WALLET.toLowerCase(),
+        username: 'argus',
+        isDeleted: false,
+        registry: { id: REGISTRY_ADDR },
+      },
+    });
+
+    await joinHandler.handler(baseArgv());
+
+    expect(mocks.query).toHaveBeenCalledTimes(1);
+    expect(mocks.query.mock.calls[0][0]).toContain('QuickJoinAccount');
+    expect(mocks.query.mock.calls[0][1]).toEqual({
+      quickJoinAddress: QJ_ADDR.toLowerCase(),
+      accountID: WALLET.toLowerCase(),
+    });
+    // accountRegistry() is still read live; getUsername() is the one that is skipped.
+    const abiNames = mocks.createReadContract.mock.calls.map((c: any[]) => c[1]);
+    expect(abiNames).toEqual(['QuickJoinNew']);
+    expect(abiNames).not.toContain('UniversalAccountRegistry');
+
+    expect(mocks.executeTx).toHaveBeenCalledTimes(1);
+    expect(mocks.executeTx.mock.calls[0][1]).toBe('quickJoinWithUser');
+    expect(output.success).toHaveBeenCalledWith('Joined organization', expect.objectContaining({
+      username: 'argus',
+    }));
+  });
+
+  it('a STALE indexed registry pointer cannot decide the flow — the live pointer wins', async () => {
+    // QuickJoin.updateAddresses re-pointed accountRegistry to NEW_REGISTRY. The
+    // indexer has not caught up: it still reports the OLD registry for BOTH the
+    // QuickJoin pointer and the Account row, so the authority guard passes.
+    // Trusting it would take the 1-tx path and revert NoUsername on-chain.
+    const NEW_REGISTRY = '0x7777777777777777777777777777777777777777';
+    mocks.createReadContract.mockImplementation((addr: string, abiName: string) => {
+      if (abiName === 'QuickJoinNew') return { accountRegistry: async () => NEW_REGISTRY };
+      if (abiName === 'UniversalAccountRegistry') {
+        // The NEW registry has never seen this wallet.
+        expect(addr).toBe(NEW_REGISTRY);
+        return { getUsername: async () => '' };
+      }
+      throw new Error(`unexpected read contract: ${abiName}`);
+    });
+    setIndexed({
+      account: {
+        id: WALLET.toLowerCase(),
+        username: 'argus',
+        isDeleted: false,
+        registry: { id: REGISTRY_ADDR },   // stale: matches the stale QuickJoin pointer
+      },
+    });
+
+    await joinHandler.handler(baseArgv({ username: 'argus' }));
+
+    // 2-tx path, and registerAccount goes to the LIVE registry.
+    expect(mocks.executeTx).toHaveBeenCalledTimes(2);
+    expect(mocks.executeTx.mock.calls[0][1]).toBe('registerAccount');
+    const registryUsedForWrite = mocks.executeTx.mock.calls[0][0].address;
+    expect(registryUsedForWrite).toBe(NEW_REGISTRY);
+    expect(registryUsedForWrite).not.toBe(REGISTRY_ADDR);
+    // ...and the username-free pre-flight targets the live registry too.
+    expect(mocks.checkUsernameFree).toHaveBeenCalledWith(NEW_REGISTRY, 'argus');
+  });
+
+  it('indexed account on a DIFFERENT registry is NOT trusted: falls back to the live getUsername', async () => {
+    // Regression guard for the doomed-1-tx-join hazard: Account.id is the
+    // bare address, so an account indexed from another registry must never
+    // decide the flow.
+    setRegistryUsername('');
+    setIndexed({
+      account: {
+        id: WALLET.toLowerCase(),
+        username: 'argus',
+        isDeleted: false,
+        registry: { id: '0x9999999999999999999999999999999999999999' },
+      },
+    });
+
+    await expect(joinHandler.handler(baseArgv())).rejects.toBeInstanceOf(ExitError);
+
+    // getUsername was consulted and reported "" → registration required
+    expect(mocks.createReadContract).toHaveBeenCalled();
+    expect(exitSpy.mock.calls[0][0]).toBe(EXIT.USAGE);
+    expect(mocks.executeTx).not.toHaveBeenCalled();
+  });
+
+  it('tombstoned (isDeleted) indexed account is NOT trusted: falls back to the live getUsername', async () => {
+    setRegistryUsername('still_there');
+    setIndexed({
+      account: {
+        id: WALLET.toLowerCase(),
+        username: 'old_name',
+        isDeleted: true,
+        registry: { id: REGISTRY_ADDR },
+      },
+    });
+
+    await joinHandler.handler(baseArgv());
+
+    expect(mocks.executeTx).toHaveBeenCalledTimes(1);
+    expect(output.success).toHaveBeenCalledWith('Joined organization', expect.objectContaining({
+      username: 'still_there',
+    }));
+  });
+
+  it('subgraph unavailable: falls back to accountRegistry() + getUsername and still joins', async () => {
+    mocks.query.mockRejectedValue(new Error('subgraph 503'));
+    setRegistryUsername('argus');
+
+    await joinHandler.handler(baseArgv());
+
+    expect(mocks.executeTx).toHaveBeenCalledTimes(1);
+    expect(mocks.executeTx.mock.calls[0][1]).toBe('quickJoinWithUser');
+    expect(output.success).toHaveBeenCalledWith('Joined organization', expect.objectContaining({
+      username: 'argus',
+    }));
+  });
+
+  it('QuickJoin not indexed: registry address still comes from accountRegistry()', async () => {
+    setIndexed({ quickJoin: null });
+    setRegistryUsername('');
+
+    await joinHandler.handler(baseArgv({ username: 'newbie' }));
+
+    expect(mocks.checkUsernameFree).toHaveBeenCalledWith(REGISTRY_ADDR, 'newbie');
+    expect(mocks.executeTx.mock.calls[0][2]).toEqual(['newbie']);
   });
 
   it('idempotency cache hit: returns the prior join without re-sending', async () => {

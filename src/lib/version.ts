@@ -10,9 +10,26 @@
  * - src/TaskManager.sol — createTask (9-arg v6), createTasksBatch(bytes32,
  *   CreateTaskInput[]), updateTaskMetadata, setFolders signatures and the
  *   CreateTaskInput struct field order.
+ *
+ * RPC COST (2026-07): this module is on the hot path of task
+ * list/create/create-batch/update/edit-meta/folders, and each call used to cost
+ * eth_getStorageAt + eth_call(implementation) + eth_getCode — the last of which
+ * ships ~20 KB of hex. Both halves now have a cheaper first choice:
+ *
+ *   1. Beacon address — the subgraph knows it (RegisteredContract.beacon).
+ *      Requires the caller to pass `orgId`; without it the EIP-1967 slot walk
+ *      runs exactly as before. The implementation is still fetched FROM the
+ *      beacon over RPC, because this function gates writes (see
+ *      beaconImplementationViaSubgraph).
+ *   2. Feature set — memoized per implementation ADDRESS (see
+ *      KNOWN_TM_IMPLEMENTATION_FEATURES). Deployed bytecode at an address is
+ *      immutable, so this is a cache of a fact, not a guess about a version
+ *      string. An unrecognised address falls back to the bytecode scan, so the
+ *      table can only ever remove work — never invent a feature.
  */
 
 import { ethers } from 'ethers';
+import { fetchOrgBeaconSnapshot, beaconAddressFromSnapshot } from '../queries/beacons';
 
 /** EIP-1967 beacon slot: keccak256('eip1967.proxy.beacon') - 1 */
 export const EIP1967_BEACON_SLOT = '0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50';
@@ -115,6 +132,54 @@ export async function getImplementation(
   return ethers.utils.getAddress(proxy);
 }
 
+/** keccak256("TaskManager") — the PoaManager/OrgRegistry module type id. */
+export const TASK_MANAGER_TYPE_ID = ethers.utils.id('TaskManager');
+
+/** Run the selector scan over already-fetched implementation bytecode. */
+export function featuresFromBytecode(code: string): TaskManagerFeatures {
+  const lowered = (code || '').toLowerCase();
+  const has = (fragment: string): boolean =>
+    lowered.includes(computeSelector(fragment).slice(2).toLowerCase());
+  return {
+    deadlines: has(TM_FEATURE_FRAGMENTS.deadlines),
+    batchCreate: has(TM_FEATURE_FRAGMENTS.batchCreate),
+    editMeta: has(TM_FEATURE_FRAGMENTS.editMeta),
+    folders: has(TM_FEATURE_FRAGMENTS.folders),
+    legacyCreate7: has(TM_FEATURE_FRAGMENTS.legacyCreate7),
+  };
+}
+
+/**
+ * Memoized feature scan per TaskManager IMPLEMENTATION ADDRESS (lowercased).
+ *
+ * Deliberately keyed by address, not by version string. A version→feature table
+ * is a guess that fails silently when a release changes shape; deployed
+ * bytecode at an address is immutable, so each row below is a recorded fact.
+ * Every row was produced by running `featuresFromBytecode` against live
+ * eth_getCode on 2026-07-30 — on BOTH Gnosis and Arbitrum, which return
+ * byte-identical code at these addresses (deterministic deploys), so a row is
+ * not chain-specific. The version comment is documentation only; nothing keys
+ * off it.
+ *
+ * FAIL CLOSED: an address that is not listed here is scanned over RPC. Adding a
+ * new TaskManager release is optional — omitting it costs one eth_getCode, it
+ * never mis-reports a feature.
+ */
+export const KNOWN_TM_IMPLEMENTATION_FEATURES: Record<string, TaskManagerFeatures> = {
+  // TaskManager v2
+  '0xe5ce83cc15360d1948b70e699cd0fa779af320b7':
+    { deadlines: false, batchCreate: false, editMeta: false, folders: false, legacyCreate7: true },
+  // TaskManager v4 — setFolders introduced
+  '0xd1721e7bb458c21485cbc7175a557c23bb4be358':
+    { deadlines: false, batchCreate: false, editMeta: false, folders: true, legacyCreate7: true },
+  // TaskManager v5 — updateTaskMetadata introduced
+  '0xd388953eee145247e1f8a51c5a0ddefc2c3db915':
+    { deadlines: false, batchCreate: false, editMeta: true, folders: true, legacyCreate7: true },
+  // TaskManager v6 — deadlines + createTasksBatch; 7-arg createTask removed
+  '0x7833c4670c42dbce1a7ab1bab7e7baf0a982ff57':
+    { deadlines: true, batchCreate: true, editMeta: true, folders: true, legacyCreate7: false },
+};
+
 const featureCache: Map<string, TaskManagerFeatures> = new Map();
 const chainIdCache: WeakMap<ethers.providers.Provider, number> = new WeakMap();
 
@@ -126,33 +191,87 @@ async function resolveChainId(provider: ethers.providers.Provider): Promise<numb
   return network.chainId;
 }
 
+export interface DetectFeaturesOptions {
+  /**
+   * Org id. When supplied, the proxy's BEACON address comes from the subgraph
+   * (RegisteredContract.beacon) instead of an EIP-1967 slot read; the
+   * implementation is still fetched from that beacon over RPC. Omit it and
+   * behaviour is exactly as before.
+   */
+  orgId?: string;
+  /** Force the pure-RPC path (offline use / tests). */
+  skipSubgraph?: boolean;
+}
+
 /**
- * Probe a TaskManager proxy's implementation bytecode for feature selectors.
- * One getCode per implementation; results cached per `chainId:proxy` for the
- * process lifetime. Pass `chainId` if known to skip the getNetwork round-trip.
+ * Resolve the implementation behind a TaskManager proxy using the subgraph for
+ * the part that is safe to index, and RPC for the part that is not.
+ *
+ * The subgraph supplies RegisteredContract.beacon — the proxy's EIP-1967 beacon
+ * address, verified byte-identical to eth_getStorageAt on live Gnosis (org
+ * Test6: 0x4af43d51…d4da7c5 from both). That value is written once at org
+ * deployment and effectively never moves, so indexing it carries no staleness
+ * risk and removes the eth_getStorageAt.
+ *
+ * The implementation ITSELF is still read from the beacon over RPC, on purpose.
+ * detectTaskManagerFeatures gates writes (createTask arity, setFolders,
+ * updateTaskMetadata): if a beacon upgrade landed inside the indexing window,
+ * a subgraph-served implementation would pick the wrong calldata shape and
+ * broadcast a doomed transaction. Beacon.currentImplementation is used for the
+ * read-only version panel, never here.
+ *
+ * Returns null when the beacon is not indexed — the caller then walks the
+ * EIP-1967 slots exactly as before.
+ */
+async function beaconImplementationViaSubgraph(
+  provider: ethers.providers.Provider,
+  chainId: number,
+  opts?: DetectFeaturesOptions
+): Promise<string | null> {
+  if (!opts?.orgId || opts.skipSubgraph) return null;
+  try {
+    const snapshot = await fetchOrgBeaconSnapshot(opts.orgId, chainId);
+    const beacon = beaconAddressFromSnapshot(snapshot, TASK_MANAGER_TYPE_ID);
+    if (!beacon) return null;
+    const raw = await provider.call({
+      to: beacon,
+      data: BEACON_IFACE.encodeFunctionData('implementation'),
+    });
+    return BEACON_IFACE.decodeFunctionResult('implementation', raw)[0];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Probe a TaskManager proxy's implementation for feature selectors.
+ *
+ * Resolution order (each step falls back to the next, never guesses):
+ *   implementation: subgraph (needs `opts.orgId`) → EIP-1967 slot walk
+ *   features:       KNOWN_TM_IMPLEMENTATION_FEATURES → eth_getCode scan
+ *
+ * Results are cached per `chainId:proxy` for the process lifetime. Pass
+ * `chainId` if known to skip the getNetwork round-trip.
  */
 export async function detectTaskManagerFeatures(
   provider: ethers.providers.Provider,
   proxy: string,
-  chainId?: number
+  chainId?: number,
+  opts?: DetectFeaturesOptions
 ): Promise<TaskManagerFeatures> {
   const resolvedChainId = chainId ?? await resolveChainId(provider);
   const cacheKey = `${resolvedChainId}:${proxy.toLowerCase()}`;
   const cached = featureCache.get(cacheKey);
   if (cached) return cached;
 
-  const impl = await getImplementation(provider, proxy);
-  const code = (await provider.getCode(impl)).toLowerCase();
-  const has = (fragment: string): boolean =>
-    code.includes(computeSelector(fragment).slice(2).toLowerCase());
+  const impl = await beaconImplementationViaSubgraph(provider, resolvedChainId, opts)
+    ?? await getImplementation(provider, proxy);
 
-  const features: TaskManagerFeatures = {
-    deadlines: has(TM_FEATURE_FRAGMENTS.deadlines),
-    batchCreate: has(TM_FEATURE_FRAGMENTS.batchCreate),
-    editMeta: has(TM_FEATURE_FRAGMENTS.editMeta),
-    folders: has(TM_FEATURE_FRAGMENTS.folders),
-    legacyCreate7: has(TM_FEATURE_FRAGMENTS.legacyCreate7),
-  };
+  const known = KNOWN_TM_IMPLEMENTATION_FEATURES[impl.toLowerCase()];
+  const features: TaskManagerFeatures = known
+    ? { ...known }
+    : featuresFromBytecode(await provider.getCode(impl));
+
   featureCache.set(cacheKey, features);
   return features;
 }

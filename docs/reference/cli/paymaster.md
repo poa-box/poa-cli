@@ -18,7 +18,7 @@ pop paymaster status [flags]
 
 ## pop paymaster deposit
 
-Fund an org's gas sponsorship balance (permissionless, one-way — no withdraw)
+Fund an org's gas sponsorship balance (permissionless; no withdraw on the deployed hub)
 
 ```text
 pop paymaster deposit [flags]

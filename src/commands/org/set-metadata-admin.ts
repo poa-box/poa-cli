@@ -24,6 +24,8 @@ import { runPreflight, checkGasBalance } from '../../lib/preflight';
 import { query } from '../../lib/subgraph';
 import { FETCH_INFRASTRUCTURE_ADDRESSES } from '../../queries/infrastructure';
 import type { InfrastructureAddresses } from '../../queries/infrastructure';
+import { FETCH_ORG_METADATA_ADMIN_HAT } from '../../queries/roles';
+import type { OrgMetadataAdminHatResult } from '../../queries/roles';
 import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
@@ -76,13 +78,31 @@ export const setMetadataAdminHandler = {
         throw new CliError('Could not resolve OrgRegistry address from subgraph', EXIT.INFRA);
       }
 
-      // Best-effort current-hat read for the confirm summary (never blocks).
+      // Best-effort current-hat read for the confirm summary (never blocks —
+      // it is display-only and gates nothing, so subgraph lag cannot cause a
+      // doomed broadcast here). Subgraph-first: Organization.metadataAdminHatId
+      // is rewritten by handleOrgMetadataAdminHatSet on every
+      // OrgMetadataAdminHatSet event and is non-null on every live org; the
+      // on-chain getter stays as the fallback.
       let currentHat: string | undefined;
       try {
-        const registry = createReadContract(orgRegistryAddr, 'OrgRegistry', ctx.provider);
-        const current = await registry.getOrgMetadataAdminHat(ctx.orgId);
-        currentHat = current.toString();
+        const current = await query<OrgMetadataAdminHatResult>(
+          FETCH_ORG_METADATA_ADMIN_HAT,
+          { orgId: ctx.orgId },
+          argv.chain
+        );
+        const fromSubgraph = current.organization?.metadataAdminHatId;
+        if (fromSubgraph !== undefined && fromSubgraph !== null) {
+          currentHat = String(fromSubgraph);
+        }
       } catch { /* summary-only */ }
+      if (currentHat === undefined) {
+        try {
+          const registry = createReadContract(orgRegistryAddr, 'OrgRegistry', ctx.provider);
+          const current = await registry.getOrgMetadataAdminHat(ctx.orgId);
+          currentHat = current.toString();
+        } catch { /* summary-only */ }
+      }
 
       // setOrgMetadataAdminHat is executor-only after bootstrap, so wrap it
       // in a proposal whose option-0 execution batch calls the OrgRegistry.

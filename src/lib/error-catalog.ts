@@ -276,9 +276,15 @@ export const ERROR_MESSAGES: Record<string, { human: string; suggestion?: string
   },
 
   // --- Shared permission / role errors ---
+  // Declared by TaskManager, HybridVoting, DirectDemocracyVoting, ParticipationToken,
+  // QuickJoin, PasskeyAccountFactory and ZkEmailInvites, so this message must stay
+  // contract-neutral — it previously named only the TaskManager permission bits, which
+  // sent people to `pop task perms` for a voting or token failure.
   Unauthorized: {
-    human: 'Your hat/role lacks the required permission for this action (TaskManager permission bits: CREATE/CLAIM/REVIEW/ASSIGN/SELF_REVIEW/BUDGET/EDIT_META/EDIT_FULL).',
-    suggestion: 'Check which hat holds the permission: pop org roles / pop task perms show',
+    human: 'Your wallet\'s hats do not carry the permission this action requires.',
+    suggestion: 'See which hats you hold with: pop user whoami. For task actions the required bit is '
+      + 'one of CREATE/CLAIM/REVIEW/ASSIGN/SELF_REVIEW/BUDGET/EDIT_META/EDIT_FULL — inspect with '
+      + 'pop task perms show. For proposals, you need a creator hat: pop org roles.',
   },
   UnauthorizedCaller: {
     human: 'Caller is not authorized for this executor operation.',
@@ -437,6 +443,94 @@ export const ERROR_MESSAGES: Record<string, { human: string; suggestion?: string
   InvalidApplicationHash: {
     human: 'The application metadata hash is invalid or does not match.',
   },
+  // ── Protocol security audit (contracts PR #185) ──
+  DefaultEligibilityConflictsWithVouch: {
+    human: 'This hat is set to make everyone eligible by default, so vouching for it would be meaningless.',
+    suggestion: 'Turn off default eligibility for the hat before enabling a vouch requirement on it.',
+  },
+  TokenNotWired: {
+    human: 'That ParticipationToken does not point back at this EducationHub, so module rewards would silently fail.',
+    suggestion: 'Wire the token\'s educationHub to this module first, then re-run setToken.',
+  },
+  UnregisteredRole: {
+    human: 'The proposal references a role index that has no hat registered for this org.',
+    suggestion: 'List the org\'s registered roles with: pop org roles',
+  },
+  SweepFailed: {
+    human: 'The native-token sweep failed — the recipient rejected the transfer.',
+    suggestion: 'A contract recipient must accept plain value transfers. Try an EOA, or a wallet whose receive() succeeds.',
+  },
+  TooManyHats: {
+    human: 'Too many hat IDs in one mint — the executor caps the batch to bound gas.',
+    suggestion: 'Split the mint into smaller batches (see Executor.MAX_HATS_PER_MINT).',
+  },
+  TooManyPollHats: {
+    human: 'Too many restricted hats on this proposal — the limit is 100.',
+    suggestion: 'Reduce the hat-restriction list, or leave it empty to let every eligible member vote.',
+  },
+  // ── Passkey M-of-N account recovery (audit H-04) ──
+  NotAGuardian: {
+    human: 'Your address is not a registered recovery guardian for this account.',
+  },
+  GuardianAlreadyExists: {
+    human: 'That address is already a guardian on this account.',
+  },
+  GuardianDoesNotExist: {
+    human: 'That address is not a guardian on this account.',
+  },
+  ThresholdExceedsGuardianCount: {
+    human: 'The recovery threshold cannot be higher than the number of guardians.',
+    suggestion: 'Add more guardians first, or set a lower threshold.',
+  },
+  RecoveryDisabled: {
+    human: 'Recovery is disabled on this account — its threshold is zero.',
+    suggestion: 'The account owner must add guardians and set a non-zero recovery threshold.',
+  },
+  InvalidPublicKey: {
+    human: 'The proposed recovery key is not a valid P-256 point.',
+    suggestion: 'Re-generate the passkey — the staged public key must be on-curve.',
+  },
+
+  // ── ZkEmailInvites (ZK Email role invites) ──
+  AllowlistNotActive: {
+    human: 'This org\'s ZK Email invite module has no active allowlist, so no one can claim yet.',
+    suggestion: 'Publish one: pop zkemail build-allowlist --file entries.json --pin, then pop zkemail propose-allowlist.',
+  },
+  NotInAllowlist: {
+    human: 'The merkle proof does not match the active allowlist root — this domain/address is not invited, or the proof was built from a stale allowlist.',
+    suggestion: 'Check with: pop zkemail check <domain-or-email>',
+  },
+  NullifierAlreadyUsed: {
+    human: 'That exact email has already been used for a claim (the nullifier is per message).',
+    suggestion: 'Claim again from a different email message.',
+  },
+  EmailAlreadyRegistered: {
+    human: 'That email address has already claimed via its specific-address allowlist entry (one registration per address).',
+    suggestion: 'Governance can reset it, or claim via a domain entry instead if the domain is allowlisted.',
+  },
+  InvalidDKIMKey: {
+    human: 'No valid DKIM key is registered for the sending domain, so the email signature cannot be checked on-chain.',
+    suggestion: 'The domain\'s DKIM key hash must be seeded in the PoaDKIMRegistry before claims from it can succeed.',
+  },
+  ClaimerNotEligible: {
+    human: 'The claimer is not eligible for one of the requested role hats, even after email verification.',
+    suggestion: 'The hat\'s eligibility module may be gating it separately — check pop role eligibility.',
+  },
+  HatOpenlyClaimable: {
+    human: 'One of the requested hats is claimable by anyone, so granting it through a ZK Email invite is refused.',
+    suggestion: 'Tighten the hat\'s eligibility module before including it in an invite allowlist.',
+  },
+  ZeroClaimer: {
+    human: 'The claimer address is the zero address.',
+  },
+  EmptyHats: {
+    human: 'The claim requested no role hats.',
+    suggestion: 'The allowlist entry must grant at least one hat ID.',
+  },
+  NotAuthorizedEmailVerifier: {
+    human: 'Only the org superAdmin or an authorized hat minter (normally the ZkEmailInvites module) may mark a wearer email-verified.',
+    suggestion: 'Route the call through governance, or authorize the caller as a hat minter on the Executor first.',
+  },
 
   // --- Participation token ---
   TransfersDisabled: {
@@ -451,8 +545,12 @@ export const ERROR_MESSAGES: Record<string, { human: string; suggestion?: string
   RequestUnknown: {
     human: 'No token request exists with that ID.',
   },
+  // Declared by BOTH ParticipationToken (token requests) and, since the audit, PasskeyAccount
+  // (a guardian re-approving a recovery). Identical zero-arg signature means one selector and
+  // no way to tell them apart from revert data alone, so the message must cover both.
   AlreadyApproved: {
-    human: 'This token request has already been approved.',
+    human: 'Already approved — either this token request, or this recovery proposal by this guardian.',
+    suggestion: 'For recovery, quorum needs approvals from DISTINCT guardians; one cannot approve twice.',
   },
   NotTaskOrEdu: {
     human: 'Only the TaskManager or EducationHub may mint participation tokens.',

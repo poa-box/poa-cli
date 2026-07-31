@@ -2,7 +2,7 @@ import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { resolveNetworkConfig, getNetworkNameByChainId } from '../../config/networks';
 import { getLoadedEnvFiles } from '../../lib/env-load';
-import { query } from '../../lib/subgraph';
+import { query, getTransportStatus, type TransportStatus } from '../../lib/subgraph';
 import * as output from '../../lib/output';
 
 /** Minimal subgraph health probe (indexed block). Non-null only on success. */
@@ -52,6 +52,16 @@ export const showHandler = {
       }
     } catch { /* no chain set */ }
 
+    // Which subgraph transport (free Studio vs paid gateway) will serve reads,
+    // and whether GRAPH_API_KEY was detected. Local-only; issues no request.
+    // getTransportStatus redacts URLs — the API key is never printed.
+    let transport: TransportStatus | undefined;
+    if (chainId) {
+      try {
+        transport = getTransportStatus(chainId);
+      } catch { /* unsupported chain — already surfaced by the chain row */ }
+    }
+
     // Which .env files were actually loaded (env-load precedence order).
     const loadedEnvFiles = getLoadedEnvFiles();
     const envFileDisplay = loadedEnvFiles.length > 0
@@ -91,6 +101,7 @@ export const showHandler = {
       subgraph: subgraph ? subgraph.substring(0, 60) + (subgraph.length > 60 ? '...' : '') : '(not set)',
       ipfsApi: process.env.POP_IPFS_API_URL || 'https://api.thegraph.com/ipfs/api/v0 (default)',
       'env file': envFileDisplay,
+      'subgraph tier': transport ? transport.summary : '(no chain set)',
       'subgraph health': subgraphHealth,
     };
 
@@ -106,6 +117,7 @@ export const showHandler = {
         ipfsApi: process.env.POP_IPFS_API_URL || 'https://api.thegraph.com/ipfs/api/v0',
         loadedEnvFiles,
         ...(subgraphBlock !== undefined ? { subgraphBlock } : {}),
+        ...(transport ? { subgraphTransport: transport } : {}),
       });
     } else {
       console.log('');

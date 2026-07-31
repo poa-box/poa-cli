@@ -36,6 +36,19 @@
   },
   {
     "type": "function",
+    "name": "MAX_HATS_PER_MINT",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "acceptBeaconOwnership",
     "inputs": [
       {
@@ -109,6 +122,29 @@
   },
   {
     "type": "function",
+    "name": "configureParticipationToken",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "taskManager",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "educationHub",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "configureVouching",
     "inputs": [
       {
@@ -177,6 +213,19 @@
   },
   {
     "type": "function",
+    "name": "hats",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IHats"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "initialize",
     "inputs": [
       {
@@ -192,6 +241,25 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "isAuthorizedHatMinter",
+    "inputs": [
+      {
+        "name": "minter",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -642,6 +710,11 @@
   },
   {
     "type": "error",
+    "name": "SweepFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "TargetSelf",
     "inputs": []
   },
@@ -653,6 +726,11 @@
   {
     "type": "error",
     "name": "TooManyCalls",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooManyHats",
     "inputs": []
   },
   {

@@ -2,16 +2,21 @@
  * pop treasury claim — claim your allocation from a merkle distribution.
  *
  * Human units: --amount is a DECIMAL amount in the distribution's payout
- * token by default. The payout token (and its decimals) is read from
- * PaymentManager.getDistribution — address(0) means the chain's native token
+ * token by default. The payout token (and its decimals) comes from the indexed
+ * Distribution entity — the same source the sibling `pop treasury claim-mine`
+ * already uses, so the two commands cannot disagree about one value — with
+ * PaymentManager.getDistribution retained as the fallback for a distribution
+ * the subgraph has not indexed yet. address(0) means the chain's native token
  * (verified against contracts origin/main src/PaymentManager.sol), otherwise
  * a live ERC20 decimals() read. Pass --wei to supply the exact raw integer
  * instead (the merkle leaf hashes the raw amount, so exactness matters when
  * your allocation has full-precision dust).
  *
  * Pre-flight (skippable with --no-preflight) mirrors the contract's revert
- * gates: DistributionNotFound, DistributionAlreadyFinalized, AlreadyClaimed
- * (hasClaimed), and OptedOut (isOptedOut) all fail fast before gas is spent.
+ * gates: DistributionNotFound, DistributionAlreadyFinalized and AlreadyClaimed
+ * (hasClaimed) fail fast before gas is spent. Opt-out only WARNS — audit L-19
+ * removed that gate from the claim path so an opt-out cannot strand funds
+ * already allocated to you.
  *
  * Prefer `pop treasury claim-mine` — it recomputes the tree and derives your
  * amount + proof automatically. This command is the manual escape hatch.
@@ -26,6 +31,8 @@ import { formatToken } from '../../lib/format';
 import { getWriteContext, confirmWrite, finishWrite } from '../../lib/command';
 import { runPreflight, checkGasBalance } from '../../lib/preflight';
 import { requireModule } from '../../lib/resolve';
+import { query } from '../../lib/subgraph';
+import { FETCH_DISTRIBUTION_BY_ID, distributionEntityId } from '../../queries/treasury';
 import { resolvePayoutTokenInfo, PayoutTokenInfo } from './helpers';
 import { CliError, PreconditionError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
@@ -133,19 +140,53 @@ export const claimHandler = {
       // The distribution read is core to amount encoding (payout token →
       // decimals), so it always runs unless --wei makes it unnecessary AND
       // pre-flight is disabled.
-      let dist: any = null;
+      //
+      // Subgraph FIRST, contract as the fallback. `distribution(id:)` answers null (not an
+      // error) for an id it has not indexed, and a brand-new distribution is exactly the case
+      // where someone claims early — so a null MUST fall through to getDistribution rather
+      // than render as DistributionNotFound. Every field used below is populated on every live
+      // Gnosis row; see src/queries/treasury.ts for the field-by-field mapping.
+      let dist: { payoutToken: string; totalAmount: ethers.BigNumber; finalized: boolean } | null = null;
       let token: PayoutTokenInfo | null = null;
       const needDecimals = !argv.wei;
       if (needDecimals || argv.preflight !== false) {
-        try {
-          dist = await pmRead.getDistribution(argv.distribution);
-        } catch {
-          throw new PreconditionError(
-            `Could not read distribution ${argv.distribution} on-chain.`,
-            'List distributions with: pop treasury distributions'
-          );
+        const indexed = await query<{ distribution: any }>(
+          FETCH_DISTRIBUTION_BY_ID,
+          { id: distributionEntityId(paymentManagerAddress, argv.distribution) },
+          argv.chain
+        ).then(r => r.distribution).catch(() => null);
+
+        if (indexed) {
+          dist = {
+            // Checksum at the boundary. The subgraph stores addresses lowercased, while the
+            // ABI-decoded getDistribution() path yields EIP-55. Without this the --json
+            // `token` field silently changes case depending on whether the distribution
+            // happens to be indexed, breaking any consumer doing an exact string compare.
+            payoutToken: ethers.utils.getAddress(indexed.payoutToken),
+            totalAmount: ethers.BigNumber.from(indexed.totalAmount),
+            // The status enum is exactly Active | Finalized, and it only becomes Finalized once
+            // DistributionFinalized is indexed — so a false positive here is impossible. A stale
+            // Active is caught by executeTx's gas estimation, which decodes the revert.
+            finalized: indexed.status === 'Finalized',
+          };
+        } else {
+          let onChain: any;
+          try {
+            onChain = await pmRead.getDistribution(argv.distribution);
+          } catch {
+            throw new PreconditionError(
+              `Could not read distribution ${argv.distribution} on-chain.`,
+              'List distributions with: pop treasury distributions'
+            );
+          }
+          dist = {
+            payoutToken: onChain.payoutToken,
+            totalAmount: ethers.BigNumber.from(onChain.totalAmount),
+            finalized: Boolean(onChain.finalized),
+          };
         }
-        if (ethers.BigNumber.from(dist.totalAmount).isZero()) {
+
+        if (dist.totalAmount.isZero()) {
           throw new PreconditionError(
             `Distribution ${argv.distribution} does not exist.`,
             'List distributions with: pop treasury distributions'
@@ -164,6 +205,14 @@ export const claimHandler = {
             `Distribution ${argv.distribution} is finalized — claims are closed and unclaimed funds were returned to the treasury.`
           );
         }
+        // Both stay on-chain, for different reasons:
+        //   hasClaimed  — a revert predictor (AlreadyClaimed). Subgraph lag here means
+        //                 knowingly broadcasting a doomed transaction.
+        //   isOptedOut  — the indexed twin would be OptOutToggle, but that entity has ZERO rows
+        //                 on live Gnosis (verified 2026-07) because zero OptOutToggled events
+        //                 have ever been emitted across all nine PaymentManagers. The mapping is
+        //                 therefore unexercised, so there is no live row to prove it indexes.
+        //                 They share one Promise.all round-trip anyway.
         const [alreadyClaimed, optedOut] = await Promise.all([
           pmRead.hasClaimed(argv.distribution, ctx.address),
           pmRead.isOptedOut(ctx.address),
@@ -172,6 +221,20 @@ export const claimHandler = {
           throw new PreconditionError(`You already claimed from distribution ${argv.distribution}.`);
         }
         if (optedOut) {
+          // BLOCK, do not warn. Audit L-19 proposes removing the OptedOut gate from the claim
+          // path, but that build is NOT deployed: the live Gnosis PaymentManager still anchors
+          // finalizeDistribution at checkpointBlock (verified by eth_call — see
+          // propose-finalize.ts), which makes it a pre-L-19/pre-M-08 implementation, and every
+          // PaymentManager source of that vintage has `if (s.optedOut[msg.sender]) revert
+          // OptedOut();` in claimDistribution. A bytecode selector scan cannot settle this
+          // either way (the impl demonstrably returns ClaimPeriodNotExpired while that selector
+          // does not appear as a substring of its runtime code), so this fails closed.
+          //
+          // Downgrading to output.warn would ALSO be silent for machine consumers:
+          // output.warn is a no-op under --json/--quiet (src/lib/output.ts), so an agent would
+          // get no signal at all and the clean EXIT.PRECONDITION would degrade into a
+          // gas-estimation failure. Re-open this only once an L-19 hub is actually deployed
+          // and can be feature-detected.
           throw new PreconditionError(
             'This wallet is opted out of distributions — the claim would revert OptedOut.',
             'Opt back in first: pop treasury opt-in'

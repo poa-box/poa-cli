@@ -5,9 +5,14 @@
  * contracts origin/main src/EducationHub.sol — is a FULL OVERWRITE of the
  * event-emitted metadata pair plus the stored payout, so this command reads
  * the current state first (payout from the chain via getModule, title +
- * metadata from the subgraph with an IPFS fallback) and merges only the
- * flags the caller passed. Metadata is re-pinned ONLY when its content
- * actually changes — a payout-only edit keeps the current contentHash.
+ * metadata from the subgraph with an IPFS fallback — issued concurrently)
+ * and merges only the flags the caller passed. Metadata is re-pinned ONLY
+ * when its content actually changes — a payout-only edit keeps the current
+ * contentHash.
+ *
+ * The payout is read on-chain and not from the indexed EducationModule.payout on purpose: a
+ * full overwrite writes the read-back value, so a stale one silently reverts a concurrent
+ * raise, and the same call is the ModuleUnknown existence gate.
  *
  * Contract gates (same verification): onlyCreator (creator hat / executor;
  * a decoded NotCreator revert is the authority), whenNotPaused, payout must
@@ -130,31 +135,39 @@ export const updateModuleHandler = {
       const educationHubAddress = requireModule(ctx.modules, 'educationHubAddress');
       const moduleId = parseModuleId(argv.module);
 
-      // ── 1. READ: on-chain payout + existence (authoritative) ───────────
-      // getModule reverts ModuleUnknown for unknown ids (verified) — this
-      // read is required for the merge, so it runs regardless of --preflight.
-      let currentPayout: ethers.BigNumber;
-      try {
-        const hub = createReadContract(educationHubAddress, 'EducationHubNew', ctx.provider);
-        const [payout] = await hub.getModule(moduleId);
-        currentPayout = payout;
-      } catch {
+      // ── 1+2. READ: on-chain payout/existence AND the indexed metadata ──
+      // Issued together: neither depends on the other, and they used to run
+      // back-to-back for no reason.
+      //
+      // The payout deliberately STAYS on-chain even though EducationModule.payout is indexed
+      // and populated (verified on live Gnosis). updateModule is a FULL OVERWRITE, and when
+      // --payout is omitted this value is written straight back — so a payout that the subgraph
+      // has not caught up with yet would silently ROLL BACK someone else's raise. The same call
+      // is also the ModuleUnknown gate (EducationHub._module reverts when !m.exists, verified
+      // against src/EducationHub.sol:255), which is a revert predictor for the write below.
+      // One eth_call on an admin-only command is the right price for both.
+      //
+      // The chain stores only {answerHash, payout, exists}; title/contentHash are event-only,
+      // so the subgraph remains the sole source for metadata preservation.
+      const hub = createReadContract(educationHubAddress, 'EducationHubNew', ctx.provider);
+      const [chainRead, indexedRead] = await Promise.allSettled([
+        hub.getModule(moduleId),
+        query<any>(FETCH_MODULES_FOR_UPDATE, { orgId: ctx.orgId }, argv.chain),
+      ]);
+
+      if (chainRead.status === 'rejected') {
         throw new PreconditionError(
           `Could not read module ${moduleId} on-chain — it may not exist (getModule reverts ModuleUnknown).`,
           'List modules with: pop education list'
         );
       }
+      const currentPayout: ethers.BigNumber = chainRead.value[0];
 
-      // ── 2. READ: current title/metadata (subgraph → IPFS fallback) ─────
-      // The chain stores only {answerHash, payout, exists}; title/contentHash
-      // are event-only, so the subgraph is the source for preservation.
+      // Subgraph unavailable — handled below based on what the merge needs.
       let subgraphModule: any = null;
-      try {
-        const result = await query<any>(FETCH_MODULES_FOR_UPDATE, { orgId: ctx.orgId }, argv.chain);
-        const modules = result.organization?.educationHub?.modules || [];
+      if (indexedRead.status === 'fulfilled') {
+        const modules = indexedRead.value.organization?.educationHub?.modules || [];
         subgraphModule = modules.find((m: any) => String(m.moduleId) === String(moduleId)) || null;
-      } catch {
-        // Subgraph unavailable — handled below based on what the merge needs.
       }
 
       let ipfsMetadata: any = null;

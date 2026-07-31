@@ -15,16 +15,17 @@
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import fs from 'fs';
-import { createWriteContract } from '../../lib/contracts';
+import { createReadContract, createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { requireAddress } from '../../lib/validation';
 import { getWriteContext, confirmWrite, finishWrite } from '../../lib/command';
 import { runPreflight, checkGasBalance } from '../../lib/preflight';
 import { requireModule } from '../../lib/resolve';
-import { CliError } from '../../lib/errors';
+import { CliError, PreconditionError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
+import { vouchConflictsWithDefaultEligibility } from '../../lib/perms';
 import * as output from '../../lib/output';
-import { parseHatId, requireSuperAdmin } from '../vouch/helpers';
+import { parseHatId, requireSuperAdmin, requireSuperAdminWithRead } from '../vouch/helpers';
 
 /** One decoded batch entry. */
 export interface EligibilityBatchEntry {
@@ -272,7 +273,51 @@ const eligibilitySetDefaultHandler = {
       const eligibilityModuleAddress = requireModule(ctx.modules, 'eligibilityModuleAddress');
 
       if (argv.preflight !== false) {
-        await requireSuperAdmin(ctx.provider, eligibilityModuleAddress, ctx.address, 'Setting default eligibility');
+        // Audit M-03: making a hat default-eligible while it uses vouching WITH
+        // combineWithHierarchy reverts DefaultEligibilityConflictsWithVouch — an open hat makes
+        // the vouch quorum meaningless. --eligible defaults to TRUE, so a bare
+        // `set-default --hat X` hits this. Detect the state, not the contract version: on an
+        // older module the write simply succeeds and this check never fires.
+        //
+        // Both reads are revert predictors and stay on chain (VouchConfig IS populated in the
+        // subgraph, but indexing lag here would BLOCK a valid set-default). They used to be two
+        // sequential eth_calls to the SAME contract — Multicall3 makes it one round-trip.
+        if (!eligible) {
+          await requireSuperAdmin(ctx.provider, eligibilityModuleAddress, ctx.address, 'Setting default eligibility');
+        } else {
+          const { extra: vc, extraError } = await requireSuperAdminWithRead(
+            ctx.provider,
+            eligibilityModuleAddress,
+            ctx.address,
+            'Setting default eligibility',
+            { fn: 'getVouchConfig', args: [hatId] }
+          );
+          if (vc === null) {
+            output.debug(`vouch-conflict pre-check skipped (${extraError?.message || extraError})`);
+          } else if (vouchConflictsWithDefaultEligibility(Number(vc.flags), Number(vc.quorum), true)) {
+            // The STATE conflicts, but only a module that implements the M-03 revert actually
+            // rejects the write — and the deployed v6 modules do NOT: an eth_call of the exact
+            // setDefaultEligibility from the real superAdmin on live Gnosis (module 0x27114c…,
+            // flags=3, quorum=1) SUCCEEDS. 17/19 live VouchConfig rows are in this state, so
+            // blocking on state alone would refuse a valid write on nearly every hat.
+            // Simulate the exact call instead — the only version-proof revert predictor.
+            const sim = createReadContract(eligibilityModuleAddress, 'EligibilityModuleNew', ctx.provider);
+            try {
+              await sim.callStatic.setDefaultEligibility(hatId, eligible, standing, { from: ctx.address });
+              output.warn(
+                `Hat ${hatId} uses vouching with combine-hierarchy (quorum ${vc.quorum}); making it `
+                  + 'default-eligible makes that quorum a no-op. This module accepts the write anyway.'
+              );
+            } catch {
+              throw new PreconditionError(
+                `Hat ${hatId} uses vouching with combine-hierarchy (quorum ${vc.quorum}). Making it `
+                  + 'default-eligible would make that quorum a no-op, so the module rejects it.',
+                'Drop combine-hierarchy or disable vouching first: '
+                  + `pop vouch config set --hat ${hatId} --quorum 0`,
+              );
+            }
+          }
+        }
       }
       await runPreflight(ctx.provider, [checkGasBalance(ctx.address)], { skip: !argv.preflight });
       spin.stop();
