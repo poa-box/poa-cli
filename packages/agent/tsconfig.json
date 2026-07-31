@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    // DOM: ox (a viem dependency reached through @poa/cli's declarations)
+    // ships .ts sources that reference window/WebAuthn types; without DOM in
+    // lib they fail to typecheck from this program even though the root
+    // package builds clean.
+    "lib": ["ES2022", "DOM"],
+    "outDir": "dist",
+    "rootDir": "src",
+    "strict": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": {
+      // Typecheck against the root package's BUILT declarations, not its
+      // source: mapping to ../../src pulls root .ts files into this program
+      // and violates rootDir. Build order is therefore root-first — `yarn
+      // build` at the repo root, then here.
+      "@poa/cli/*": ["../../dist/*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test"]
+}

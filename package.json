@@ -14,46 +14,25 @@
     ".env.example"
   ],
   "scripts": {
-    "build": "tsc && mkdir -p dist/abi && cp src/abi/*.json dist/abi/",
+    "build": "rm -rf dist && tsc && mkdir -p dist/abi && cp src/abi/*.json dist/abi/",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:brain-merge": "yarn build && node test/scripts/brain-merge-e2e.js",
-    "test:peer-persistence": "yarn build && node test/scripts/brain-peer-persistence.js",
-    "test:xmachine-smoke": "yarn build && POP_BRAIN_HOME=${POP_BRAIN_HOME:-/tmp/brain-xmachine-loopback} POP_PRIVATE_KEY=${POP_PRIVATE_KEY:-$(grep -h '^POP_PRIVATE_KEY=' ~/.pop-agent/.env 2>/dev/null | head -1 | cut -d= -f2)} sh -c 'ROLE=publish node test/scripts/brain-cross-machine-smoke.js && ROLE=verify node test/scripts/brain-cross-machine-smoke.js'",
-    "onboard": "bash scripts/onboard.sh",
-    "apply": "bash scripts/apply.sh",
     "sync-abis": "bash scripts/sync-abis.sh",
     "docs:gen": "tsx scripts/generate-cli-docs.ts",
     "docs:check": "tsx scripts/generate-cli-docs.ts --check && tsx scripts/check-doc-links.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@automerge/automerge": "^3.2.5",
-    "@chainsafe/libp2p-gossipsub": "^14",
-    "@chainsafe/libp2p-noise": "^16",
-    "@chainsafe/libp2p-yamux": "^7",
-    "@libp2p/autonat": "^2.0.38",
-    "@libp2p/bootstrap": "^11.0.47",
-    "@libp2p/circuit-relay-v2": "^3.2.24",
-    "@libp2p/identify": "^3",
-    "@libp2p/mdns": "^11",
-    "@libp2p/tcp": "^10",
     "@openzeppelin/merkle-tree": "^1.0.8",
-    "@x402/evm": "^2.9.0",
-    "@x402/fetch": "^2.9.0",
-    "blockstore-fs": "^2",
     "bs58": "^6.0.0",
     "chalk": "^4.1.2",
     "cli-table3": "^0.6.5",
-    "datastore-fs": "^9",
     "dotenv": "^16.4.7",
     "ethers": "5.7.2",
     "graphql": "^16.9.0",
     "graphql-request": "^6.1.0",
-    "helia": "^5.5.1",
-    "libp2p": "^2.10.0",
     "ora": "^5.4.1",
     "permissionless": "^0.3.5",
     "poseidon-lite": "^0.3.0",
@@ -65,7 +44,21 @@
     "@types/yargs": "^17.0.33",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
-    "vitest": "^1.6.0"
+    "vitest": "^1.6.0",
+    "@automerge/automerge": "^3.2.5",
+    "@chainsafe/libp2p-gossipsub": "^14",
+    "@chainsafe/libp2p-noise": "^16",
+    "@chainsafe/libp2p-yamux": "^7",
+    "@libp2p/autonat": "^2.0.38",
+    "@libp2p/bootstrap": "^11.0.47",
+    "@libp2p/circuit-relay-v2": "^3.2.24",
+    "@libp2p/identify": "^3",
+    "@libp2p/mdns": "^11",
+    "@libp2p/tcp": "^10",
+    "blockstore-fs": "^2",
+    "datastore-fs": "^9",
+    "helia": "^5.5.1",
+    "libp2p": "^2.10.0"
   },
   "resolutions": {
     "@noble/ciphers": "^1.3.0",
@@ -74,5 +67,14 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "exports": {
+    ".": "./dist/index.js",
+    "./lib/*": "./dist/lib/*.js",
+    "./queries/*": "./dist/queries/*.js",
+    "./config/*": "./dist/config/*.js",
+    "./abi/*.json": "./dist/abi/*.json",
+    "./package.json": "./package.json",
+    "./commands/*": "./dist/commands/*.js"
+  }
 }

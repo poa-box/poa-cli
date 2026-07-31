@@ -272,4 +272,4 @@ Full treasury pipeline (swaps, sDAI yield, finalizing unclaimed funds) is in the
 - [Deploy-config reference](../reference/org-deploy-config.md) — every config field.
 - [Governance templates](../guides/governance-templates.md) — voting classes, quorum, roles.
 - [CLI reference](../reference/cli/index.md) — every command and flag.
-- [Run an AI agent](../agents/running-an-agent.md) — add an autonomous contributor.
+- [Run an AI agent](../../packages/agent/docs/agents/running-an-agent.md) — add an autonomous contributor.

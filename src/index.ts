@@ -26,12 +26,61 @@ import { registerPaymasterCommands } from './commands/paymaster';
 import { registerRoleCommands } from './commands/role';
 import { registerZkEmailCommands } from './commands/zkemail';
 import { registerConfigCommands } from './commands/config';
-import { registerAgentCommands } from './commands/agent';
-import { registerBrainCommands } from './commands/brain';
 import { initHandler } from './commands/init';
 import { applyDefaultOrgFallback } from './lib/default-org';
 
+/**
+ * The agent surface (`pop agent`, `pop brain`) lives in @poa/agent — a separate
+ * package carrying the heavy p2p/CRDT dependency tree (libp2p, helia,
+ * automerge). A human `npm install @poa/cli` never fetches any of it; in this
+ * repo, or on a host that installed both packages, the probe finds it and the
+ * commands work exactly as before.
+ *
+ * Visibility is separate from availability: the groups are HIDDEN from
+ * `pop --help` unless POP_AGENT_MODE=1 (the `pop-agent` bin sets it), but they
+ * always EXECUTE when invoked explicitly — every skill and script calling
+ * `pop agent triage` or `pop brain read` keeps working unchanged. A yargs
+ * command registered with a `false` description is exactly that: invocable,
+ * unlisted.
+ */
+interface AgentPlugin {
+  registerAgentCommands: (y: any) => any;
+  registerBrainCommands: (y: any) => any;
+}
+
+function loadAgentPlugin(): AgentPlugin | null {
+  const candidates = [
+    '@poa/agent', // installed alongside @poa/cli
+    require('path').join(__dirname, '..', 'packages', 'agent', 'dist'), // in-repo build
+  ];
+  for (const spec of candidates) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = require(spec);
+      if (mod?.registerAgentCommands && mod?.registerBrainCommands) return mod;
+    } catch { /* not installed / not built — the human surface stands alone */ }
+  }
+  return null;
+}
+
+/** Builder for `pop agent|brain …` when @poa/agent is not installed. */
+function agentUnavailable(group: string) {
+  return (y: any) => y.command('$0', false, () => { /* no options */ }, () => {
+    output.error(`'pop ${group}' needs the @poa/agent package, which is not installed.`, {
+      suggestion: 'In this repo: yarn --cwd packages/agent install && yarn --cwd packages/agent build. '
+        + 'Standalone: npm install -g @poa/agent.',
+    });
+    process.exit(1);
+  });
+}
+
 async function main() {
+  const agentPlugin = loadAgentPlugin();
+  // Hidden from human help; `pop-agent` (or POP_AGENT_MODE=1) reveals them.
+  // yargs accepts `false` as "register but do not list"; @types/yargs models
+  // that as a separate overload a union type cannot select, hence the cast.
+  const agentDesc = (s: string): string =>
+    (process.env.POP_AGENT_MODE === '1' ? s : (false as unknown as string));
   const cli = yargs(hideBin(process.argv))
     .scriptName('pop')
     .usage('$0 <domain> <action> [options]')
@@ -48,8 +97,10 @@ async function main() {
     .command('role <action>', 'Role applications', registerRoleCommands)
     .command('zkemail <action>', 'ZK Email role invites (allowlists)', registerZkEmailCommands)
     .command('config <action>', 'View and validate configuration', registerConfigCommands)
-    .command('agent <action>', 'Agent operations & monitoring', registerAgentCommands)
-    .command('brain <action>', 'P2P CRDT brain layer (live-sync knowledge)', registerBrainCommands)
+    .command('agent <action>', agentDesc('Agent operations & monitoring'),
+      agentPlugin ? agentPlugin.registerAgentCommands : agentUnavailable('agent'))
+    .command('brain <action>', agentDesc('P2P CRDT brain layer (live-sync knowledge)'),
+      agentPlugin ? agentPlugin.registerBrainCommands : agentUnavailable('brain'))
     // Top-level onboarding wizard. Registered before the global --org option so
     // it is clearly not an org-scoped command; its handler never resolves an
     // org, so the POP_DEFAULT_ORG middleware fallback below never blocks it.

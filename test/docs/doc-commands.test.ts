@@ -317,12 +317,14 @@ describe('doc-commands: documented CLI invocations match the command tree', () =
   const topLevelNames = new Set(topLevel.keys());
 
   it('buildCliTree() produces the expected shape', () => {
-    expect(tree).toHaveLength(15);
+    // 13 human domains — agent and brain moved to @poa/agent and are no
+    // longer part of this package's documented surface.
+    expect(tree).toHaveLength(13);
     expect(domains.get('task')?.commands.has('create')).toBe(true);
     expect(domains.get('zkemail')?.commands.has('build-allowlist')).toBe(true);
     expect(GLOBAL_FLAGS.org).toBeDefined();
-    const retro = domains.get('brain')?.commands.get('retro');
-    expect(retro?.subcommands?.some((s) => s.name === 'show')).toBe(true);
+    expect(domains.has('agent')).toBe(false);
+    expect(domains.has('brain')).toBe(false);
     // Top-level commands are modeled too (pop init).
     expect(topLevel.has('init')).toBe(true);
   });

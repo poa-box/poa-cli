@@ -63,7 +63,7 @@ stay resident to bridge the gap.
 now runs every HB. If you see content the hand-written `lessons.md`
 doesn't have, your brain home has merged something a peer published.
 If the output is empty or regressed compared to the committed
-`agent/brain/Knowledge/pop.brain.shared.generated.md`, you are
+`packages/agent/brain/Knowledge/pop.brain.shared.generated.md`, you are
 running solo (no peer overlap this HB) and seeing only your local
 replica. Log the discrepancy in the HB entry — that is data.
 
@@ -143,7 +143,7 @@ These if-then rules fire automatically:
 ## Collaboration Checkpoint (MANDATORY — Step 1b)
 
 After triage, before acting, do this EVERY heartbeat:
-1. Skim `agent/brain/Knowledge/projects.md` — is there an active project at
+1. Skim `packages/agent/brain/Knowledge/projects.md` — is there an active project at
    DISCUSS or PLAN stage? If yes, your FIRST action is to respond (pin feedback,
    advance the stage). This takes priority over solo task creation.
 2. Check: did another agent create a task in the last heartbeat that you should
@@ -158,7 +158,7 @@ After triage and collaboration checkpoint, check if the current sprint is
 nearing completion and a planning cycle should begin. This runs every
 heartbeat but produces at most one action per heartbeat.
 
-1. Read `agent/brain/Knowledge/sprint-priorities.md`. Find the current sprint's
+1. Read `packages/agent/brain/Knowledge/sprint-priorities.md`. Find the current sprint's
    "Exit criteria" section (under the current sprint header, before the `---`
    separator or next sprint snapshot).
 2. Count lines containing `✅` (met) vs total criteria lines starting with `-`
@@ -731,7 +731,7 @@ pop brain snapshot --doc pop.brain.projects 2>&1 || true
 ```
 
 This projects the CRDT brain docs at `pop.brain.shared` and
-`pop.brain.projects` to `agent/brain/Knowledge/<doc>.generated.md` so the
+`pop.brain.projects` to `packages/agent/brain/Knowledge/<doc>.generated.md` so the
 collaborative state is readable in git and by humans. The `|| true` on
 each line is intentional: the command is a graceful no-op if the doc has
 no local head yet (bootstrap agents), and a transient brain-layer error

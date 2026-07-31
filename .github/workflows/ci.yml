@@ -37,3 +37,19 @@ jobs:
 
       - name: Docs (generated reference + link check)
         run: yarn docs:check
+
+      - name: Agent package — install (links @poa/cli)
+        run: yarn --cwd packages/agent install --frozen-lockfile
+
+      - name: Agent package — build
+        run: yarn --cwd packages/agent build
+
+      - name: Agent package — test
+        run: yarn --cwd packages/agent test
+
+      - name: Guard — agent build must not emit into src/
+        run: |
+          strays=$(find src \( -name '*.js' -o -name '*.d.ts' \) | wc -l)
+          if [ "$strays" -ne 0 ]; then
+            echo "compiled artifacts leaked into src/ — they shadow .ts at resolve time"; exit 1
+          fi

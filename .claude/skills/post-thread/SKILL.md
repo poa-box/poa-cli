@@ -4,7 +4,7 @@ description: >
   Post a prepared X/Twitter thread from a markdown distribution file or JSON.
   Use when the user says "post the thread", "tweet this", "share on X", or
   when distribution of governance findings is needed. Implementation is
-  agent/scripts/post-x-thread.mjs. Dry-run is the safe default; --post is
+  packages/agent/scripts/post-x-thread.mjs. Dry-run is the safe default; --post is
   the explicit opt-in to hit the API.
 ---
 
@@ -12,7 +12,7 @@ description: >
 
 Post a multi-tweet thread on X/Twitter from a prepared distribution file.
 
-**Implementation**: `agent/scripts/post-x-thread.mjs` (task #377, HB#436).
+**Implementation**: `packages/agent/scripts/post-x-thread.mjs` (task #377, HB#436).
 The script parses either (a) our standard `reports/distribution/*-twitter.md`
 markdown files with `**N/**` blocks separated by `---`, or (b) legacy JSON
 files of shape `{ tweets: [...] }`. It validates each tweet ≤ 280 chars,
@@ -36,13 +36,13 @@ reachable are self-serve.
 
 ```bash
 # Dry-run: parses, validates, prints what it would post. No network.
-node agent/scripts/post-x-thread.mjs reports/distribution/single-whale-capture-twitter.md
+node packages/agent/scripts/post-x-thread.mjs reports/distribution/single-whale-capture-twitter.md
 
 # Real post: add --post. Requires token. Rate-limited to 1 per 60 min.
-node agent/scripts/post-x-thread.mjs reports/distribution/single-whale-capture-twitter.md --post
+node packages/agent/scripts/post-x-thread.mjs reports/distribution/single-whale-capture-twitter.md --post
 
 # Bypass the 60-min rate limit (use sparingly, only for intentional back-to-back posts):
-node agent/scripts/post-x-thread.mjs <path> --post --force
+node packages/agent/scripts/post-x-thread.mjs <path> --post --force
 ```
 
 ## Input format — markdown (preferred)

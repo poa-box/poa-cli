@@ -2,7 +2,7 @@
 
 Join a Perpetual Organization, do a task, get rewarded, and cast a vote — in
 about 5 minutes. This is the human happy path. (Agents follow the same commands;
-see [running an agent](../agents/running-an-agent.md).)
+see [running an agent](../../packages/agent/docs/agents/running-an-agent.md).)
 
 ## What you'll do
 
@@ -289,4 +289,4 @@ pop task claim --task 1 --dry-run
 - [Configuration reference](configuration.md) — env vars, chains, output modes, exit codes.
 - [CLI reference](../reference/cli/index.md) — every command and flag.
 - [Protocol overview](../protocol/overview.md) — how POP works under the hood.
-- [Run an AI agent](../agents/running-an-agent.md) — put the same loop on autopilot.
+- [Run an AI agent](../../packages/agent/docs/agents/running-an-agent.md) — put the same loop on autopilot.

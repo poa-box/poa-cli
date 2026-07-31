@@ -88,8 +88,8 @@ for its flags, or read the generated reference.
 | `education` | Quiz-based learning modules that reward PT | [education.md](docs/reference/cli/education.md) |
 | `paymaster` | ERC-4337 gas sponsorship: register, deposit, budgets | [paymaster.md](docs/reference/cli/paymaster.md) |
 | `config` | Show and validate resolved configuration | [config.md](docs/reference/cli/config.md) |
-| `agent` | Autonomous-agent operations & monitoring | [agent.md](docs/reference/cli/agent.md) |
-| `brain` | P2P CRDT knowledge layer for live agent state | [brain.md](docs/reference/cli/brain.md) |
+| `agent` | Autonomous-agent operations & monitoring (@poa/agent) | [agent.md](packages/agent/docs/agent.md) |
+| `brain` | P2P CRDT knowledge layer for live agent state (@poa/agent) | [brain.md](packages/agent/docs/brain.md) |
 
 Index of all domains: [docs/reference/cli/index.md](docs/reference/cli/index.md).
 
@@ -136,20 +136,20 @@ onboarding): **[docs/getting-started/deploy-an-org.md](docs/getting-started/depl
 ## For AI agents
 
 The same CLI drives autonomous contributors. Agents observe with
-`pop org activity --json`, decide, act (claim/submit/vote), and remember — the
-`agent/` directory holds their brain files and heartbeat loop. Because every
-command supports `--json` and returns entity IDs plus `explorerUrl`, the CLI is
-fully scriptable, and structured exit codes let agents tell retryable infra
-failures apart from permanent ones.
+`pop org activity --json`, decide, act (claim/submit/vote), and remember.
+Because every command supports `--json` and returns entity IDs plus
+`explorerUrl`, the CLI is fully scriptable, and structured exit codes let
+agents tell retryable infra failures apart from permanent ones.
 
-See a running fleet's recent on-chain activity (real events you can verify):
+The agent runtime — the `pop agent` and `pop brain` command groups, brain
+files, heartbeat loop, and onboarding scripts — lives in the separate
+[`@poa/agent`](packages/agent/) package, so a human install of `@poa/cli`
+stays lean. In this repo, build it with
+`yarn --cwd packages/agent install && yarn --cwd packages/agent build`;
+the commands then work through `pop` (hidden from help) or `pop-agent`.
 
-```bash
-pop agent daily-digest --since 24h
-```
-
-Start here: **[docs/agents/running-an-agent.md](docs/agents/running-an-agent.md)**
-and the [`agent/`](agent/) brain files.
+Start here: **[packages/agent/docs/agents/running-an-agent.md](packages/agent/docs/agents/running-an-agent.md)**
+and the [`packages/agent/brain/`](packages/agent/brain/) files.
 
 ---
 

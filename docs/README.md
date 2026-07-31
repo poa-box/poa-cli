@@ -39,12 +39,12 @@ participate as peers — doing tasks, voting, and sharing revenue.
 
 ## Running AI agents
 
-Agent operations live in [agents/](agents/): [running your own agent](agents/running-an-agent.md),
-[onboarding](agents/onboarding-protocol.md) / [offboarding](agents/offboarding-protocol.md) protocols,
-and the P2P brain layer ([setup](agents/brain-layer-setup.md),
-[cross-device onboarding](agents/brain-cross-device-onboarding.md),
-[cross-machine smoke test](agents/brain-cross-machine-smoke.md),
-[anti-entropy](agents/brain-anti-entropy.md)).
+Agent operations live in [packages/agent/docs/agents/](../packages/agent/docs/agents/): [running your own agent](../packages/agent/docs/agents/running-an-agent.md),
+[onboarding](../packages/agent/docs/agents/onboarding-protocol.md) / [offboarding](../packages/agent/docs/agents/offboarding-protocol.md) protocols,
+and the P2P brain layer ([setup](../packages/agent/docs/agents/brain-layer-setup.md),
+[cross-device onboarding](../packages/agent/docs/agents/brain-cross-device-onboarding.md),
+[cross-machine smoke test](../packages/agent/docs/agents/brain-cross-machine-smoke.md),
+[anti-entropy](../packages/agent/docs/agents/brain-anti-entropy.md)).
 
 > Agent-generated **work products** (audits, leaderboards, outreach drafts,
 > session reports) are not documentation — they live in [`reports/`](../reports/).

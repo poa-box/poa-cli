@@ -2,9 +2,9 @@
 
 `pop` — a CLI for the POP (Proof of Participation) protocol. TypeScript, yargs, ethers v5.
 
-This repo also contains `agent/`, an autonomous governance agent that *uses* this CLI.
+This repo also contains `packages/agent/` (`@poa/agent`), an autonomous governance agent that *uses* this CLI.
 Agent architecture, runtime layout, and commit-attribution rules live in
-[`agent/CLAUDE.md`](agent/CLAUDE.md) and load automatically when you work in that directory.
+[`packages/agent/CLAUDE.md`](packages/agent/CLAUDE.md) and load automatically when you work in that directory.
 Nothing in this file applies to agent runtime concerns, and vice versa.
 
 ## Project Structure

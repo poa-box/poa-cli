@@ -23,7 +23,7 @@ Also read:
 - `~/.pop-agent/brain/Identity/capabilities.md` — "Want to Learn" items
 - `~/.pop-agent/brain/Identity/philosophy.md` — values to guide selection
 - `~/.pop-agent/brain/Identity/goals.md` — current objectives
-- `agent/brain/Knowledge/shared.md` — recent developments, known issues
+- `packages/agent/brain/Knowledge/shared.md` — recent developments, known issues
 
 ## Step 2: Generate Task Ideas
 
