@@ -20,13 +20,33 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-  createProvider: vi.fn(),
-  createSigner: vi.fn(),
-  resolveOrgModules: vi.fn(),
-  createReadContract: vi.fn(),
-  query: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  const query = vi.fn();
+  // Mirrors src/lib/subgraph.ts queryWithFieldFallback: walk the tiers, falling through
+  // ONLY on the unknown-field validation error a deployment raises for a field it lacks.
+  const queryWithFieldFallback = vi.fn(async (tiers: any[], opts?: any) => {
+    let lastValidationError: any;
+    for (let tierIndex = 0; tierIndex < tiers.length; tierIndex++) {
+      try {
+        const data = await query(tiers[tierIndex].query, tiers[tierIndex].variables, opts?.chainId);
+        return { data, tierIndex };
+      } catch (error: any) {
+        const message = String(error?.message ?? error);
+        if (!/cannot query field|has no field|unknown field/i.test(message)) throw error;
+        lastValidationError = error;
+      }
+    }
+    throw lastValidationError;
+  });
+  return {
+    createProvider: vi.fn(),
+    createSigner: vi.fn(),
+    resolveOrgModules: vi.fn(),
+    createReadContract: vi.fn(),
+    query,
+    queryWithFieldFallback,
+  };
+});
 
 vi.mock('../../src/lib/signer', async (importOriginal) => {
   const actual = await importOriginal<any>();
@@ -38,6 +58,7 @@ vi.mock('../../src/lib/signer', async (importOriginal) => {
 });
 vi.mock('../../src/lib/subgraph', () => ({
   query: mocks.query,
+  queryWithFieldFallback: mocks.queryWithFieldFallback,
 }));
 vi.mock('../../src/lib/resolve', () => ({
   resolveOrgModules: mocks.resolveOrgModules,
@@ -112,7 +133,29 @@ function fakeReader(overrides: Record<string, any> = {}) {
  * Subgraph payload shaped like the live poa-gnosis-v-1 response, matching the
  * on-chain fixture above (quorum 3, membership hat 45, 2 active vouches).
  */
+/**
+ * An epoch-aware deployment (tier 0): VouchConfig.epoch plus the WearerVouchState
+ * mirror of currentVouchCount. `count` is the raw tally and `epoch` decides whether it
+ * still counts, exactly as the contract's getter does.
+ */
 function subgraphPayload(overrides: Record<string, any> = {}) {
+  return {
+    vouchConfigs: [{
+      id: `${EM_ADDR}-123`,
+      hatId: '123',
+      quorum: 3,
+      membershipHatId: '45',
+      enabled: true,
+      combinesWithHierarchy: false,
+      epoch: '2',
+    }],
+    wearerVouchStates: [{ id: 'w1', count: 2, effectiveCount: 2, epoch: '2', cleared: false }],
+    ...overrides,
+  };
+}
+
+/** Legacy deployment (tier 1): no epoch fields, so tier 0 fails GraphQL validation. */
+function legacySubgraphPayload(overrides: Record<string, any> = {}) {
   return {
     vouchConfigs: [{
       id: `${EM_ADDR}-123`,
@@ -125,6 +168,24 @@ function subgraphPayload(overrides: Record<string, any> = {}) {
     vouches: [{ id: 'v1' }, { id: 'v2' }],
     ...overrides,
   };
+}
+
+/** Serve `payload` from tier 0 (an epoch-aware deployment). */
+function mockEpochAware(payload: any) {
+  mocks.query.mockImplementation(async (gqlQuery: string) => {
+    if (gqlQuery.includes('wearerVouchStates')) return payload;
+    throw new Error('legacy tier must not be reached on an epoch-aware deployment');
+  });
+}
+
+/** Reject tier 0 as an older deployment would, then serve `payload` from tier 1. */
+function mockLegacy(payload: any) {
+  mocks.query.mockImplementation(async (gqlQuery: string) => {
+    if (gqlQuery.includes('wearerVouchStates')) {
+      throw new Error('Type Query has no field "wearerVouchStates"');
+    }
+    return payload;
+  });
 }
 
 function baseArgv(overrides: Record<string, any> = {}): any {
@@ -275,7 +336,7 @@ describe('pop vouch status — subgraph-first wearer progress', () => {
     mocks.resolveOrgModules.mockResolvedValue({ orgId: ORG_ID, eligibilityModuleAddress: EM_ADDR });
     mocks.createProvider.mockReturnValue({});
     mocks.createReadContract.mockReturnValue(fakeReader());
-    mocks.query.mockResolvedValue(subgraphPayload());
+    mockEpochAware(subgraphPayload());
     (output.isJsonMode as any).mockReturnValue(true);
   });
 
@@ -323,13 +384,35 @@ describe('pop vouch status — subgraph-first wearer progress', () => {
   });
 
   it('quorum reached on the subgraph → canClaim true', async () => {
-    mocks.query.mockResolvedValue(subgraphPayload({
-      vouches: [{ id: 'v1' }, { id: 'v2' }, { id: 'v3' }],
+    mockEpochAware(subgraphPayload({
+      wearerVouchStates: [{ id: 'w1', count: 3, effectiveCount: 3, epoch: '2', cleared: false }],
     }));
 
     await statusHandler.handler(baseArgv());
 
     expect((output.json as any).mock.calls[0][0].canClaim).toBe(true);
+  });
+
+  it('a stale-epoch tally does NOT report quorum met', async () => {
+    // Three vouches were cast, then configureVouching bumped the hat to epoch 2. On chain
+    // currentVouchCount() is 0, so canClaim must be false — the bug this indexing fixes.
+    mockEpochAware(subgraphPayload({
+      wearerVouchStates: [{ id: 'w1', count: 3, effectiveCount: 0, epoch: '1', cleared: false }],
+    }));
+
+    await statusHandler.handler(baseArgv());
+
+    const payload = (output.json as any).mock.calls[0][0];
+    expect(payload.currentVouches).toBe('0');
+    expect(payload.canClaim).toBe(false);
+  });
+
+  it('legacy deployment without the epoch mirror is still served from the subgraph', async () => {
+    mockLegacy(legacySubgraphPayload());
+
+    await statusHandler.handler(baseArgv());
+
+    expect((output.json as any).mock.calls[0][0].currentVouches).toBe('2');
   });
 
   it('missing VouchConfig row is ambiguous → falls back to the on-chain getters', async () => {
@@ -346,10 +429,10 @@ describe('pop vouch status — subgraph-first wearer progress', () => {
     expect(payload.requiredVouches).toBe('3');
   });
 
-  it('a full 1000-row page cannot be trusted as a count → falls back to RPC', async () => {
+  it('legacy tier: a full 1000-row page cannot be trusted as a count → falls back to RPC', async () => {
     const reader = fakeReader();
     mocks.createReadContract.mockReturnValue(reader);
-    mocks.query.mockResolvedValue(subgraphPayload({
+    mockLegacy(legacySubgraphPayload({
       vouches: Array.from({ length: 1000 }, (_, i) => ({ id: `v${i}` })),
     }));
 

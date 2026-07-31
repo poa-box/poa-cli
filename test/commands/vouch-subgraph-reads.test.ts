@@ -19,8 +19,31 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ query: vi.fn() }));
-vi.mock('../../src/lib/subgraph', () => ({ query: mocks.query }));
+const mocks = vi.hoisted(() => {
+  const query = vi.fn();
+  // Mirrors src/lib/subgraph.ts queryWithFieldFallback: walk the tiers, falling through
+  // ONLY on the unknown-field validation error a deployment raises for a field it lacks.
+  const queryWithFieldFallback = vi.fn(async (tiers: any[], opts?: any) => {
+    let lastValidationError: any;
+    for (let tierIndex = 0; tierIndex < tiers.length; tierIndex++) {
+      try {
+        const data = await query(tiers[tierIndex].query, tiers[tierIndex].variables, opts?.chainId);
+        return { data, tierIndex };
+      } catch (error: any) {
+        const message = String(error?.message ?? error);
+        const isValidation = /cannot query field|has no field|unknown field/i.test(message);
+        if (!isValidation) throw error;
+        lastValidationError = error;
+      }
+    }
+    throw lastValidationError;
+  });
+  return { query, queryWithFieldFallback };
+});
+vi.mock('../../src/lib/subgraph', () => ({
+  query: mocks.query,
+  queryWithFieldFallback: mocks.queryWithFieldFallback,
+}));
 
 import { ethers } from 'ethers';
 import {
@@ -29,6 +52,7 @@ import {
   fetchVouchConfigFromSubgraph,
   fetchWearerVouchStateFromSubgraph,
   readVoucherGate,
+  readRevokeGate,
 } from '../../src/commands/vouch/helpers';
 import { MULTICALL3 } from '../../src/lib/multicall';
 import { loadAbi } from '../../src/lib/contracts';
@@ -140,6 +164,40 @@ describe('batchEligibilityReads — Multicall3 batching for surviving RPC reads'
   });
 });
 
+describe('readRevokeGate — epoch-aware revoke pre-flight', () => {
+  function gateProvider(hasVouched: boolean, currentCount: number) {
+    return multicallProvider(fn => {
+      if (fn === 'hasVouched') return EM_IFACE.encodeFunctionResult('hasVouched', [hasVouched]);
+      if (fn === 'currentVouchCount') {
+        return EM_IFACE.encodeFunctionResult('currentVouchCount', [currentCount]);
+      }
+      return null;
+    });
+  }
+
+  it('reads hasVouched + currentVouchCount in ONE round-trip', async () => {
+    const { provider, direct } = gateProvider(true, 2);
+
+    const gate = await readRevokeGate(provider, EM_ADDR, HAT, WEARER, SUPER_ADMIN);
+
+    expect(gate).toEqual({ hasVouched: true, currentCount: 2 });
+    expect(provider.call).toHaveBeenCalledTimes(1);
+    expect(direct).toEqual([]);
+  });
+
+  it('surfaces the stale-epoch case hasVouched alone cannot see', async () => {
+    // hasVouched reads the raw `vouchers` mapping with no epoch filter, so it still says
+    // true after a configureVouching voided the vouch. currentVouchCount is epoch-aware
+    // and returns 0 — which is what proves revokeVouch would revert HasNotVouched.
+    const { provider } = gateProvider(true, 0);
+
+    expect(await readRevokeGate(provider, EM_ADDR, HAT, WEARER, SUPER_ADMIN)).toEqual({
+      hasVouched: true,
+      currentCount: 0,
+    });
+  });
+});
+
 describe('requireSuperAdminWithRead — superAdmin + one pre-flight read in one trip', () => {
   it('returns the extra read when the signer IS the superAdmin', async () => {
     const { provider } = multicallProvider(fn => GATE_ANSWERS[fn] ?? null);
@@ -199,6 +257,24 @@ describe('subgraph vouch readers', () => {
     combinesWithHierarchy: true,
   };
 
+  /** Deployment predating the epoch mirror: the tier-0 fields fail GraphQL validation. */
+  function legacyDeployment(payload: any) {
+    mocks.query.mockImplementation(async (gqlQuery: string) => {
+      if (gqlQuery.includes('wearerVouchStates')) {
+        throw new Error('Type Query has no field "wearerVouchStates"');
+      }
+      return payload;
+    });
+  }
+
+  /** Deployment that indexes the epoch mirror: tier 0 answers and tier 1 is never used. */
+  function epochAwareDeployment(payload: any) {
+    mocks.query.mockImplementation(async (gqlQuery: string) => {
+      if (gqlQuery.includes('wearerVouchStates')) return payload;
+      throw new Error('legacy tier must not be reached on an epoch-aware deployment');
+    });
+  }
+
   beforeEach(() => vi.clearAllMocks());
 
   it('maps a live-shaped VouchConfig row onto the RPC-decoded view', async () => {
@@ -214,8 +290,8 @@ describe('subgraph vouch readers', () => {
     });
   });
 
-  it('counts ACTIVE vouch rows as the current vouch count', async () => {
-    mocks.query.mockResolvedValue({ vouchConfigs: [ROW], vouches: [{ id: 'a' }, { id: 'b' }] });
+  it('legacy tier: counts ACTIVE vouch rows as the current vouch count', async () => {
+    legacyDeployment({ vouchConfigs: [ROW], vouches: [{ id: 'a' }, { id: 'b' }] });
 
     const state = await fetchWearerVouchStateFromSubgraph(EM_ADDR, HAT, WEARER, 100);
 
@@ -244,8 +320,8 @@ describe('subgraph vouch readers', () => {
     expect(await fetchVouchConfigFromSubgraph(EM_ADDR, HAT, 100)).toBeNull();
   });
 
-  it('a full 1000-row page cannot be trusted as a count → null', async () => {
-    mocks.query.mockResolvedValue({
+  it('legacy tier: a full 1000-row page cannot be trusted as a count → null', async () => {
+    legacyDeployment({
       vouchConfigs: [ROW],
       vouches: Array.from({ length: 1000 }, (_, i) => ({ id: String(i) })),
     });
@@ -255,6 +331,108 @@ describe('subgraph vouch readers', () => {
   it('a query error degrades to null instead of throwing', async () => {
     mocks.query.mockRejectedValue(new Error('502 bad gateway'));
     expect(await fetchVouchConfigFromSubgraph(EM_ADDR, HAT, 100)).toBeNull();
+    expect(await fetchWearerVouchStateFromSubgraph(EM_ADDR, HAT, WEARER, 100)).toBeNull();
+  });
+
+  /*───────────────────────── epoch mirror (tier 0) ─────────────────────────*/
+
+  const EPOCH_ROW = { ...ROW, epoch: '4' };
+
+  function stateRow(over: Record<string, any> = {}) {
+    return { id: 's', count: 2, effectiveCount: 2, epoch: '4', cleared: false, ...over };
+  }
+
+  it('epoch tier: reproduces currentVouchCount when the wearer is on the current epoch', async () => {
+    epochAwareDeployment({ vouchConfigs: [EPOCH_ROW], wearerVouchStates: [stateRow()] });
+
+    const state = await fetchWearerVouchStateFromSubgraph(EM_ADDR, HAT, WEARER, 100);
+
+    expect(state).toEqual({
+      config: {
+        quorum: 1,
+        membershipHatId: ROW.membershipHatId,
+        enabled: true,
+        combineWithHierarchy: true,
+      },
+      currentCount: 2,
+    });
+  });
+
+  it('epoch tier: THE REGRESSION — a stale-epoch tally reads 0, not quorum met', async () => {
+    // configureVouching bumped the hat to epoch 4 after these two vouches were cast under
+    // epoch 3. On chain currentVouchCount() returns 0; counting rows would have said 2.
+    epochAwareDeployment({
+      vouchConfigs: [EPOCH_ROW],
+      wearerVouchStates: [stateRow({ epoch: '3', effectiveCount: 0 })],
+    });
+
+    const state = await fetchWearerVouchStateFromSubgraph(EM_ADDR, HAT, WEARER, 100);
+    expect(state?.currentCount).toBe(0);
+  });
+
+  it('epoch tier: a cleared wearer sits on the uint256 sentinel and reads 0', async () => {
+    epochAwareDeployment({
+      vouchConfigs: [EPOCH_ROW],
+      wearerVouchStates: [stateRow({
+        count: 0,
+        effectiveCount: 0,
+        epoch: '115792089237316195423570985008687907853269984665640564039457584007913129639935',
+        cleared: true,
+      })],
+    });
+
+    expect((await fetchWearerVouchStateFromSubgraph(EM_ADDR, HAT, WEARER, 100))?.currentCount).toBe(0);
+  });
+
+  it('epoch tier: epochs are compared as strings, so uint256 values beyond 2^53 still work', async () => {
+    const huge = '18446744073709551617'; // > Number.MAX_SAFE_INTEGER, and huge+1 is not
+    epochAwareDeployment({
+      vouchConfigs: [{ ...ROW, epoch: huge }],
+      wearerVouchStates: [stateRow({ epoch: '18446744073709551618', effectiveCount: 0 })],
+    });
+
+    // Number() would round both to the same float and wrongly call this a match.
+    expect((await fetchWearerVouchStateFromSubgraph(EM_ADDR, HAT, WEARER, 100))?.currentCount).toBe(0);
+  });
+
+  it('epoch tier: no wearer row means never vouched → 0, since the config proves indexing', async () => {
+    epochAwareDeployment({ vouchConfigs: [EPOCH_ROW], wearerVouchStates: [] });
+
+    expect((await fetchWearerVouchStateFromSubgraph(EM_ADDR, HAT, WEARER, 100))?.currentCount).toBe(0);
+  });
+
+  it('epoch tier: effectiveCount disagreeing with count+epoch means a buggy deployment → null', async () => {
+    epochAwareDeployment({
+      vouchConfigs: [EPOCH_ROW],
+      wearerVouchStates: [stateRow({ epoch: '3', effectiveCount: 2 })], // sweep never ran
+    });
+
+    expect(await fetchWearerVouchStateFromSubgraph(EM_ADDR, HAT, WEARER, 100)).toBeNull();
+  });
+
+  it('epoch tier: a null epoch on either side is not derivable → null', async () => {
+    epochAwareDeployment({ vouchConfigs: [{ ...ROW, epoch: null }], wearerVouchStates: [stateRow()] });
+    expect(await fetchWearerVouchStateFromSubgraph(EM_ADDR, HAT, WEARER, 100)).toBeNull();
+
+    epochAwareDeployment({ vouchConfigs: [EPOCH_ROW], wearerVouchStates: [stateRow({ epoch: null })] });
+    expect(await fetchWearerVouchStateFromSubgraph(EM_ADDR, HAT, WEARER, 100)).toBeNull();
+  });
+
+  it('falls through to the legacy tier when the deployment rejects the epoch fields', async () => {
+    legacyDeployment({ vouchConfigs: [ROW], vouches: [{ id: 'a' }] });
+
+    expect((await fetchWearerVouchStateFromSubgraph(EM_ADDR, HAT, WEARER, 100))?.currentCount).toBe(1);
+    // Tier 0 was attempted first, then tier 1 served it.
+    expect(mocks.query.mock.calls[0][0]).toContain('wearerVouchStates');
+    expect(mocks.query.mock.calls[1][0]).not.toContain('wearerVouchStates');
+  });
+
+  it('legacy tier: a vouch older than the config update is the epoch ambiguity → null', async () => {
+    legacyDeployment({
+      vouchConfigs: [{ ...ROW, updatedAtBlock: '500' }],
+      vouches: [{ id: 'a', createdAtBlock: '400' }, { id: 'b', createdAtBlock: '600' }],
+    });
+
     expect(await fetchWearerVouchStateFromSubgraph(EM_ADDR, HAT, WEARER, 100)).toBeNull();
   });
 

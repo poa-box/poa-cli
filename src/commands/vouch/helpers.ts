@@ -28,6 +28,14 @@
  *   with the RPC getter kept as fallback: VouchConfig.{quorum,membershipHatId,
  *   enabled,combinesWithHierarchy} and a count of active Vouch rows are
  *   verified-populated and byte-for-byte equal to the on-chain values.
+ * - VOUCH COUNTS ARE EPOCH-SCOPED. configureVouching/batchConfigureVouching/
+ *   resetVouches bump vouchConfigEpoch[hatId] and clearWearerVouches parks
+ *   wearerVouchEpoch on a 2^256-1 sentinel; currentVouchCount() returns 0 when
+ *   the two disagree, and NO event marks the individual vouches dead. Counting
+ *   active Vouch rows therefore overcounts after any reconfiguration and would
+ *   report quorum met against a contract that says zero. Newer deployments
+ *   index the epochs (WearerVouchState), which is exact; older ones can only
+ *   detect the ambiguity and refuse. See src/queries/vouch.ts for both tiers.
  * - WRITE PRE-FLIGHT reads stay on RPC. superAdmin(), paused(),
  *   hasVouched(), hasActiveApplication(), getWearerStatus(), getDefaultRules()
  *   and the vouch-for/claim gates all exist to PREDICT A REVERT; indexing lag
@@ -43,8 +51,8 @@ import { ethers } from 'ethers';
 import { resolveOrgModules, requireModule } from '../../lib/resolve';
 import { createReadContract } from '../../lib/contracts';
 import { tryAggregate, Call, CallResult } from '../../lib/multicall';
-import { query } from '../../lib/subgraph';
-import { FETCH_VOUCH_CONFIG, FETCH_VOUCH_STATUS } from '../../queries/vouch';
+import { query, queryWithFieldFallback } from '../../lib/subgraph';
+import { FETCH_VOUCH_CONFIG, FETCH_VOUCH_STATUS, FETCH_VOUCH_STATUS_EPOCH_AWARE } from '../../queries/vouch';
 import { formatAddress } from '../../lib/encoding';
 import { formatRelativeTime } from '../../lib/format';
 import { CliError, PreconditionError } from '../../lib/errors';
@@ -212,9 +220,68 @@ export interface WearerVouchState {
 }
 
 /**
- * Subgraph read of a hat's vouch config PLUS the wearer's current vouch count
- * (the number of active Vouch rows, verified equal to on-chain
- * currentVouchCount). Returns null to mean "fall back to RPC".
+ * TIER 0 reader — reproduce `currentVouchCount(hatId, wearer)` from the subgraph's
+ * epoch mirror. Returns null to mean "cannot derive, fall back to RPC".
+ */
+function wearerCountFromEpochMirror(data: any, configRow: any): number | null {
+  const configEpoch = configRow?.epoch;
+  if (configEpoch === null || configEpoch === undefined) return null;
+
+  const states = data?.wearerVouchStates;
+  if (!Array.isArray(states)) return null;
+  // No row means the wearer has never been vouched for on this hat. The config row
+  // proved the module is indexed, so absence here is a real zero rather than lag.
+  if (states.length === 0) return 0;
+
+  const state = states[0];
+  if (state?.count === null || state?.count === undefined) return null;
+  if (state?.epoch === null || state?.epoch === undefined) return null;
+
+  // The contract's getter, verbatim: a tally from a superseded epoch reads as zero.
+  // String compare because epochs are uint256 and exceed Number's safe range.
+  const count = String(state.epoch) === String(configEpoch) ? Number(state.count) : 0;
+  if (!Number.isFinite(count)) return null;
+
+  // effectiveCount is the subgraph's own materialisation of the same expression, kept
+  // in step by a sweep. Disagreement means the deployment is buggy — refuse to pick a
+  // winner and let the authoritative on-chain getter answer.
+  const materialised = state?.effectiveCount;
+  if (materialised !== null && materialised !== undefined && Number(materialised) !== count) {
+    return null;
+  }
+  return count;
+}
+
+/**
+ * TIER 1 reader — count active Vouch rows on deployments with no epoch mirror.
+ * Returns null to mean "cannot derive, fall back to RPC".
+ */
+function wearerCountFromVouchRows(data: any, configRow: any): number | null {
+  const vouches = data?.vouches;
+  if (!Array.isArray(vouches) || vouches.length >= VOUCH_PAGE_CAP) return null;
+
+  // EPOCH GUARD. These deployments do not index the vouch epoch at all, and the
+  // contract emits no event when a configureVouching/resetVouches invalidates every
+  // outstanding vouch — so the superseded rows are still isActive here. A vouch
+  // created BEFORE the config's last update may therefore be dead on chain, and
+  // counting it would report quorum met when the contract says otherwise. Block-number
+  // ordering is the only signal available, so any such row makes the count underivable.
+  const configBlock = Number(configRow?.updatedAtBlock ?? 0);
+  if (configBlock > 0 && vouches.some((v: any) => Number(v?.createdAtBlock ?? 0) < configBlock)) {
+    return null;
+  }
+  return vouches.length;
+}
+
+/**
+ * Subgraph read of a hat's vouch config PLUS the wearer's current vouch count.
+ * Returns null to mean "fall back to RPC".
+ *
+ * Two tiers (src/queries/vouch.ts): the epoch mirror when the deployment indexes it —
+ * which is exact, and lets a reconfigured hat still be served from the subgraph — and
+ * the legacy active-row count, which can only refuse to answer once an epoch bump is
+ * suspected. `queryWithFieldFallback` drops to the legacy tier on the unknown-field
+ * validation error, so this works before and after the subgraph ships.
  */
 export async function fetchWearerVouchStateFromSubgraph(
   eligibilityModuleAddress: string,
@@ -222,33 +289,29 @@ export async function fetchWearerVouchStateFromSubgraph(
   wearer: string,
   chainId?: number
 ): Promise<WearerVouchState | null> {
+  const variables = {
+    eligibilityModuleId: eligibilityModuleAddress,
+    hatId: hatId.toString(),
+    wearer,
+  };
   try {
-    const data = await query<any>(
-      FETCH_VOUCH_STATUS,
-      {
-        eligibilityModuleId: eligibilityModuleAddress,
-        hatId: hatId.toString(),
-        wearer,
-      },
-      chainId
+    const { data, tierIndex } = await queryWithFieldFallback<any>(
+      [
+        { query: FETCH_VOUCH_STATUS_EPOCH_AWARE, variables },
+        { query: FETCH_VOUCH_STATUS, variables },
+      ],
+      { chainId }
     );
-    const config = vouchConfigFromSubgraph(data?.vouchConfigs?.[0]);
+    const configRow = data?.vouchConfigs?.[0];
+    const config = vouchConfigFromSubgraph(configRow);
     if (!config) return null;
-    const vouches = data?.vouches;
-    if (!Array.isArray(vouches) || vouches.length >= VOUCH_PAGE_CAP) return null;
-    // EPOCH GUARD. The contract's currentVouchCount is epoch-aware: any
-    // configureVouching/resetVouches bumps the hat's vouch epoch and the
-    // deployed module counts only current-epoch vouches — but it emits no
-    // event for the implicit invalidation, so the indexer still has the old
-    // rows as isActive. A vouch created BEFORE the config's last update may
-    // therefore be stale; counting it would report quorum met when the
-    // contract says otherwise. When that ambiguity exists, this count is not
-    // derivable — fall back to the authoritative RPC read.
-    const configBlock = Number(data?.vouchConfigs?.[0]?.updatedAtBlock ?? 0);
-    if (configBlock > 0 && vouches.some((v: any) => Number(v?.createdAtBlock ?? 0) < configBlock)) {
-      return null;
-    }
-    return { config, currentCount: vouches.length };
+
+    const currentCount = tierIndex === 0
+      ? wearerCountFromEpochMirror(data, configRow)
+      : wearerCountFromVouchRows(data, configRow);
+    if (currentCount === null) return null;
+
+    return { config, currentCount };
   } catch {
     return null;
   }
@@ -575,6 +638,50 @@ export async function hasVouched(
 ): Promise<boolean> {
   const contract = createReadContract(eligibilityModuleAddress, 'EligibilityModuleNew', provider);
   return Boolean(await contract.hasVouched(hatId, wearer, voucher));
+}
+
+/** What `pop vouch revoke` pre-flights, in one Multicall3 round-trip. */
+export interface RevokeGate {
+  /** Raw `vouchers[hat][wearer][voucher]` — true even for a superseded epoch. */
+  hasVouched: boolean;
+  /** Epoch-aware `currentVouchCount(hat, wearer)`; 0 proves revokeVouch reverts. */
+  currentCount: number;
+}
+
+/**
+ * Revoke pre-flight, RPC-only (it predicts a revert, so indexing lag is not
+ * acceptable) and batched into ONE round-trip.
+ *
+ * `hasVouched` ALONE IS NOT SUFFICIENT: the getter returns the raw `vouchers`
+ * mapping with no epoch filter (VERIFIED, contracts origin/main — it is a bare
+ * `return _layout().vouchers[hatId][wearer][voucher]`), while revokeVouch first
+ * requires `wearerVouchEpoch[hatId][wearer] == vouchConfigEpoch[hatId]`. After a
+ * configureVouching/resetVouches/clearWearerVouches, hasVouched still says true
+ * and the transaction still reverts HasNotVouched.
+ *
+ * currentVouchCount closes most of that gap: it returns 0 for exactly the stale-epoch
+ * case, and a zero count also makes the `newCount = count - 1` underflow unavoidable —
+ * so `currentCount == 0` guarantees a revert and can be blocked with no false negatives.
+ *
+ * One residual case stays unpredictable off-chain: the wearer's epoch is current
+ * (someone else vouched after the bump) but THIS voucher's record is not. There is no
+ * getter for voucherRecordEpoch, so the decoded HasNotVouched revert still covers it.
+ */
+export async function readRevokeGate(
+  provider: ethers.providers.Provider,
+  eligibilityModuleAddress: string,
+  hatId: ethers.BigNumberish,
+  wearer: string,
+  voucher: string
+): Promise<RevokeGate> {
+  const [vouched, currentCount] = await batchEligibilityReads(provider, eligibilityModuleAddress, [
+    { fn: 'hasVouched', args: [hatId, wearer, voucher] },
+    { fn: 'currentVouchCount', args: [hatId, wearer] },
+  ]);
+  return {
+    hasVouched: Boolean(vouched),
+    currentCount: ethers.BigNumber.from(currentCount).toNumber(),
+  };
 }
 
 /**

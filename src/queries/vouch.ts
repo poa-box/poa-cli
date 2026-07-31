@@ -37,21 +37,79 @@ export const FETCH_VOUCH_CONFIG = `
 `;
 
 /**
- * Vouch config + the wearer's ACTIVE vouch records for one hat.
+ * TIER 0 — vouch progress read off the subgraph's epoch mirror.
  *
- * `vouches.length` is the subgraph equivalent of the on-chain
- * currentVouchCount(hatId, wearer): EligibilityModule increments the counter
- * in vouchFor (emits Vouched) and decrements it in revokeVouch (emits
- * VouchRevoked), and the subgraph creates a Vouch on Vouched / flips
- * isActive=false on VouchRevoked — a 1:1 correspondence with no epoch/reset
- * in between (resetVouches only clears vouchConfigs, not the counter).
+ * EligibilityModule kills stale vouches by bumping an epoch counter rather than
+ * emitting a per-vouch invalidation:
  *
- * VERIFIED live against Gnosis RPC on 5 real (hat, wearer) pairs, including
- * three with a count of 2 — active-Vouch count matched currentVouchCount()
- * exactly on all 5.
+ *   configureVouching / batchConfigureVouching / resetVouches → vouchConfigEpoch[hatId]++
+ *   clearWearerVouches                                        → wearerVouchEpoch = 2^256-1
  *
- * `first: 1000` is the Graph page cap; callers treat a full page as
- * "cannot derive" and fall back to RPC rather than silently under-counting.
+ * and `currentVouchCount(hatId, wearer)` returns 0 whenever the two disagree. The
+ * subgraph mirrors both counters onto WearerVouchState, so this tier reproduces the
+ * getter EXACTLY:
+ *
+ *   currentCount = (state.epoch == config.epoch) ? state.count : 0
+ *
+ * No row counting, so no 1000-row page cap and no cross-epoch overcount.
+ *
+ * `effectiveCount` is the subgraph's own materialisation of that same expression. It
+ * is read only as a CONSISTENCY CHECK: the count+epoch comparison is self-correcting
+ * while effectiveCount depends on a sweep, so a disagreement means the deployment is
+ * buggy and the caller falls back to RPC rather than picking a winner.
+ *
+ * This tier fails GraphQL validation (unknown field `epoch`) on deployments predating
+ * the epoch indexing, which is what drops callers to FETCH_VOUCH_STATUS below.
+ */
+export const FETCH_VOUCH_STATUS_EPOCH_AWARE = `
+  query FetchVouchStatusEpochAware($eligibilityModuleId: Bytes!, $hatId: BigInt!, $wearer: Bytes!) {
+    vouchConfigs(
+      where: { eligibilityModule: $eligibilityModuleId, hatId: $hatId }
+      first: 1
+    ) {
+      id
+      hatId
+      quorum
+      membershipHatId
+      enabled
+      combinesWithHierarchy
+      epoch
+    }
+    wearerVouchStates(
+      where: {
+        eligibilityModule: $eligibilityModuleId
+        hatId: $hatId
+        wearer: $wearer
+      }
+      first: 1
+    ) {
+      id
+      count
+      effectiveCount
+      epoch
+      cleared
+    }
+  }
+`;
+
+/**
+ * TIER 1 — legacy deployments with no epoch mirror.
+ *
+ * `vouches.length` approximates the on-chain currentVouchCount(hatId, wearer):
+ * EligibilityModule increments the counter in vouchFor (emits Vouched) and decrements
+ * it in revokeVouch (emits VouchRevoked), and the subgraph creates a Vouch on Vouched /
+ * flips isActive=false on VouchRevoked.
+ *
+ * VERIFIED live against Gnosis RPC on 5 real (hat, wearer) pairs, including three with
+ * a count of 2 — active-Vouch count matched currentVouchCount() exactly on all 5.
+ *
+ * It is only an APPROXIMATION: on these deployments an epoch bump leaves the superseded
+ * rows at isActive=true, so the count runs high after any reconfiguration. `updatedAtBlock`
+ * and `createdAtBlock` exist purely so the caller can detect that ambiguity (any vouch
+ * older than the config's last update) and refuse to derive.
+ *
+ * `first: 1000` is the Graph page cap; callers treat a full page as "cannot derive"
+ * and fall back to RPC rather than silently under-counting.
  */
 export const FETCH_VOUCH_STATUS = `
   query FetchVouchStatus($eligibilityModuleId: Bytes!, $hatId: BigInt!, $wearer: Bytes!) {
@@ -82,6 +140,16 @@ export const FETCH_VOUCH_STATUS = `
   }
 `;
 
+/**
+ * Recent vouch activity for `pop vouch list` — display only, never a quorum decision.
+ *
+ * `isActive` IS THE EPOCH FILTER HERE. On deployments that index the epoch, the indexer
+ * flips isActive=false for every vouch a configureVouching/resetVouches/clearWearerVouches
+ * voided (recording invalidatedAt to keep that distinct from a voucher's own revokedAt),
+ * so this listing is epoch-correct with no extra field. On older deployments the
+ * superseded rows are still isActive and will be listed — stale rather than wrong, which
+ * is acceptable for a listing but NOT for the quorum maths in FETCH_VOUCH_STATUS above.
+ */
 export const FETCH_VOUCHES_FOR_ORG = `
   query FetchVouchesForOrg($eligibilityModuleId: Bytes!) {
     vouches(
