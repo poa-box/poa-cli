@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   pinJson: vi.fn(),
   createSigner: vi.fn(),
   resolveOrgModules: vi.fn(),
+  query: vi.fn(),
 }));
 
 vi.mock('../../src/lib/tx', () => ({ executeTx: mocks.executeTx }));
@@ -31,6 +32,7 @@ vi.mock('../../src/lib/resolve', () => ({
   resolveOrgModules: mocks.resolveOrgModules,
   requireModule: (modules: any, key: string) => modules[key],
 }));
+vi.mock('../../src/lib/subgraph', () => ({ query: mocks.query }));
 vi.mock('../../src/lib/output', () => {
   const makeSpinner = () => {
     const s: any = { text: '' };
@@ -139,6 +141,10 @@ describe('pop task create-batch — v6 batch vs legacy loop', () => {
       participationTokenAddress: '',
     });
     mocks.pinJson.mockResolvedValue(CID);
+    // Payout-config query: org row present, no configured pricing. Every ROWS
+    // fixture carries explicit payouts, so this only keeps the handler's
+    // unconditional config fetch off the network.
+    mocks.query.mockResolvedValue({ organization: { metadata: null } });
   });
 
   afterEach(() => {
@@ -319,5 +325,133 @@ describe('pop task create-batch — v6 batch vs legacy loop', () => {
       expect.stringContaining('Batch creation failed'),
       expect.objectContaining({ errorCode: 'TX_REVERTED' })
     );
+  });
+});
+
+/**
+ * Row-level payout derivation vs the org payout config.
+ *
+ * Same convention as `pop task create`: a row may omit `payout` and be priced
+ * from the org's config + its difficulty/estHours. When ANY row needs
+ * derivation and the config cannot be read (query failed, or the org row is
+ * not indexed yet), the whole batch must refuse BEFORE any pin or tx —
+ * pricing from the hard-coded default would silently misprice every derived
+ * row on-chain. An org row with null metadata is the legit default-pricing
+ * case, and rows with explicit payouts never depend on the config at all.
+ */
+describe('pop task create-batch — payout derivation for rows omitting payout', () => {
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+  let tmpDir: string;
+
+  /** Row 1 omits payout (needs derivation); row 2 is explicit. */
+  const ROWS_MIXED = [
+    { name: 'Alpha task', description: 'd1' },
+    { name: 'Beta task', description: 'd2', payout: 2 },
+  ];
+
+  function writeJsonl(rows: any[]): string {
+    const file = path.join(tmpDir, 'tasks.jsonl');
+    fs.writeFileSync(file, rows.map(r => JSON.stringify(r)).join('\n') + '\n');
+    return file;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pop-batch-payout-'));
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new ExitError(code ?? 0);
+    }) as never);
+
+    mocks.createSigner.mockReturnValue({
+      signer: new ethers.VoidSigner(WALLET),
+      provider: {},
+      address: WALLET,
+      chainId: 11155111,
+    });
+    mocks.resolveOrgModules.mockResolvedValue({
+      orgId: ORG_ID,
+      taskManagerAddress: TM_ADDR,
+      participationTokenAddress: '',
+    });
+    mocks.pinJson.mockResolvedValue(CID);
+    mocks.detectTaskManagerFeatures.mockResolvedValue(V6_FEATURES);
+    mocks.executeTx.mockResolvedValue({
+      success: true,
+      txHash: '0xbatch',
+      explorerUrl: 'https://explorer/tx/0xbatch',
+      logs: [10, 11].map(id => ({ name: 'TaskCreated', args: { id: ethers.BigNumber.from(id) } })),
+    });
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('row omits payout + config query rejects: refuses naming the row, BEFORE any pin or tx', async () => {
+    mocks.query.mockRejectedValue(new Error('subgraph unreachable'));
+    const file = writeJsonl(ROWS_MIXED);
+
+    await expect(createBatchHandler.handler(batchArgv({ file }))).rejects.toBeInstanceOf(ExitError);
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(output.error).toHaveBeenCalledWith(expect.stringContaining('Could not read the org payout config'));
+    // Names exactly the rows that needed derivation
+    expect(output.error).toHaveBeenCalledWith(expect.stringContaining('Alpha task'));
+    expect(output.error).not.toHaveBeenCalledWith(expect.stringContaining('Beta task'));
+    expect(mocks.executeTx).not.toHaveBeenCalled();
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+  });
+
+  it('row omits payout + query resolves {organization: null} (indexer lag): same refusal', async () => {
+    mocks.query.mockResolvedValue({ organization: null });
+    const file = writeJsonl(ROWS_MIXED);
+
+    await expect(createBatchHandler.handler(batchArgv({ file }))).rejects.toBeInstanceOf(ExitError);
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(output.error).toHaveBeenCalledWith(expect.stringContaining('Could not read the org payout config'));
+    expect(mocks.executeTx).not.toHaveBeenCalled();
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+  });
+
+  it('row omits payout + org row present with null metadata: derives default pricing (medium/0h → 4)', async () => {
+    mocks.query.mockResolvedValue({ organization: { metadata: null } });
+    const file = writeJsonl(ROWS_MIXED);
+
+    await createBatchHandler.handler(batchArgv({ file }));
+
+    expect(mocks.executeTx).toHaveBeenCalledTimes(1);
+    const [, method, args] = mocks.executeTx.mock.calls[0];
+    expect(method).toBe('createTasksBatch');
+    const [, inputs] = args;
+    // DIFFICULTY_CONFIG.medium: base 4 + 24 x 0h = 4 (frontend convention)
+    expect(inputs[0][0].toString()).toBe(ethers.utils.parseUnits('4', 18).toString());
+    // The explicit row keeps its own payout untouched
+    expect(inputs[1][0].toString()).toBe(ethers.utils.parseUnits('2', 18).toString());
+    expect(output.error).not.toHaveBeenCalled();
+  });
+
+  it('all rows explicit + config query rejects: proceeds — no row depends on org pricing', async () => {
+    mocks.query.mockRejectedValue(new Error('subgraph unreachable'));
+    mocks.executeTx.mockResolvedValue({
+      success: true,
+      txHash: '0xbatch',
+      explorerUrl: 'https://explorer/tx/0xbatch',
+      logs: [10, 11, 12].map(id => ({ name: 'TaskCreated', args: { id: ethers.BigNumber.from(id) } })),
+    });
+    const file = writeJsonl(ROWS_NO_DEADLINE); // payouts 1, 2, 3 — all explicit
+
+    await createBatchHandler.handler(batchArgv({ file }));
+
+    expect(mocks.executeTx).toHaveBeenCalledTimes(1);
+    const [, , args] = mocks.executeTx.mock.calls[0];
+    const [, inputs] = args;
+    expect(inputs.map((t: any[]) => t[0].toString())).toEqual([
+      ethers.utils.parseUnits('1', 18).toString(),
+      ethers.utils.parseUnits('2', 18).toString(),
+      ethers.utils.parseUnits('3', 18).toString(),
+    ]);
+    expect(output.error).not.toHaveBeenCalled();
   });
 });

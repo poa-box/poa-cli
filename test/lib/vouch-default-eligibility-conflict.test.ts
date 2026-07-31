@@ -1,6 +1,8 @@
 /**
- * Audit M-03 conflict predicate — the gate behind the two blocking pre-flights
- * added to `pop role eligibility set-default` and `pop vouch config set`.
+ * Audit M-03 conflict predicate — the state gate `pop role eligibility
+ * set-default` uses in its blocking pre-flight. (`pop vouch config set` guards
+ * the mirror-image conflict but does NOT call this predicate: it reads
+ * getDefaultRules().eligible directly.)
  *
  * These branches were previously untested, so a false block would not have been
  * caught by CI. The predicate is pinned against LIVE Gnosis behaviour on
@@ -71,9 +73,13 @@ describe('vouchConflictsWithDefaultEligibility — blocking pre-flight predicate
     expect(vouchConflictsWithDefaultEligibility(0, 0, true)).toBe(false);
   });
 
-  it('is symmetric: the vouch-config direction uses the same predicate', () => {
+  it('agrees with the vouch-config direction of the conflict (mirror-image state)', () => {
     // `pop vouch config set --combine-hierarchy --quorum N` on an already
-    // default-eligible hat is the mirror image and must block identically.
+    // default-eligible hat is the mirror image of the same M-03 conflict.
+    // That command detects it by reading getDefaultRules().eligible directly
+    // rather than calling this predicate — so this test pins that the
+    // predicate CLASSIFIES that direction's state identically, not that the
+    // command uses it.
     const quorum = 1;
     const combine = true;
     const defaultEligible = true;
