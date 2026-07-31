@@ -17,7 +17,7 @@
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { createProvider } from '../../lib/signer';
+import { createProvider , resolveIdentityAddress } from '../../lib/signer';
 import { createReadContract } from '../../lib/contracts';
 import { formatToken } from '../../lib/format';
 import { query } from '../../lib/subgraph';
@@ -44,11 +44,7 @@ export const balanceHandler = {
     spin.start();
 
     try {
-      const address = argv.address || (() => {
-        const key = argv.privateKey as string || process.env.POP_PRIVATE_KEY;
-        if (!key) throw new Error('Provide --address or --private-key to identify user');
-        return new ethers.Wallet(key).address;
-      })();
+      const address = resolveIdentityAddress(argv, { required: true, purpose: 'token balance' })!;
 
       const { tokenAddress } = await resolveTokenAddress(argv.org, argv.chain);
 

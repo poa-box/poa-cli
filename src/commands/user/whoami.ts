@@ -33,7 +33,8 @@
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { createSigner, createProvider } from '../../lib/signer';
+import { createProvider, resolveIdentityAddress } from '../../lib/signer';
+import { resolveNetworkConfig } from '../../config/networks';
 import { resolveOrgModules, OrgModules } from '../../lib/resolve';
 import { tryAggregate, Call, CallResult } from '../../lib/multicall';
 import { formatToken } from '../../lib/format';
@@ -138,11 +139,12 @@ export const whoamiHandler = {
     spin.start();
 
     try {
-      const { address, provider, chainId } = createSigner({
-        privateKey: argv['private-key'] as string | undefined,
-        chainId: argv.chain,
-        rpcUrl: argv.rpc,
-      });
+      // whoami is the identity-scoped READ par excellence: it needs an
+      // ADDRESS and a PROVIDER, never a signer. Under POP_READONLY (or with
+      // just POP_ADDRESS set) it must still answer.
+      const address = resolveIdentityAddress(argv, { required: true, purpose: 'whoami' })!;
+      const provider = createProvider({ chainId: argv.chain, rpcUrl: argv.rpc });
+      const chainId = resolveNetworkConfig(argv.chain).chainId;
       const network = getNetworkByChainId(chainId);
       const nativeSymbol = network?.nativeCurrency.symbol ?? 'ETH';
 

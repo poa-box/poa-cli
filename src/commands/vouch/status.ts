@@ -23,7 +23,7 @@
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { createProvider } from '../../lib/signer';
+import { createProvider , resolveIdentityAddress } from '../../lib/signer';
 import { requireAddress } from '../../lib/validation';
 import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
@@ -47,12 +47,19 @@ interface StatusArgs {
   'private-key'?: string;
 }
 
-/** Resolve the signer address from --private-key/POP_PRIVATE_KEY without requiring one. */
+/**
+ * Resolve the VOUCHER identity (POP_ADDRESS/key) without requiring one.
+ *
+ * Deliberately excludes argv.address: this command's own --address means
+ * "the WEARER to check" (pre-existing, demanded option), not "observe as".
+ * Passing it through resolveIdentityAddress would silently evaluate the
+ * voucher gate as the wearer.
+ */
 function optionalSignerAddress(argv: { 'private-key'?: string }): string | null {
-  const key = (argv['private-key'] as string) || (argv as any).privateKey || process.env.POP_PRIVATE_KEY;
-  if (!key) return null;
   try {
-    return new ethers.Wallet(key).address;
+    return resolveIdentityAddress({
+      privateKey: (argv as any)['private-key'] ?? (argv as any).privateKey,
+    });
   } catch {
     return null;
   }

@@ -142,6 +142,11 @@ async function main() {
       description: 'Private key (hex)',
       global: true,
     })
+    .option('address', {
+      type: 'string',
+      description: 'Observe as this address for identity-scoped reads (or set POP_ADDRESS) — no key needed',
+      global: true,
+    })
     .option('dry-run', {
       type: 'boolean',
       description: 'Simulate without sending transactions',

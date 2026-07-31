@@ -1,5 +1,6 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
+import { execFileSync } from 'child_process';
 import { type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createSigner } from '@poa/cli/lib/signer';
@@ -52,14 +53,32 @@ export const onboardHandler = {
 
       // Step 1: Register username (via pop user register --username)
       spin.text = '1/4 Registering username...';
-      try {
-        const { execSync } = require('child_process');
-        const cmd = `node ${__dirname}/../../index.js user register --username ${argv.username} --chain ${networkConfig.chainId} --json -y`;
-        const regOutput = execSync(cmd, { env: process.env, encoding: 'utf8', timeout: 30000 });
-        results.steps.push({ step: 'register', success: true, output: JSON.parse(regOutput) });
-      } catch (e: any) {
-        // May fail if already registered — that's ok
-        results.steps.push({ step: 'register', success: false, error: e.message?.slice(0, 100) || 'Already registered or failed' });
+      if (argv.dryRun) {
+        // --dry-run is a GLOBAL flag and this step broadcasts a real
+        // registration tx through the child process. It must honor the flag
+        // like steps 2 and 3 do — an integrator probing the CLI safely is
+        // exactly who runs onboard --dry-run first.
+        results.steps.push({ step: 'register', success: true, note: `Would register username "${argv.username}" (dry-run)` });
+      } else {
+        try {
+          // execFile with an args ARRAY — never a shell string. The username is
+          // operator input; interpolating it into a shell command is injectable.
+          const regOutput = execFileSync(
+            process.execPath,
+            [
+              `${__dirname}/../../index.js`,
+              'user', 'register',
+              '--username', String(argv.username),
+              '--chain', String(networkConfig.chainId),
+              '--json', '-y',
+            ],
+            { env: process.env, encoding: 'utf8', timeout: 30000 }
+          );
+          results.steps.push({ step: 'register', success: true, output: JSON.parse(regOutput) });
+        } catch (e: any) {
+          // May fail if already registered — that's ok
+          results.steps.push({ step: 'register', success: false, error: e.message?.slice(0, 100) || 'Already registered or failed' });
+        }
       }
 
       // Step 2: EIP-7702 delegation
@@ -100,12 +119,14 @@ export const onboardHandler = {
             active: true,
           };
 
-          const cid = await pinJson(JSON.stringify(registration));
-          const uri = `https://ipfs.io/ipfs/${cid}`;
-
+          // Pin only when actually registering: pinning publishes the doc to
+          // IPFS publicly and irreversibly, which is a real side effect a
+          // dry run must not have.
           if (argv.dryRun) {
-            results.steps.push({ step: 'identity', success: true, note: 'Would register (dry-run)', uri });
+            results.steps.push({ step: 'identity', success: true, note: 'Would pin registration JSON and register (dry-run)' });
           } else {
+            const cid = await pinJson(JSON.stringify(registration));
+            const uri = `https://ipfs.io/ipfs/${cid}`;
             const tx = await registry.register(uri);
             const receipt = await tx.wait();
             const transferTopic = ethers.utils.id('Transfer(address,address,uint256)');

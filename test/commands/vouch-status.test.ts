@@ -28,10 +28,14 @@ const mocks = vi.hoisted(() => ({
   query: vi.fn(),
 }));
 
-vi.mock('../../src/lib/signer', () => ({
-  createProvider: mocks.createProvider,
-  createSigner: mocks.createSigner,
-}));
+vi.mock('../../src/lib/signer', async (importOriginal) => {
+  const actual = await importOriginal<any>();
+  return {
+    ...actual,
+    createProvider: mocks.createProvider,
+    createSigner: mocks.createSigner,
+  };
+});
 vi.mock('../../src/lib/subgraph', () => ({
   query: mocks.query,
 }));

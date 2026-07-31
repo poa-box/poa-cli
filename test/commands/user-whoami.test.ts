@@ -27,7 +27,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   createSigner: vi.fn(),
-  createProvider: vi.fn(() => ({ __homeChainProvider: true })),
+  createProvider: vi.fn(),
   resolveOrgModules: vi.fn(),
   tryAggregate: vi.fn(),
   query: vi.fn(),
@@ -35,10 +35,14 @@ const mocks = vi.hoisted(() => ({
   getBalance: vi.fn(),
 }));
 
-vi.mock('../../src/lib/signer', () => ({
-  createSigner: mocks.createSigner,
-  createProvider: mocks.createProvider,
-}));
+vi.mock('../../src/lib/signer', async (importOriginal) => {
+  const actual = await importOriginal<any>();
+  return {
+    ...actual,
+    createSigner: mocks.createSigner,
+    createProvider: mocks.createProvider,
+  };
+});
 vi.mock('../../src/lib/resolve', () => ({
   resolveOrgModules: mocks.resolveOrgModules,
   requireModule: (modules: any, key: string) => modules[key],
@@ -196,7 +200,9 @@ function installSubgraph(opts: { orgData?: any; homeAccount?: any } = {}) {
 }
 
 function baseArgv(overrides: Record<string, any> = {}): any {
-  return { _: [], $0: 'pop', org: 'testorg', ...overrides };
+  // whoami is keyless: identity arrives via --address (the observe-as flag),
+  // never via createSigner. chain pins resolveNetworkConfig deterministically.
+  return { _: [], $0: 'pop', org: 'testorg', address: WALLET, chain: 11155111, ...overrides };
 }
 
 describe('pop user whoami — identity + org standing', () => {
@@ -204,12 +210,11 @@ describe('pop user whoami — identity + org standing', () => {
     vi.clearAllMocks();
     mocks.isJsonMode.mockReturnValue(true);
     mocks.getBalance.mockResolvedValue(BALANCE_WEI);
-    mocks.createSigner.mockReturnValue({
-      signer: new ethers.VoidSigner(WALLET),
-      provider: { getBalance: mocks.getBalance },
-      address: WALLET,
-      chainId: 11155111,
-    });
+    // First createProvider call = the PRIMARY provider (gas balance);
+    // later calls (home-chain lookups) get a distinguishable object.
+    mocks.createProvider
+      .mockReturnValue({ __homeChainProvider: true, getBalance: mocks.getBalance })
+      .mockReturnValueOnce({ getBalance: mocks.getBalance });
     mocks.resolveOrgModules.mockResolvedValue({
       orgId: ORG_ID,
       quickJoinAddress: QJ_ADDR,
@@ -257,8 +262,8 @@ describe('pop user whoami — identity + org standing', () => {
     // no Hats.balanceOf. Only eth_getBalance, which no indexer can serve.
     expect(mocks.tryAggregate).not.toHaveBeenCalled();
     expect(mocks.getBalance).toHaveBeenCalledWith(WALLET);
-    // ...and no second JsonRpcProvider for the home chain.
-    expect(mocks.createProvider).not.toHaveBeenCalled();
+    // ...and no SECOND provider for the home chain — only the primary one.
+    expect(mocks.createProvider).toHaveBeenCalledTimes(1);
 
     // Exactly one subgraph round-trip, org-scoped
     const whoamiCalls = mocks.query.mock.calls.filter((c: any[]) => String(c[0]).includes('WhoamiOrgData'));
@@ -521,7 +526,7 @@ describe('pop user whoami — identity + org standing', () => {
     expect(accountCall?.[1]).toEqual({ accountID: WALLET.toLowerCase() });
     expect(accountCall?.[2]).toBe(HOME_CHAIN_ID);
     // The old shape built a second JsonRpcProvider purely for getUsername
-    expect(mocks.createProvider).not.toHaveBeenCalled();
+    expect(mocks.createProvider).toHaveBeenCalledTimes(1);
     expect(mocks.tryAggregate).not.toHaveBeenCalled();
   });
 

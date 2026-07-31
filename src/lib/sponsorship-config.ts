@@ -26,6 +26,9 @@ export interface SponsoredConfig {
  * transactions.
  */
 export function resolveSponsoredConfig(): SponsoredConfig | undefined {
+  // Read-only mode: sponsorship is a signing capability (userops are signed
+  // with the key) — report "not configured" so no 4337 path ever activates.
+  if (process.env.POP_READONLY === '1') return undefined;
   const privateKey = process.env.POP_PRIVATE_KEY;
   const orgId = process.env.POP_ORG_ID;
   const hatId = process.env.POP_HAT_ID;

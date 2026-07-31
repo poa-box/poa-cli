@@ -89,11 +89,28 @@ describe('confirmWrite', () => {
     ).rejects.toMatchObject({ name: 'AbortedError' });
   });
 
-  it('returns immediately in JSON mode (even destructive)', async () => {
+  it('JSON mode is NOT consent: destructive still aborts without --yes', async () => {
+    // Every automated integrator runs --json. If json implied consent, the
+    // destructive guard would be dead code for exactly that audience — this
+    // was real: vote execute / token approve ran unconfirmed under --json.
     makeStreams(false);
     setJsonMode(true);
     await expect(
       confirmWrite({}, { task: 12 }, { destructive: true })
+    ).rejects.toMatchObject({ name: 'AbortedError' });
+  });
+
+  it('JSON mode still proceeds for NON-destructive writes (agent behavior)', async () => {
+    makeStreams(false);
+    setJsonMode(true);
+    await expect(confirmWrite({}, { task: 12 })).resolves.toBeUndefined();
+  });
+
+  it('JSON mode + --yes proceeds for destructive writes', async () => {
+    makeStreams(false);
+    setJsonMode(true);
+    await expect(
+      confirmWrite({ yes: true }, { task: 12 }, { destructive: true })
     ).resolves.toBeUndefined();
   });
 

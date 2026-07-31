@@ -1,4 +1,5 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
+import { resolveIdentityAddress } from '../../lib/signer';
 import { ethers } from 'ethers';
 import { queryWithFieldFallback } from '../../lib/subgraph';
 import { resolveOrgId } from '../../lib/resolve';
@@ -125,14 +126,15 @@ export const listHandler = {
       // Resolve --mine to the signer's address
       let myAddress: string | undefined;
       if (argv.mine) {
-        const key = argv.privateKey as string || process.env.POP_PRIVATE_KEY;
-        if (!key) {
+        // Identity-scoped READ: needs an address, never a signing key.
+        try {
+          myAddress = resolveIdentityAddress(argv, { required: true, purpose: '--mine' })!.toLowerCase();
+        } catch (e: any) {
           spin.stop();
-          output.error('--mine requires a private key (set POP_PRIVATE_KEY or pass --private-key)');
+          output.error(e.message);
           process.exit(1);
           return;
         }
-        myAddress = new ethers.Wallet(key).address.toLowerCase();
       }
 
       // Resolve shortcut flags

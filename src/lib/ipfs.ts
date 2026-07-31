@@ -63,7 +63,19 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = MAX_RETRIES, base
  * Uses FormData POST to match frontend behavior exactly.
  * Returns CIDv0 (Qm...) string.
  */
+function assertNotReadonly(): void {
+  // Pinning publishes content publicly and irreversibly. Read commands can
+  // reach here via --pin (org audit-*, leaderboard, portfolio), so this is a
+  // genuine external side effect the read-only mode must refuse.
+  if (process.env.POP_READONLY === '1') {
+    throw new IpfsError(
+      'POP_READONLY=1 — refusing to pin: pinning publishes to IPFS publicly and irreversibly.'
+    );
+  }
+}
+
 export async function pinJson(content: string): Promise<string> {
+  assertNotReadonly();
   const apiUrl = getIpfsApiUrl();
 
   const result = await withRetry(async () => {
@@ -95,6 +107,7 @@ export async function pinJson(content: string): Promise<string> {
  * Pin a file (binary) to IPFS.
  */
 export async function pinFile(content: Buffer): Promise<string> {
+  assertNotReadonly();
   const apiUrl = getIpfsApiUrl();
 
   const result = await withRetry(async () => {

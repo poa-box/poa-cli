@@ -83,27 +83,39 @@ async function buildWriteContext(argv: any, needsOrg: boolean): Promise<WriteCon
 
 /**
  * Confirmation policy for write commands:
- * - --yes, POP_ASSUME_YES=1, or --json → proceed without asking
- * - interactive TTY → show the summary, ask, throw AbortedError on decline
- * - non-TTY, non-destructive → proceed (preserves current agent behavior)
- * - non-TTY, destructive → refuse without an explicit --yes
+ * - --yes or POP_ASSUME_YES=1 → proceed without asking (explicit consent)
+ * - destructive without explicit consent → interactive TTY prompts; anything
+ *   else refuses. --json is NOT consent: it selects the output format, and
+ *   every automated integrator runs with it, so treating it as consent made
+ *   the destructive guard dead code for exactly the audience it protects.
+ * - non-destructive: --json or non-TTY proceed (preserves agent behavior);
+ *   interactive TTY shows the summary and asks.
  */
 export async function confirmWrite(
   argv: any,
   summary: Record<string, string | number | undefined>,
   opts?: { destructive?: boolean; actionLabel?: string }
 ): Promise<void> {
-  if (argv.yes || process.env.POP_ASSUME_YES === '1' || output.isJsonMode()) return;
+  const explicitConsent = Boolean(argv.yes) || process.env.POP_ASSUME_YES === '1';
+  if (explicitConsent) return;
+
+  if (opts?.destructive) {
+    if (isInteractive()) {
+      output.keyValueBlock(opts?.actionLabel ?? 'About to send', summary);
+      const ok = await confirm('Proceed?');
+      if (!ok) throw new AbortedError('aborted by user');
+      return;
+    }
+    throw new AbortedError('This is a destructive action. Pass --yes to run non-interactively.');
+  }
+
+  if (output.isJsonMode()) return;
 
   if (isInteractive()) {
     output.keyValueBlock(opts?.actionLabel ?? 'About to send', summary);
     const ok = await confirm('Proceed?');
     if (!ok) throw new AbortedError('aborted by user');
     return;
-  }
-
-  if (opts?.destructive) {
-    throw new AbortedError('This is a destructive action. Pass --yes to run non-interactively.');
   }
   // Non-TTY and non-destructive: proceed silently.
 }

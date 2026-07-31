@@ -15,6 +15,7 @@
   ],
   "scripts": {
     "build": "rm -rf dist && tsc",
+    "prepublishOnly": "yarn build",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:xmachine-smoke": "yarn build && POP_BRAIN_HOME=${POP_BRAIN_HOME:-/tmp/brain-xmachine-loopback} POP_PRIVATE_KEY=${POP_PRIVATE_KEY:-$(grep -h '^POP_PRIVATE_KEY=' ~/.pop-agent/.env 2>/dev/null | head -1 | cut -d= -f2)} sh -c 'ROLE=publish node test/scripts/brain-cross-machine-smoke.js && ROLE=verify node test/scripts/brain-cross-machine-smoke.js'",
@@ -24,6 +25,10 @@
   },
   "dependencies": {
     "@poa/cli": "link:../..",
+    "ethers": "5.7.2",
+    "yargs": "^17.7.2"
+  },
+  "optionalDependencies": {
     "@automerge/automerge": "^3.2.5",
     "@chainsafe/libp2p-gossipsub": "^14",
     "@chainsafe/libp2p-noise": "^16",
@@ -37,9 +42,7 @@
     "blockstore-fs": "^2",
     "datastore-fs": "^9",
     "helia": "^5.5.1",
-    "libp2p": "^2.10.0",
-    "ethers": "5.7.2",
-    "yargs": "^17.7.2"
+    "libp2p": "^2.10.0"
   },
   "devDependencies": {
     "@types/node": "^18.19.0",

@@ -15,6 +15,7 @@
   ],
   "scripts": {
     "build": "rm -rf dist && tsc && mkdir -p dist/abi && cp src/abi/*.json dist/abi/",
+    "prepublishOnly": "yarn build",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",

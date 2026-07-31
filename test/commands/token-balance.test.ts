@@ -32,7 +32,10 @@ const {
 
 vi.mock('../../src/commands/token/helpers', () => ({ resolveTokenAddress: resolveTokenAddressMock }));
 vi.mock('../../src/lib/subgraph', () => ({ query: queryMock }));
-vi.mock('../../src/lib/signer', () => ({ createProvider: createProviderMock }));
+vi.mock('../../src/lib/signer', async (importOriginal) => {
+  const actual = await importOriginal<any>();
+  return { ...actual, createProvider: createProviderMock };
+});
 vi.mock('../../src/lib/contracts', async (importOriginal) => {
   const actual = await importOriginal<any>();
   return { ...actual, createReadContract: createReadContractMock };
