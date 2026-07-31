@@ -72,6 +72,9 @@ bare query — **Arbitrum and Gnosis run different deployments**.
 - Error codes: `TX_REVERTED`, `INSUFFICIENT_FUNDS`, `NETWORK_ERROR`, `GAS_ESTIMATION_FAILED`
 - Errors go through `src/lib/error-catalog.ts`; exit codes through `src/lib/exit-codes.ts`
 - Batch independent contract reads through `src/lib/multicall.ts` — never `await` them in a loop
+- `src/lib/payout.ts`, `src/lib/zkemail.ts`, `src/lib/perms.ts` are **browser-pure** (no
+  fs/process/env/child_process) — they are the seed of a future `@poa/core` shared with the
+  frontend. Keep them that way; new frontend-ported logic goes in this class
 
 ## Related repos
 
