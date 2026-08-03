@@ -54,6 +54,12 @@ npm publish --access public --otp=<fresh code>
 # 5. Prove the published artifacts cold
 npx -y @poa-box/cli@latest --version
 POP_READONLY=1 POP_DEFAULT_CHAIN=100 npx -y @poa-box/cli@latest org list --json
+# link:-swap check — MUST print semver ranges, never "link:". The 0.1.0 agent
+# shipped with dependencies["@poa-box/cli"]="link:../.." because the prepack
+# npm-pkg-set targeted a stale key name; an installed link: dep fails for
+# every consumer. Verify the swap actually landed in the registry:
+npm view @poa-box/cli dependencies.@poa-box/core
+npm view @poa-box/agent dependencies.@poa-box/cli
 
 # 6. Push the tags
 git push && git push --tags
