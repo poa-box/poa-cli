@@ -165,6 +165,14 @@ whole package into a bundle.
   `INSUFFICIENT_FUNDS`, `NETWORK_ERROR`, `GAS_ESTIMATION_FAILED`, …), and all
   metadata document shapes.
 
+## Not building in JS? Or building an AI agent?
+
+This package is one of three integration surfaces (the others: the `pop` CLI
+with `--json` for any language, and `pop mcp serve` for tool-calling AI
+agents). All three produce byte-identical transactions and metadata. The
+chooser + quickstarts for all three live in
+[`docs/guides/integrators.md`](../../docs/guides/integrators.md).
+
 ## Relationship to the CLI and frontend
 
 The `pop` CLI consumes this package for all shared logic (its `src/lib/*`
