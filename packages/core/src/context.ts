@@ -50,7 +50,13 @@ export interface CreatePopContextOptions {
  * host-chosen (executeIntent for ethers EOA, encodeIntent for anything else).
  */
 export function createPopContext(options: CreatePopContextOptions = {}): PopContext {
-  const client = new GraphClient({ env: options.env, ...options.graph });
+  // The context chain is also the client's default chain: reads documented as
+  // `fn(ctx.client, …)` must work without repeating the chainId per call.
+  const client = new GraphClient({
+    env: options.env,
+    defaultChainId: options.chainId,
+    ...options.graph,
+  });
   return {
     client,
     chainId: options.chainId,

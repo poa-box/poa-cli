@@ -49,13 +49,12 @@ const DUMMY_ECDSA_SIGNATURE = ('0x' + 'ff'.repeat(65)) as Hex;
  * Options for sendSponsored. Bundler routing is injected here — core never
  * reads env. The CLI maps POP_BUNDLER_URL → bundlerUrl and
  * PIMLICO_API_KEY → pimlicoApiKey.
+ *
+ * Canonical home is sponsorship-config (kept viem-free so the plain-EOA
+ * executor's TxOptions can reference it); re-exported here for back-compat.
  */
-export interface SponsoredSendOptions {
-  rpcUrl?: string;
-  value?: bigint;
-  pimlicoApiKey?: string;
-  bundlerUrl?: string;
-}
+export type { SponsoredSendOptions } from '../sponsorship-config';
+import type { SponsoredSendOptions } from '../sponsorship-config';
 
 /**
  * Encode paymaster data for the PaymasterHub.

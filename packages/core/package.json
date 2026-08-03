@@ -49,6 +49,7 @@
   },
   "typesVersions": {
     "*": {
+      "dist/index.d.ts": ["dist/index.d.ts"],
       "abis": ["dist/abis/index.d.ts"],
       "graph": ["dist/graph/index.d.ts"],
       "graph/documents": ["dist/graph/documents/index.d.ts"],

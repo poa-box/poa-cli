@@ -140,15 +140,18 @@ describe('calldata parity with the CLI recipes', () => {
   });
 
   it('token request', () => {
+    // requestTokens(uint96, string ipfsHash) takes the RAW CID string — the
+    // CLI pins {reason, submittedAt} and passes pinJson's Qm… straight
+    // through, with no bytes32 conversion (unlike task/role metadata hashes).
     const iface = new ethers.utils.Interface(getAbi('ParticipationToken'));
     const amount = ethers.utils.parseUnits('5', 18);
     const intent = buildRequestTokens({
       participationTokenAddress: PT,
       amountWei: amount,
-      ipfsHash: ipfsCidToBytes32(CID),
+      ipfsHash: CID,
     });
     expect(encodeIntent(intent).data)
-      .toBe(iface.encodeFunctionData('requestTokens', [amount, ipfsCidToBytes32(CID)]));
+      .toBe(iface.encodeFunctionData('requestTokens', [amount, CID]));
   });
 
   it('vouch for', () => {

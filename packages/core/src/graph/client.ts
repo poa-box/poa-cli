@@ -316,6 +316,12 @@ export interface TransportStatus {
 export interface GraphClientOptions {
   /** POP_SUBGRAPH_TIER, GRAPH_API_KEY, POP_<NET>_* endpoint overrides. */
   env?: EnvSource;
+  /**
+   * Chain served when a call passes no chainId. Without it, per-call chainId
+   * (or env POP_DEFAULT_CHAIN) is required — createPopContext({ chainId })
+   * sets this so documented reads work with zero further configuration.
+   */
+  defaultChainId?: number;
   /** Free-tier exhaustion memory. Default: in-memory (per client instance). */
   stateStore?: TierStateStore;
   /** Transport. Default: globalThis.fetch. */
@@ -328,6 +334,7 @@ export interface GraphClientOptions {
 
 export class GraphClient {
   private env: EnvSource;
+  private defaultChainId?: number;
   private store: TierStateStore;
   private providedFetch?: typeof fetch;
   private onWarn: (message: string) => void;
@@ -335,6 +342,7 @@ export class GraphClient {
 
   constructor(options: GraphClientOptions = {}) {
     this.env = options.env ?? EMPTY_ENV;
+    this.defaultChainId = options.defaultChainId;
     this.store = options.stateStore ?? new InMemoryTierStateStore();
     this.providedFetch = options.fetch;
     this.onWarn = options.onWarn ?? (() => {});
@@ -539,7 +547,10 @@ export class GraphClient {
    * Pure w.r.t. the network: reads env + config + the injected state store only.
    */
   resolveTransportPlan(chainId?: number): TransportPlan {
-    const config = resolveNetworkConfig(chainId, this.env);
+    // Per-call chainId wins; the client's default fills the gap. Env
+    // (POP_DEFAULT_CHAIN inside resolveNetworkConfig) remains the last resort,
+    // preserving the CLI's precedence exactly (its client sets no default).
+    const config = resolveNetworkConfig(chainId ?? this.defaultChainId, this.env);
     const effectiveChainId = config.chainId;
     const { mode, ignored } = this.resolveMode();
 

@@ -112,6 +112,30 @@ export async function fetchProjectsData(
   };
 }
 
+/** A task row flattened out of the projects tree, with its project attached. */
+export interface TaskListRow extends SubgraphTask {
+  /** Composite project entity id the task belongs to. */
+  projectId: string;
+  projectTitle: string | null;
+}
+
+/**
+ * Flat list of an org's tasks — the friendliest first read (`pop task list`'s
+ * data, sans rendering). Sugar over fetchProjectsData: same tiered query, the
+ * projects → tasks tree flattened with each row keeping its project identity.
+ */
+export async function listTasks(
+  client: GraphClient,
+  orgId: string,
+  chainId?: number
+): Promise<TaskListRow[]> {
+  const { data } = await fetchProjectsData(client, orgId, chainId);
+  const projects = data.organization?.taskManager?.projects ?? [];
+  return projects.flatMap(p =>
+    (p.tasks ?? []).map(t => ({ ...t, projectId: p.id, projectTitle: p.title ?? null }))
+  );
+}
+
 /**
  * Find a task in a FETCH_PROJECTS_DATA result by its NUMERIC task id.
  * Port of src/commands/task/helpers.ts findSubgraphTask.

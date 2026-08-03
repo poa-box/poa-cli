@@ -8,10 +8,15 @@
 import { ethers } from 'ethers';
 import { getNetworkByChainId } from '../chains';
 import { decodeContractError } from '../error-catalog';
-import type { SponsoredSendOptions } from './sponsored';
-import type { SponsoredConfig } from '../sponsorship-config';
+import type { SponsoredConfig, SponsoredSendOptions } from '../sponsorship-config';
 import type { TxIntent } from '../tx/intent';
-import type { Hex, Address } from 'viem';
+
+// Local aliases, structurally identical to viem's Hex/Address. This module is
+// the PLAIN-EOA executor: viem is an optional peer, so neither its runtime
+// nor its DECLARATIONS may enter this file's closure (a skipLibCheck:false
+// consumer without viem must typecheck). Values flow to viem without casts.
+type Hex = `0x${string}`;
+type Address = `0x${string}`;
 
 // Re-exported for convenience — canonical home is sponsorship-config.
 export type { SponsoredConfig };

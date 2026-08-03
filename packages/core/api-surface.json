@@ -580,6 +580,7 @@
     "SubgraphProject",
     "SubgraphRolePermission",
     "SubgraphTask",
+    "TaskListRow",
     "TaskPermsRead",
     "TaskPermsResult",
     "TaskReleaseEntry",
@@ -594,6 +595,7 @@
     "fetchTaskReleaseHistory",
     "fetchTaskStats",
     "findSubgraphTask",
+    "listTasks",
     "maskFromBooleans",
     "normalizeRoot",
     "resolveProjectFromList",
@@ -695,7 +697,9 @@
     "tokenize"
   ],
   "sponsorship-config": [
+    "Hex",
     "SponsoredConfig",
+    "SponsoredSendOptions",
     "resolveSponsoredConfig"
   ],
   "stats": [

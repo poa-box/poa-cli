@@ -7,13 +7,35 @@
  * without a circular dependency, and so mocking the tx module in a test never
  * removes this function from preflight's reach.
  */
-import type { Hex } from 'viem';
 import { EnvSource, EMPTY_ENV } from './env';
+
+/**
+ * Structurally identical to viem's Hex. Declared locally so this module — and
+ * everything that re-exports SponsoredConfig (the root barrel, preflight, the
+ * plain-EOA executor) — never references viem's declarations: viem is an
+ * OPTIONAL peer, and a skipLibCheck:false consumer without it must still
+ * typecheck. Values flow to/from viem's Hex without casts.
+ */
+export type Hex = `0x${string}`;
 
 export interface SponsoredConfig {
   privateKey: Hex;
   orgId: Hex;
   hatId: bigint;
+}
+
+/**
+ * Bundler/RPC routing for the sponsored (4337/7702) send path. Lives here —
+ * not in execute/sponsored — for the same optional-peer reason: TxOptions on
+ * the plain-EOA executor references this type, and that executor must not
+ * pull viem-typed declarations into its closure. execute/sponsored re-exports
+ * it, so its historical import path keeps working.
+ */
+export interface SponsoredSendOptions {
+  rpcUrl?: string;
+  value?: bigint;
+  pimlicoApiKey?: string;
+  bundlerUrl?: string;
 }
 
 /**
