@@ -65,6 +65,15 @@ jobs:
       - name: Docs (generated reference + link check)
         run: yarn docs:check
 
+      # Merging to main publishes (see release.yml), so a PR must prove its
+      # artifacts are publishable BEFORE it lands. This runs a real `npm
+      # publish` against a capture-only localhost server and asserts the
+      # registry metadata carries no `link:` range — the failure that shipped
+      # @poa-box/agent@0.1.0 uninstallable. Nothing is uploaded anywhere.
+      - name: Publish metadata is clean (nothing is published)
+        if: ${{ matrix.node == '22' }}
+        run: yarn release:verify-metadata
+
       - name: Agent package — test
         run: yarn --cwd packages/agent test
 

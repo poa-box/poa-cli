@@ -39,10 +39,9 @@ yarn --cwd packages/core api:check # @poa-box/core export surface (run after bui
 #    diff: additions are fine; a REMOVAL means this release is a major bump.
 
 # 3. Version bumps (keep all three packages in lockstep unless truly independent)
-#    Or skip 3-6 entirely: run the "Release" GitHub Action (workflow_dispatch,
-#    dry_run=false) — it does everything below, skipping already-published
-#    versions, and verifies the registry afterwards. See "Publishing auth"
-#    below: the workflow prefers trusted publishing and stores no credential.
+#    NORMALLY YOU STOP HERE: bump the versions in a PR and merge it. Merging to
+#    main runs the Release workflow, which publishes exactly the bumped
+#    packages and skips the rest. Steps 4-6 below are the manual fallback.
 #    --no-git-tag-version: `npm version` otherwise tries to commit each bump,
 #    and the second call then aborts on the dirty tree left by the first,
 #    leaving the chain half-bumped. Bump all three, then commit once; the
@@ -79,6 +78,27 @@ npm view @poa-box/agent dependencies.@poa-box/cli
 # 6. Push the tags
 git push && git push --tags
 ```
+
+## How a release happens
+
+**Merging to `main` is the release.** Bump the version of each package you are
+releasing in a PR (`npm version patch --no-git-tag-version`), merge, and the
+Release workflow publishes them — in dependency order, with provenance, then
+verifies the registry and pushes per-package tags. A merge that changes no
+version publishes nothing: a ~15s `plan` job sees every version already on the
+registry and stops, so ordinary merges cost almost nothing.
+
+This is safe because publishability is proven BEFORE merge, not after: CI runs
+the full suite plus `release:verify-metadata`, which performs a real
+`npm publish` against a capture-only localhost server and asserts the registry
+metadata is clean. A PR that would publish a broken package fails review, not
+production.
+
+Manual dispatch (Actions → Release → Run workflow) remains for three cases:
+a **dry run** (`dry_run: true` — verifies everything, publishes nothing),
+**re-running after a partial failure** (already-published versions are
+skipped, so it resumes), and **prereleases** (`dist_tag: next`, since an rc on
+`latest` would become every consumer's default install).
 
 ## Publishing auth: trusted publishing (preferred) vs a token
 

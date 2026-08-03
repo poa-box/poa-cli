@@ -3,14 +3,22 @@ name: Release
 # Publishes the three-package chain in dependency order:
 #   @poa-box/core → @poa-box/cli → @poa-box/agent
 #
-# VERSIONS COME FROM THE CHECKED-IN package.json FILES. Bump them in a PR
-# (`npm version patch` in each package you are releasing), merge, then run
-# this workflow. Inter-package ranges need no hand-editing: the local `link:`
-# deps are swapped for `^<dependency version>` at publish time and restored
-# afterwards (scripts/lib/link-swap.mjs).
+# MERGING TO MAIN IS THE RELEASE. Versions come from the checked-in
+# package.json files: bump the ones you are releasing in a PR
+# (`npm version patch --no-git-tag-version`), merge, and this publishes them.
+# A merge that changes no version publishes nothing — the `plan` job sees
+# every version already on the registry and stops there.
+#
+# Inter-package ranges need no hand-editing: the local `link:` deps are
+# swapped for `^<dependency version>` at publish time and restored afterwards
+# (scripts/lib/link-swap.mjs).
+#
+# Manual dispatch is still available for a dry run, for re-running after a
+# partial failure, and for publishing a prerelease under a non-`latest` tag.
 #
 # Safety properties, in the order they are enforced:
 #   * one release at a time (concurrency), main only
+#   * a cheap `plan` job gates the expensive one, so ordinary merges cost ~15s
 #   * preflight validates the whole plan against the LIVE registry BEFORE any
 #     build — a forgotten bump, a backwards `latest`, a prerelease heading for
 #     `latest`, a malformed version, or a dangling inter-package pin stops the
@@ -45,6 +53,14 @@ name: Release
 # This workflow supports both and reports which one it used.
 
 on:
+  # Merging to main IS the release. The plan job below decides whether there is
+  # anything to publish (versions come from the checked-in package.json files),
+  # so the overwhelmingly common merge — one that changes no version — is a
+  # clean no-op that publishes nothing and costs one short job.
+  push:
+    branches: [main]
+  # Manual dispatch remains for: a dry run, re-running after a partial failure,
+  # and choosing a dist-tag for a prerelease.
   workflow_dispatch:
     inputs:
       dry_run:
@@ -61,13 +77,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: ${{ inputs.dry_run && 'verify (dry run)' || 'publish' }}
+  # Cheap gate (~15s, no install): does this commit actually release anything?
+  # Runs on every merge so the expensive job never starts for nothing.
+  plan:
+    name: plan
     runs-on: ubuntu-latest
-    permissions:
-      contents: write        # push per-package version tags
-      id-token: write        # npm provenance attestation
-
+    outputs:
+      has_work: ${{ steps.preflight.outputs.has_work }}
+      summary: ${{ steps.preflight.outputs.summary }}
     steps:
       - name: Guard — releases run from main only
         if: ${{ github.ref != 'refs/heads/main' }}
@@ -75,6 +92,43 @@ jobs:
           echo "::error::Release must run from main (got ${{ github.ref }}). Merge first, then release."
           exit 1
 
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # --allow-empty ONLY for automatic runs: a merge that changes no version
+      # is normal and must not fail. A human who explicitly asked for a release
+      # and bumped nothing has made a mistake, so dispatch keeps the hard error.
+      - name: Preflight — is there anything to publish?
+        id: preflight
+        shell: bash
+        run: |
+          set -o pipefail
+          empty=''
+          [ "${{ github.event_name }}" = 'push' ] && empty='--allow-empty'
+          node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag || 'latest' }}' $empty | tee plan.txt
+          node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag || 'latest' }}' $empty --json > plan.json
+          has_work=$(node -p "JSON.parse(require('fs').readFileSync('plan.json','utf8')).hasWork")
+          echo "has_work=$has_work" >> "$GITHUB_OUTPUT"
+          {
+            echo '## Release plan'
+            echo '```'
+            cat plan.txt
+            echo '```'
+            [ "$has_work" = 'true' ] || echo '_No version changed — nothing to publish._'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: ${{ inputs.dry_run && 'verify (dry run)' || 'publish' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.has_work == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push per-package version tags
+      id-token: write        # npm provenance attestation
+
+    steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -131,8 +185,8 @@ jobs:
         id: preflight
         run: |
           set -o pipefail
-          node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag }}' | tee plan.txt
-          node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag }}' --json > plan.json
+          node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag || 'latest' }}' | tee plan.txt
+          node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag || 'latest' }}' --json > plan.json
           {
             echo '## Release plan'
             echo '```'
@@ -240,15 +294,15 @@ jobs:
       # reaches the registry metadata) and restores the link: form in a finally.
       - name: Publish @poa-box/core
         if: ${{ !inputs.dry_run && steps.preflight.outputs.core_action == 'publish' }}
-        run: node scripts/publish-package.mjs packages/core --access public --provenance --tag '${{ inputs.dist_tag }}'
+        run: node scripts/publish-package.mjs packages/core --access public --provenance --tag '${{ inputs.dist_tag || 'latest' }}'
 
       - name: Publish @poa-box/cli
         if: ${{ !inputs.dry_run && steps.preflight.outputs.cli_action == 'publish' }}
-        run: node scripts/publish-package.mjs . --access public --provenance --tag '${{ inputs.dist_tag }}'
+        run: node scripts/publish-package.mjs . --access public --provenance --tag '${{ inputs.dist_tag || 'latest' }}'
 
       - name: Publish @poa-box/agent
         if: ${{ !inputs.dry_run && steps.preflight.outputs.agent_action == 'publish' }}
-        run: node scripts/publish-package.mjs packages/agent --access public --provenance --tag '${{ inputs.dist_tag }}'
+        run: node scripts/publish-package.mjs packages/agent --access public --provenance --tag '${{ inputs.dist_tag || 'latest' }}'
 
       # Tag BEFORE verification: the publishes are irreversible, so the record
       # of what shipped must not be lost to a flaky post-publish check.

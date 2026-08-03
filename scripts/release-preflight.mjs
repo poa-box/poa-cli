@@ -39,6 +39,8 @@ const distTag = (() => {
   const i = process.argv.indexOf('--tag');
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : 'latest';
 })();
+/** Treat "no version changed" as a clean no-op (automatic runs on every merge). */
+const allowEmpty = process.argv.includes('--allow-empty');
 
 /**
  * Publish order is dependency order. `dependsOn` names the sibling whose
@@ -219,15 +221,19 @@ export function buildPlan(packages, readPkg, lookup, options = {}) {
     });
   }
 
-  // Guard 1: a release that publishes nothing is a mistake, not a no-op.
-  if (errors.length === 0 && plan.every(p => p.action === 'skip')) {
+  // Guard 1: for a release someone ASKED for, publishing nothing is a mistake
+  // (a forgotten version bump) and must fail loudly. For an automatic run on
+  // every merge, it is the normal case — most merges change no version — so
+  // `allowEmpty` turns it into a clean no-op instead.
+  const nothingToPublish = plan.length > 0 && plan.every(p => p.action === 'skip');
+  if (errors.length === 0 && nothingToPublish && !options.allowEmpty) {
     errors.push(
       'nothing to publish: every version already exists on the registry. '
       + 'Bump the version(s) you mean to release (npm version patch) and re-run.'
     );
   }
 
-  return { plan, errors };
+  return { plan, errors, nothingToPublish };
 }
 
 // --- main -------------------------------------------------------------------
@@ -246,7 +252,7 @@ function lookup(name) {
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   let result;
   try {
-    result = buildPlan(PACKAGES, readPkg, lookup, { distTag });
+    result = buildPlan(PACKAGES, readPkg, lookup, { distTag, allowEmpty });
   } catch (err) {
     console.error(`release-preflight: ${err.message}`);
     process.exit(1);
@@ -255,7 +261,10 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   const { plan, errors } = result;
 
   if (asJson) {
-    console.log(JSON.stringify({ plan, errors, ok: errors.length === 0 }, null, 2));
+    console.log(JSON.stringify({
+      plan, errors, ok: errors.length === 0,
+      hasWork: !result.nothingToPublish && errors.length === 0,
+    }, null, 2));
   } else {
     console.log('\nRelease plan\n');
     for (const p of plan) {
@@ -270,6 +279,8 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
     if (errors.length) {
       console.error('BLOCKED:\n');
       for (const e of errors) console.error(`  ✗ ${e}\n`);
+    } else if (result.nothingToPublish) {
+      console.log('Nothing to publish — every version is already on the registry.\n');
     } else {
       const n = plan.filter(p => p.action === 'publish').length;
       console.log(`OK — ${n} package(s) will publish, in the order shown.\n`);

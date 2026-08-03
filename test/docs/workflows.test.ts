@@ -62,8 +62,21 @@ describe('workflow files', () => {
 describe('release workflow contract', () => {
   const src = readFileSync(join(WORKFLOWS, 'release.yml'), 'utf-8');
 
-  it('defaults to a dry run — a publish must be chosen deliberately', () => {
+  it('releases on merge to main, and keeps manual dispatch for dry runs', () => {
+    expect(src).toMatch(/push:\s*\n\s*branches: \[main\]/);
     expect(src).toMatch(/dry_run:[\s\S]*?type: boolean[\s\S]*?default: true/);
+  });
+
+  it('gates the expensive job on a cheap plan job', () => {
+    // Without this, every merge would install, build and test three packages
+    // just to discover no version changed.
+    expect(src).toMatch(/needs: plan/);
+    expect(src).toMatch(/if: \$\{\{ needs\.plan\.outputs\.has_work == 'true' \}\}/);
+  });
+
+  it('only tolerates an empty plan for automatic runs, never a requested one', () => {
+    // A human who asked for a release and bumped nothing made a mistake.
+    expect(src).toMatch(/github\.event_name \}\}" = 'push' \] && empty='--allow-empty'/);
   });
 
   it('publishes in dependency order: core → cli → agent', () => {
