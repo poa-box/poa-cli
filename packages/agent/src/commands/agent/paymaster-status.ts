@@ -2,9 +2,9 @@ import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { createPublicClient, http, pad, toHex, formatEther, type Address } from 'viem';
 import { gnosis } from 'viem/chains';
 import { entryPoint07Address } from 'viem/account-abstraction';
-import { PAYMASTER_HUB } from '@poa/cli/lib/sponsored';
-import * as output from '@poa/cli/lib/output';
-import { resolveOrgModules } from '@poa/cli/lib/resolve';
+import { PAYMASTER_HUB } from '@poa-box/cli/lib/sponsored';
+import * as output from '@poa-box/cli/lib/output';
+import { resolveOrgModules } from '@poa-box/cli/lib/resolve';
 
 interface PaymasterStatusArgs {
   org: string;

@@ -1,5 +1,5 @@
 /**
- * IPFS Client — CLI wrapper over @poa/core/ipfs.
+ * IPFS Client — CLI wrapper over @poa-box/core/ipfs.
  *
  * Pin/fetch (Graph IPFS endpoint, gateway cascade, retries, CIDv0 guard) live
  * in core, environment-free. The CLI binds the historical env vars per call:
@@ -14,8 +14,8 @@ import {
   ipfsOptionsFromEnv,
   bytes32ToIpfsCid,
   ipfsCidToBytes32,
-} from '@poa/core/ipfs';
-import type { IpfsOptions } from '@poa/core/ipfs';
+} from '@poa-box/core/ipfs';
+import type { IpfsOptions } from '@poa-box/core/ipfs';
 
 export { bytes32ToIpfsCid, ipfsCidToBytes32, ipfsOptionsFromEnv };
 export type { IpfsOptions };

@@ -1,4 +1,4 @@
-# Releasing @poa/cli and @poa/agent
+# Releasing @poa-box/cli and @poa-box/agent
 
 The CLI is the compatibility layer for the whole ecosystem: the frontend,
 org brains, and agents parse its `--json` output so that protocol and
@@ -34,7 +34,7 @@ yarn docs:check                    # generated reference + manifest + links
 
 # 2. The contracts, verified
 yarn contracts:check               # --json keys, against LIVE data
-yarn --cwd packages/core api:check # @poa/core export surface (run after build)
+yarn --cwd packages/core api:check # @poa-box/core export surface (run after build)
 #    Intentional shape change? contracts:update / api:update && review the
 #    diff: additions are fine; a REMOVAL means this release is a major bump.
 
@@ -42,9 +42,9 @@ yarn --cwd packages/core api:check # @poa/core export surface (run after build)
 (cd packages/core && npm version patch)
 npm version patch                  # or minor / major — updates package.json + git tag
 (cd packages/agent && npm version patch)
-#    If @poa/cli's major/minor changed: update the "^x.y.z" range in
-#    packages/agent's prepack script. When @poa/core starts publishing to npm,
-#    swap @poa/cli's "link:./packages/core" the same way at pack time.
+#    If @poa-box/cli's major/minor changed: update the "^x.y.z" range in
+#    packages/agent's prepack script. When @poa-box/core starts publishing to npm,
+#    swap @poa-box/cli's "link:./packages/core" the same way at pack time.
 
 # 4. Publish (order matters: core → cli → agent)
 (cd packages/core && npm publish --access public --otp=<code>)
@@ -52,8 +52,8 @@ npm publish --access public --otp=<fresh code>
 (cd packages/agent && npm publish --access public --otp=<fresh code>)
 
 # 5. Prove the published artifacts cold
-npx -y @poa/cli@latest --version
-POP_READONLY=1 POP_DEFAULT_CHAIN=100 npx -y @poa/cli@latest org list --json
+npx -y @poa-box/cli@latest --version
+POP_READONLY=1 POP_DEFAULT_CHAIN=100 npx -y @poa-box/cli@latest org list --json
 
 # 6. Push the tags
 git push && git push --tags
@@ -66,5 +66,5 @@ Semver treats 0.x minors as breaking. Our promise, stronger than semver:
 removals). Anything that would break a consumer bumps the minor (0.x → 0.x+1)
 and is called out in the release notes. At 1.0.0 this becomes standard semver.
 
-Consumers should pin `@poa/cli@~0.x` (Docker: exact version) and read
+Consumers should pin `@poa-box/cli@~0.x` (Docker: exact version) and read
 `pop --version` — which reports the real installed version — when debugging.

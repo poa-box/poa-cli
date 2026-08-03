@@ -5,7 +5,7 @@
  * Source of truth stays at <repo>/src/abi/*.json (written by
  * scripts/extract-abis.mjs from forge artifacts, plus the hand-maintained
  * ERC20.json and external/ set). This script derives packages/core/src/abis/
- * from it at build time, so @poa/core never touches the filesystem at runtime
+ * from it at build time, so @poa-box/core never touches the filesystem at runtime
  * and bundlers see plain TS modules.
  *
  * Generated files are committed (they are part of the package source) but

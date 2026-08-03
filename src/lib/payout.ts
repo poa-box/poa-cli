@@ -1,5 +1,5 @@
 /**
- * Moved to @poa/core (browser-pure). This shim keeps the historical CLI import
- * path — and the `@poa/cli/lib/payout` subpath the agent deep-imports — stable.
+ * Moved to @poa-box/core (browser-pure). This shim keeps the historical CLI import
+ * path — and the `@poa-box/cli/lib/payout` subpath the agent deep-imports — stable.
  */
-export * from '@poa/core/payout';
+export * from '@poa-box/core/payout';

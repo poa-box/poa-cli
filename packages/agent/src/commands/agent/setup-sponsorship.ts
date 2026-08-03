@@ -10,8 +10,8 @@ import {
 } from 'viem';
 import { gnosis } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
-import { isDelegated, delegateEOA, EOA_DELEGATION, PAYMASTER_HUB } from '@poa/cli/lib/sponsored';
-import * as output from '@poa/cli/lib/output';
+import { isDelegated, delegateEOA, EOA_DELEGATION, PAYMASTER_HUB } from '@poa-box/cli/lib/sponsored';
+import * as output from '@poa-box/cli/lib/output';
 
 interface SetupSponsorshipArgs {
   org: string;

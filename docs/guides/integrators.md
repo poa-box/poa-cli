@@ -2,7 +2,7 @@
 
 POP has **three integration surfaces**. All three produce byte-identical
 transactions and metadata, because all three run the same layer underneath —
-[`@poa/core`](../../packages/core/README.md). Anything created through any of
+[`@poa-box/core`](../../packages/core/README.md). Anything created through any of
 them indexes correctly in the subgraph and renders correctly in every POP
 frontend. Pick by the shape of your app, not by feature coverage (they all
 cover everything).
@@ -11,13 +11,13 @@ cover everything).
 
 | You are building… | Use | Why |
 |---|---|---|
-| A web frontend (Next/React/Vite, any wallet stack) | **`@poa/core`** | Tx builders return wallet-agnostic intents; your users sign with wagmi, passkeys, whatever you run |
-| A TypeScript/JS backend, bot, or service | **`@poa/core`** | In-process, typed, no child processes |
+| A web frontend (Next/React/Vite, any wallet stack) | **`@poa-box/core`** | Tx builders return wallet-agnostic intents; your users sign with wagmi, passkeys, whatever you run |
+| A TypeScript/JS backend, bot, or service | **`@poa-box/core`** | In-process, typed, no child processes |
 | An app in any *other* language (Python, Go, Rust…) | **CLI with `--json`** | Stable JSON contracts, stable exit codes; shell out and parse |
 | Automation with shell access (cron, CI, an agent with a Bash tool) | **CLI with `--json`** | Composition, `--help`, `--dry-run`, stderr feedback |
 | An AI agent that only makes tool calls (no shell) | **`pop mcp serve`** | Every command becomes an MCP tool; zero integration code |
-| A dashboard / analytics / read-only tool | **`@poa/core` reads** (JS) or **CLI `--json`** (anything else) | No keys, no wallet, no write surface at all |
-| Ops tooling for a multisig | **`@poa/core`** → `encodeIntent` → Safe | An intent is just `{to, data, value}` — propose it to the Safe |
+| A dashboard / analytics / read-only tool | **`@poa-box/core` reads** (JS) or **CLI `--json`** (anything else) | No keys, no wallet, no write surface at all |
+| Ops tooling for a multisig | **`@poa-box/core`** → `encodeIntent` → Safe | An intent is just `{to, data, value}` — propose it to the Safe |
 
 Mixing is normal: a Python backend shells the CLI while its TS frontend uses
 core; an AI agent uses MCP while your deploy scripts use the CLI. Nothing
@@ -25,20 +25,20 @@ diverges, because it's one layer.
 
 ---
 
-## Path 1 — `@poa/core`: the library (JS/TS apps)
+## Path 1 — `@poa-box/core`: the library (JS/TS apps)
 
 ```bash
-yarn add @poa/core ethers@5.7.2
-# (@poa/core is not on npm yet — consume via git/link until first publish.
+yarn add @poa-box/core ethers@5.7.2
+# (@poa-box/core is not on npm yet — consume via git/link until first publish.
 #  ethers rides along as core's encoding library; your WALLET can be anything.)
 ```
 
 ### Reads: zero-config
 
 ```ts
-import { createPopContext } from '@poa/core';
-import { resolveOrgModules } from '@poa/core/reads/resolve';
-import { listTasks } from '@poa/core/reads/task';
+import { createPopContext } from '@poa-box/core';
+import { resolveOrgModules } from '@poa-box/core/reads/resolve';
+import { listTasks } from '@poa-box/core/reads/task';
 
 const ctx = createPopContext({ chainId: 100 });          // Gnosis. That's all the setup.
 
@@ -50,8 +50,8 @@ No API key, no signer, no infrastructure. Reads route through the tiered
 subgraph client (free endpoint, automatic paid-gateway failover when you
 supply `GRAPH_API_KEY` via `env`), with field-fallback across subgraph
 deployments handled for you. Typed reads exist per domain
-(`@poa/core/reads/*`); the raw GraphQL documents are exported too
-(`@poa/core/graph/documents`) if you run Apollo.
+(`@poa-box/core/reads/*`); the raw GraphQL documents are exported too
+(`@poa-box/core/graph/documents`) if you run Apollo.
 
 ### Writes: fill in the facts, get a ready transaction
 
@@ -63,8 +63,8 @@ override with `ipfs: { apiUrl }` if you run your own), converts the CID, and
 encodes the calldata, including version quirks like v6-vs-legacy signatures:
 
 ```ts
-import { createProposalIntent } from '@poa/core/tx/vote';
-import { encodeIntent } from '@poa/core/tx/intent';
+import { createProposalIntent } from '@poa-box/core/tx/vote';
+import { encodeIntent } from '@poa-box/core/tx/intent';
 
 const intent = await createProposalIntent(ctx, {
   org: 'my-org',
@@ -91,21 +91,21 @@ writeContract({ address: intent.to, abi: intent.abi, functionName: intent.method
 // ethers
 await signer.sendTransaction({ to, data, value });
 // or the built-in executor (gas estimation, receipt parsing, decoded errors):
-import { executeIntent } from '@poa/core/execute/ethers';
+import { executeIntent } from '@poa-box/core/execute/ethers';
 const result = await executeIntent(signer, intent, { dryRun: false });
 
 // Safe / multisig
 await safeSdk.createTransaction({ transactions: [{ to, data, value }] });
 
 // Sponsored (ERC-4337 / EIP-7702 — PaymasterHub pays gas)
-import { sendSponsored } from '@poa/core/execute/sponsored';
+import { sendSponsored } from '@poa-box/core/execute/sponsored';
 await sendSponsored(privateKey, intent.to, data, orgId, hatId, { bundlerUrl });
 ```
 
 For your confirmation UI: `intent.meta.summary` carries human-readable
 preview fields, and `intent.meta.ipfs` carries the pinned CID + document.
 Every one of the protocol's write operations has a builder like this under
-`@poa/core/tx/*` — tasks, votes, org membership, roles/vouching, tokens,
+`@poa-box/core/tx/*` — tasks, votes, org membership, roles/vouching, tokens,
 treasury (including governance-wrapped proposals), education, zkemail.
 Builders come in two levels: async `*Intent(ctx, params)` (resolves the org,
 derives conventions, pins metadata) and pure sync `build*(args)` when you
@@ -235,11 +235,11 @@ agent's context at it.
 You should never need to rework your integration because a contract or the
 subgraph changed — that churn is absorbed **inside** the layer you consume:
 
-- **`@poa/core`**: semver. Within a major version changes are additive,
+- **`@poa-box/core`**: semver. Within a major version changes are additive,
   enforced by `packages/core/api-surface.json` — removing or renaming any of
   the package's exports fails its CI (`yarn api:check`) and requires a major
   bump. Contract upgrades land behind feature detection (old orgs keep
-  getting old calldata), so upgrading is `yarn upgrade @poa/core` + reading
+  getting old calldata), so upgrading is `yarn upgrade @poa-box/core` + reading
   one changelog line.
 - **CLI `--json`**: every key in
   [`output-contracts.json`](../reference/cli/output-contracts.json) is
@@ -263,6 +263,6 @@ and checklist: [docs/RELEASING.md](../RELEASING.md).
   it builds the two-package chain (`packages/core` first) and encodes the one
   build trap (`dist/abi/*.json` is copied by `yarn build`; plain `tsc` ships
   3 of 20 ABIs and fails at runtime in ways that look like protocol bugs).
-- npm: `@poa/cli` and `@poa/core` are publish-ready (`prepublishOnly`
+- npm: `@poa-box/cli` and `@poa-box/core` are publish-ready (`prepublishOnly`
   builds) but not yet published; clone-and-build, `link:`, or Docker are the
   current install paths.

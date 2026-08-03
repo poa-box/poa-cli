@@ -12,7 +12,7 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { getBrainNodeInfo, stopBrainNode } from '../../lib/brain';
 import { getRunningDaemonPid, sendIpcRequest } from '../../lib/brain-daemon';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 export const statusHandler = {
   builder: (yargs: Argv) => yargs,

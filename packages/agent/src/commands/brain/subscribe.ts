@@ -22,7 +22,7 @@ import {
   fetchAndMergeRemoteHead,
   type BrainHeadAnnouncement,
 } from '../../lib/brain';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 interface SubscribeArgs {
   doc: string;

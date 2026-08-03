@@ -1,4 +1,4 @@
-# @poa/core
+# @poa-box/core
 
 The stable protocol layer for POP (Proof of Participation): **transaction
 creation** and **data reads** for every consumer — the `pop` CLI, web
@@ -24,9 +24,9 @@ sponsored/4337 execution path — they are optional peers).
 ## Quickstart — reads
 
 ```ts
-import { createPopContext } from '@poa/core';
-import { resolveOrgModules } from '@poa/core/reads/resolve';
-import { listTasks } from '@poa/core/reads/task';
+import { createPopContext } from '@poa-box/core';
+import { resolveOrgModules } from '@poa-box/core/reads/resolve';
+import { listTasks } from '@poa-box/core/reads/task';
 
 const ctx = createPopContext({ chainId: 100 });          // Gnosis; zero config
 
@@ -38,7 +38,7 @@ Reads are **subgraph-first** through a tiered transport: the free Graph Studio
 endpoint first, automatic failover to the paid gateway (`GRAPH_API_KEY` via
 `env`) when the free quota is spent, and **field-fallback tiers** that keep
 queries working across the different subgraph deployments on Gnosis and
-Arbitrum. Raw GraphQL documents stay exported (`@poa/core/graph/documents`) if
+Arbitrum. Raw GraphQL documents stay exported (`@poa-box/core/graph/documents`) if
 you'd rather run them through Apollo — you keep your cache, we keep the
 documents canonical.
 
@@ -47,8 +47,8 @@ documents canonical.
 Building a transaction never signs or sends. Builders return a `TxIntent`:
 
 ```ts
-import { createPopContext } from '@poa/core';
-import { createTaskIntent } from '@poa/core/tx/task';
+import { createPopContext } from '@poa-box/core';
+import { createTaskIntent } from '@poa-box/core/tx/task';
 
 const ctx = createPopContext({ chainId: 100, provider });  // provider: feature detection
 const intent = await createTaskIntent(ctx, {
@@ -65,12 +65,12 @@ Execute it with whatever stack you have:
 
 ```ts
 // 1. ethers EOA (what the CLI does)
-import { executeIntent } from '@poa/core/execute/ethers';
+import { executeIntent } from '@poa-box/core/execute/ethers';
 const result = await executeIntent(signer, intent, { dryRun: false });
 // result: { success, txHash, explorerUrl, logs, errorCode?, suggestion?, … }
 
 // 2. wagmi / viem
-import { encodeIntent } from '@poa/core/tx/intent';
+import { encodeIntent } from '@poa-box/core/tx/intent';
 writeContract({
   address: intent.to as `0x${string}`,
   abi: intent.abi,
@@ -79,7 +79,7 @@ writeContract({
 });
 
 // 3. ERC-4337 / EIP-7702 sponsored (PaymasterHub pays gas)
-import { sendSponsored } from '@poa/core/execute/sponsored';
+import { sendSponsored } from '@poa-box/core/execute/sponsored';
 const { data } = encodeIntent(intent);
 await sendSponsored(privateKey, intent.to, data, orgId, hatId, {
   bundlerUrl,                      // or pimlicoApiKey
@@ -104,10 +104,10 @@ confirmation UI; `meta.ipfs` carries the pinned CID + document.
 ## Metadata is canonical here
 
 The subgraph and every frontend parse metadata JSON **by exact key order**.
-Never hand-build these objects — use `@poa/core/metadata/*`:
+Never hand-build these objects — use `@poa-box/core/metadata/*`:
 
 ```ts
-import { task } from '@poa/core/metadata';
+import { task } from '@poa-box/core/metadata';
 const doc = task.buildTaskMetadata({ name, description, location, difficulty, estHours });
 ```
 
@@ -137,15 +137,15 @@ file, a browser can use localStorage), `IpfsOptions`, `fetch`, and `onWarn`.
 
 | Subpath | Contents |
 |---|---|
-| `@poa/core/chains` | chain table, env-injected RPC/subgraph resolution, token registry |
-| `@poa/core/abis` | generated contract ABIs (`ALL_ABIS`), regenerated from forge artifacts |
-| `@poa/core/graph/client` | tiered subgraph client (`GraphClient`) |
-| `@poa/core/graph/documents` | GraphQL documents + pure derivation helpers, per domain |
-| `@poa/core/reads/*` | typed reads: `resolve`, `task`, `org`, `vote`, `token`, `user`, `eligibility`, `treasury`, `paymaster`, `education`, `project`, `zkemail` |
-| `@poa/core/tx/*` | `intent` (TxIntent/encodeIntent) + builders per domain, incl. `governance` (proposal wraps) |
-| `@poa/core/execute/*` | `ethers` (EOA executor, error classification, 4337 inner-revert detection), `sponsored` (7702/4337 userop path) |
-| `@poa/core/metadata/*` | canonical metadata builders (key order = protocol) |
-| `@poa/core/payout`, `perms`, `zkemail`, `encoding`, `format`, `validation`, `multicall`, `error-catalog`, `preflight`, `version`, `task-lens`, `ipfs` | shared protocol logic |
+| `@poa-box/core/chains` | chain table, env-injected RPC/subgraph resolution, token registry |
+| `@poa-box/core/abis` | generated contract ABIs (`ALL_ABIS`), regenerated from forge artifacts |
+| `@poa-box/core/graph/client` | tiered subgraph client (`GraphClient`) |
+| `@poa-box/core/graph/documents` | GraphQL documents + pure derivation helpers, per domain |
+| `@poa-box/core/reads/*` | typed reads: `resolve`, `task`, `org`, `vote`, `token`, `user`, `eligibility`, `treasury`, `paymaster`, `education`, `project`, `zkemail` |
+| `@poa-box/core/tx/*` | `intent` (TxIntent/encodeIntent) + builders per domain, incl. `governance` (proposal wraps) |
+| `@poa-box/core/execute/*` | `ethers` (EOA executor, error classification, 4337 inner-revert detection), `sponsored` (7702/4337 userop path) |
+| `@poa-box/core/metadata/*` | canonical metadata builders (key order = protocol) |
+| `@poa-box/core/payout`, `perms`, `zkemail`, `encoding`, `format`, `validation`, `multicall`, `error-catalog`, `preflight`, `version`, `task-lens`, `ipfs` | shared protocol logic |
 
 Prefer subpath imports — the root barrel re-exports everything but pulls the
 whole package into a bundle.

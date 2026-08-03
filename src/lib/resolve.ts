@@ -1,9 +1,9 @@
 /**
- * Shared org/contract resolution helpers — CLI wrapper over @poa/core/reads/resolve.
+ * Shared org/contract resolution helpers — CLI wrapper over @poa-box/core/reads/resolve.
  *
  * Core's functions take a GraphClient explicitly; the CLI binds its
  * process-global client (src/lib/subgraph.ts) so the ~78 command files and the
- * agent's `@poa/cli/lib/resolve` deep import keep the pre-extraction
+ * agent's `@poa-box/cli/lib/resolve` deep import keep the pre-extraction
  * signatures.
  */
 
@@ -11,8 +11,8 @@ import {
   resolveOrgId as coreResolveOrgId,
   resolveOrgModules as coreResolveOrgModules,
   requireModule,
-} from '@poa/core/reads/resolve';
-import type { OrgModules } from '@poa/core/reads/resolve';
+} from '@poa-box/core/reads/resolve';
+import type { OrgModules } from '@poa-box/core/reads/resolve';
 import { subgraphModuleClient } from './subgraph-module-client';
 
 export { requireModule };

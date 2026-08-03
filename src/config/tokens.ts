@@ -1,7 +1,7 @@
 /**
- * Token configuration — moved to @poa/core/chains (shared with the frontend so
+ * Token configuration — moved to @poa-box/core/chains (shared with the frontend so
  * amount encoding can never drift). This shim keeps the historical CLI import
- * path and the `@poa/cli/config/tokens` subpath stable.
+ * path and the `@poa-box/cli/config/tokens` subpath stable.
  */
 export {
   PARTICIPATION_TOKEN_DECIMALS,
@@ -9,5 +9,5 @@ export {
   getTokenBySymbol,
   resolveTokenAddress,
   getTokenDecimals,
-} from '@poa/core/chains';
-export type { TokenInfo } from '@poa/core/chains';
+} from '@poa-box/core/chains';
+export type { TokenInfo } from '@poa-box/core/chains';

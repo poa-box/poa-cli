@@ -14,7 +14,7 @@
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { listBrainDocs } from '../../lib/brain';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface ListArgs {}

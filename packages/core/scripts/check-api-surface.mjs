@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * API-surface tripwire for @poa/core.
+ * API-surface tripwire for @poa-box/core.
  *
  * The exported surface IS the stability contract other teams depend on
  * (same policy as the CLI's docs/reference/cli/output-contracts.json for

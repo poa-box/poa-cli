@@ -32,7 +32,7 @@ import {
   getAllowlistPath,
   type AllowlistEntry,
 } from '../../lib/brain-signing';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 interface AllowlistListArgs {}
 interface AllowlistAddArgs {

@@ -1,4 +1,4 @@
-# Adopting @poa/core in a frontend
+# Adopting @poa-box/core in a frontend
 
 This is the migration map for `poa-app` (and the template for every future
 market-targeted frontend). The goal state: a frontend owns **wallet UX,
@@ -36,21 +36,21 @@ hooks/components don't churn:
 
 | poa-app source | replaced by |
 |---|---|
-| `TaskService` task-metadata objects (built inline 5×) | `@poa/core/metadata/task` |
-| `TaskService` createTask/claim/submit/… encodings | `@poa/core/tx/task` |
-| `VotingService._uploadProposalMetadata` + createProposal | `@poa/core/metadata/proposal` + `@poa/core/tx/vote` |
-| `useProposalForm` buildProposalData / setterDefinitions execution batches | `@poa/core/tx/governance` (`encodeExecutorCall`, `buildGovernanceProposal`) |
-| `EligibilityService` vouch/role calls + permission bitmasks (`util/permissions.js`) | `@poa/core/tx/eligibility` + `@poa/core/perms` |
-| `TokenRequestService` / `TreasuryService` / `EducationService` / `ZkEmailInvitesService` | `@poa/core/tx/{token,treasury,education,zkemail}` |
-| `src/lib/zkemail/allowlist.js` | `@poa/core/zkemail` |
-| `util/taskUtils.js` + `tokenLabel.js` payout math | `@poa/core/payout` |
-| `services/web3/utils/encoding.js` (CID↔bytes32 etc.) | `@poa/core/encoding` |
-| `config/networks.js` | `@poa/core/chains` (env via injection) |
-| `abi/` directory (byte-drifted copies) | `@poa/core/abis` |
-| `util/tokens.js` TOKEN_META decimals | `@poa/core/chains` token registry |
-| `lib/errors/` revert decoding | `@poa/core/error-catalog` + `classifyError` (map decoded errors to toasts) |
-| `ipfsContext` pin/fetch plumbing | `@poa/core/ipfs` (inject your endpoints; keep your read-back verification UX on top) |
-| `userOpBuilder.js` hash/paymaster encoding | `@poa/core/execute/sponsored` (`getUserOpHash`, `encodePaymasterData`) |
+| `TaskService` task-metadata objects (built inline 5×) | `@poa-box/core/metadata/task` |
+| `TaskService` createTask/claim/submit/… encodings | `@poa-box/core/tx/task` |
+| `VotingService._uploadProposalMetadata` + createProposal | `@poa-box/core/metadata/proposal` + `@poa-box/core/tx/vote` |
+| `useProposalForm` buildProposalData / setterDefinitions execution batches | `@poa-box/core/tx/governance` (`encodeExecutorCall`, `buildGovernanceProposal`) |
+| `EligibilityService` vouch/role calls + permission bitmasks (`util/permissions.js`) | `@poa-box/core/tx/eligibility` + `@poa-box/core/perms` |
+| `TokenRequestService` / `TreasuryService` / `EducationService` / `ZkEmailInvitesService` | `@poa-box/core/tx/{token,treasury,education,zkemail}` |
+| `src/lib/zkemail/allowlist.js` | `@poa-box/core/zkemail` |
+| `util/taskUtils.js` + `tokenLabel.js` payout math | `@poa-box/core/payout` |
+| `services/web3/utils/encoding.js` (CID↔bytes32 etc.) | `@poa-box/core/encoding` |
+| `config/networks.js` | `@poa-box/core/chains` (env via injection) |
+| `abi/` directory (byte-drifted copies) | `@poa-box/core/abis` |
+| `util/tokens.js` TOKEN_META decimals | `@poa-box/core/chains` token registry |
+| `lib/errors/` revert decoding | `@poa-box/core/error-catalog` + `classifyError` (map decoded errors to toasts) |
+| `ipfsContext` pin/fetch plumbing | `@poa-box/core/ipfs` (inject your endpoints; keep your read-back verification UX on top) |
+| `userOpBuilder.js` hash/paymaster encoding | `@poa-box/core/execute/sponsored` (`getUserOpHash`, `encodePaymasterData`) |
 
 Frontend-tuned gas policy (`config/gas.js` multipliers, announceWinner's 3×
 callGasLimit, MAX_USEROP_GAS) stays in the frontend — pass it through your
@@ -58,7 +58,7 @@ manager's options; core deliberately doesn't hardcode it.
 
 ## Step 3 — reads (optional, incremental)
 
-Apollo can stay. Point your documents at `@poa/core/graph/documents/*` so the
+Apollo can stay. Point your documents at `@poa-box/core/graph/documents/*` so the
 queries themselves can't drift, or adopt `GraphClient` where you don't need
 Apollo's cache. `subgraphCapabilities.js` (introspection) and core's
 field-fallback tiers solve the same problem — when a service moves to core

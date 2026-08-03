@@ -1,8 +1,8 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { type Hex, type Address } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { isDelegated, delegateEOA, EOA_DELEGATION } from '@poa/cli/lib/sponsored';
-import * as output from '@poa/cli/lib/output';
+import { isDelegated, delegateEOA, EOA_DELEGATION } from '@poa-box/cli/lib/sponsored';
+import * as output from '@poa-box/cli/lib/output';
 
 interface DelegateArgs {
   chain?: number;

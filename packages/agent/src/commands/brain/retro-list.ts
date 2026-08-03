@@ -15,7 +15,7 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { openBrainDoc, stopBrainNode } from '../../lib/brain';
 import type { BrainRetro, RetroStatus } from '../../lib/brain-projections';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 interface RetroListArgs {
   doc: string;

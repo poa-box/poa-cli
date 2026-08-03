@@ -2098,7 +2098,7 @@
     tslib "^2.8.1"
     tsyringe "^4.10.0"
 
-"@poa/core@link:./packages/core":
+"@poa-box/core@link:./packages/core":
   version "0.0.0"
   uid ""
 

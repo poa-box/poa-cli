@@ -1,14 +1,14 @@
 /**
- * Display Formatting Helpers — CLI wrapper over @poa/core/format.
+ * Display Formatting Helpers — CLI wrapper over @poa-box/core/format.
  *
  * The pure formatters (formatToken, formatRelativeTime, formatCountdown,
- * formatUsd) moved to @poa/core. statusColor stays here: it is terminal
+ * formatUsd) moved to @poa-box/core. statusColor stays here: it is terminal
  * presentation (chalk), which core deliberately excludes.
  */
 
 import chalk from 'chalk';
 
-export { formatToken, formatRelativeTime, formatCountdown, formatUsd } from '@poa/core/format';
+export { formatToken, formatRelativeTime, formatCountdown, formatUsd } from '@poa-box/core/format';
 
 /** Wrap a status string in its conventional color; unknown statuses pass through. */
 export function statusColor(status: string): string {

@@ -3,13 +3,13 @@ import { ethers } from 'ethers';
 import * as fs from 'fs';
 import * as path from 'path';
 import { homedir } from 'os';
-import { queryWithFieldFallback } from '@poa/cli/lib/subgraph';
-import { resolveOrgModules } from '@poa/cli/lib/resolve';
-import { resolveNetworkConfig } from '@poa/cli/config/networks';
-import { createReadContract } from '@poa/cli/lib/contracts';
-import { resolveVotingContracts } from '@poa/cli/commands/vote/helpers';
-import { getNoAllocationSet } from '@poa/cli/lib/no-alloc-cache';
-import * as output from '@poa/cli/lib/output';
+import { queryWithFieldFallback } from '@poa-box/cli/lib/subgraph';
+import { resolveOrgModules } from '@poa-box/cli/lib/resolve';
+import { resolveNetworkConfig } from '@poa-box/cli/config/networks';
+import { createReadContract } from '@poa-box/cli/lib/contracts';
+import { resolveVotingContracts } from '@poa-box/cli/commands/vote/helpers';
+import { getNoAllocationSet } from '@poa-box/cli/lib/no-alloc-cache';
+import * as output from '@poa-box/cli/lib/output';
 
 interface TriageArgs {
   org?: string;
@@ -440,7 +440,7 @@ export const triageHandler = {
       // --- 4b. AUDIT OPPORTUNITIES (when board is empty) ---
       if (!hasWork) {
         try {
-          const { queryAllChains } = require('@poa/cli/lib/subgraph');
+          const { queryAllChains } = require('@poa-box/cli/lib/subgraph');
           const exploreQuery = `query($first:Int!){organizations(first:$first){name users(first:100){membershipStatus} taskManager{projects(where:{deleted:false},first:10){tasks(first:200){status}}} hybridVoting{proposals(first:50){status}}}}`;
           const exploreResults = await queryAllChains(exploreQuery, { first: 10 });
           for (const cr of exploreResults) {

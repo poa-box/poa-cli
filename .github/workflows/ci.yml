@@ -37,7 +37,7 @@ jobs:
 
       # The agent package must exist BEFORE the root suite runs:
       # cli-agent-surface.test.ts spawns packages/agent/dist/pop-agent.js.
-      - name: Agent package — install (links @poa/cli)
+      - name: Agent package — install (links @poa-box/cli)
         run: yarn --cwd packages/agent install --frozen-lockfile
 
       - name: Agent package — build

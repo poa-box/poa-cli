@@ -109,7 +109,7 @@ function buildTools(allowWrites: boolean, allowDestructive: boolean) {
   // command spec (readOnly/destructive/sideEffects per command) through MCP.
   tools.push({
     name: 'pop_manifest',
-    description: 'The @poa/cli machine-readable command manifest: every command with readOnly, broadcasts, destructive, and sideEffects classifications.',
+    description: 'The @poa-box/cli machine-readable command manifest: every command with readOnly, broadcasts, destructive, and sideEffects classifications.',
     inputSchema: { type: 'object', properties: {} },
   });
 

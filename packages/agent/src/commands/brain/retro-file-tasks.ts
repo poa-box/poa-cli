@@ -56,7 +56,7 @@ import { spawnSync } from 'child_process';
 import { openBrainDoc, stopBrainNode } from '../../lib/brain';
 import { routedDispatch } from '../../lib/brain-ops';
 import type { BrainRetro, RetroProposedChange } from '../../lib/brain-projections';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 interface RetroFileTasksArgs {
   doc: string;

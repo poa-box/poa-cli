@@ -1,9 +1,9 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { createSigner } from '@poa/cli/lib/signer';
-import { pinJson } from '@poa/cli/lib/ipfs';
-import { resolveNetworkConfig } from '@poa/cli/config/networks';
-import * as output from '@poa/cli/lib/output';
+import { createSigner } from '@poa-box/cli/lib/signer';
+import { pinJson } from '@poa-box/cli/lib/ipfs';
+import { resolveNetworkConfig } from '@poa-box/cli/config/networks';
+import * as output from '@poa-box/cli/lib/output';
 
 interface RegisterArgs {
   name: string;

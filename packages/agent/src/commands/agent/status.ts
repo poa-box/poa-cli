@@ -1,9 +1,9 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { query } from '@poa/cli/lib/subgraph';
-import { resolveOrgModules } from '@poa/cli/lib/resolve';
-import { resolveNetworkConfig } from '@poa/cli/config/networks';
-import * as output from '@poa/cli/lib/output';
+import { query } from '@poa-box/cli/lib/subgraph';
+import { resolveOrgModules } from '@poa-box/cli/lib/resolve';
+import { resolveNetworkConfig } from '@poa-box/cli/config/networks';
+import * as output from '@poa-box/cli/lib/output';
 
 interface StatusArgs {
   org?: string;

@@ -1,7 +1,7 @@
 {
-  "name": "@poa/agent",
+  "name": "@poa-box/agent",
   "version": "0.1.0",
-  "description": "Autonomous governance agent runtime for the POP protocol — agent + brain (P2P CRDT) command surface over @poa/cli",
+  "description": "Autonomous governance agent runtime for the POP protocol — agent + brain (P2P CRDT) command surface over @poa-box/cli",
   "main": "dist/index.js",
   "bin": {
     "pop-agent": "./dist/pop-agent.js"
@@ -23,11 +23,11 @@
     "onboard": "bash scripts/onboard.sh",
     "apply": "bash scripts/apply.sh",
     "lint": "tsc --noEmit",
-    "prepack": "npm pkg set 'dependencies.@poa/cli=^0.1.0'",
-    "postpack": "npm pkg set 'dependencies.@poa/cli=link:../..'"
+    "prepack": "npm pkg set 'dependencies.@poa-box/cli=^0.1.0'",
+    "postpack": "npm pkg set 'dependencies.@poa-box/cli=link:../..'"
   },
   "dependencies": {
-    "@poa/cli": "link:../..",
+    "@poa-box/cli": "link:../..",
     "ethers": "5.7.2",
     "viem": "^2.47.12",
     "yargs": "^17.7.2"

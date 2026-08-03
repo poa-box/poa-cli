@@ -1,5 +1,5 @@
 /**
- * EIP-7702 Gas Sponsorship — CLI wrapper over @poa/core/execute/sponsored.
+ * EIP-7702 Gas Sponsorship — CLI wrapper over @poa-box/core/execute/sponsored.
  *
  * The userop construction (paymaster data encoding, v0.7 hash, dummy-signature
  * gas estimation, bundler submission) lives in core, environment-free. This
@@ -18,8 +18,8 @@ import {
   delegateEOA,
   getUserOpHash,
   encodeCall,
-} from '@poa/core/execute/sponsored';
-import type { SponsoredSendOptions } from '@poa/core/execute/sponsored';
+} from '@poa-box/core/execute/sponsored';
+import type { SponsoredSendOptions } from '@poa-box/core/execute/sponsored';
 
 export {
   EOA_DELEGATION,

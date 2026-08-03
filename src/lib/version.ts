@@ -1,5 +1,5 @@
 /**
- * Implementation feature detection — CLI wrapper over @poa/core/version.
+ * Implementation feature detection — CLI wrapper over @poa-box/core/version.
  *
  * Everything (selector math, EIP-1967 slot walk, bytecode scan, the
  * known-implementation feature table, legacy fragments) lives in core. The one
@@ -9,15 +9,15 @@
  */
 
 import { ethers } from 'ethers';
-import { detectTaskManagerFeatures as coreDetect } from '@poa/core/version';
-import type { DetectFeaturesOptions, TaskManagerFeatures } from '@poa/core/version';
+import { detectTaskManagerFeatures as coreDetect } from '@poa-box/core/version';
+import type { DetectFeaturesOptions, TaskManagerFeatures } from '@poa-box/core/version';
 import { fetchOrgBeaconSnapshot } from '../queries/beacons';
 
-export * from '@poa/core/version';
+export * from '@poa-box/core/version';
 
 /**
  * Probe a TaskManager proxy's implementation for feature selectors.
- * See @poa/core/version for resolution order and caching. The CLI injects the
+ * See @poa-box/core/version for resolution order and caching. The CLI injects the
  * beacon-snapshot fetcher from its own queries/beacons module (the seam tests
  * mock) unless the caller supplied a client/fetcher or asked to skip the
  * subgraph.

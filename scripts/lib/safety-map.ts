@@ -1,5 +1,5 @@
 /**
- * The curated safety classification for every @poa/cli command — the source
+ * The curated safety classification for every @poa-box/cli command — the source
  * the machine-readable manifest (and `pop mcp`) derives readOnly/destructive
  * from.
  *

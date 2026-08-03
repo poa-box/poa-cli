@@ -21,7 +21,7 @@ import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { readBrainDoc, stopBrainNode } from '../../lib/brain';
 import { projectForDoc } from '../../lib/brain-projections';
 import { parseSharedMarkdown } from '../../lib/brain-migrate';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 interface SnapshotArgs {
   doc: string;

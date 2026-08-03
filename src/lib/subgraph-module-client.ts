@@ -12,7 +12,7 @@
  * a missing method is actually called.
  */
 
-import type { GraphClient } from '@poa/core/graph/client';
+import type { GraphClient } from '@poa-box/core/graph/client';
 import * as subgraph from './subgraph';
 
 export function subgraphModuleClient(): GraphClient {

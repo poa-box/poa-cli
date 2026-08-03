@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const { requestMock } = vi.hoisted(() => ({ requestMock: vi.fn() }));
 
 /**
- * The transport is @poa/core's fetch-based client; the stub translates the
+ * The transport is @poa-box/core's fetch-based client; the stub translates the
  * requestMock protocol (resolve data / reject with `.response`) into HTTP
  * responses so the classification paths run for real.
  */

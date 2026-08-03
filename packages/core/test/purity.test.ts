@@ -1,7 +1,7 @@
 /**
  * Browser-purity gate.
  *
- * @poa/core's whole reason to exist is that frontends and integrators can
+ * @poa-box/core's whole reason to exist is that frontends and integrators can
  * depend on it without Node. This test fails the build if any module under
  * src/ (except the scripts/ dir, which runs at build time) references a Node
  * built-in, a terminal library, or process.env.

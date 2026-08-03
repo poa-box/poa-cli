@@ -1,5 +1,5 @@
-# Reference Dockerfile for the POP human CLI (@poa/cli) only.
-# The autonomous agent runtime (packages/agent, @poa/agent) and its brain/p2p
+# Reference Dockerfile for the POP human CLI (@poa-box/cli) only.
+# The autonomous agent runtime (packages/agent, @poa-box/agent) and its brain/p2p
 # stack are deliberately NOT built or installed here.
 #
 # Build:  docker build -t poa-cli .
@@ -14,8 +14,8 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
-# @poa/core is a link: dependency — its package.json must exist BEFORE install
-# so yarn can create the node_modules/@poa/core symlink.
+# @poa-box/core is a link: dependency — its package.json must exist BEFORE install
+# so yarn can create the node_modules/@poa-box/core symlink.
 COPY package.json yarn.lock ./
 COPY packages/core/package.json packages/core/yarn.lock ./packages/core/
 RUN yarn install --frozen-lockfile --production=false \
@@ -36,7 +36,7 @@ RUN yarn build
 FROM node:20-alpine
 WORKDIR /app
 
-# The runtime needs @poa/core resolvable at node_modules/@poa/core; the link:
+# The runtime needs @poa-box/core resolvable at node_modules/@poa-box/core; the link:
 # symlink points at packages/core, so ship its package.json + built dist.
 COPY package.json yarn.lock ./
 COPY packages/core/package.json ./packages/core/package.json

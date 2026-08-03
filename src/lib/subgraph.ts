@@ -1,8 +1,8 @@
 /**
- * Subgraph Client — CLI host wrapper over @poa/core.
+ * Subgraph Client — CLI host wrapper over @poa-box/core.
  *
  * The tiered transport (free Studio / paid gateway routing, quota pins, field
- * fallback) lives in @poa/core/graph/client and is browser-pure. This module
+ * fallback) lives in @poa-box/core/graph/client and is browser-pure. This module
  * is the CLI's binding of it to the Node environment:
  *
  *   env         process.env (live reference, so per-call env reads behave
@@ -13,7 +13,7 @@
  *   onWarn      process.stderr (visible to a human without corrupting --json)
  *
  * Every export keeps its pre-extraction signature, so the ~66 command files
- * and @poa/agent's deep imports (`@poa/cli/lib/subgraph`) are unaffected.
+ * and @poa-box/agent's deep imports (`@poa-box/cli/lib/subgraph`) are unaffected.
  */
 
 import * as fs from 'fs';
@@ -26,7 +26,7 @@ import {
   redactSubgraphUrl,
   isQuotaError,
   isAuthError,
-} from '@poa/core/graph/client';
+} from '@poa-box/core/graph/client';
 import type {
   TierState,
   TierStateStore,
@@ -38,7 +38,7 @@ import type {
   TransportStatus,
   FieldFallbackTier,
   ChainQueryResult,
-} from '@poa/core/graph/client';
+} from '@poa-box/core/graph/client';
 
 export { FREE_BACKOFF_SECONDS, redactSubgraphUrl, isQuotaError, isAuthError };
 export type {
@@ -144,7 +144,7 @@ function buildClient(): GraphClient {
   });
 }
 
-/** The GraphClient this process uses — for handing to @poa/core helpers. */
+/** The GraphClient this process uses — for handing to @poa-box/core helpers. */
 export function getGraphClient(): GraphClient {
   return client;
 }
@@ -174,7 +174,7 @@ export function resolveTransportPlan(chainId?: number): TransportPlan {
 
 /**
  * Query a subgraph on the specified chain, routed through the tier plan
- * (see @poa/core/graph/client).
+ * (see @poa-box/core/graph/client).
  */
 export async function query<T = any>(
   gqlQuery: string,

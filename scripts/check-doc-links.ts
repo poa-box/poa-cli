@@ -157,7 +157,7 @@ function main(): void {
     if (fs.existsSync(full)) mdFiles.push(full);
   }
   mdFiles.push(...walk(path.join(ROOT, 'docs'), '.md'));
-  // The agent package's docs moved here in the @poa/cli / @poa/agent split —
+  // The agent package's docs moved here in the @poa-box/cli / @poa-box/agent split —
   // they broke silently because this scan did not follow them.
   mdFiles.push(...walk(path.join(ROOT, 'packages', 'agent', 'docs'), '.md'));
 

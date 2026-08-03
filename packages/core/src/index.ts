@@ -1,18 +1,18 @@
 /**
- * @poa/core — the stable POP protocol layer.
+ * @poa-box/core — the stable POP protocol layer.
  *
  * Subpath imports are the primary API (tree-shake friendly and explicit):
  *
- *   @poa/core/chains            chain table + env-injected resolvers + tokens
- *   @poa/core/abis              generated contract ABIs (ALL_ABIS registry)
- *   @poa/core/graph/client      tiered subgraph client (GraphClient)
- *   @poa/core/graph/documents   GraphQL documents + pure derivation helpers
- *   @poa/core/reads/*           typed reads (resolve, per-domain)
- *   @poa/core/tx/*              TxIntent + per-domain intent builders
- *   @poa/core/execute/*         ethers EOA executor + 4337/7702 sponsored path
- *   @poa/core/metadata/*        canonical metadata builders (key order = protocol)
- *   @poa/core/ipfs              pin/fetch client (injected endpoints)
- *   @poa/core/payout|perms|zkemail|encoding|…  pure domain logic
+ *   @poa-box/core/chains            chain table + env-injected resolvers + tokens
+ *   @poa-box/core/abis              generated contract ABIs (ALL_ABIS registry)
+ *   @poa-box/core/graph/client      tiered subgraph client (GraphClient)
+ *   @poa-box/core/graph/documents   GraphQL documents + pure derivation helpers
+ *   @poa-box/core/reads/*           typed reads (resolve, per-domain)
+ *   @poa-box/core/tx/*              TxIntent + per-domain intent builders
+ *   @poa-box/core/execute/*         ethers EOA executor + 4337/7702 sponsored path
+ *   @poa-box/core/metadata/*        canonical metadata builders (key order = protocol)
+ *   @poa-box/core/ipfs              pin/fetch client (injected endpoints)
+ *   @poa-box/core/payout|perms|zkemail|encoding|…  pure domain logic
  *
  * This barrel re-exports the kernel for convenience; bundle-sensitive
  * consumers should prefer subpaths.
@@ -47,7 +47,7 @@ export * from './preflight';
 // NOT re-exported here: ./execute (ethers EOA executor + 4337/7702 sponsored
 // path). It requires the optional viem/permissionless peers at load time, and
 // this barrel must stay loadable for reads-only consumers that skip them.
-// Import executors explicitly: '@poa/core/execute/ethers' / '/sponsored'.
+// Import executors explicitly: '@poa-box/core/execute/ethers' / '/sponsored'.
 export * as zkemail from './zkemail';
 export * as intents from './tx';
 export * as reads from './reads';

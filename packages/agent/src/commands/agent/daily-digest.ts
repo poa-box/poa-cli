@@ -10,9 +10,9 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { execSync } from 'child_process';
 import { ethers } from 'ethers';
-import { queryWithFieldFallback } from '@poa/cli/lib/subgraph';
-import { resolveOrgModules } from '@poa/cli/lib/resolve';
-import * as output from '@poa/cli/lib/output';
+import { queryWithFieldFallback } from '@poa-box/cli/lib/subgraph';
+import { resolveOrgModules } from '@poa-box/cli/lib/resolve';
+import * as output from '@poa-box/cli/lib/output';
 
 interface DailyDigestArgs {
   org?: string;

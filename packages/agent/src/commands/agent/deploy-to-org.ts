@@ -1,9 +1,9 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { createSigner } from '@poa/cli/lib/signer';
-import { resolveNetworkConfig } from '@poa/cli/config/networks';
-import { pinJson } from '@poa/cli/lib/ipfs';
-import * as output from '@poa/cli/lib/output';
+import { createSigner } from '@poa-box/cli/lib/signer';
+import { resolveNetworkConfig } from '@poa-box/cli/config/networks';
+import { pinJson } from '@poa-box/cli/lib/ipfs';
+import * as output from '@poa-box/cli/lib/output';
 
 interface DeployToOrgArgs {
   'target-org': string;
@@ -76,7 +76,7 @@ export const deployToOrgHandler = {
       // Step 4: Check if org exists on target chain
       spin.text = 'Checking target org...';
       const orgQuery = `query($name: String!) { organizations(where: { name: $name }, first: 1) { id name users(first: 100) { address membershipStatus account { username } } } }`;
-      const { queryAllChains } = require('@poa/cli/lib/subgraph');
+      const { queryAllChains } = require('@poa-box/cli/lib/subgraph');
       let orgFound = false;
       let isMember = false;
       let orgMembers = 0;

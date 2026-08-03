@@ -1,5 +1,5 @@
 /**
- * Network Configuration — CLI wrapper over @poa/core/chains.
+ * Network Configuration — CLI wrapper over @poa-box/core/chains.
  *
  * The chain table (NETWORKS) and pure helpers live in core, shared verbatim
  * with every other consumer so CLI and frontend chain config can never drift.
@@ -10,14 +10,14 @@
 import {
   getGatewaySubgraphUrl as coreGetGatewaySubgraphUrl,
   resolveNetworkConfig as coreResolveNetworkConfig,
-} from '@poa/core/chains';
-import type { NetworkConfig } from '@poa/core/chains';
+} from '@poa-box/core/chains';
+import type { NetworkConfig } from '@poa-box/core/chains';
 
-export * from '@poa/core/chains';
+export * from '@poa-box/core/chains';
 
 /**
  * Resolve the PAID (decentralised gateway) subgraph endpoint for a chain, or
- * undefined when none is configured. See @poa/core/chains for the precedence
+ * undefined when none is configured. See @poa-box/core/chains for the precedence
  * (POP_<NET>_SUBGRAPH_GATEWAY > _FALLBACK > _ID > built-in gatewaySubgraphId).
  */
 export function getGatewaySubgraphUrl(chainId: number): string | undefined {

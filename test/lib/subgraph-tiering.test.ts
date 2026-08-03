@@ -18,7 +18,7 @@ const { requestMock } = vi.hoisted(() => ({ requestMock: vi.fn() }));
 
 /**
  * Records the URL each request went to, so we can assert which tier served it.
- * The transport is @poa/core's fetch-based GraphQL client, so the stub speaks
+ * The transport is @poa-box/core's fetch-based GraphQL client, so the stub speaks
  * HTTP: requestMock resolutions become 200 responses ({ data }), and
  * requestMock rejections are translated from their `.response`
  * { status, headers, errors|error } shape into the equivalent HTTP response —

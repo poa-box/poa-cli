@@ -1,5 +1,5 @@
 {
-  "name": "@poa/core",
+  "name": "@poa-box/core",
   "version": "0.1.0",
   "description": "Browser-and-Node core for the POP (Proof of Participation) protocol: transaction intent builders, subgraph reads, canonical metadata, ABIs, and chain config. The stable layer the CLI, frontends, and integrators share.",
   "main": "dist/index.js",

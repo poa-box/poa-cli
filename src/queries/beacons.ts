@@ -1,5 +1,5 @@
 /**
- * Beacon/version queries — CLI wrapper over @poa/core/graph/documents/beacons.
+ * Beacon/version queries — CLI wrapper over @poa-box/core/graph/documents/beacons.
  *
  * Documents, types, and the pure snapshot helpers are re-exported verbatim.
  * The two network fetchers take a GraphClient in core; the CLI binds its
@@ -10,11 +10,11 @@
 import {
   fetchOrgBeaconSnapshot as coreFetchOrgBeaconSnapshot,
   fetchImplementationVersionIndex as coreFetchImplementationVersionIndex,
-} from '@poa/core/graph/documents/beacons';
-import type { OrgBeaconSnapshot, ImplementationVersionRow } from '@poa/core/graph/documents/beacons';
+} from '@poa-box/core/graph/documents/beacons';
+import type { OrgBeaconSnapshot, ImplementationVersionRow } from '@poa-box/core/graph/documents/beacons';
 import { subgraphModuleClient } from '../lib/subgraph-module-client';
 
-export * from '@poa/core/graph/documents/beacons';
+export * from '@poa-box/core/graph/documents/beacons';
 
 /** Fetch an org's module→beacon snapshot (field-fallback tiered). */
 export async function fetchOrgBeaconSnapshot(orgId: string, chainId?: number): Promise<OrgBeaconSnapshot> {

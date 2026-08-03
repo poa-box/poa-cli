@@ -1,9 +1,9 @@
 /**
- * Transaction Execution — CLI wrapper over @poa/core/execute.
+ * Transaction Execution — CLI wrapper over @poa-box/core/execute.
  *
  * The full pipeline (gas estimation as revert prediction, dry-run calldata,
  * EIP-7702 sponsored routing with EOA fallback, receipt-log parsing, error
- * classification/decoding) lives in @poa/core/execute/ethers and is
+ * classification/decoding) lives in @poa-box/core/execute/ethers and is
  * environment-free. This wrapper restores the CLI's implicit env behavior:
  *
  *   - sponsorship auto-resolves from env (POP_PRIVATE_KEY/POP_ORG_ID/POP_HAT_ID
@@ -12,7 +12,7 @@
  *   - POP_LEGACY_DRYRUN_TXHASH=1 keeps the legacy dry-run txHash field
  *
  * executeTx keeps its pre-extraction signature for every command and for
- * @poa/agent's `@poa/cli/lib/tx` deep import.
+ * @poa-box/agent's `@poa-box/cli/lib/tx` deep import.
  */
 
 import { ethers } from 'ethers';
@@ -22,9 +22,9 @@ import {
   classifyError,
   detectUserOpFailure,
   parseEventLogs,
-} from '@poa/core/execute/ethers';
-import type { TxResult, TxOptions as CoreTxOptions, ErrorCode, ClassifiedError } from '@poa/core/execute/ethers';
-import type { TxIntent } from '@poa/core/tx/intent';
+} from '@poa-box/core/execute/ethers';
+import type { TxResult, TxOptions as CoreTxOptions, ErrorCode, ClassifiedError } from '@poa-box/core/execute/ethers';
+import type { TxIntent } from '@poa-box/core/tx/intent';
 import { resolveSponsoredConfig } from './sponsorship-config';
 import type { SponsoredConfig } from './sponsorship-config';
 
@@ -76,8 +76,8 @@ export async function executeTx(
 }
 
 /**
- * Execute a @poa/core TxIntent with the same CLI env bindings as executeTx.
- * New code should prefer building intents (tx/<domain> in @poa/core) and
+ * Execute a @poa-box/core TxIntent with the same CLI env bindings as executeTx.
+ * New code should prefer building intents (tx/<domain> in @poa-box/core) and
  * executing them here.
  */
 export async function executeIntent(

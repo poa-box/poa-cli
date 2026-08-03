@@ -12,7 +12,7 @@ import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { openBrainDoc, stopBrainNode } from '../../lib/brain';
 import { projectRetros } from '../../lib/brain-projections';
 import type { BrainRetro } from '../../lib/brain-projections';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 interface RetroShowArgs {
   retroId: string;
