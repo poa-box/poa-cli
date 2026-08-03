@@ -83,8 +83,13 @@ jobs:
     name: plan
     runs-on: ubuntu-latest
     outputs:
-      has_work: ${{ steps.preflight.outputs.has_work }}
-      summary: ${{ steps.preflight.outputs.summary }}
+      has_work: ${{ needs.plan.outputs.has_work }}
+      core_action: ${{ needs.plan.outputs.core_action }}
+      core_version: ${{ needs.plan.outputs.core_version }}
+      cli_action: ${{ needs.plan.outputs.cli_action }}
+      cli_version: ${{ needs.plan.outputs.cli_version }}
+      agent_action: ${{ needs.plan.outputs.agent_action }}
+      agent_version: ${{ needs.plan.outputs.agent_version }}
     steps:
       - name: Guard — releases run from main only
         if: ${{ github.ref != 'refs/heads/main' }}
@@ -96,6 +101,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+
+      # Pin the npm MAJOR. `npm@latest` silently moved to npm 12, which
+      # changed `npm view --json` to wrap results in an array; the plan job
+      # (runner npm) and the publish job (npm 12) then disagreed about what
+      # was already published and the release tried to republish an existing
+      # version. Both jobs now run the same pinned npm.
+      - name: Pin npm (>= 11.5.1 for trusted publishing)
+        run: npm install -g 'npm@^11.5.1' && npm --version
 
       # --allow-empty ONLY for automatic runs: a merge that changes no version
       # is normal and must not fail. A human who explicitly asked for a release
@@ -111,6 +124,15 @@ jobs:
           node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag || 'latest' }}' $empty --json > plan.json
           has_work=$(node -p "JSON.parse(require('fs').readFileSync('plan.json','utf8')).hasWork")
           echo "has_work=$has_work" >> "$GITHUB_OUTPUT"
+          for pkg in core cli agent; do
+            case "$pkg" in
+              core)  name='@poa-box/core' ;;
+              cli)   name='@poa-box/cli' ;;
+              agent) name='@poa-box/agent' ;;
+            esac
+            echo "${pkg}_action=$(node -p "JSON.parse(require('fs').readFileSync('plan.json','utf8')).plan.find(p=>p.name==='$name').action")"   >> "$GITHUB_OUTPUT"
+            echo "${pkg}_version=$(node -p "JSON.parse(require('fs').readFileSync('plan.json','utf8')).plan.find(p=>p.name==='$name').version")" >> "$GITHUB_OUTPUT"
+          done
           {
             echo '## Release plan'
             echo '```'
@@ -165,11 +187,13 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          npm install -g npm@latest >/dev/null
+          # Pinned major, not @latest — see the plan job's note: npm 12
+          # changed `npm view --json` output and broke the release.
+          npm install -g 'npm@^11.5.1' >/dev/null
           ver=$(npm --version); echo "npm $ver, node $(node --version)"
           case "$ver" in
-            11.*|1[2-9].*|[2-9][0-9].*) ;;
-            *) echo "::error::npm $ver is too old for trusted publishing (need >= 11.5.1)"; exit 1 ;;
+            11.*) ;;
+            *) echo "::error::expected npm 11.x (>= 11.5.1) for trusted publishing, got $ver"; exit 1 ;;
           esac
           if [ -n "${NPM_TOKEN:-}" ]; then
             echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
@@ -180,30 +204,15 @@ jobs:
             echo "auth: trusted publishing (OIDC) — no long-lived credential in this repo"
           fi
 
-      # --- Decide (and validate) what would publish, before any work ---------
-      - name: Preflight — build and validate the release plan
-        id: preflight
+      # NO second preflight here. The plan job already computed and validated
+      # the plan; recomputing it produced TWO sources of truth that disagreed
+      # (different npm versions read the registry differently) and the wrong
+      # one won. The plan is an input to this job now, not a recomputation.
+      - name: Show the plan this job will execute
         run: |
-          set -o pipefail
-          node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag || 'latest' }}' | tee plan.txt
-          node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag || 'latest' }}' --json > plan.json
-          {
-            echo '## Release plan'
-            echo '```'
-            cat plan.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          for pkg in core cli agent; do
-            case "$pkg" in
-              core)  name='@poa-box/core' ;;
-              cli)   name='@poa-box/cli' ;;
-              agent) name='@poa-box/agent' ;;
-            esac
-            action=$(node -p "JSON.parse(require('fs').readFileSync('plan.json','utf8')).plan.find(p=>p.name==='$name').action")
-            version=$(node -p "JSON.parse(require('fs').readFileSync('plan.json','utf8')).plan.find(p=>p.name==='$name').version")
-            echo "${pkg}_action=$action"   >> "$GITHUB_OUTPUT"
-            echo "${pkg}_version=$version" >> "$GITHUB_OUTPUT"
-          done
+          echo "core  ${{ needs.plan.outputs.core_action }}  ${{ needs.plan.outputs.core_version }}"
+          echo "cli   ${{ needs.plan.outputs.cli_action }}  ${{ needs.plan.outputs.cli_version }}"
+          echo "agent ${{ needs.plan.outputs.agent_action }}  ${{ needs.plan.outputs.agent_version }}"
 
       # --- Build the whole chain ---------------------------------------------
       - name: Install (root — links @poa-box/core)
@@ -293,15 +302,15 @@ jobs:
       # publish-package.mjs applies the semver range BEFORE invoking npm (so it
       # reaches the registry metadata) and restores the link: form in a finally.
       - name: Publish @poa-box/core
-        if: ${{ !inputs.dry_run && steps.preflight.outputs.core_action == 'publish' }}
+        if: ${{ !inputs.dry_run && needs.plan.outputs.core_action == 'publish' }}
         run: node scripts/publish-package.mjs packages/core --access public --provenance --tag '${{ inputs.dist_tag || 'latest' }}'
 
       - name: Publish @poa-box/cli
-        if: ${{ !inputs.dry_run && steps.preflight.outputs.cli_action == 'publish' }}
+        if: ${{ !inputs.dry_run && needs.plan.outputs.cli_action == 'publish' }}
         run: node scripts/publish-package.mjs . --access public --provenance --tag '${{ inputs.dist_tag || 'latest' }}'
 
       - name: Publish @poa-box/agent
-        if: ${{ !inputs.dry_run && steps.preflight.outputs.agent_action == 'publish' }}
+        if: ${{ !inputs.dry_run && needs.plan.outputs.agent_action == 'publish' }}
         run: node scripts/publish-package.mjs packages/agent --access public --provenance --tag '${{ inputs.dist_tag || 'latest' }}'
 
       # Tag BEFORE verification: the publishes are irreversible, so the record
@@ -321,9 +330,9 @@ jobs:
             fi
             git tag -a "$tag" -m "$1 $2" && git push origin "$tag"
           }
-          tag_it core  '${{ steps.preflight.outputs.core_version }}'  '${{ steps.preflight.outputs.core_action }}'
-          tag_it cli   '${{ steps.preflight.outputs.cli_version }}'   '${{ steps.preflight.outputs.cli_action }}'
-          tag_it agent '${{ steps.preflight.outputs.agent_version }}' '${{ steps.preflight.outputs.agent_action }}'
+          tag_it core  '${{ needs.plan.outputs.core_version }}'  '${{ needs.plan.outputs.core_action }}'
+          tag_it cli   '${{ needs.plan.outputs.cli_version }}'   '${{ needs.plan.outputs.cli_action }}'
+          tag_it agent '${{ needs.plan.outputs.agent_version }}' '${{ needs.plan.outputs.agent_action }}'
 
       # --- Prove the published artifacts, cold -------------------------------
       # Every assertion below is SCOPED to what this run actually published —
@@ -334,12 +343,12 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          core='${{ steps.preflight.outputs.core_version }}'
-          cli='${{ steps.preflight.outputs.cli_version }}'
-          agent='${{ steps.preflight.outputs.agent_version }}'
-          core_act='${{ steps.preflight.outputs.core_action }}'
-          cli_act='${{ steps.preflight.outputs.cli_action }}'
-          agent_act='${{ steps.preflight.outputs.agent_action }}'
+          core='${{ needs.plan.outputs.core_version }}'
+          cli='${{ needs.plan.outputs.cli_version }}'
+          agent='${{ needs.plan.outputs.agent_version }}'
+          core_act='${{ needs.plan.outputs.core_action }}'
+          cli_act='${{ needs.plan.outputs.cli_action }}'
+          agent_act='${{ needs.plan.outputs.agent_action }}'
           fail=0
           summary='## Published'
 

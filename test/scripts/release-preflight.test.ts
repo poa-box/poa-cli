@@ -233,6 +233,38 @@ describe('guard: latest falls back to the highest version', () => {
   });
 });
 
+describe('regression: an existing package must never look "new"', () => {
+  // The release that failed in production: `npm install -g npm@latest` moved
+  // to npm 12, which wraps `npm view --json` output in an ARRAY. Reading
+  // `.versions` off the array gave undefined, every package looked brand new,
+  // and the run tried to republish core@0.1.0 (npm refuses; the chain died).
+  it('treats a package with known versions as published, not new', () => {
+    const { plan } = buildPlan(
+      PACKAGES,
+      pkgs({ 'packages/core': '0.1.0', '.': '0.1.1', 'packages/agent': '0.1.1' }),
+      registry({
+        '@poa-box/core': { versions: ['0.1.0'], latest: '0.1.0' },
+        '@poa-box/cli': { versions: ['0.1.0'], latest: '0.1.0' },
+        '@poa-box/agent': { versions: ['0.1.0'], latest: '0.1.0' },
+      })
+    );
+    // core is already at 0.1.0 → skip. This is the exact plan the failed run
+    // should have produced but did not.
+    expect(plan.map((p: any) => p.action)).toEqual(['skip', 'publish', 'publish']);
+  });
+
+  it('an empty version list still means "new" when that is genuinely true', () => {
+    // The npm-shape guard lives in fetchRegistryInfo (it cross-checks the
+    // registry anonymously); buildPlan itself must keep trusting its input.
+    const { plan } = buildPlan(
+      PACKAGES,
+      pkgs({ 'packages/core': '0.1.0', '.': '0.1.1', 'packages/agent': '0.1.1' }),
+      registry({ ...FRESH })
+    );
+    expect(plan[0].action).toBe('publish');
+  });
+});
+
 describe('guard: malformed versions never reach the registry', () => {
   it('rejects a typo\'d version', () => {
     const { errors } = buildPlan(
