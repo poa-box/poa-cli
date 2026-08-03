@@ -26,24 +26,29 @@ not just a version bump.
 ## Release checklist
 
 ```bash
-# 1. Everything green
+# 1. Everything green (yarn build builds packages/core first)
 yarn build && yarn test
+yarn --cwd packages/core test      # purity gate + calldata parity
 yarn --cwd packages/agent build && yarn --cwd packages/agent test
 yarn docs:check                    # generated reference + manifest + links
 
-# 2. The output contract, verified against LIVE data
-yarn contracts:check               # fails on any missing promised key
-#    Intentional shape change? contracts:update && review the diff:
-#    additions are fine; a REMOVAL means this release is a major bump.
+# 2. The contracts, verified
+yarn contracts:check               # --json keys, against LIVE data
+yarn --cwd packages/core api:check # @poa/core export surface (run after build)
+#    Intentional shape change? contracts:update / api:update && review the
+#    diff: additions are fine; a REMOVAL means this release is a major bump.
 
-# 3. Version bumps (keep both packages in lockstep unless truly independent)
+# 3. Version bumps (keep all three packages in lockstep unless truly independent)
+(cd packages/core && npm version patch)
 npm version patch                  # or minor / major — updates package.json + git tag
 (cd packages/agent && npm version patch)
 #    If @poa/cli's major/minor changed: update the "^x.y.z" range in
-#    packages/agent's prepack script.
+#    packages/agent's prepack script. When @poa/core starts publishing to npm,
+#    swap @poa/cli's "link:./packages/core" the same way at pack time.
 
-# 4. Publish (order matters: cli first — agent's manifest depends on it)
-npm publish --access public --otp=<code>
+# 4. Publish (order matters: core → cli → agent)
+(cd packages/core && npm publish --access public --otp=<code>)
+npm publish --access public --otp=<fresh code>
 (cd packages/agent && npm publish --access public --otp=<fresh code>)
 
 # 5. Prove the published artifacts cold

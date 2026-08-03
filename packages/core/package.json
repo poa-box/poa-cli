@@ -1,0 +1,102 @@
+{
+  "name": "@poa/core",
+  "version": "0.1.0",
+  "description": "Browser-and-Node core for the POP (Proof of Participation) protocol: transaction intent builders, subgraph reads, canonical metadata, ABIs, and chain config. The stable layer the CLI, frontends, and integrators share.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json",
+    "./abis": {
+      "types": "./dist/abis/index.d.ts",
+      "default": "./dist/abis/index.js"
+    },
+    "./graph": {
+      "types": "./dist/graph/index.d.ts",
+      "default": "./dist/graph/index.js"
+    },
+    "./graph/documents": {
+      "types": "./dist/graph/documents/index.d.ts",
+      "default": "./dist/graph/documents/index.js"
+    },
+    "./tx": {
+      "types": "./dist/tx/index.d.ts",
+      "default": "./dist/tx/index.js"
+    },
+    "./reads": {
+      "types": "./dist/reads/index.d.ts",
+      "default": "./dist/reads/index.js"
+    },
+    "./metadata": {
+      "types": "./dist/metadata/index.d.ts",
+      "default": "./dist/metadata/index.js"
+    },
+    "./execute": {
+      "types": "./dist/execute/index.d.ts",
+      "default": "./dist/execute/index.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "abis": ["dist/abis/index.d.ts"],
+      "graph": ["dist/graph/index.d.ts"],
+      "graph/documents": ["dist/graph/documents/index.d.ts"],
+      "tx": ["dist/tx/index.d.ts"],
+      "reads": ["dist/reads/index.d.ts"],
+      "metadata": ["dist/metadata/index.d.ts"],
+      "execute": ["dist/execute/index.d.ts"],
+      "*": ["dist/*"]
+    }
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "rm -rf dist && node scripts/gen-abis.mjs && tsc",
+    "prepublishOnly": "yarn build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "node scripts/gen-abis.mjs && tsc --noEmit",
+    "api:check": "node scripts/check-api-surface.mjs",
+    "api:update": "node scripts/check-api-surface.mjs --update"
+  },
+  "dependencies": {
+    "@openzeppelin/merkle-tree": "^1.0.8",
+    "bs58": "^6.0.0",
+    "poseidon-lite": "^0.3.0"
+  },
+  "peerDependencies": {
+    "ethers": "^5.7.0",
+    "permissionless": "^0.3.0",
+    "viem": "^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "viem": {
+      "optional": true
+    },
+    "permissionless": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "ethers": "5.7.2",
+    "permissionless": "^0.3.5",
+    "typescript": "^5.6.0",
+    "viem": "^2.47.12",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}

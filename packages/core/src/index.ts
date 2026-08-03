@@ -1,0 +1,54 @@
+/**
+ * @poa/core — the stable POP protocol layer.
+ *
+ * Subpath imports are the primary API (tree-shake friendly and explicit):
+ *
+ *   @poa/core/chains            chain table + env-injected resolvers + tokens
+ *   @poa/core/abis              generated contract ABIs (ALL_ABIS registry)
+ *   @poa/core/graph/client      tiered subgraph client (GraphClient)
+ *   @poa/core/graph/documents   GraphQL documents + pure derivation helpers
+ *   @poa/core/reads/*           typed reads (resolve, per-domain)
+ *   @poa/core/tx/*              TxIntent + per-domain intent builders
+ *   @poa/core/execute/*         ethers EOA executor + 4337/7702 sponsored path
+ *   @poa/core/metadata/*        canonical metadata builders (key order = protocol)
+ *   @poa/core/ipfs              pin/fetch client (injected endpoints)
+ *   @poa/core/payout|perms|zkemail|encoding|…  pure domain logic
+ *
+ * This barrel re-exports the kernel for convenience; bundle-sensitive
+ * consumers should prefer subpaths.
+ */
+
+export * from './env';
+export * from './errors';
+export * from './exit-codes';
+export * from './chains';
+export * from './contracts';
+export * from './encoding';
+export * from './format';
+export * from './validation';
+export * from './similarity';
+export * from './stats';
+export * from './label-aliases';
+export * from './multicall';
+export * from './payout';
+export * from './perms';
+export * from './error-catalog';
+export * from './sponsorship-config';
+export * from './context';
+export * from './tx/intent';
+export * from './graph/client';
+export * as documents from './graph/documents';
+export * as abis from './abis';
+export * from './reads/resolve';
+export * from './ipfs';
+export * from './version';
+export * from './task-lens';
+export * from './preflight';
+// NOT re-exported here: ./execute (ethers EOA executor + 4337/7702 sponsored
+// path). It requires the optional viem/permissionless peers at load time, and
+// this barrel must stay loadable for reads-only consumers that skip them.
+// Import executors explicitly: '@poa/core/execute/ethers' / '/sponsored'.
+export * as zkemail from './zkemail';
+export * as intents from './tx';
+export * as reads from './reads';
+export * as metadata from './metadata';

@@ -15,8 +15,11 @@
     "AGENTS.md"
   ],
   "scripts": {
-    "build": "rm -rf dist && tsc && mkdir -p dist/abi && cp src/abi/*.json dist/abi/",
+    "build:core": "yarn --cwd packages/core build",
+    "build": "yarn build:core && rm -rf dist && tsc && mkdir -p dist/abi && cp src/abi/*.json dist/abi/",
     "prepublishOnly": "yarn build",
+    "prepack": "npm pkg set \"dependencies.@poa/core=^$(node -p \\\"require('./packages/core/package.json').version\\\")\"",
+    "postpack": "npm pkg set 'dependencies.@poa/core=link:./packages/core'",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",
@@ -29,6 +32,7 @@
     "contracts:update": "tsx scripts/check-output-contracts.ts --update"
   },
   "dependencies": {
+    "@poa/core": "link:./packages/core",
     "@openzeppelin/merkle-tree": "^1.0.8",
     "bs58": "^6.0.0",
     "chalk": "^4.1.2",

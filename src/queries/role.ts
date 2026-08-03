@@ -1,40 +1,6 @@
 /**
- * Role Application Queries
- * Ported from frontend queries.js
+ * Moved to @poa/core/graph/documents (shared with every consumer so query
+ * documents and their field-fallback tiers can never drift from the deployed
+ * schemas). This shim keeps the historical import path stable.
  */
-
-export const FETCH_USER_ROLE_APPLICATIONS = `
-  query FetchUserRoleApplications($eligibilityModuleId: Bytes!, $applicant: Bytes!) {
-    roleApplications(
-      where: { eligibilityModule: $eligibilityModuleId, applicant: $applicant, active: true }
-      first: 50
-    ) {
-      id
-      hatId
-      applicant
-      applicantUsername
-      applicationHash
-      active
-      appliedAt
-    }
-  }
-`;
-
-export const FETCH_ALL_ROLE_APPLICATIONS = `
-  query FetchAllRoleApplications($eligibilityModuleId: Bytes!) {
-    roleApplications(
-      where: { eligibilityModule: $eligibilityModuleId, active: true }
-      orderBy: appliedAt
-      orderDirection: desc
-      first: 200
-    ) {
-      id
-      hatId
-      applicant
-      applicantUsername
-      applicationHash
-      active
-      appliedAt
-    }
-  }
-`;
+export * from '@poa/core/graph/documents/role';
