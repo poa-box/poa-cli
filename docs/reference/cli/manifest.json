@@ -1,11 +1,11 @@
 {
-  "package": "@poa/cli",
+  "package": "@poa-box/cli",
   "schemaVersion": 1,
   "notes": [
     "readOnly means \"cannot broadcast a transaction\". A readOnly command may still have sideEffects — ipfs-pin(--pin) publishes publicly and irreversibly when --pin is passed.",
     "destructive commands require an explicit --yes (or POP_ASSUME_YES=1) in every non-interactive context; --json is never consent.",
     "POP_READONLY=1 makes the process structurally unable to sign or pin. POP_ADDRESS/--address serves identity-scoped reads without a key.",
-    "The agent runtime commands (pop agent, pop brain) live in @poa/agent and are not covered here."
+    "The agent runtime commands (pop agent, pop brain) live in @poa-box/agent and are not covered here."
   ],
   "globalFlags": {
     "org": {

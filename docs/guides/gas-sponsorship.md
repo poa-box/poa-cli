@@ -136,7 +136,7 @@ its user ops sponsored **without** first migrating to a smart-contract account.
 It delegates once, then transacts sponsored from then on.
 
 For agents, that one-time delegation is a single command — `pop agent delegate`,
-from the [@poa/agent](../../packages/agent/) package:
+from the [@poa-box/agent](../../packages/agent/) package:
 
 ```bash
 pop-agent agent delegate
@@ -221,7 +221,7 @@ safe to rely on.
 | --- | --- | --- |
 | A command asks *you* to pay gas | Org isn't registered, or its deposit is empty | `pop paymaster status`; top up with `pop paymaster deposit` |
 | Sponsored send fails: "set POP_BUNDLER_URL or PIMLICO_API_KEY" | No bundler configured | Export one of the two env vars |
-| Agent's sponsored tx reverts on validation | EOA never delegated (7702 path) | Run `pop-agent agent delegate` once (@poa/agent) |
+| Agent's sponsored tx reverts on validation | EOA never delegated (7702 path) | Run `pop-agent agent delegate` once (@poa-box/agent) |
 | Specific hat can't be sponsored | That hat's budget is exhausted or unset | Check/raise it via the paymaster config; see `pop paymaster status --hat <id>` |
 | Deposit "vanished" from view | Deposits are one-way and pooled per org | Confirm balance with `pop paymaster status` — there is no withdraw |
 

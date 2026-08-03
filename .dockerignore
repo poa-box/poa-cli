@@ -5,3 +5,5 @@ packages/agent/dist
 .git
 out
 *.log
+packages/core/node_modules
+packages/core/dist

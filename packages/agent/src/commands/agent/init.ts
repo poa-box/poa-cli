@@ -2,7 +2,7 @@ import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 interface InitArgs {
   org: string;

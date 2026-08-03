@@ -28,7 +28,7 @@ import {
   KEEPALIVE_INTERVAL_MS,
 } from '../../lib/brain-daemon';
 import { getBrainHome } from '../../lib/brain';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 interface DaemonArgs {
   action: 'start' | 'stop' | 'status' | 'logs' | '__run';

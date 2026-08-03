@@ -27,8 +27,8 @@ import {
   argvToIdempotencyString,
   checkIdempotencyCache,
   recordIdempotentResult,
-} from '@poa/cli/lib/idempotency';
-import * as output from '@poa/cli/lib/output';
+} from '@poa-box/cli/lib/idempotency';
+import * as output from '@poa-box/cli/lib/output';
 
 interface NewProjectArgs {
   doc: string;

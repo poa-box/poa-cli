@@ -1,0 +1,403 @@
+name: Release
+
+# Publishes the three-package chain in dependency order:
+#   @poa-box/core → @poa-box/cli → @poa-box/agent
+#
+# MERGING TO MAIN IS THE RELEASE. Versions come from the checked-in
+# package.json files: bump the ones you are releasing in a PR
+# (`npm version patch --no-git-tag-version`), merge, and this publishes them.
+# A merge that changes no version publishes nothing — the `plan` job sees
+# every version already on the registry and stops there.
+#
+# Inter-package ranges need no hand-editing: the local `link:` deps are
+# swapped for `^<dependency version>` at publish time and restored afterwards
+# (scripts/lib/link-swap.mjs).
+#
+# Manual dispatch is still available for a dry run, for re-running after a
+# partial failure, and for publishing a prerelease under a non-`latest` tag.
+#
+# Safety properties, in the order they are enforced:
+#   * one release at a time (concurrency), main only
+#   * a cheap `plan` job gates the expensive one, so ordinary merges cost ~15s
+#   * preflight validates the whole plan against the LIVE registry BEFORE any
+#     build — a forgotten bump, a backwards `latest`, a prerelease heading for
+#     `latest`, a malformed version, or a dangling inter-package pin stops the
+#     run (scripts/release-preflight.mjs, unit-tested)
+#   * every test suite + api:check + docs:check must pass
+#   * a real `npm publish` is executed against a capture-only local registry
+#     and the captured PUT body is asserted free of `link:` ranges — this is
+#     the artifact that shipped agent@0.1.0 uninstallable, and the one a
+#     tarball inspection cannot see
+#   * npm auth is established before the first publish, so a credential
+#     problem cannot leave the chain half-published
+#   * already-published versions are SKIPPED, so re-running after a partial
+#     failure resumes instead of erroring
+#   * tags are pushed BEFORE post-publish verification, so an irreversible
+#     publish is always recorded
+#   * after publishing: the registry is polled, the ranges this run published
+#     are re-read from it, and the CLI is cold-installed from npm and executed
+#
+# AUTH — prefer TRUSTED PUBLISHING (OIDC); no credential is stored anywhere:
+#   npmjs.com → each package → Settings → Trusted Publisher → GitHub Actions
+#     Organization/user: poa-box     Repository: poa-cli
+#     Workflow filename: release.yml (filename only, no path)
+#   Then delete the NPM_TOKEN secret. npm mints a short-lived, workflow-scoped
+#   credential per run, and provenance is generated automatically.
+#
+#   CAVEAT: npm cannot configure a trusted publisher for a package that does
+#   not exist yet, so a BRAND-NEW package name needs exactly one token-based
+#   publish first. Set the NPM_TOKEN secret (an npm **Automation** token —
+#   they bypass 2FA, which is why no --otp appears below), run this once, then
+#   configure the trusted publisher and remove the secret.
+#
+# This workflow supports both and reports which one it used.
+
+on:
+  # Merging to main IS the release. The plan job below decides whether there is
+  # anything to publish (versions come from the checked-in package.json files),
+  # so the overwhelmingly common merge — one that changes no version — is a
+  # clean no-op that publishes nothing and costs one short job.
+  push:
+    branches: [main]
+  # Manual dispatch remains for: a dry run, re-running after a partial failure,
+  # and choosing a dist-tag for a prerelease.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Verify everything and publish NOTHING'
+        type: boolean
+        default: true
+      dist_tag:
+        description: 'npm dist-tag. Keep "latest" for normal releases; use "next" for prereleases (an rc on latest becomes everyone default install).'
+        type: string
+        default: 'latest'
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # Cheap gate (~15s, no install): does this commit actually release anything?
+  # Runs on every merge so the expensive job never starts for nothing.
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    outputs:
+      has_work: ${{ steps.preflight.outputs.has_work }}
+      summary: ${{ steps.preflight.outputs.summary }}
+    steps:
+      - name: Guard — releases run from main only
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::Release must run from main (got ${{ github.ref }}). Merge first, then release."
+          exit 1
+
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # --allow-empty ONLY for automatic runs: a merge that changes no version
+      # is normal and must not fail. A human who explicitly asked for a release
+      # and bumped nothing has made a mistake, so dispatch keeps the hard error.
+      - name: Preflight — is there anything to publish?
+        id: preflight
+        shell: bash
+        run: |
+          set -o pipefail
+          empty=''
+          [ "${{ github.event_name }}" = 'push' ] && empty='--allow-empty'
+          node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag || 'latest' }}' $empty | tee plan.txt
+          node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag || 'latest' }}' $empty --json > plan.json
+          has_work=$(node -p "JSON.parse(require('fs').readFileSync('plan.json','utf8')).hasWork")
+          echo "has_work=$has_work" >> "$GITHUB_OUTPUT"
+          {
+            echo '## Release plan'
+            echo '```'
+            cat plan.txt
+            echo '```'
+            [ "$has_work" = 'true' ] || echo '_No version changed — nothing to publish._'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: ${{ inputs.dry_run && 'verify (dry run)' || 'publish' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.has_work == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push per-package version tags
+      id-token: write        # npm provenance attestation
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # tags
+
+      # Node 22.14+ AND npm 11.5.1+ are REQUIRED for trusted publishing (OIDC).
+      # registry-url is deliberately NOT set: it makes setup-node write an
+      # .npmrc auth line referencing NODE_AUTH_TOKEN, which is empty in OIDC
+      # mode and muddies the auth path. Auth is configured explicitly below.
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: yarn
+          cache-dependency-path: |
+            yarn.lock
+            packages/core/yarn.lock
+            packages/agent/yarn.lock
+
+      # Two supported auth modes, preferring the one npm recommends:
+      #   TRUSTED PUBLISHING (OIDC) — no stored credential at all. npm trusts
+      #     this repo + workflow filename directly and mints a short-lived
+      #     token per run. Configure per package at
+      #     npmjs.com → package → Settings → Trusted Publisher.
+      #   TOKEN — the NPM_TOKEN secret, used only when trusted publishing is
+      #     not yet configured. npm CANNOT configure a trusted publisher for a
+      #     package that does not exist yet, so a brand-new package name needs
+      #     exactly one token-based publish before it can switch to OIDC.
+      - name: Configure npm auth (trusted publishing, or token as fallback)
+        id: npmauth
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm install -g npm@latest >/dev/null
+          ver=$(npm --version); echo "npm $ver, node $(node --version)"
+          case "$ver" in
+            11.*|1[2-9].*|[2-9][0-9].*) ;;
+            *) echo "::error::npm $ver is too old for trusted publishing (need >= 11.5.1)"; exit 1 ;;
+          esac
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
+            echo 'mode=token' >> "$GITHUB_OUTPUT"
+            echo "auth: NPM_TOKEN secret (consider migrating to trusted publishing)"
+          else
+            echo 'mode=trusted' >> "$GITHUB_OUTPUT"
+            echo "auth: trusted publishing (OIDC) — no long-lived credential in this repo"
+          fi
+
+      # --- Decide (and validate) what would publish, before any work ---------
+      - name: Preflight — build and validate the release plan
+        id: preflight
+        run: |
+          set -o pipefail
+          node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag || 'latest' }}' | tee plan.txt
+          node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag || 'latest' }}' --json > plan.json
+          {
+            echo '## Release plan'
+            echo '```'
+            cat plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          for pkg in core cli agent; do
+            case "$pkg" in
+              core)  name='@poa-box/core' ;;
+              cli)   name='@poa-box/cli' ;;
+              agent) name='@poa-box/agent' ;;
+            esac
+            action=$(node -p "JSON.parse(require('fs').readFileSync('plan.json','utf8')).plan.find(p=>p.name==='$name').action")
+            version=$(node -p "JSON.parse(require('fs').readFileSync('plan.json','utf8')).plan.find(p=>p.name==='$name').version")
+            echo "${pkg}_action=$action"   >> "$GITHUB_OUTPUT"
+            echo "${pkg}_version=$version" >> "$GITHUB_OUTPUT"
+          done
+
+      # --- Build the whole chain ---------------------------------------------
+      - name: Install (root — links @poa-box/core)
+        run: yarn install --frozen-lockfile
+
+      - name: Install (core)
+        run: yarn --cwd packages/core install --frozen-lockfile
+
+      - name: Build (core + cli)
+        run: yarn build
+
+      - name: Install (agent — links @poa-box/cli)
+        run: yarn --cwd packages/agent install --frozen-lockfile
+
+      - name: Build (agent)
+        run: yarn --cwd packages/agent build
+
+      # --- Everything green, or nothing ships --------------------------------
+      - name: Test (cli)
+        run: yarn test
+
+      - name: Test (core — purity, calldata parity, transport)
+        run: yarn --cwd packages/core test
+
+      - name: Test (agent)
+        run: yarn --cwd packages/agent test
+
+      - name: Core API surface (no exports removed)
+        run: yarn --cwd packages/core api:check
+
+      - name: Docs (generated reference + link check)
+        run: yarn docs:check
+
+      - name: Guard — builds must not emit into any src/
+        shell: bash
+        run: |
+          set -o pipefail
+          strays=$(find src packages/core/src packages/agent/src \
+            \( -name '*.js' -o -name '*.d.ts' \) ! -path '*/abis/*' -print)
+          if [ -n "$strays" ]; then
+            echo "::error::compiled artifacts leaked into a src/ tree — they shadow .ts at resolve time:"
+            echo "$strays"
+            exit 1
+          fi
+
+      # --- Pre-flight on the actual artifacts --------------------------------
+      # THE decisive pre-publish gate. It runs a real `npm publish` against a
+      # capture-only server on localhost and asserts the PUT body — the exact
+      # document that becomes registry metadata — carries no `link:` range.
+      #
+      # Inspecting the tarball is NOT sufficient and was actively misleading:
+      # npm reads the manifest it publishes BEFORE running prepack, so a
+      # prepack-based swap fixes the tarball while the registry metadata still
+      # says `link:`. That is precisely how @poa-box/agent@0.1.0 shipped
+      # uninstallable (`npm view @poa-box/agent@0.1.0 dependencies` still
+      # proves it), and why the swap now happens before npm is invoked at all
+      # (scripts/lib/link-swap.mjs).
+      - name: 'Verify publish metadata (what npm would send to the registry)'
+        shell: bash
+        run: node scripts/verify-publish-metadata.mjs
+
+      - name: Guard — the working tree survived packing unchanged
+        shell: bash
+        run: |
+          if ! git diff --quiet -- package.json packages/agent/package.json packages/core/package.json; then
+            echo "::error::a pack/publish step left package.json modified — the link: restore did not run"
+            git --no-pager diff -- package.json packages/agent/package.json packages/core/package.json
+            exit 1
+          fi
+
+      # Only meaningful in token mode: trusted publishing has no user identity
+      # to report — its credential is minted during the publish call itself.
+      - name: Verify npm authentication (before the first publish)
+        if: ${{ !inputs.dry_run && steps.npmauth.outputs.mode == 'token' }}
+        run: |
+          who=$(npm whoami) || {
+            echo "::error::npm authentication failed — NPM_TOKEN is invalid or expired."; exit 1; }
+          echo "authenticated as $who"
+
+      - name: Dry run complete
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "Dry run: everything verified, nothing published." >> "$GITHUB_STEP_SUMMARY"
+          echo "Re-run with dry_run=false to publish the plan above."
+
+      # --- Publish, in dependency order --------------------------------------
+      # publish-package.mjs applies the semver range BEFORE invoking npm (so it
+      # reaches the registry metadata) and restores the link: form in a finally.
+      - name: Publish @poa-box/core
+        if: ${{ !inputs.dry_run && steps.preflight.outputs.core_action == 'publish' }}
+        run: node scripts/publish-package.mjs packages/core --access public --provenance --tag '${{ inputs.dist_tag || 'latest' }}'
+
+      - name: Publish @poa-box/cli
+        if: ${{ !inputs.dry_run && steps.preflight.outputs.cli_action == 'publish' }}
+        run: node scripts/publish-package.mjs . --access public --provenance --tag '${{ inputs.dist_tag || 'latest' }}'
+
+      - name: Publish @poa-box/agent
+        if: ${{ !inputs.dry_run && steps.preflight.outputs.agent_action == 'publish' }}
+        run: node scripts/publish-package.mjs packages/agent --access public --provenance --tag '${{ inputs.dist_tag || 'latest' }}'
+
+      # Tag BEFORE verification: the publishes are irreversible, so the record
+      # of what shipped must not be lost to a flaky post-publish check.
+      - name: Tag the published versions
+        if: ${{ !inputs.dry_run && !cancelled() }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          tag_it() {  # <prefix> <version> <action>
+            [ "$3" = 'publish' ] || return 0
+            local tag="$1-v$2"
+            if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              echo "tag $tag already exists — leaving it alone"; return 0
+            fi
+            git tag -a "$tag" -m "$1 $2" && git push origin "$tag"
+          }
+          tag_it core  '${{ steps.preflight.outputs.core_version }}'  '${{ steps.preflight.outputs.core_action }}'
+          tag_it cli   '${{ steps.preflight.outputs.cli_version }}'   '${{ steps.preflight.outputs.cli_action }}'
+          tag_it agent '${{ steps.preflight.outputs.agent_version }}' '${{ steps.preflight.outputs.agent_action }}'
+
+      # --- Prove the published artifacts, cold -------------------------------
+      # Every assertion below is SCOPED to what this run actually published —
+      # a skipped package's pre-existing state is not this release's problem
+      # (agent@0.1.0's known-bad metadata would otherwise fail every future run).
+      - name: Verify the registry
+        if: ${{ !inputs.dry_run && !cancelled() }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          core='${{ steps.preflight.outputs.core_version }}'
+          cli='${{ steps.preflight.outputs.cli_version }}'
+          agent='${{ steps.preflight.outputs.agent_version }}'
+          core_act='${{ steps.preflight.outputs.core_action }}'
+          cli_act='${{ steps.preflight.outputs.cli_action }}'
+          agent_act='${{ steps.preflight.outputs.agent_action }}'
+          fail=0
+          summary='## Published'
+
+          # Registry reads are eventually consistent — poll rather than sleep.
+          await() {  # <pkg@version>
+            for i in $(seq 1 20); do
+              npm view "$1" version >/dev/null 2>&1 && { echo "$1 visible"; return 0; }
+              sleep 6
+            done
+            echo "::error::$1 did not appear on the registry within 120s"; return 1
+          }
+          # A published dependency range must be real semver, never a local link.
+          check_range() {  # <pkg@version> <dep>
+            local range
+            range=$(npm view "$1" "dependencies.$2" 2>/dev/null)
+            echo "$1 → $2 = ${range:-<none>}"
+            case "$range" in
+              link:*|file:*|portal:*)
+                echo "::error::$1 published an unusable $2 range: '$range'"; return 1 ;;
+            esac
+            return 0
+          }
+
+          if [ "$core_act" = 'publish' ]; then
+            await "@poa-box/core@$core" || fail=1
+            summary="$summary"$'\n'"- \`@poa-box/core@$core\`"
+          fi
+          if [ "$cli_act" = 'publish' ]; then
+            await "@poa-box/cli@$cli" || fail=1
+            check_range "@poa-box/cli@$cli" '@poa-box/core' || fail=1
+            summary="$summary"$'\n'"- \`@poa-box/cli@$cli\`"
+          fi
+          if [ "$agent_act" = 'publish' ]; then
+            await "@poa-box/agent@$agent" || fail=1
+            check_range "@poa-box/agent@$agent" '@poa-box/cli' || fail=1
+            summary="$summary"$'\n'"- \`@poa-box/agent@$agent\`"
+          fi
+
+          # Cold install from the registry into a scratch project, then RUN it.
+          if [ "$cli_act" = 'publish' ]; then
+            tmp=$(mktemp -d)
+            if (cd "$tmp" && npm init -y >/dev/null && npm i "@poa-box/cli@$cli" >/dev/null); then
+              POP_READONLY=1 "$tmp/node_modules/.bin/pop" --version \
+                || { echo "::error::published CLI binary does not run"; fail=1; }
+              if [ -d "$tmp/node_modules/@poa-box/core" ]; then
+                node -e "
+                  const { createPopContext } = require('$tmp/node_modules/@poa-box/core');
+                  if (!createPopContext({ chainId: 100 }).client) throw new Error('core unusable');
+                  console.log('core resolves and constructs from the registry install');
+                " || { echo "::error::@poa-box/core is not usable from a registry install"; fail=1; }
+              fi
+            else
+              echo "::error::cold install of @poa-box/cli@$cli failed"; fail=1
+            fi
+          fi
+
+          # Always record what shipped, even if a check failed — the publishes
+          # are irreversible and this summary is the operator's only record.
+          printf '%s\n' "$summary" >> "$GITHUB_STEP_SUMMARY"
+          exit $fail
+

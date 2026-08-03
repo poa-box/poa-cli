@@ -14,7 +14,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['20']
+        # 20 is the documented floor for users; 22 is what the Release
+        # workflow runs on (trusted publishing needs Node >= 22.14), so a
+        # release must never be the first time the suite sees Node 22.
+        node: ['20', '22']
 
     steps:
       - name: Checkout
@@ -32,12 +35,25 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
+      - name: Core package — install
+        run: yarn --cwd packages/core install --frozen-lockfile
+
       - name: Build (tsc)
         run: yarn build
 
+      # Core's own gates run HERE, on every PR — not only at release time.
+      # Purity, calldata parity and the exported-surface lockfile are the
+      # promises @poa-box/core makes to consumers; catching a break after
+      # merge means catching it too late to fix cheaply.
+      - name: Core package — test (purity, calldata parity, transport)
+        run: yarn --cwd packages/core test
+
+      - name: Core package — API surface (no exports removed)
+        run: yarn --cwd packages/core api:check
+
       # The agent package must exist BEFORE the root suite runs:
       # cli-agent-surface.test.ts spawns packages/agent/dist/pop-agent.js.
-      - name: Agent package — install (links @poa/cli)
+      - name: Agent package — install (links @poa-box/cli)
         run: yarn --cwd packages/agent install --frozen-lockfile
 
       - name: Agent package — build
@@ -48,6 +64,15 @@ jobs:
 
       - name: Docs (generated reference + link check)
         run: yarn docs:check
+
+      # Merging to main publishes (see release.yml), so a PR must prove its
+      # artifacts are publishable BEFORE it lands. This runs a real `npm
+      # publish` against a capture-only localhost server and asserts the
+      # registry metadata carries no `link:` range — the failure that shipped
+      # @poa-box/agent@0.1.0 uninstallable. Nothing is uploaded anywhere.
+      - name: Publish metadata is clean (nothing is published)
+        if: ${{ matrix.node == '22' }}
+        run: yarn release:verify-metadata
 
       - name: Agent package — test
         run: yarn --cwd packages/agent test

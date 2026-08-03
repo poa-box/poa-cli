@@ -27,19 +27,19 @@ vi.mock('child_process', () => ({
   execFileSync: mocks.execFileSync,
   execSync: mocks.execSync,
 }));
-vi.mock('@poa/cli/lib/signer', () => ({ createSigner: mocks.createSigner }));
-vi.mock('@poa/cli/lib/ipfs', () => ({ pinJson: mocks.pinJson }));
-vi.mock('@poa/cli/lib/sponsored', () => ({
+vi.mock('@poa-box/cli/lib/signer', () => ({ createSigner: mocks.createSigner }));
+vi.mock('@poa-box/cli/lib/ipfs', () => ({ pinJson: mocks.pinJson }));
+vi.mock('@poa-box/cli/lib/sponsored', () => ({
   isDelegated: mocks.isDelegated,
   delegateEOA: mocks.delegateEOA,
 }));
-vi.mock('@poa/cli/config/networks', () => ({
+vi.mock('@poa-box/cli/config/networks', () => ({
   resolveNetworkConfig: mocks.resolveNetworkConfig,
 }));
-vi.mock('@poa/cli/lib/contracts', () => ({ createWriteContract: vi.fn() }));
-vi.mock('@poa/cli/lib/tx', () => ({ executeTx: vi.fn() }));
-vi.mock('@poa/cli/lib/resolve', () => ({ resolveOrgModules: vi.fn() }));
-vi.mock('@poa/cli/lib/output', () => ({
+vi.mock('@poa-box/cli/lib/contracts', () => ({ createWriteContract: vi.fn() }));
+vi.mock('@poa-box/cli/lib/tx', () => ({ executeTx: vi.fn() }));
+vi.mock('@poa-box/cli/lib/resolve', () => ({ resolveOrgModules: vi.fn() }));
+vi.mock('@poa-box/cli/lib/output', () => ({
   spinner: () => ({ start: vi.fn(), stop: vi.fn(), set text(_: string) { /* noop */ } }),
   isJsonMode: () => true,
   json: vi.fn(),

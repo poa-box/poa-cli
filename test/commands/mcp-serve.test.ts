@@ -117,7 +117,7 @@ describe('pop mcp serve', () => {
     const call = replies.find((r) => r.id === 3)!;
     expect(call.result.isError).toBe(false);
     const manifest = JSON.parse(call.result.content[0].text);
-    expect(manifest.package).toBe('@poa/cli');
+    expect(manifest.package).toBe('@poa-box/cli');
     const announceAll = manifest.commands.find((c: any) => c.name === 'vote announce-all');
     expect(announceAll.broadcasts, 'the manifest must carry the announce-all trap').toBe(true);
   }, 60_000);

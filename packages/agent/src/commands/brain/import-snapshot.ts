@@ -51,7 +51,7 @@ import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { importBrainDoc, listBrainDocs, stopBrainNode } from '../../lib/brain';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 interface ImportSnapshotArgs {
   doc: string;

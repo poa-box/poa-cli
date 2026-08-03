@@ -3,15 +3,15 @@ import { ethers } from 'ethers';
 import { execFileSync } from 'child_process';
 import { type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { createSigner } from '@poa/cli/lib/signer';
-import { createWriteContract } from '@poa/cli/lib/contracts';
-import { executeTx } from '@poa/cli/lib/tx';
-import { pinJson } from '@poa/cli/lib/ipfs';
-import { stringToBytes } from '@poa/cli/lib/encoding';
-import { resolveNetworkConfig } from '@poa/cli/config/networks';
-import { resolveOrgModules } from '@poa/cli/lib/resolve';
-import { isDelegated, delegateEOA } from '@poa/cli/lib/sponsored';
-import * as output from '@poa/cli/lib/output';
+import { createSigner } from '@poa-box/cli/lib/signer';
+import { createWriteContract } from '@poa-box/cli/lib/contracts';
+import { executeTx } from '@poa-box/cli/lib/tx';
+import { pinJson } from '@poa-box/cli/lib/ipfs';
+import { stringToBytes } from '@poa-box/cli/lib/encoding';
+import { resolveNetworkConfig } from '@poa-box/cli/config/networks';
+import { resolveOrgModules } from '@poa-box/cli/lib/resolve';
+import { isDelegated, delegateEOA } from '@poa-box/cli/lib/sponsored';
+import * as output from '@poa-box/cli/lib/output';
 
 const IDENTITY_REGISTRY = '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432';
 const REGISTRY_ABI = [

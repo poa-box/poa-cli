@@ -1,8 +1,8 @@
 /**
- * @poa/agent — agent + brain command surface for the POP CLI.
+ * @poa-box/agent — agent + brain command surface for the POP CLI.
  *
- * This module is the plugin contract with @poa/cli: the CLI probes for this
- * package at startup (require('@poa/agent'), falling back to the in-repo
+ * This module is the plugin contract with @poa-box/cli: the CLI probes for this
+ * package at startup (require('@poa-box/agent'), falling back to the in-repo
  * packages/agent/dist path) and, when present, registers these two command
  * groups. Visibility is the CLI's decision — hidden from `pop --help` unless
  * POP_AGENT_MODE=1, always visible under the `pop-agent` bin.

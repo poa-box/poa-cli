@@ -2,17 +2,24 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { requestMock } = vi.hoisted(() => ({ requestMock: vi.fn() }));
 
-vi.mock('graphql-request', () => ({
-  GraphQLClient: class {
-    url: string;
-    constructor(url: string) {
-      this.url = url;
-    }
-    request(...args: any[]) {
-      return requestMock(this.url, ...args);
-    }
-  },
-}));
+/**
+ * The transport is @poa-box/core's fetch-based client; the stub translates the
+ * requestMock protocol (resolve data / reject with `.response`) into HTTP
+ * responses so the classification paths run for real.
+ */
+vi.stubGlobal('fetch', async (url: any, init: any) => {
+  const body = JSON.parse(init?.body ?? '{}');
+  try {
+    const data = await requestMock(String(url), body.query, body.variables);
+    return new Response(JSON.stringify({ data }), { status: 200 });
+  } catch (err: any) {
+    const r = err?.response ?? {};
+    const payload = Array.isArray(r.errors)
+      ? { errors: r.errors }
+      : { errors: [{ message: err?.message || 'error' }] };
+    return new Response(JSON.stringify(payload), { status: r.status ?? 500, headers: r.headers || {} });
+  }
+});
 
 import { queryWithFieldFallback } from '../../src/lib/subgraph';
 

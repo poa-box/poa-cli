@@ -1,9 +1,9 @@
 /**
  * Agent-surface visibility — src/index.ts loadAgentPlugin() + agentDesc().
  *
- * `pop agent` / `pop brain` live in @poa/agent and are HIDDEN from the human
+ * `pop agent` / `pop brain` live in @poa-box/agent and are HIDDEN from the human
  * `pop --help` (yargs description `false`): visible only when POP_AGENT_MODE=1,
- * which the `pop-agent` bin sets before delegating to @poa/cli.
+ * which the `pop-agent` bin sets before delegating to @poa-box/cli.
  *
  * These tests spawn the BUILT artifacts (dist/index.js and
  * packages/agent/dist/pop-agent.js) with `--help` ONLY. `--help` short-circuits

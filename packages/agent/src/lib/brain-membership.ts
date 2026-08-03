@@ -32,9 +32,9 @@
  *   (3) manual emergency overrides for keys outside the DAO
  */
 
-import { query } from '@poa/cli/lib/subgraph';
-import { resolveOrgModules } from '@poa/cli/lib/resolve';
-import { resolveNetworkConfig } from '@poa/cli/config/networks';
+import { query } from '@poa-box/cli/lib/subgraph';
+import { resolveOrgModules } from '@poa-box/cli/lib/resolve';
+import { resolveNetworkConfig } from '@poa-box/cli/config/networks';
 
 const MEMBERS_QUERY = `
   query BrainMembers($orgId: Bytes!) {

@@ -37,7 +37,7 @@ import {
   type ParsedBrainDoc,
   type MigrationContext,
 } from '../../lib/brain-migrate';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 interface MigrateArgs {
   from: string;

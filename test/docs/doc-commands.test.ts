@@ -317,7 +317,7 @@ describe('doc-commands: documented CLI invocations match the command tree', () =
   const topLevelNames = new Set(topLevel.keys());
 
   it('buildCliTree() produces the expected shape', () => {
-    // 14 human domains — agent and brain moved to @poa/agent and are no
+    // 14 human domains — agent and brain moved to @poa-box/agent and are no
     // longer part of this package's documented surface; mcp is the MCP
     // server surface for integrators.
     expect(tree).toHaveLength(14);

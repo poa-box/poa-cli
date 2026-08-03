@@ -33,7 +33,7 @@ import {
 } from '../../lib/brain';
 import { isAllowedAuthor, loadAllowlist } from '../../lib/brain-signing';
 import { sendIpcRequest, getDaemonPidPath } from '../../lib/brain-daemon';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 type Status = 'pass' | 'warn' | 'fail' | 'info';
 

@@ -29,7 +29,7 @@ import { ethers } from 'ethers';
 import { stopBrainNode } from '../../lib/brain';
 import { routedDispatch } from '../../lib/brain-ops';
 import type { RetroChangeInput } from '../../lib/brain-ops';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 interface RetroStartArgs {
   doc: string;

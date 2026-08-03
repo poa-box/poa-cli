@@ -25,7 +25,7 @@ import {
 import { parseProjectsMarkdown } from '../../lib/brain-migrate-projects';
 import type { MigrationContext } from '../../lib/brain-migrate';
 import type { ProjectsBrainDoc } from '../../lib/brain-projections';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 interface MigrateProjectsArgs {
   from: string;

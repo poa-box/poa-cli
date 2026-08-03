@@ -31,9 +31,9 @@ import { initHandler } from './commands/init';
 import { applyDefaultOrgFallback } from './lib/default-org';
 
 /**
- * The agent surface (`pop agent`, `pop brain`) lives in @poa/agent — a separate
+ * The agent surface (`pop agent`, `pop brain`) lives in @poa-box/agent — a separate
  * package carrying the heavy p2p/CRDT dependency tree (libp2p, helia,
- * automerge). A human `npm install @poa/cli` never fetches any of it; in this
+ * automerge). A human `npm install @poa-box/cli` never fetches any of it; in this
  * repo, or on a host that installed both packages, the probe finds it and the
  * commands work exactly as before.
  *
@@ -51,7 +51,7 @@ interface AgentPlugin {
 
 function loadAgentPlugin(): AgentPlugin | null {
   const candidates = [
-    '@poa/agent', // installed alongside @poa/cli
+    '@poa-box/agent', // installed alongside @poa-box/cli
     require('path').join(__dirname, '..', 'packages', 'agent', 'dist'), // in-repo build
   ];
   for (const spec of candidates) {
@@ -65,7 +65,7 @@ function loadAgentPlugin(): AgentPlugin | null {
 }
 
 /**
- * When @poa/agent is not installed, every invocation shape must reach the
+ * When @poa-box/agent is not installed, every invocation shape must reach the
  * install hint — `pop brain read --doc x` as much as bare `pop brain`. The
  * builder disables strict parsing for the group (unknown flags would
  * otherwise die with a yargs options dump before any handler runs) and the
@@ -76,9 +76,9 @@ function agentUnavailableBuilder() {
 }
 function agentUnavailableHandler(group: string) {
   return () => {
-    output.error(`'pop ${group}' needs the @poa/agent package, which is not installed.`, {
+    output.error(`'pop ${group}' needs the @poa-box/agent package, which is not installed.`, {
       suggestion: 'In this repo: yarn --cwd packages/agent install && yarn --cwd packages/agent build. '
-        + '(@poa/agent is not yet published to npm — in-repo build is the only install.)',
+        + '(@poa-box/agent is not yet published to npm — in-repo build is the only install.)',
     });
     process.exit(1);
   };

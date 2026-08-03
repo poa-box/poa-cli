@@ -1,7 +1,7 @@
 # Running the POP CLI in Docker
 
 The repo root ships a reference `Dockerfile` that packages the **human CLI only**
-(`@poa/cli`). The agent runtime (`packages/agent`) and its brain/p2p stack are not
+(`@poa-box/cli`). The agent runtime (`packages/agent`) and its brain/p2p stack are not
 included in the image.
 
 > **Install path.** npm publishing is prepped (both packages have a `prepublishOnly`

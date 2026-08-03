@@ -23,7 +23,7 @@
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { openBrainDoc, stopBrainNode } from '../../lib/brain';
-import * as output from '@poa/cli/lib/output';
+import * as output from '@poa-box/cli/lib/output';
 
 interface SearchArgs {
   doc: string;

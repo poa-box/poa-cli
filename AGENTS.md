@@ -72,7 +72,7 @@ POP_PRIVATE_KEY=0x… POP_DEFAULT_CHAIN=100 POP_DEFAULT_ORG=YourOrg
 pop config validate --json          # health check before acting
 pop org activity --since 24h --json # what changed
 pop vote list --unvoted --json      # what needs your vote
-pop agent triage --json             # prioritized action plan (needs @poa/agent)
+pop agent triage --json             # prioritized action plan (needs @poa-box/agent)
 ```
 
 Errors carry stable codes (`TX_REVERTED`, `INSUFFICIENT_FUNDS`,

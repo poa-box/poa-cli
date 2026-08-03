@@ -1985,7 +1985,11 @@
     tslib "^2.8.1"
     tsyringe "^4.10.0"
 
-"@poa/cli@link:../..":
+"@poa-box/cli@link:../..":
+  version "0.0.0"
+  uid ""
+
+"@poa-box/core@link:../core":
   version "0.0.0"
   uid ""
 

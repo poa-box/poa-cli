@@ -18,37 +18,40 @@ const { requestMock } = vi.hoisted(() => ({ requestMock: vi.fn() }));
 
 /**
  * Records the URL each request went to, so we can assert which tier served it.
- * Faithfully reproduces graphql-request v6's responseMiddleware contract: it is
- * invoked with the response envelope (which carries `headers` and `status`) on
- * success and with the error on failure. A mock resolution may carry a
- * `__headers` bag, which is stripped before the value reaches the caller.
+ * The transport is @poa-box/core's fetch-based GraphQL client, so the stub speaks
+ * HTTP: requestMock resolutions become 200 responses ({ data }), and
+ * requestMock rejections are translated from their `.response`
+ * { status, headers, errors|error } shape into the equivalent HTTP response —
+ * a string `error` body becomes a non-JSON (plain text) body, exactly how
+ * Studio serves its plain-text 429. A mock resolution may carry a `__headers`
+ * bag, which is served as response headers and stripped from the data.
  */
-vi.mock('graphql-request', () => ({
-  GraphQLClient: class {
-    url: string;
-    config: any;
-    constructor(url: string, config?: any) {
-      this.url = url;
-      this.config = config;
+vi.stubGlobal('fetch', async (url: any, init: any) => {
+  const body = JSON.parse(init?.body ?? '{}');
+  try {
+    const res: any = await requestMock(String(url), body.query, body.variables);
+    const headers = res && typeof res === 'object' ? res.__headers : undefined;
+    let data = res;
+    if (headers) {
+      const { __headers, ...rest } = res;
+      data = rest;
     }
-    async request(...args: any[]) {
-      const mw = this.config?.responseMiddleware;
-      try {
-        const res: any = await requestMock(this.url, ...args);
-        const headers = res && typeof res === 'object' ? res.__headers : undefined;
-        if (mw) mw({ data: res, headers: headers || {}, status: 200 });
-        if (headers) {
-          const { __headers, ...rest } = res;
-          return rest;
-        }
-        return res;
-      } catch (err) {
-        if (mw) mw(err);
-        throw err;
-      }
+    return new Response(JSON.stringify({ data }), { status: 200, headers: headers || {} });
+  } catch (err: any) {
+    const r = err?.response ?? {};
+    const status = r.status ?? 500;
+    const headers = r.headers || {};
+    if (typeof r.error === 'string' && !Array.isArray(r.errors)) {
+      // Plain-text (non-JSON) body — Studio's 429 shape.
+      return new Response(r.error, { status, headers });
     }
-  },
-}));
+    const payload: any = {};
+    if (Array.isArray(r.errors)) payload.errors = r.errors;
+    if (r.error !== undefined) payload.error = r.error;
+    if (!payload.errors && !payload.error) payload.errors = [{ message: err?.message || 'error' }];
+    return new Response(JSON.stringify(payload), { status, headers });
+  }
+});
 
 import {
   query,
