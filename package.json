@@ -29,7 +29,8 @@
     "docs:check": "tsx scripts/generate-cli-docs.ts --check && tsx scripts/check-doc-links.ts",
     "lint": "tsc --noEmit",
     "contracts:check": "tsx scripts/check-output-contracts.ts",
-    "contracts:update": "tsx scripts/check-output-contracts.ts --update"
+    "contracts:update": "tsx scripts/check-output-contracts.ts --update",
+    "release:preflight": "node scripts/release-preflight.mjs"
   },
   "dependencies": {
     "@openzeppelin/merkle-tree": "^1.0.8",

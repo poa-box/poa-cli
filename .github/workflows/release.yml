@@ -1,36 +1,64 @@
 name: Release
 
-# One-click publish of the three-package chain, in dependency order:
+# Publishes the three-package chain in dependency order:
 #   @poa-box/core → @poa-box/cli → @poa-box/agent
 #
-# Versions come from the checked-in package.json files — bump and merge them
-# first, then run this. Already-published versions are SKIPPED, so re-running
-# after a partial failure resumes rather than erroring.
+# VERSIONS COME FROM THE CHECKED-IN package.json FILES. Bump them in a PR
+# (`npm version patch` in each package you are releasing), merge, then run
+# this workflow. Inter-package ranges need no hand-editing: each prepack
+# derives `^<dependency version>` and postpack restores the local link:.
 #
-# Setup (once): repo Settings → Secrets → Actions → NPM_TOKEN
-#   an npm "Automation" access token for an account with publish rights on the
-#   poa-box org (Automation tokens bypass 2FA, which is why no --otp appears
-#   anywhere below).
+# Safety properties, in the order they are enforced:
+#   * one release at a time (concurrency), main only
+#   * preflight validates the whole plan against the LIVE registry BEFORE any
+#     build — no bump, a backwards `latest`, a malformed version, or a
+#     dangling inter-package pin stops the run (scripts/release-preflight.mjs)
+#   * every test suite + api:check + docs:check must pass
+#   * both tarballs are packed and their dependency ranges inspected — a
+#     `link:` range can never escape (this is what shipped agent@0.1.0 broken)
+#   * npm auth is verified before the first publish, so a bad token cannot
+#     leave the chain half-published
+#   * already-published versions are SKIPPED, so re-running after a partial
+#     failure resumes instead of erroring
+#   * after publishing: the registry is polled, dependency ranges are
+#     re-read from it, and the CLI is cold-installed from npm and executed
+#
+# Setup (once): Settings → Secrets and variables → Actions → new secret
+#   NPM_TOKEN = an npm **Automation** token for an account with publish rights
+#   on the poa-box org. Automation tokens bypass 2FA, which is why no --otp
+#   appears below.
 
 on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Pack and verify only — publish nothing'
+        description: 'Verify everything and publish NOTHING'
         type: boolean
         default: true
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
-    name: publish (dry-run=${{ inputs.dry_run }})
+    name: ${{ inputs.dry_run && 'verify (dry run)' || 'publish' }}
     runs-on: ubuntu-latest
     permissions:
-      contents: write        # push the version tag
+      contents: write        # push per-package version tags
       id-token: write        # npm provenance attestation
 
     steps:
+      - name: Guard — releases run from main only
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::Release must run from main (got ${{ github.ref }}). Merge first, then release."
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # tags
 
       - name: Use Node 20
         uses: actions/setup-node@v4
@@ -43,7 +71,42 @@ jobs:
             packages/core/yarn.lock
             packages/agent/yarn.lock
 
-      # --- Build the whole chain -------------------------------------------
+      - name: Guard — NPM_TOKEN is configured
+        if: ${{ !inputs.dry_run }}
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "::error::NPM_TOKEN secret is not set. Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      # --- Decide (and validate) what would publish, before any work ---------
+      - name: Preflight — build and validate the release plan
+        id: preflight
+        run: |
+          set -o pipefail
+          node scripts/release-preflight.mjs | tee plan.txt
+          node scripts/release-preflight.mjs --json > plan.json
+          {
+            echo '## Release plan'
+            echo '```'
+            cat plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          for pkg in core cli agent; do
+            case "$pkg" in
+              core)  name='@poa-box/core' ;;
+              cli)   name='@poa-box/cli' ;;
+              agent) name='@poa-box/agent' ;;
+            esac
+            action=$(node -p "JSON.parse(require('fs').readFileSync('plan.json','utf8')).plan.find(p=>p.name==='$name').action")
+            version=$(node -p "JSON.parse(require('fs').readFileSync('plan.json','utf8')).plan.find(p=>p.name==='$name').version")
+            echo "${pkg}_action=$action"   >> "$GITHUB_OUTPUT"
+            echo "${pkg}_version=$version" >> "$GITHUB_OUTPUT"
+          done
+
+      # --- Build the whole chain ---------------------------------------------
       - name: Install (root — links @poa-box/core)
         run: yarn install --frozen-lockfile
 
@@ -59,7 +122,7 @@ jobs:
       - name: Build (agent)
         run: yarn --cwd packages/agent build
 
-      # --- Everything green, or nothing ships ------------------------------
+      # --- Everything green, or nothing ships --------------------------------
       - name: Test (cli)
         run: yarn test
 
@@ -75,10 +138,18 @@ jobs:
       - name: Docs (generated reference + link check)
         run: yarn docs:check
 
-      # --- Pre-flight: what would ship -------------------------------------
-      # Catches the class of bug that shipped @poa-box/agent@0.1.0 with a raw
-      # `link:` dependency: inspect the ACTUAL tarball, not the source tree.
-      - name: Verify tarball dependency ranges (no link: may escape)
+      - name: Guard — agent build must not emit into src/
+        run: |
+          strays=$(find src \( -name '*.js' -o -name '*.d.ts' \) | wc -l)
+          if [ "$strays" -ne 0 ]; then
+            echo "::error::compiled artifacts leaked into src/ — they shadow .ts at resolve time"; exit 1
+          fi
+
+      # --- Pre-flight on the actual artifacts --------------------------------
+      # Inspects the TARBALL, not the source tree: @poa-box/agent@0.1.0 shipped
+      # a raw `link:../..` dependency because a prepack silently no-opped, and
+      # nothing looking at the repo would have caught it.
+      - name: 'Verify tarball dependency ranges (no link: may escape)'
         shell: bash
         run: |
           set -uo pipefail
@@ -88,84 +159,127 @@ jobs:
             local dir="$1" dep="$2" before after packed out tgz
             before=$(dep_of "$dir/package.json" "$dep")
             out=$(mktemp -d)
-            (cd "$dir" && npm pack --pack-destination "$out" >/dev/null) || { echo "::error::npm pack failed in $dir"; fail=1; return; }
+            (cd "$dir" && npm pack --pack-destination "$out" >/dev/null) \
+              || { echo "::error::npm pack failed in $dir"; fail=1; return; }
             tgz=$(find "$out" -name '*.tgz' | head -1)
-            packed=$(tar -xzOf "$tgz" package/package.json > "$out/p.json" && dep_of "$out/p.json" "$dep")
+            tar -xzOf "$tgz" package/package.json > "$out/p.json"
+            packed=$(dep_of "$out/p.json" "$dep")
             after=$(dep_of "$dir/package.json" "$dep")
             echo "$dir: working='$before' → tarball='$packed' → restored='$after'"
             case "$packed" in
               ''|'<absent>'|'^'|link:*|file:*)
                 echo "::error::$dir tarball has an unpublishable $dep range: '$packed'"; fail=1 ;;
             esac
-            [ "$before" = "$after" ] || { echo "::error::$dir postpack did not restore $dep ($before → $after)"; fail=1; }
+            [ "$before" = "$after" ] \
+              || { echo "::error::$dir postpack did not restore $dep ($before → $after)"; fail=1; }
             rm -rf "$out"
           }
           check . '@poa-box/core'
           check packages/agent '@poa-box/cli'
           exit $fail
 
-      # --- Publish, in dependency order ------------------------------------
-      - name: Publish @poa-box/core
+      - name: Verify npm authentication (before the first publish)
         if: ${{ !inputs.dry_run }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          v=$(node -p "require('./packages/core/package.json').version")
-          if npm view "@poa-box/core@$v" version >/dev/null 2>&1; then
-            echo "@poa-box/core@$v already published — skipping"
-          else
-            (cd packages/core && npm publish --access public --provenance)
-          fi
+          who=$(npm whoami) || {
+            echo "::error::npm authentication failed — NPM_TOKEN is invalid or expired."; exit 1; }
+          echo "authenticated as $who"
+
+      - name: Dry run complete
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "Dry run: everything verified, nothing published." >> "$GITHUB_STEP_SUMMARY"
+          echo "Re-run with dry_run=false to publish the plan above."
+
+      # --- Publish, in dependency order --------------------------------------
+      - name: Publish @poa-box/core
+        if: ${{ !inputs.dry_run && steps.preflight.outputs.core_action == 'publish' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: cd packages/core && npm publish --access public --provenance
 
       - name: Publish @poa-box/cli
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && steps.preflight.outputs.cli_action == 'publish' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          v=$(node -p "require('./package.json').version")
-          if npm view "@poa-box/cli@$v" version >/dev/null 2>&1; then
-            echo "@poa-box/cli@$v already published — skipping"
-          else
-            npm publish --access public --provenance
-          fi
+        run: npm publish --access public --provenance
 
       - name: Publish @poa-box/agent
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && steps.preflight.outputs.agent_action == 'publish' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          v=$(node -p "require('./packages/agent/package.json').version")
-          if npm view "@poa-box/agent@$v" version >/dev/null 2>&1; then
-            echo "@poa-box/agent@$v already published — skipping"
-          else
-            (cd packages/agent && npm publish --access public --provenance)
-          fi
+        run: cd packages/agent && npm publish --access public --provenance
 
-      # --- Prove the published artifacts, cold -----------------------------
-      - name: Verify the registry (fresh install, real dependency ranges)
+      # --- Prove the published artifacts, cold -------------------------------
+      - name: Verify the registry
         if: ${{ !inputs.dry_run }}
+        shell: bash
         run: |
-          set -euo pipefail
-          sleep 15   # registry read-after-write lag
-          cli=$(node -p "require('./package.json').version")
-          agent=$(node -p "require('./packages/agent/package.json').version")
-          core=$(node -p "require('./packages/core/package.json').version")
-          echo "core@$core deps:  $(npm view @poa-box/core@$core dependencies --json)"
-          echo "cli@$cli  → core: $(npm view @poa-box/cli@$cli dependencies.@poa-box/core)"
-          echo "agent@$agent → cli: $(npm view @poa-box/agent@$agent dependencies.@poa-box/cli)"
-          npm view "@poa-box/cli@$cli" dependencies.@poa-box/core | grep -qv '^link:'
-          npm view "@poa-box/agent@$agent" dependencies.@poa-box/cli | grep -qv '^link:'
-          # Cold smoke test: install from the registry into a scratch dir and run it.
+          set -uo pipefail
+          core='${{ steps.preflight.outputs.core_version }}'
+          cli='${{ steps.preflight.outputs.cli_version }}'
+          agent='${{ steps.preflight.outputs.agent_version }}'
+          fail=0
+
+          # Registry reads are eventually consistent — poll rather than sleep.
+          await() {  # <pkg@version>
+            for i in $(seq 1 20); do
+              npm view "$1" version >/dev/null 2>&1 && { echo "$1 visible"; return 0; }
+              sleep 6
+            done
+            echo "::error::$1 did not appear on the registry within 120s"; return 1
+          }
+          await "@poa-box/core@$core"  || fail=1
+          await "@poa-box/cli@$cli"    || fail=1
+          await "@poa-box/agent@$agent" || fail=1
+          [ "$fail" -eq 0 ] || exit 1
+
+          # The published ranges must be real semver — the failure that shipped
+          # agent@0.1.0 was visible ONLY here, in the registry metadata.
+          cli_core=$(npm view "@poa-box/cli@$cli" dependencies.@poa-box/core)
+          agent_cli=$(npm view "@poa-box/agent@$agent" dependencies.@poa-box/cli)
+          echo "cli@$cli   → @poa-box/core  $cli_core"
+          echo "agent@$agent → @poa-box/cli   $agent_cli"
+          case "$cli_core"  in link:*|file:*|'') echo "::error::published CLI has an unusable core range: '$cli_core'"; fail=1 ;; esac
+          case "$agent_cli" in link:*|file:*|'') echo "::error::published agent has an unusable cli range: '$agent_cli'"; fail=1 ;; esac
+
+          # Cold install from the registry into a scratch project, then RUN it.
           tmp=$(mktemp -d)
-          (cd "$tmp" && npm init -y >/dev/null && npm i "@poa-box/cli@$cli" >/dev/null)
-          POP_READONLY=1 "$tmp/node_modules/.bin/pop" --version
+          (cd "$tmp" && npm init -y >/dev/null && npm i "@poa-box/cli@$cli" >/dev/null) \
+            || { echo "::error::cold install of @poa-box/cli@$cli failed"; exit 1; }
+          POP_READONLY=1 "$tmp/node_modules/.bin/pop" --version \
+            || { echo "::error::published CLI binary does not run"; fail=1; }
           node -e "
-            const {createPopContext}=require('$tmp/node_modules/@poa-box/core');
-            if(!createPopContext({chainId:100}).client) throw new Error('core unusable from the registry');
-            console.log('core resolves + constructs from the registry install');"
+            const { createPopContext } = require('$tmp/node_modules/@poa-box/core');
+            if (!createPopContext({ chainId: 100 }).client) throw new Error('core unusable');
+            console.log('core resolves and constructs from the registry install');
+          " || { echo "::error::@poa-box/core is not usable from a registry install"; fail=1; }
 
-      - name: Tag the release
+          {
+            echo '## Published'
+            echo "- \`@poa-box/core@$core\`"
+            echo "- \`@poa-box/cli@$cli\` → core \`$cli_core\`"
+            echo "- \`@poa-box/agent@$agent\` → cli \`$agent_cli\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $fail
+
+      - name: Tag the published versions
         if: ${{ !inputs.dry_run }}
+        shell: bash
         run: |
-          v=$(node -p "require('./package.json').version")
-          git tag -f "v$v" && git push -f origin "v$v"
+          set -uo pipefail
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          tag_it() {  # <prefix> <version> <action>
+            [ "$3" = 'publish' ] || return 0
+            local tag="$1-v$2"
+            if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              echo "tag $tag already exists — leaving it alone"; return 0
+            fi
+            git tag -a "$tag" -m "$1 $2" && git push origin "$tag"
+          }
+          tag_it core  '${{ steps.preflight.outputs.core_version }}'  '${{ steps.preflight.outputs.core_action }}'
+          tag_it cli   '${{ steps.preflight.outputs.cli_version }}'   '${{ steps.preflight.outputs.cli_action }}'
+          tag_it agent '${{ steps.preflight.outputs.agent_version }}' '${{ steps.preflight.outputs.agent_action }}'
