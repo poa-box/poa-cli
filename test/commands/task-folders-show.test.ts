@@ -72,7 +72,7 @@ const INDEXED_ROOT = '0x8694f683853d6b83878418518069f68316dd36a296b84df1f934a6a8
 const CHAIN_ROOT = '0x' + '77'.repeat(32);
 const UPDATED_BY = '0xa6f4d9f44dd980b7168d829d5f74c2b00a46b2c9';
 
-const V4_FEATURES = { deadlines: false, batchCreate: false, editMeta: false, folders: true, legacyCreate7: true };
+const V4_FEATURES = { deadlines: false, batchCreate: false, editMeta: false, folders: true, legacyCreate7: true, unclaim: false };
 
 /** Wrap a decoded payload the way TaskManager.getLensData returns it. */
 function lensReturn(types: string[], values: any[]) {

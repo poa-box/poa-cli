@@ -42,6 +42,13 @@ export const WRITE_COMMANDS: Record<string, CommandSafety> = {
   'task create': { broadcasts: true, sideEffects: ['ipfs-pin'] },
   'task create-batch': { broadcasts: true, sideEffects: ['ipfs-pin'] },
   'task claim': { broadcasts: true },
+  // Destructive is the CONSERVATIVE reading of a two-route command: a
+  // self-release is harmless and reversible, but force-releasing another
+  // member's expired claim takes their task away. The manifest is per-command
+  // and cannot express "sometimes", so it takes the stronger classification.
+  // The handler only passes `destructive: true` to confirmWrite on the
+  // third-party route, so a self-release stays frictionless under --json.
+  'task unclaim': { broadcasts: true, destructive: true },
   'task submit': { broadcasts: true, sideEffects: ['ipfs-pin'] },
   'task review': { broadcasts: true, sideEffects: ['ipfs-pin'] },
   'task cancel': { broadcasts: true, destructive: true },

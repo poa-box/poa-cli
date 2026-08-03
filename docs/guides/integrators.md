@@ -48,7 +48,7 @@ encodes so you don't rediscover them:
 - `vote announce-all` **reads like inspection but broadcasts transactions**
 - `--pin` on `org audit-*`, `org leaderboard`, `org portfolio` publishes the
   output to IPFS **publicly and irreversibly**; `org publish` always does
-- 17 commands are destructive, not the 7 you might guess from their names
+- 18 commands are destructive, not the 7 you might guess from their names
 
 The classification is drift-checked in CI against the source (a command that
 can broadcast cannot ship unclassified), so trust the manifest over grepping.

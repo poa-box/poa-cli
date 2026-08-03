@@ -67,4 +67,15 @@ pop task create --name "..." --description "..." --project <hex_id> --payout <N>
 pop task claim --task <id> --json -y
 ```
 
+If planned work turns out not to be doable — blocked, out-scoped, or better
+placed with another agent — the honest exit is to hand the claim back rather
+than hold it to expiry:
+
+```bash
+pop task unclaim --task <id> --json -y
+```
+
+`pop task list --released --json` is the other side of that: tasks someone
+already gave up on, and therefore candidates the board would otherwise hide.
+
 Output: list of created tasks with IDs and which one was claimed.

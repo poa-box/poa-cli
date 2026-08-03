@@ -1,6 +1,6 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { query } from '../../lib/subgraph';
+import { queryWithFieldFallback } from '../../lib/subgraph';
 import { resolveOrgModules } from '../../lib/resolve';
 import * as output from '../../lib/output';
 
@@ -17,6 +17,8 @@ const FETCH_TASK_STATS = `
         participationTokenBalance
         membershipStatus
         totalTasksCompleted
+        totalTasksReleased
+        totalTasksLostToExpiry
         account { username }
       }
       taskManager {
@@ -39,6 +41,21 @@ const FETCH_TASK_STATS = `
   }
 `;
 
+/**
+ * FETCH_TASK_STATS without the claim-churn counters (subgraph #201, TaskManager v7).
+ *
+ * The two counters are asymmetric: `totalTasksLostToExpiry` is live on Arbitrum too, but
+ * `totalTasksReleased` is Gnosis-only as of 2026-08-02 (verified: poa-arb-v-1 answers
+ * ``Type `User` has no field `totalTasksReleased```, which `isUnknownFieldError` matches).
+ * A document validates as a whole, so they have to share tier 0 — asking for the portable
+ * one alongside the Gnosis-only one costs nothing, since the whole query would fail anyway.
+ * Derived by deletion so the two tiers cannot drift apart.
+ */
+const FETCH_TASK_STATS_LEGACY = FETCH_TASK_STATS
+  .split('\n')
+  .filter((line) => !/^\s*(totalTasksReleased|totalTasksLostToExpiry)\s*$/.test(line))
+  .join('\n');
+
 export const statsHandler = {
   builder: (yargs: Argv) => yargs,
 
@@ -48,7 +65,14 @@ export const statsHandler = {
 
     try {
       const modules = await resolveOrgModules(argv.org, argv.chain);
-      const result = await query<any>(FETCH_TASK_STATS, { orgId: modules.orgId }, argv.chain);
+      const { data: result, tierIndex } = await queryWithFieldFallback<any>(
+        [
+          { query: FETCH_TASK_STATS, variables: { orgId: modules.orgId } },
+          { query: FETCH_TASK_STATS_LEGACY, variables: { orgId: modules.orgId } },
+        ],
+        { chainId: argv.chain }
+      );
+      const hasChurn = tierIndex === 0;
       const org = result.organization;
       if (!org) throw new Error('Organization not found');
 
@@ -96,6 +120,13 @@ export const statsHandler = {
           reviewsReceived: reviewsReceived.length,
           selfReviews: selfReviews.length,
           topProject: topProject ? `${topProject[0]} (${topProject[1]})` : '-',
+          // Every other metric here is derived from the task array, but a released task is
+          // unattributable there: handleTaskUnclaimed nulls assignee/assigneeUsername/assigneeUser,
+          // so filtering `allTasks` by address can never find one. These counters are the only
+          // surviving record. null rather than 0 off tier 0, so "not indexed on this chain" stays
+          // distinguishable from "indexed, never released".
+          tasksReleased: hasChurn ? Number(u.totalTasksReleased ?? 0) : null,
+          tasksLostToExpiry: hasChurn ? Number(u.totalTasksLostToExpiry ?? 0) : null,
         };
       });
 
@@ -137,6 +168,16 @@ export const statsHandler = {
           console.log('  Self-reviews:');
           for (const m of memberStats.filter((m: any) => m.selfReviews > 0)) {
             console.log(`    ${m.username}: ${m.selfReviews}`);
+          }
+        }
+        // Its own block rather than two more table columns: the header above and its
+        // '─'.repeat(75) rule are hand-aligned, and widening them for a signal that is
+        // zero on every member of every org today is a bad trade.
+        if (memberStats.some((m: any) => m.tasksReleased || m.tasksLostToExpiry)) {
+          console.log('');
+          console.log('  Claim churn (released / lost to expiry):');
+          for (const m of memberStats.filter((m: any) => m.tasksReleased || m.tasksLostToExpiry)) {
+            console.log(`    ${m.username}: ${m.tasksReleased} / ${m.tasksLostToExpiry}`);
           }
         }
         console.log('');

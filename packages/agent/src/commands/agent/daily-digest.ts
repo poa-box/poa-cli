@@ -10,7 +10,7 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { execSync } from 'child_process';
 import { ethers } from 'ethers';
-import { query } from '@poa/cli/lib/subgraph';
+import { queryWithFieldFallback } from '@poa/cli/lib/subgraph';
 import { resolveOrgModules } from '@poa/cli/lib/resolve';
 import * as output from '@poa/cli/lib/output';
 
@@ -79,6 +79,24 @@ const FETCH_DIGEST_DATA = `
   }
 `;
 
+/**
+ * FETCH_DIGEST_DATA plus the TaskManager v7 claim-release fields (subgraph #201).
+ *
+ * Gnosis-only today — poa-arb-v-1 answers ``Type `Task` has no field `releaseCount```,
+ * which `isUnknownFieldError` matches, so this has to be a tier: agents run against both
+ * chains and a bare query would take the whole digest down on Arbitrum. Built by insertion
+ * next to the field it repairs so the two documents cannot drift apart.
+ */
+const FETCH_DIGEST_DATA_WITH_RELEASES = FETCH_DIGEST_DATA.replace(
+  /^(\s*)assignedAt$/m,
+  '$1assignedAt\n$1releaseCount\n$1lastReleasedAt',
+);
+
+const DIGEST_DATA_TIERS = [
+  FETCH_DIGEST_DATA_WITH_RELEASES, // 0: Gnosis — releases indexed
+  FETCH_DIGEST_DATA,               // 1: Arbitrum today — no release indexing
+];
+
 function getGitCommits(sinceSec: number): Array<{ hash: string; author: string; date: string; message: string }> {
   try {
     const sinceDate = new Date(Date.now() - sinceSec * 1000).toISOString();
@@ -132,7 +150,13 @@ export const dailyDigestHandler = {
       const sinceTs = Math.floor(Date.now() / 1000) - sinceSec;
 
       const modules = await resolveOrgModules(argv.org, argv.chain);
-      const result = await query<any>(FETCH_DIGEST_DATA, { orgId: modules.orgId }, argv.chain);
+      const { data: result, tierIndex } = await queryWithFieldFallback<any>(
+        DIGEST_DATA_TIERS.map((q) => ({ query: q, variables: { orgId: modules.orgId } })),
+        { chainId: argv.chain },
+      );
+      // Gate on the served tier, never on truthiness: releaseCount is 0 on every
+      // live row today, which must stay distinguishable from "not indexed here".
+      const hasReleaseData = tierIndex === 0;
       const org = result.organization;
       if (!org) throw new Error('Organization not found');
 
@@ -147,6 +171,12 @@ export const dailyDigestHandler = {
       const tasksClaimed = allTasks.filter((t: any) => parseInt(t.assignedAt || '0') >= sinceTs && t.assignee);
       const tasksSubmitted = allTasks.filter((t: any) => parseInt(t.submittedAt || '0') >= sinceTs);
       const tasksCompleted = allTasks.filter((t: any) => parseInt(t.completedAt || '0') >= sinceTs);
+      // unclaimTask nulls assignee/assignedAt, so a claim-then-release inside the window
+      // leaves no trace in tasksClaimed above — the work would read as if it never happened.
+      // lastReleasedAt is the only surviving timestamp.
+      const tasksReleased = hasReleaseData
+        ? allTasks.filter((t: any) => parseInt(t.lastReleasedAt || '0') >= sinceTs)
+        : [];
 
       // PT earned in window
       const ptEarnedInWindow = tasksCompleted.reduce(
@@ -255,6 +285,9 @@ export const dailyDigestHandler = {
           ptSupply: Math.round(ptSupply * 10) / 10,
           totalVotesCast,
           activeProposals: activeProposals.length,
+          // Appended at the end, gated on the served tier so a chain that does not
+          // index releases omits the key rather than reporting a false 0.
+          ...(hasReleaseData ? { tasksReleased: tasksReleased.length } : {}),
         },
         activeProposals: activeProposals.map((p: any) => ({
           id: p.proposalId,
@@ -273,6 +306,14 @@ export const dailyDigestHandler = {
           'Branch protection on main — requires repo admin (task #402)',
           'Cross-org vouching (tasks #230, #277) — Hudson-gated',
         ],
+        ...(hasReleaseData ? {
+          releasedTasks: tasksReleased.map((t: any) => ({
+            taskId: t.taskId,
+            title: t.title,
+            lastReleasedAt: t.lastReleasedAt ?? null,
+            releaseCount: Number(t.releaseCount ?? 0),
+          })),
+        } : {}),
       };
 
       if (output.isJsonMode()) {
@@ -290,6 +331,7 @@ export const dailyDigestHandler = {
       if (prsMerged > 0) console.log(`  PRs merged:         ${prsMerged}`);
       console.log(`  Tasks created:      ${tasksCreated.length}`);
       console.log(`  Tasks claimed:      ${tasksClaimed.length}`);
+      if (hasReleaseData) console.log(`  Tasks released:     ${tasksReleased.length}`);
       console.log(`  Tasks submitted:    ${tasksSubmitted.length}`);
       console.log(`  Tasks completed:    ${tasksCompleted.length} (${ptEarnedInWindow.toFixed(1)} PT earned)`);
       console.log(`  Total votes (all):  ${totalVotesCast}`);
@@ -310,6 +352,18 @@ export const dailyDigestHandler = {
         console.log('  ───────────────');
         for (const t of pendingReviews) {
           console.log(`  #${t.taskId} "${t.title}" by ${t.assigneeUsername || t.assignee?.slice(0, 10)}`);
+        }
+      }
+
+      // Named explicitly rather than folded into the counters: the row itself no
+      // longer says who let the task go, so the operator needs the task ids to
+      // chase it down (pop task view --task N shows the release history).
+      if (tasksReleased.length > 0) {
+        console.log('');
+        console.log('  Released Back to the Pool');
+        console.log('  ─────────────────────────');
+        for (const t of tasksReleased) {
+          console.log(`  #${t.taskId} "${t.title}" (${t.releaseCount}x released, now ${t.status})`);
         }
       }
 

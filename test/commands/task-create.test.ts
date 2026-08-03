@@ -77,8 +77,8 @@ const CID = 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG';
 /** 2100-01-01T00:00:00Z — fixed unix-seconds fixture, comfortably future */
 const DEADLINE_TS = 4102444800;
 
-const V6_FEATURES = { deadlines: true, batchCreate: true, editMeta: true, folders: true, legacyCreate7: false };
-const LEGACY_FEATURES = { deadlines: false, batchCreate: false, editMeta: false, folders: false, legacyCreate7: true };
+const V6_FEATURES = { deadlines: true, batchCreate: true, editMeta: true, folders: true, legacyCreate7: false, unclaim: false };
+const LEGACY_FEATURES = { deadlines: false, batchCreate: false, editMeta: false, folders: false, legacyCreate7: true, unclaim: false };
 
 const SIG_V6 = 'createTask(uint256,bytes,bytes32,bytes32,address,uint256,bool,uint48,uint32)';
 const SIG_LEGACY = 'createTask(uint256,bytes,bytes32,bytes32,address,uint256,bool)';

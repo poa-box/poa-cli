@@ -1,8 +1,8 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { resolveIdentityAddress } from '../../lib/signer';
 import { ethers } from 'ethers';
-import { query } from '../../lib/subgraph';
-import { FETCH_USERNAME, FETCH_USER_DATA } from '../../queries/user';
+import { query, queryWithFieldFallback } from '../../lib/subgraph';
+import { FETCH_USERNAME, userDataTiers } from '../../queries/user';
 import { resolveOrgId } from '../../lib/resolve';
 import { formatToken } from '../../lib/format';
 import { HOME_CHAIN_ID } from '../../config/networks';
@@ -51,11 +51,13 @@ export const profileHandler = {
         const orgUserID = `${orgId.toLowerCase()}-${address.toLowerCase()}`;
         const chainId = argv.chain;
 
-        const userResult = await query<any>(
-          FETCH_USER_DATA,
-          { orgUserID, userAddress: address.toLowerCase() },
-          chainId
+        // Tier 0 carries the v7 claim-churn counters (Gnosis only today), tier 1
+        // is the same document without them.
+        const { data: userResult, tierIndex } = await queryWithFieldFallback<any>(
+          userDataTiers(orgUserID, address.toLowerCase()),
+          { chainId }
         );
+        const hasChurn = tierIndex === 0;
 
         const user = userResult.user;
 
@@ -82,6 +84,13 @@ export const profileHandler = {
             lastActiveAt: user?.lastActiveAt,
             assignedTasks: user?.assignedTasks,
             completedTasks: user?.completedTasks,
+            // Additive v7 churn keys, APPENDED at the end — never inserted
+            // mid-object. Gated on the served tier, so a chain that does not
+            // index releases omits them rather than reporting a false 0.
+            ...(hasChurn ? {
+              totalTasksReleased: user?.totalTasksReleased,
+              totalTasksLostToExpiry: user?.totalTasksLostToExpiry,
+            } : {}),
           });
         } else {
           console.log('');
@@ -104,10 +113,24 @@ export const profileHandler = {
             console.log(`  Votes Cast: ${user.totalVotes || 0}`);
             console.log(`  Modules Completed: ${user.totalModulesCompleted || 0}`);
 
+            // Suppressed at 0/0, which is every member on every chain today —
+            // a permanent "Claims Released: 0 self, 0 expired" on every profile
+            // would be noise, and the --json keys already carry the tier signal
+            // for anything that needs to tell 0 apart from "not indexed".
+            const released = Number(user.totalTasksReleased || 0);
+            const lostToExpiry = Number(user.totalTasksLostToExpiry || 0);
+            if (hasChurn && (released || lostToExpiry)) {
+              console.log(`  Claims Released: ${released} self, ${lostToExpiry} expired`);
+            }
+
             if (user.currentHatIds?.length) {
               console.log(`  Hats: ${user.currentHatIds.join(', ')}`);
             }
 
+            // `assignedTasks` is @derivedFrom(assigneeUser), and handleTaskUnclaimed
+            // nulls the task's assigneeUser — so a released task silently leaves this
+            // list with no completion to match it. That is the release, not an
+            // indexing gap; "Claims Released" above is where it shows up.
             if (user.assignedTasks?.length) {
               console.log('  Active Tasks:');
               for (const t of user.assignedTasks) {

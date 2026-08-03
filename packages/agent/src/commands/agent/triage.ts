@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 import * as fs from 'fs';
 import * as path from 'path';
 import { homedir } from 'os';
-import { query } from '@poa/cli/lib/subgraph';
+import { queryWithFieldFallback } from '@poa/cli/lib/subgraph';
 import { resolveOrgModules } from '@poa/cli/lib/resolve';
 import { resolveNetworkConfig } from '@poa/cli/config/networks';
 import { createReadContract } from '@poa/cli/lib/contracts';
@@ -69,6 +69,23 @@ const FETCH_TRIAGE_DATA = `
   }
 `;
 
+/**
+ * FETCH_TRIAGE_DATA plus the TaskManager v7 release counter (subgraph #201).
+ *
+ * Gnosis-only today — poa-arb-v-1 answers ``Type `Task` has no field `releaseCount```,
+ * which `isUnknownFieldError` matches, so this has to be a tier: agents run against both
+ * chains and a bare query would kill triage outright on Arbitrum.
+ */
+const FETCH_TRIAGE_DATA_WITH_RELEASES = FETCH_TRIAGE_DATA.replace(
+  /^(\s*)rejectionCount$/m,
+  '$1rejectionCount\n$1releaseCount',
+);
+
+const TRIAGE_DATA_TIERS = [
+  FETCH_TRIAGE_DATA_WITH_RELEASES, // 0: Gnosis — releases indexed
+  FETCH_TRIAGE_DATA,               // 1: Arbitrum today — no release indexing
+];
+
 export const triageHandler = {
   builder: (yargs: Argv) => yargs,
 
@@ -89,11 +106,17 @@ export const triageHandler = {
 
       const [gasBalance, orgData] = await Promise.all([
         provider.getBalance(wallet.address),
-        query<any>(FETCH_TRIAGE_DATA, { orgId: modules.orgId }, argv.chain),
+        queryWithFieldFallback<any>(
+          TRIAGE_DATA_TIERS.map((q) => ({ query: q, variables: { orgId: modules.orgId } })),
+          { chainId: argv.chain },
+        ),
       ]);
 
-      const org = orgData.organization;
+      const org = orgData.data.organization;
       if (!org) throw new Error('Organization not found');
+      // Gate on the served tier, never on truthiness: releaseCount is 0 on every
+      // live row today, which must stay distinguishable from "not indexed here".
+      const hasReleaseData = orgData.tierIndex === 0;
 
       const now = Math.floor(Date.now() / 1000);
       const actions: Action[] = [];
@@ -359,10 +382,52 @@ export const triageHandler = {
         actions.push({ priority: 'MEDIUM', type: 'work', detail: `Task #${t.taskId} "${t.title}" assigned to you.`, data: { taskId: t.taskId } });
       }
 
-      // Open tasks available to claim
+      // Previously attempted work (TaskManager v7). `unclaimTask` nulls assignee and
+      // assignedAt, so a task that was rejected and then released — the documented exit
+      // route out of Submitted — comes back as a plain Open row that neither myRejected
+      // nor myAssigned can see. A non-zero counter is the only evidence left, so surface
+      // these separately: re-claiming work the agent just walked away from, or that
+      // someone else already bounced off, is the failure this prevents.
       const openTasks = allTasks.filter((t: any) => t.status === 'Open');
-      if (openTasks.length > 0) {
-        actions.push({ priority: 'MEDIUM', type: 'claim-task', detail: `${openTasks.length} open task(s) available to claim.`, data: { tasks: openTasks.map((t: any) => ({ id: t.taskId, title: t.title })) } });
+      const previouslyAttempted = openTasks.filter((t: any) =>
+        parseInt(t.rejectionCount || '0') > 0 ||
+        (hasReleaseData && parseInt(t.releaseCount || '0') > 0)
+      );
+      const attemptedIds = new Set(previouslyAttempted.map((t: any) => t.taskId));
+      const freshTasks = openTasks.filter((t: any) => !attemptedIds.has(t.taskId));
+
+      // PUSHED FIRST, and deliberately so. Both actions are MEDIUM and Array#sort is
+      // stable, so push order IS the order the agent reads them in — and the heartbeat
+      // works actions top-down. Emitting the warning after the offer let an agent claim
+      // the task before ever seeing it.
+      if (previouslyAttempted.length > 0) {
+        actions.push({
+          priority: 'MEDIUM',
+          type: 'previously-attempted',
+          detail: `${previouslyAttempted.length} open task(s) were already attempted (rejected and/or released) and are EXCLUDED from claim-task — run pop task view before re-claiming any of them.`,
+          data: {
+            tasks: previouslyAttempted.map((t: any) => ({
+              id: t.taskId,
+              title: t.title,
+              rejectionCount: parseInt(t.rejectionCount || '0'),
+              ...(hasReleaseData ? { releaseCount: parseInt(t.releaseCount || '0') } : {}),
+            })),
+          },
+        });
+      }
+
+      // Open tasks available to claim — attempted ones removed, so acting on this
+      // action alone can never silently re-claim abandoned work. The counts stay
+      // honest about what was withheld rather than quietly shrinking the list.
+      if (freshTasks.length > 0) {
+        actions.push({
+          priority: 'MEDIUM',
+          type: 'claim-task',
+          detail: previouslyAttempted.length > 0
+            ? `${freshTasks.length} open task(s) available to claim (${previouslyAttempted.length} previously-attempted excluded — see above).`
+            : `${freshTasks.length} open task(s) available to claim.`,
+          data: { tasks: freshTasks.map((t: any) => ({ id: t.taskId, title: t.title })) },
+        });
       }
 
       // --- 4. PLAN (LOW) ---
@@ -440,6 +505,7 @@ export const triageHandler = {
         openTasks: openTasks.length,
         assignedTasks: myAssigned.length,
         boardState: hasWork ? 'has-work' : 'empty',
+        previouslyAttempted: previouslyAttempted.length,
       };
 
       if (output.isJsonMode()) {

@@ -236,6 +236,10 @@
           "type": "string",
           "description": "Filter by project ID"
         },
+        "released": {
+          "type": "boolean",
+          "description": "Only tasks that were previously claimed and handed back (releaseCount > 0; v7, Gnosis only today)"
+        },
         "sort-by": {
           "type": "string",
           "description": "Sort field",
@@ -283,6 +287,32 @@
         "idempotency-key": {
           "type": "string",
           "description": "Task #370 (HB#214): explicit idempotency key. Two claims for the same task within 15 minutes return the same result without re-submitting. Default: auto-derived from argv."
+        },
+        "no-idempotency": {
+          "type": "boolean",
+          "description": "Bypass the idempotency cache and always submit.",
+          "default": false
+        },
+        "task": {
+          "type": "string",
+          "description": "Task ID",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task unclaim",
+      "kind": "command",
+      "description": "Release a claimed task back to the pool — the claimer any time, ASSIGN holders once the claim expired. Refunds nothing and deletes nothing (that is cancel); v7",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "idempotency-key": {
+          "type": "string",
+          "description": "Explicit idempotency key. Two releases of the same task within 15 minutes return the same result without re-submitting. Default: auto-derived from argv."
         },
         "no-idempotency": {
           "type": "boolean",

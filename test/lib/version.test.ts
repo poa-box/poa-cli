@@ -52,6 +52,13 @@ describe('computeSelector', () => {
     expect(computeSelector(fragment)).toBe('0xa9059cbb');
   });
 
+  it('pins the unclaimTask selector published by contracts PR #187', () => {
+    // The probe scans raw bytecode for this literal, so a typo in the fragment
+    // (an argument name change is harmless, a type change is not) would silently
+    // report v7 orgs as lacking unclaim.
+    expect(computeSelector(TM_FEATURE_FRAGMENTS.unclaim)).toBe('0x6103955a');
+  });
+
   it('matches getSighash for every feature fragment', () => {
     for (const fragment of Object.values(TM_FEATURE_FRAGMENTS)) {
       const iface = new ethers.utils.Interface([fragment]);
@@ -79,7 +86,17 @@ describe('detectTaskManagerFeatures', () => {
       editMeta: false,
       folders: false,
       legacyCreate7: false,
+      unclaim: false,
     });
+  });
+
+  it('flags unclaim when the v7 unclaimTask selector is in the bytecode', async () => {
+    const code = '0x6080604052' + computeSelector(TM_FEATURE_FRAGMENTS.unclaim).slice(2) + '5b';
+    const provider = mockProvider({ code: () => code });
+
+    const features = await detectTaskManagerFeatures(provider, PROXY, 100);
+    expect(features.unclaim).toBe(true);
+    expect(features.deadlines).toBe(false);
   });
 
   it('probes the proxy itself when neither EIP-1967 slot is set (non-proxy)', async () => {

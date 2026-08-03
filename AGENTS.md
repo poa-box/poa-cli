@@ -19,7 +19,7 @@ behavior is identical either way.
 ## The safety contract
 
 1. **`--json` is an output format, never consent.** Destructive commands
-   (17 of them — `vote execute`, `token approve`, `treasury send`, …) abort
+   (18 of them — `vote execute`, `token approve`, `treasury send`, …) abort
    in any non-interactive context unless you pass `--yes` explicitly. Pass it
    only when you mean it.
 2. **Write commands broadcast real transactions to mainnet** with real funds
@@ -44,6 +44,12 @@ behavior is identical either way.
   output to IPFS **publicly and irreversibly**. `org publish` always does.
 - `task create` without `--payout` derives the price from org config and
   puts it **on-chain**. Prefer an explicit `--payout`, or `--dry-run` first.
+- `task unclaim` is **not** `task cancel`. `unclaim` releases a claim back to
+  the pool: budgets and applications untouched, task immediately re-claimable.
+  `cancel` is the destructive, refunding, terminal one. Reaching for `cancel`
+  when you meant `unclaim` destroys a funded task. Releasing **your own** claim
+  is always allowed; force-releasing someone else's needs `ASSIGN` **and** an
+  already-expired claim.
 
 ## Environment recipes
 

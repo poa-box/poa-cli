@@ -100,8 +100,8 @@ const DEADLINE_TS = 4102444800;
 /** 2020-01-01T00:00:00Z — the past-deadline admin lever */
 const PAST_TS = 1577836800;
 
-const V6_FEATURES = { deadlines: true, batchCreate: true, editMeta: true, folders: true, legacyCreate7: false };
-const LEGACY_FEATURES = { deadlines: false, batchCreate: false, editMeta: false, folders: false, legacyCreate7: true };
+const V6_FEATURES = { deadlines: true, batchCreate: true, editMeta: true, folders: true, legacyCreate7: false, unclaim: false };
+const LEGACY_FEATURES = { deadlines: false, batchCreate: false, editMeta: false, folders: false, legacyCreate7: true, unclaim: false };
 
 const SIG_V6 = 'updateTask(uint256,uint256,bytes,bytes32,address,uint256,uint48,uint32)';
 
