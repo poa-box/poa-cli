@@ -1,0 +1,171 @@
+name: Release
+
+# One-click publish of the three-package chain, in dependency order:
+#   @poa-box/core → @poa-box/cli → @poa-box/agent
+#
+# Versions come from the checked-in package.json files — bump and merge them
+# first, then run this. Already-published versions are SKIPPED, so re-running
+# after a partial failure resumes rather than erroring.
+#
+# Setup (once): repo Settings → Secrets → Actions → NPM_TOKEN
+#   an npm "Automation" access token for an account with publish rights on the
+#   poa-box org (Automation tokens bypass 2FA, which is why no --otp appears
+#   anywhere below).
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Pack and verify only — publish nothing'
+        type: boolean
+        default: true
+
+jobs:
+  release:
+    name: publish (dry-run=${{ inputs.dry_run }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push the version tag
+      id-token: write        # npm provenance attestation
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: yarn
+          cache-dependency-path: |
+            yarn.lock
+            packages/core/yarn.lock
+            packages/agent/yarn.lock
+
+      # --- Build the whole chain -------------------------------------------
+      - name: Install (root — links @poa-box/core)
+        run: yarn install --frozen-lockfile
+
+      - name: Install (core)
+        run: yarn --cwd packages/core install --frozen-lockfile
+
+      - name: Build (core + cli)
+        run: yarn build
+
+      - name: Install (agent — links @poa-box/cli)
+        run: yarn --cwd packages/agent install --frozen-lockfile
+
+      - name: Build (agent)
+        run: yarn --cwd packages/agent build
+
+      # --- Everything green, or nothing ships ------------------------------
+      - name: Test (cli)
+        run: yarn test
+
+      - name: Test (core — purity, calldata parity, transport)
+        run: yarn --cwd packages/core test
+
+      - name: Test (agent)
+        run: yarn --cwd packages/agent test
+
+      - name: Core API surface (no exports removed)
+        run: yarn --cwd packages/core api:check
+
+      - name: Docs (generated reference + link check)
+        run: yarn docs:check
+
+      # --- Pre-flight: what would ship -------------------------------------
+      # Catches the class of bug that shipped @poa-box/agent@0.1.0 with a raw
+      # `link:` dependency: inspect the ACTUAL tarball, not the source tree.
+      - name: Verify tarball dependency ranges (no link: may escape)
+        shell: bash
+        run: |
+          set -uo pipefail
+          fail=0
+          dep_of() { node -p "JSON.parse(require('fs').readFileSync('$1','utf8')).dependencies['$2'] ?? '<absent>'"; }
+          check() {  # <pkg-dir> <dep-name>
+            local dir="$1" dep="$2" before after packed out tgz
+            before=$(dep_of "$dir/package.json" "$dep")
+            out=$(mktemp -d)
+            (cd "$dir" && npm pack --pack-destination "$out" >/dev/null) || { echo "::error::npm pack failed in $dir"; fail=1; return; }
+            tgz=$(find "$out" -name '*.tgz' | head -1)
+            packed=$(tar -xzOf "$tgz" package/package.json > "$out/p.json" && dep_of "$out/p.json" "$dep")
+            after=$(dep_of "$dir/package.json" "$dep")
+            echo "$dir: working='$before' → tarball='$packed' → restored='$after'"
+            case "$packed" in
+              ''|'<absent>'|'^'|link:*|file:*)
+                echo "::error::$dir tarball has an unpublishable $dep range: '$packed'"; fail=1 ;;
+            esac
+            [ "$before" = "$after" ] || { echo "::error::$dir postpack did not restore $dep ($before → $after)"; fail=1; }
+            rm -rf "$out"
+          }
+          check . '@poa-box/core'
+          check packages/agent '@poa-box/cli'
+          exit $fail
+
+      # --- Publish, in dependency order ------------------------------------
+      - name: Publish @poa-box/core
+        if: ${{ !inputs.dry_run }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          v=$(node -p "require('./packages/core/package.json').version")
+          if npm view "@poa-box/core@$v" version >/dev/null 2>&1; then
+            echo "@poa-box/core@$v already published — skipping"
+          else
+            (cd packages/core && npm publish --access public --provenance)
+          fi
+
+      - name: Publish @poa-box/cli
+        if: ${{ !inputs.dry_run }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          v=$(node -p "require('./package.json').version")
+          if npm view "@poa-box/cli@$v" version >/dev/null 2>&1; then
+            echo "@poa-box/cli@$v already published — skipping"
+          else
+            npm publish --access public --provenance
+          fi
+
+      - name: Publish @poa-box/agent
+        if: ${{ !inputs.dry_run }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          v=$(node -p "require('./packages/agent/package.json').version")
+          if npm view "@poa-box/agent@$v" version >/dev/null 2>&1; then
+            echo "@poa-box/agent@$v already published — skipping"
+          else
+            (cd packages/agent && npm publish --access public --provenance)
+          fi
+
+      # --- Prove the published artifacts, cold -----------------------------
+      - name: Verify the registry (fresh install, real dependency ranges)
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          sleep 15   # registry read-after-write lag
+          cli=$(node -p "require('./package.json').version")
+          agent=$(node -p "require('./packages/agent/package.json').version")
+          core=$(node -p "require('./packages/core/package.json').version")
+          echo "core@$core deps:  $(npm view @poa-box/core@$core dependencies --json)"
+          echo "cli@$cli  → core: $(npm view @poa-box/cli@$cli dependencies.@poa-box/core)"
+          echo "agent@$agent → cli: $(npm view @poa-box/agent@$agent dependencies.@poa-box/cli)"
+          npm view "@poa-box/cli@$cli" dependencies.@poa-box/core | grep -qv '^link:'
+          npm view "@poa-box/agent@$agent" dependencies.@poa-box/cli | grep -qv '^link:'
+          # Cold smoke test: install from the registry into a scratch dir and run it.
+          tmp=$(mktemp -d)
+          (cd "$tmp" && npm init -y >/dev/null && npm i "@poa-box/cli@$cli" >/dev/null)
+          POP_READONLY=1 "$tmp/node_modules/.bin/pop" --version
+          node -e "
+            const {createPopContext}=require('$tmp/node_modules/@poa-box/core');
+            if(!createPopContext({chainId:100}).client) throw new Error('core unusable from the registry');
+            console.log('core resolves + constructs from the registry install');"
+
+      - name: Tag the release
+        if: ${{ !inputs.dry_run }}
+        run: |
+          v=$(node -p "require('./package.json').version")
+          git tag -f "v$v" && git push -f origin "v$v"

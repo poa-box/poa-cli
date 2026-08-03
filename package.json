@@ -1,6 +1,6 @@
 {
   "name": "@poa-box/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI for the POP (Proof of Participation) protocol",
   "bin": {
     "pop": "./dist/index.js"
@@ -84,5 +84,13 @@
     "./abi/*.json": "./dist/abi/*.json",
     "./package.json": "./package.json",
     "./commands/*": "./dist/commands/*.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/poa-box/poa-cli.git"
+  },
+  "homepage": "https://github.com/poa-box/poa-cli",
+  "bugs": {
+    "url": "https://github.com/poa-box/poa-cli/issues"
   }
 }

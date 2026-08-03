@@ -49,15 +49,33 @@
   },
   "typesVersions": {
     "*": {
-      "dist/index.d.ts": ["dist/index.d.ts"],
-      "abis": ["dist/abis/index.d.ts"],
-      "graph": ["dist/graph/index.d.ts"],
-      "graph/documents": ["dist/graph/documents/index.d.ts"],
-      "tx": ["dist/tx/index.d.ts"],
-      "reads": ["dist/reads/index.d.ts"],
-      "metadata": ["dist/metadata/index.d.ts"],
-      "execute": ["dist/execute/index.d.ts"],
-      "*": ["dist/*"]
+      "dist/index.d.ts": [
+        "dist/index.d.ts"
+      ],
+      "abis": [
+        "dist/abis/index.d.ts"
+      ],
+      "graph": [
+        "dist/graph/index.d.ts"
+      ],
+      "graph/documents": [
+        "dist/graph/documents/index.d.ts"
+      ],
+      "tx": [
+        "dist/tx/index.d.ts"
+      ],
+      "reads": [
+        "dist/reads/index.d.ts"
+      ],
+      "metadata": [
+        "dist/metadata/index.d.ts"
+      ],
+      "execute": [
+        "dist/execute/index.d.ts"
+      ],
+      "*": [
+        "dist/*"
+      ]
     }
   },
   "sideEffects": false,
@@ -99,5 +117,14 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/poa-box/poa-cli.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/poa-box/poa-cli",
+  "bugs": {
+    "url": "https://github.com/poa-box/poa-cli/issues"
+  }
 }

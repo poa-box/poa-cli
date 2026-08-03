@@ -1,6 +1,6 @@
 {
   "name": "@poa-box/agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Autonomous governance agent runtime for the POP protocol — agent + brain (P2P CRDT) command surface over @poa-box/cli",
   "main": "dist/index.js",
   "bin": {
@@ -23,8 +23,8 @@
     "onboard": "bash scripts/onboard.sh",
     "apply": "bash scripts/apply.sh",
     "lint": "tsc --noEmit",
-    "prepack": "npm pkg set 'dependencies.@poa-box/cli=^0.1.0'",
-    "postpack": "npm pkg set 'dependencies.@poa-box/cli=link:../..'"
+    "prepack": "node scripts/prepack-cli-range.mjs",
+    "postpack": "node scripts/postpack-cli-link.mjs"
   },
   "dependencies": {
     "@poa-box/cli": "link:../..",
@@ -57,5 +57,14 @@
   "engines": {
     "node": ">=18"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/poa-box/poa-cli.git",
+    "directory": "packages/agent"
+  },
+  "homepage": "https://github.com/poa-box/poa-cli",
+  "bugs": {
+    "url": "https://github.com/poa-box/poa-cli/issues"
+  }
 }

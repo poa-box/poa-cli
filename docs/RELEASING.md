@@ -39,6 +39,9 @@ yarn --cwd packages/core api:check # @poa-box/core export surface (run after bui
 #    diff: additions are fine; a REMOVAL means this release is a major bump.
 
 # 3. Version bumps (keep all three packages in lockstep unless truly independent)
+#    Or skip 3-6 entirely: run the "Release" GitHub Action (workflow_dispatch,
+#    dry_run=false) — it does everything below, skipping already-published
+#    versions, and verifies the registry afterwards.
 (cd packages/core && npm version patch)
 npm version patch                  # or minor / major — updates package.json + git tag
 (cd packages/agent && npm version patch)
