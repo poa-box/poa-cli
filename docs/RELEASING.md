@@ -42,9 +42,14 @@ yarn --cwd packages/core api:check # @poa-box/core export surface (run after bui
 #    Or skip 3-6 entirely: run the "Release" GitHub Action (workflow_dispatch,
 #    dry_run=false) — it does everything below, skipping already-published
 #    versions, and verifies the registry afterwards.
-(cd packages/core && npm version patch)
-npm version patch                  # or minor / major — updates package.json + git tag
-(cd packages/agent && npm version patch)
+#    --no-git-tag-version: `npm version` otherwise tries to commit each bump,
+#    and the second call then aborts on the dirty tree left by the first,
+#    leaving the chain half-bumped. Bump all three, then commit once; the
+#    Release workflow pushes the per-package tags after publishing.
+(cd packages/core   && npm version patch --no-git-tag-version)
+npm version patch --no-git-tag-version   # or minor / major
+(cd packages/agent  && npm version patch --no-git-tag-version)
+git commit -am "Release: core X.Y.Z, cli X.Y.Z, agent X.Y.Z"
 #    Inter-package ranges need no hand-editing: each prepack DERIVES the
 #    caret range from the dependency's actual version (scripts/
 #    prepack-core-range.mjs, packages/agent/scripts/prepack-cli-range.mjs)
@@ -76,5 +81,9 @@ Semver treats 0.x minors as breaking. Our promise, stronger than semver:
 removals). Anything that would break a consumer bumps the minor (0.x → 0.x+1)
 and is called out in the release notes. At 1.0.0 this becomes standard semver.
 
-Consumers should pin `@poa-box/cli@~0.x` (Docker: exact version) and read
-`pop --version` — which reports the real installed version — when debugging.
+Consumers should pin the MINOR line — `@poa-box/cli@~0.1.1`, which resolves
+`>=0.1.1 <0.2.0` — so they receive safe patches and never a breaking minor.
+(Do not write `~0.x` literally: npm reads that as `~0`, i.e. `<1.0.0`, which
+accepts every breaking release the policy allows — the exact opposite of a
+pin.) Docker should pin an exact version. `pop --version` reports the real
+installed version when debugging.

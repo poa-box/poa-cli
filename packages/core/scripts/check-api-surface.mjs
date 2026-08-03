@@ -101,7 +101,12 @@ for (const [mod, names] of Object.entries(expected)) {
 if (problems.length) {
   console.error('api-surface: BREAKING — the published surface lost exports:\n');
   for (const p of problems) console.error('  ' + p);
-  console.error('\nIf this break is intentional, bump the major version and run --update.');
+  console.error(
+    '\nIf this break is intentional it is a BREAKING RELEASE: while on 0.x bump the'
+    + '\nMINOR (0.x → 0.x+1; after 1.0.0, the major), call it out in the release notes,'
+    + '\nthen run --update to record the new surface. Regenerating without a version'
+    + '\nbump would ship a break to consumers pinned on a patch range.'
+  );
   process.exit(1);
 }
 

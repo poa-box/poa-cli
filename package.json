@@ -30,7 +30,8 @@
     "lint": "tsc --noEmit",
     "contracts:check": "tsx scripts/check-output-contracts.ts",
     "contracts:update": "tsx scripts/check-output-contracts.ts --update",
-    "release:preflight": "node scripts/release-preflight.mjs"
+    "release:preflight": "node scripts/release-preflight.mjs",
+    "release:verify-metadata": "node scripts/verify-publish-metadata.mjs"
   },
   "dependencies": {
     "@openzeppelin/merkle-tree": "^1.0.8",

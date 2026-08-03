@@ -152,8 +152,13 @@ whole package into a bundle.
 
 ## Stability contract
 
-- **Semver.** Within a major version, changes are additive. Renaming,
-  removing, or moving an export is a breaking change and bumps the major.
+- **Semver.** Additive changes ship as patches. Renaming, removing, or moving
+  an export is a breaking change. **While this package is on 0.x**, semver
+  puts breaking changes in the MINOR position, so a break bumps `0.x → 0.(x+1)`
+  and a patch (`0.x.y → 0.x.(y+1)`) is always safe — pin `~0.1.0` to get safe
+  patches only. After 1.0.0 a break bumps the major, as usual. This matches
+  [docs/RELEASING.md](../../docs/RELEASING.md) exactly; the two documents are
+  one policy.
 - **Enforced.** `api-surface.json` records every export of every module;
   `yarn api:check` fails if any recorded export disappears (additions are
   allowed and recorded with `yarn api:update`, so they show up in review).

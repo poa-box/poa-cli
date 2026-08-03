@@ -71,15 +71,32 @@ describe('release workflow contract', () => {
     expect(order).toEqual(['@poa-box/core', '@poa-box/cli', '@poa-box/agent']);
   });
 
-  it('gates every publish and the tagging on dry_run', () => {
-    const publishSteps = src.split('\n').filter(l => l.includes('npm publish'));
+  it('publishes only through publish-package.mjs, never `npm publish` directly', () => {
+    // Direct `npm publish` cannot be used: the link:→semver swap has to happen
+    // before npm reads the manifest, which publish-package.mjs guarantees.
+    const publishSteps = src.split('\n').filter(l => /run:.*publish-package\.mjs/.test(l));
     expect(publishSteps.length).toBe(3);
-    // Each publish step is preceded by an `if:` that negates dry_run.
+    const direct = src.split('\n').filter(l => /^\s*run: .*npm publish/.test(l));
+    expect(direct).toEqual([]);
+  });
+
+  it('gates every publish and the tagging on dry_run', () => {
     expect([...src.matchAll(/if: \$\{\{ !inputs\.dry_run/g)].length).toBeGreaterThanOrEqual(6);
   });
 
   it('runs the preflight before any publish step', () => {
-    expect(src.indexOf('release-preflight.mjs')).toBeLessThan(src.indexOf('npm publish'));
+    expect(src.indexOf('release-preflight.mjs')).toBeLessThan(src.indexOf('publish-package.mjs'));
+  });
+
+  it('verifies publish METADATA (not just the tarball) before publishing', () => {
+    // The artifact that broke agent@0.1.0 was the registry metadata; a tarball
+    // check cannot see it, so this gate must exist and must run pre-publish.
+    expect(src).toContain('verify-publish-metadata.mjs');
+    expect(src.indexOf('verify-publish-metadata.mjs')).toBeLessThan(src.indexOf('publish-package.mjs'));
+  });
+
+  it('tags before post-publish verification, so an irreversible publish is recorded', () => {
+    expect(src.indexOf('Tag the published versions')).toBeLessThan(src.indexOf('Verify the registry'));
   });
 
   it('serializes releases and can push tags + provenance', () => {

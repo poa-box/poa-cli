@@ -32,8 +32,21 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
+      - name: Core package — install
+        run: yarn --cwd packages/core install --frozen-lockfile
+
       - name: Build (tsc)
         run: yarn build
+
+      # Core's own gates run HERE, on every PR — not only at release time.
+      # Purity, calldata parity and the exported-surface lockfile are the
+      # promises @poa-box/core makes to consumers; catching a break after
+      # merge means catching it too late to fix cheaply.
+      - name: Core package — test (purity, calldata parity, transport)
+        run: yarn --cwd packages/core test
+
+      - name: Core package — API surface (no exports removed)
+        run: yarn --cwd packages/core api:check
 
       # The agent package must exist BEFORE the root suite runs:
       # cli-agent-surface.test.ts spawns packages/agent/dist/pop-agent.js.

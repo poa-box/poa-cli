@@ -34,6 +34,11 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const asJson = process.argv.includes('--json');
+/** Dist-tag the release will publish under (`--tag next` for prereleases). */
+const distTag = (() => {
+  const i = process.argv.indexOf('--tag');
+  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : 'latest';
+})();
 
 /**
  * Publish order is dependency order. `dependsOn` names the sibling whose
@@ -48,11 +53,46 @@ const PACKAGES = [
 
 // --- tiny semver (avoids a runtime dependency in a release-critical script) --
 
-/** Parse `1.2.3` / `1.2.3-rc.1`. Returns null when not valid semver. */
+/**
+ * Parse `1.2.3` / `1.2.3-rc.1`. Returns null when not valid semver.
+ * Leading zeros are rejected (npm normalizes `01.2.3`, so the version that
+ * reaches the registry would differ from the one reviewed) and build metadata
+ * is rejected outright (npm ignores it for equality, so `1.2.3+a` and
+ * `1.2.3+b` collide and the second publish fails mid-chain).
+ */
 export function parseVersion(v) {
-  const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(String(v ?? ''));
+  const m = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?$/.exec(String(v ?? ''));
   if (!m) return null;
-  return { major: +m[1], minor: +m[2], patch: +m[3], prerelease: m[4] ?? null };
+  const prerelease = m[4] ?? null;
+  // Prerelease identifiers: dot-separated, non-empty, numeric ones unpadded.
+  if (prerelease !== null) {
+    const ids = prerelease.split('.');
+    if (ids.some(id => id === '' || /^0\d+$/.test(id))) return null;
+  }
+  return { major: +m[1], minor: +m[2], patch: +m[3], prerelease };
+}
+
+/**
+ * Compare prerelease identifier lists per semver §11.4: numeric identifiers
+ * compare NUMERICALLY (so rc.2 < rc.10 — a plain string compare gets this
+ * backwards), numeric always sorts below alphanumeric, and when one list is a
+ * prefix of the other the longer list wins.
+ */
+function comparePrereleaseIds(a, b) {
+  const ia = a.split('.'), ib = b.split('.');
+  for (let i = 0; i < Math.max(ia.length, ib.length); i++) {
+    if (ia[i] === undefined) return -1;
+    if (ib[i] === undefined) return 1;
+    const na = /^\d+$/.test(ia[i]), nb = /^\d+$/.test(ib[i]);
+    if (na && nb) {
+      if (+ia[i] !== +ib[i]) return +ia[i] < +ib[i] ? -1 : 1;
+    } else if (na !== nb) {
+      return na ? -1 : 1;              // numeric < alphanumeric
+    } else if (ia[i] !== ib[i]) {
+      return ia[i] < ib[i] ? -1 : 1;   // ASCII order
+    }
+  }
+  return 0;
 }
 
 /** -1 | 0 | 1, with a prerelease sorting BELOW its release (1.0.0-rc < 1.0.0). */
@@ -65,7 +105,7 @@ export function compareVersions(a, b) {
   if (pa.prerelease === pb.prerelease) return 0;
   if (pa.prerelease === null) return 1;   // release > prerelease
   if (pb.prerelease === null) return -1;
-  return pa.prerelease < pb.prerelease ? -1 : 1;
+  return comparePrereleaseIds(pa.prerelease, pb.prerelease);
 }
 
 // --- registry ---------------------------------------------------------------
@@ -93,10 +133,12 @@ function registryInfo(name) {
 
 // --- plan -------------------------------------------------------------------
 
-export function buildPlan(packages, readPkg, lookup) {
+export function buildPlan(packages, readPkg, lookup, options = {}) {
+  const distTag = options.distTag ?? 'latest';
   const plan = [];
   const errors = [];
-  const willPublish = new Map(); // name -> version
+  const willPublish = new Map(); // name -> version (only packages clear to publish)
+  const blocked = new Set();     // names whose own publish is refused
 
   for (const { dir, dependsOn } of packages) {
     const pkg = readPkg(dir);
@@ -110,39 +152,69 @@ export function buildPlan(packages, readPkg, lookup) {
     const info = lookup(name);
     const alreadyPublished = info.versions.includes(version);
     const action = alreadyPublished ? 'skip' : 'publish';
+    const parsed = parseVersion(version);
+    const errorsBefore = errors.length;
 
     // Guard 2: never move `latest` backwards.
-    if (action === 'publish' && info.latest && compareVersions(version, info.latest) < 0) {
+    // `info.latest` can be absent while versions exist (a package whose
+    // dist-tags were manipulated), so fall back to the highest known version
+    // rather than skipping the guard entirely.
+    const effectiveLatest = info.latest
+      ?? (info.versions.length ? [...info.versions].sort(compareVersions).pop() : null);
+    if (action === 'publish' && effectiveLatest && compareVersions(version, effectiveLatest) < 0) {
       errors.push(
-        `${name}: refusing to publish ${version} — it is LOWER than the current latest (${info.latest}), `
+        `${name}: refusing to publish ${version} — it is LOWER than the current latest (${effectiveLatest}), `
         + `and npm would move the "latest" tag backwards, silently downgrading consumers. `
-        + `Bump past ${info.latest}, or publish with an explicit --tag.`
+        + `Bump past ${effectiveLatest}, or release it under a different dist-tag.`
       );
     }
 
-    // Guard 3: the range prepack will pin must resolve to a real version.
-    if (dependsOn) {
-      const depVersion = willPublish.get(dependsOn) ?? null;
+    // Guard 2b: a prerelease must never land on `latest`. npm points `latest`
+    // at whatever was published most recently, so an rc published without an
+    // explicit tag becomes the default install for every consumer.
+    if (action === 'publish' && parsed.prerelease !== null && distTag === 'latest') {
+      errors.push(
+        `${name}: ${version} is a PRERELEASE and would be published to the "latest" dist-tag, `
+        + `making it the default install for every consumer. Re-run with a dist tag such as "next".`
+      );
+    }
+
+    // Guard 3: the range this package will publish for its sibling must
+    // resolve to a version that exists after this run. `dependsOn` is pinned
+    // as ^<sibling's local version> (scripts/lib/link-swap.mjs), so the check
+    // is: will that exact version be on the registry when this publishes?
+    if (dependsOn && action === 'publish') {
+      const depEntry = plan.find(p => p.name === dependsOn);
+      const depVersion = depEntry?.version;
       const depInfo = lookup(dependsOn);
-      const depWillExist = depVersion !== null || depInfo.versions.length > 0;
-      const depPinned = plan.find(p => p.name === dependsOn)?.version;
-      if (action === 'publish') {
-        if (!depWillExist) {
-          errors.push(`${name}: pins ^${depPinned} of ${dependsOn}, which is not published and not part of this run`);
-        } else if (depPinned && !depInfo.versions.includes(depPinned) && !willPublish.has(dependsOn)) {
+      if (!depVersion) {
+        errors.push(`${name}: depends on ${dependsOn}, which is not part of the release plan — cannot derive a range`);
+      } else {
+        const depPublishedAlready = depInfo.versions.includes(depVersion);
+        // willPublish only contains dependencies that are actually CLEAR to
+        // publish — a sibling whose own publish was refused does not count,
+        // or a blocked core would silently "satisfy" the CLI's pin.
+        const depPublishingNow = willPublish.get(dependsOn) === depVersion;
+        if (!depPublishedAlready && !depPublishingNow) {
+          const why = blocked.has(dependsOn)
+            ? `${dependsOn}@${depVersion} is itself blocked above`
+            : `that version is neither on the registry nor being published in this run (${dependsOn} is ${depEntry.action})`;
           errors.push(
-            `${name}: prepack will pin ^${depPinned} of ${dependsOn}, but that version is neither on the `
-            + `registry nor being published in this run — the tarball would reference a nonexistent version`
+            `${name}: would publish a dependency on ${dependsOn}@^${depVersion}, but ${why} — `
+            + `consumers could not install ${name}@${version}`
           );
         }
       }
     }
 
-    if (action === 'publish') willPublish.set(name, version);
+    const cleanToPublish = errors.length === errorsBefore;
+    if (!cleanToPublish) blocked.add(name);
+    if (action === 'publish' && cleanToPublish) willPublish.set(name, version);
     plan.push({
       name, dir, version, action,
       registryLatest: info.latest,
       dependsOn,
+      distTag,
       pinnedRange: dependsOn ? `^${plan.find(p => p.name === dependsOn)?.version ?? '?'}` : null,
     });
   }
@@ -174,7 +246,7 @@ function lookup(name) {
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   let result;
   try {
-    result = buildPlan(PACKAGES, readPkg, lookup);
+    result = buildPlan(PACKAGES, readPkg, lookup, { distTag });
   } catch (err) {
     console.error(`release-preflight: ${err.message}`);
     process.exit(1);

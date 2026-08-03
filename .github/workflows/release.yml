@@ -5,23 +5,29 @@ name: Release
 #
 # VERSIONS COME FROM THE CHECKED-IN package.json FILES. Bump them in a PR
 # (`npm version patch` in each package you are releasing), merge, then run
-# this workflow. Inter-package ranges need no hand-editing: each prepack
-# derives `^<dependency version>` and postpack restores the local link:.
+# this workflow. Inter-package ranges need no hand-editing: the local `link:`
+# deps are swapped for `^<dependency version>` at publish time and restored
+# afterwards (scripts/lib/link-swap.mjs).
 #
 # Safety properties, in the order they are enforced:
 #   * one release at a time (concurrency), main only
 #   * preflight validates the whole plan against the LIVE registry BEFORE any
-#     build — no bump, a backwards `latest`, a malformed version, or a
-#     dangling inter-package pin stops the run (scripts/release-preflight.mjs)
+#     build — a forgotten bump, a backwards `latest`, a prerelease heading for
+#     `latest`, a malformed version, or a dangling inter-package pin stops the
+#     run (scripts/release-preflight.mjs, unit-tested)
 #   * every test suite + api:check + docs:check must pass
-#   * both tarballs are packed and their dependency ranges inspected — a
-#     `link:` range can never escape (this is what shipped agent@0.1.0 broken)
+#   * a real `npm publish` is executed against a capture-only local registry
+#     and the captured PUT body is asserted free of `link:` ranges — this is
+#     the artifact that shipped agent@0.1.0 uninstallable, and the one a
+#     tarball inspection cannot see
 #   * npm auth is verified before the first publish, so a bad token cannot
 #     leave the chain half-published
 #   * already-published versions are SKIPPED, so re-running after a partial
 #     failure resumes instead of erroring
-#   * after publishing: the registry is polled, dependency ranges are
-#     re-read from it, and the CLI is cold-installed from npm and executed
+#   * tags are pushed BEFORE post-publish verification, so an irreversible
+#     publish is always recorded
+#   * after publishing: the registry is polled, the ranges this run published
+#     are re-read from it, and the CLI is cold-installed from npm and executed
 #
 # Setup (once): Settings → Secrets and variables → Actions → new secret
 #   NPM_TOKEN = an npm **Automation** token for an account with publish rights
@@ -35,6 +41,10 @@ on:
         description: 'Verify everything and publish NOTHING'
         type: boolean
         default: true
+      dist_tag:
+        description: 'npm dist-tag. Keep "latest" for normal releases; use "next" for prereleases (an rc on latest becomes everyone default install).'
+        type: string
+        default: 'latest'
 
 concurrency:
   group: release
@@ -86,8 +96,8 @@ jobs:
         id: preflight
         run: |
           set -o pipefail
-          node scripts/release-preflight.mjs | tee plan.txt
-          node scripts/release-preflight.mjs --json > plan.json
+          node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag }}' | tee plan.txt
+          node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag }}' --json > plan.json
           {
             echo '## Release plan'
             echo '```'
@@ -138,45 +148,42 @@ jobs:
       - name: Docs (generated reference + link check)
         run: yarn docs:check
 
-      - name: Guard — agent build must not emit into src/
+      - name: Guard — builds must not emit into any src/
+        shell: bash
         run: |
-          strays=$(find src \( -name '*.js' -o -name '*.d.ts' \) | wc -l)
-          if [ "$strays" -ne 0 ]; then
-            echo "::error::compiled artifacts leaked into src/ — they shadow .ts at resolve time"; exit 1
+          set -o pipefail
+          strays=$(find src packages/core/src packages/agent/src \
+            \( -name '*.js' -o -name '*.d.ts' \) ! -path '*/abis/*' -print)
+          if [ -n "$strays" ]; then
+            echo "::error::compiled artifacts leaked into a src/ tree — they shadow .ts at resolve time:"
+            echo "$strays"
+            exit 1
           fi
 
       # --- Pre-flight on the actual artifacts --------------------------------
-      # Inspects the TARBALL, not the source tree: @poa-box/agent@0.1.0 shipped
-      # a raw `link:../..` dependency because a prepack silently no-opped, and
-      # nothing looking at the repo would have caught it.
-      - name: 'Verify tarball dependency ranges (no link: may escape)'
+      # THE decisive pre-publish gate. It runs a real `npm publish` against a
+      # capture-only server on localhost and asserts the PUT body — the exact
+      # document that becomes registry metadata — carries no `link:` range.
+      #
+      # Inspecting the tarball is NOT sufficient and was actively misleading:
+      # npm reads the manifest it publishes BEFORE running prepack, so a
+      # prepack-based swap fixes the tarball while the registry metadata still
+      # says `link:`. That is precisely how @poa-box/agent@0.1.0 shipped
+      # uninstallable (`npm view @poa-box/agent@0.1.0 dependencies` still
+      # proves it), and why the swap now happens before npm is invoked at all
+      # (scripts/lib/link-swap.mjs).
+      - name: 'Verify publish metadata (what npm would send to the registry)'
+        shell: bash
+        run: node scripts/verify-publish-metadata.mjs
+
+      - name: Guard — the working tree survived packing unchanged
         shell: bash
         run: |
-          set -uo pipefail
-          fail=0
-          dep_of() { node -p "JSON.parse(require('fs').readFileSync('$1','utf8')).dependencies['$2'] ?? '<absent>'"; }
-          check() {  # <pkg-dir> <dep-name>
-            local dir="$1" dep="$2" before after packed out tgz
-            before=$(dep_of "$dir/package.json" "$dep")
-            out=$(mktemp -d)
-            (cd "$dir" && npm pack --pack-destination "$out" >/dev/null) \
-              || { echo "::error::npm pack failed in $dir"; fail=1; return; }
-            tgz=$(find "$out" -name '*.tgz' | head -1)
-            tar -xzOf "$tgz" package/package.json > "$out/p.json"
-            packed=$(dep_of "$out/p.json" "$dep")
-            after=$(dep_of "$dir/package.json" "$dep")
-            echo "$dir: working='$before' → tarball='$packed' → restored='$after'"
-            case "$packed" in
-              ''|'<absent>'|'^'|link:*|file:*)
-                echo "::error::$dir tarball has an unpublishable $dep range: '$packed'"; fail=1 ;;
-            esac
-            [ "$before" = "$after" ] \
-              || { echo "::error::$dir postpack did not restore $dep ($before → $after)"; fail=1; }
-            rm -rf "$out"
-          }
-          check . '@poa-box/core'
-          check packages/agent '@poa-box/cli'
-          exit $fail
+          if ! git diff --quiet -- package.json packages/agent/package.json packages/core/package.json; then
+            echo "::error::a pack/publish step left package.json modified — the link: restore did not run"
+            git --no-pager diff -- package.json packages/agent/package.json packages/core/package.json
+            exit 1
+          fi
 
       - name: Verify npm authentication (before the first publish)
         if: ${{ !inputs.dry_run }}
@@ -194,79 +201,30 @@ jobs:
           echo "Re-run with dry_run=false to publish the plan above."
 
       # --- Publish, in dependency order --------------------------------------
+      # publish-package.mjs applies the semver range BEFORE invoking npm (so it
+      # reaches the registry metadata) and restores the link: form in a finally.
       - name: Publish @poa-box/core
         if: ${{ !inputs.dry_run && steps.preflight.outputs.core_action == 'publish' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: cd packages/core && npm publish --access public --provenance
+        run: node scripts/publish-package.mjs packages/core --access public --provenance --tag '${{ inputs.dist_tag }}'
 
       - name: Publish @poa-box/cli
         if: ${{ !inputs.dry_run && steps.preflight.outputs.cli_action == 'publish' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public --provenance
+        run: node scripts/publish-package.mjs . --access public --provenance --tag '${{ inputs.dist_tag }}'
 
       - name: Publish @poa-box/agent
         if: ${{ !inputs.dry_run && steps.preflight.outputs.agent_action == 'publish' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: cd packages/agent && npm publish --access public --provenance
+        run: node scripts/publish-package.mjs packages/agent --access public --provenance --tag '${{ inputs.dist_tag }}'
 
-      # --- Prove the published artifacts, cold -------------------------------
-      - name: Verify the registry
-        if: ${{ !inputs.dry_run }}
-        shell: bash
-        run: |
-          set -uo pipefail
-          core='${{ steps.preflight.outputs.core_version }}'
-          cli='${{ steps.preflight.outputs.cli_version }}'
-          agent='${{ steps.preflight.outputs.agent_version }}'
-          fail=0
-
-          # Registry reads are eventually consistent — poll rather than sleep.
-          await() {  # <pkg@version>
-            for i in $(seq 1 20); do
-              npm view "$1" version >/dev/null 2>&1 && { echo "$1 visible"; return 0; }
-              sleep 6
-            done
-            echo "::error::$1 did not appear on the registry within 120s"; return 1
-          }
-          await "@poa-box/core@$core"  || fail=1
-          await "@poa-box/cli@$cli"    || fail=1
-          await "@poa-box/agent@$agent" || fail=1
-          [ "$fail" -eq 0 ] || exit 1
-
-          # The published ranges must be real semver — the failure that shipped
-          # agent@0.1.0 was visible ONLY here, in the registry metadata.
-          cli_core=$(npm view "@poa-box/cli@$cli" dependencies.@poa-box/core)
-          agent_cli=$(npm view "@poa-box/agent@$agent" dependencies.@poa-box/cli)
-          echo "cli@$cli   → @poa-box/core  $cli_core"
-          echo "agent@$agent → @poa-box/cli   $agent_cli"
-          case "$cli_core"  in link:*|file:*|'') echo "::error::published CLI has an unusable core range: '$cli_core'"; fail=1 ;; esac
-          case "$agent_cli" in link:*|file:*|'') echo "::error::published agent has an unusable cli range: '$agent_cli'"; fail=1 ;; esac
-
-          # Cold install from the registry into a scratch project, then RUN it.
-          tmp=$(mktemp -d)
-          (cd "$tmp" && npm init -y >/dev/null && npm i "@poa-box/cli@$cli" >/dev/null) \
-            || { echo "::error::cold install of @poa-box/cli@$cli failed"; exit 1; }
-          POP_READONLY=1 "$tmp/node_modules/.bin/pop" --version \
-            || { echo "::error::published CLI binary does not run"; fail=1; }
-          node -e "
-            const { createPopContext } = require('$tmp/node_modules/@poa-box/core');
-            if (!createPopContext({ chainId: 100 }).client) throw new Error('core unusable');
-            console.log('core resolves and constructs from the registry install');
-          " || { echo "::error::@poa-box/core is not usable from a registry install"; fail=1; }
-
-          {
-            echo '## Published'
-            echo "- \`@poa-box/core@$core\`"
-            echo "- \`@poa-box/cli@$cli\` → core \`$cli_core\`"
-            echo "- \`@poa-box/agent@$agent\` → cli \`$agent_cli\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-          exit $fail
-
+      # Tag BEFORE verification: the publishes are irreversible, so the record
+      # of what shipped must not be lost to a flaky post-publish check.
       - name: Tag the published versions
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && !cancelled() }}
         shell: bash
         run: |
           set -uo pipefail
@@ -283,3 +241,80 @@ jobs:
           tag_it core  '${{ steps.preflight.outputs.core_version }}'  '${{ steps.preflight.outputs.core_action }}'
           tag_it cli   '${{ steps.preflight.outputs.cli_version }}'   '${{ steps.preflight.outputs.cli_action }}'
           tag_it agent '${{ steps.preflight.outputs.agent_version }}' '${{ steps.preflight.outputs.agent_action }}'
+
+      # --- Prove the published artifacts, cold -------------------------------
+      # Every assertion below is SCOPED to what this run actually published —
+      # a skipped package's pre-existing state is not this release's problem
+      # (agent@0.1.0's known-bad metadata would otherwise fail every future run).
+      - name: Verify the registry
+        if: ${{ !inputs.dry_run && !cancelled() }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          core='${{ steps.preflight.outputs.core_version }}'
+          cli='${{ steps.preflight.outputs.cli_version }}'
+          agent='${{ steps.preflight.outputs.agent_version }}'
+          core_act='${{ steps.preflight.outputs.core_action }}'
+          cli_act='${{ steps.preflight.outputs.cli_action }}'
+          agent_act='${{ steps.preflight.outputs.agent_action }}'
+          fail=0
+          summary='## Published'
+
+          # Registry reads are eventually consistent — poll rather than sleep.
+          await() {  # <pkg@version>
+            for i in $(seq 1 20); do
+              npm view "$1" version >/dev/null 2>&1 && { echo "$1 visible"; return 0; }
+              sleep 6
+            done
+            echo "::error::$1 did not appear on the registry within 120s"; return 1
+          }
+          # A published dependency range must be real semver, never a local link.
+          check_range() {  # <pkg@version> <dep>
+            local range
+            range=$(npm view "$1" "dependencies.$2" 2>/dev/null)
+            echo "$1 → $2 = ${range:-<none>}"
+            case "$range" in
+              link:*|file:*|portal:*)
+                echo "::error::$1 published an unusable $2 range: '$range'"; return 1 ;;
+            esac
+            return 0
+          }
+
+          if [ "$core_act" = 'publish' ]; then
+            await "@poa-box/core@$core" || fail=1
+            summary="$summary"$'\n'"- \`@poa-box/core@$core\`"
+          fi
+          if [ "$cli_act" = 'publish' ]; then
+            await "@poa-box/cli@$cli" || fail=1
+            check_range "@poa-box/cli@$cli" '@poa-box/core' || fail=1
+            summary="$summary"$'\n'"- \`@poa-box/cli@$cli\`"
+          fi
+          if [ "$agent_act" = 'publish' ]; then
+            await "@poa-box/agent@$agent" || fail=1
+            check_range "@poa-box/agent@$agent" '@poa-box/cli' || fail=1
+            summary="$summary"$'\n'"- \`@poa-box/agent@$agent\`"
+          fi
+
+          # Cold install from the registry into a scratch project, then RUN it.
+          if [ "$cli_act" = 'publish' ]; then
+            tmp=$(mktemp -d)
+            if (cd "$tmp" && npm init -y >/dev/null && npm i "@poa-box/cli@$cli" >/dev/null); then
+              POP_READONLY=1 "$tmp/node_modules/.bin/pop" --version \
+                || { echo "::error::published CLI binary does not run"; fail=1; }
+              if [ -d "$tmp/node_modules/@poa-box/core" ]; then
+                node -e "
+                  const { createPopContext } = require('$tmp/node_modules/@poa-box/core');
+                  if (!createPopContext({ chainId: 100 }).client) throw new Error('core unusable');
+                  console.log('core resolves and constructs from the registry install');
+                " || { echo "::error::@poa-box/core is not usable from a registry install"; fail=1; }
+              fi
+            else
+              echo "::error::cold install of @poa-box/cli@$cli failed"; fail=1
+            fi
+          fi
+
+          # Always record what shipped, even if a check failed — the publishes
+          # are irreversible and this summary is the operator's only record.
+          printf '%s\n' "$summary" >> "$GITHUB_STEP_SUMMARY"
+          exit $fail
+
