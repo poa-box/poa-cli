@@ -113,24 +113,77 @@ export function compareVersions(a, b) {
 // --- registry ---------------------------------------------------------------
 
 /**
- * Registry facts for a package, or `{ published: false }` when the name has
- * never been published. A network/auth failure THROWS — an unreachable
- * registry must abort the release, never look like "unpublished" (which would
- * skip the backwards-`latest` guard entirely).
+ * Registry facts for a package, or `{ published: false }` ONLY when the name is
+ * confirmed absent.
+ *
+ * Two ways this has failed open, both of which tried to republish an existing
+ * version (npm rejects that, so the release died mid-chain):
+ *
+ *  1. npm 12 changed `npm view --json` to wrap a single result in an ARRAY —
+ *     `[{versions,dist-tags}]` instead of `{versions,dist-tags}` — so reading
+ *     `.versions` off the parsed value yielded undefined and every package
+ *     looked brand new. Both shapes are handled now.
+ *  2. For a SCOPED package the registry answers 404 to an unauthorized read,
+ *     so a credential problem is indistinguishable from "never published".
+ *
+ * Therefore an empty or 404 read is never trusted on its own: it is confirmed
+ * with an anonymous registry GET, and a contradiction aborts the release.
  */
-function registryInfo(name) {
+async function fetchRegistryInfo(name) {
+  let raw;
   try {
-    const out = execFileSync('npm', ['view', name, 'versions', 'dist-tags', '--json'], {
+    raw = execFileSync('npm', ['view', name, 'versions', 'dist-tags', '--json'], {
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const data = JSON.parse(out);
-    const versions = Array.isArray(data.versions) ? data.versions : [data.versions].filter(Boolean);
-    return { published: true, versions, latest: data['dist-tags']?.latest ?? null };
   } catch (err) {
     const stderr = String(err.stderr ?? '');
-    if (/E404|404 Not Found/.test(stderr)) return { published: false, versions: [], latest: null };
+    if (/E404|404 Not Found/.test(stderr)) {
+      await assertGenuinelyAbsent(name, 'npm view reported 404');
+      return { published: false, versions: [], latest: null };
+    }
     throw new Error(`npm view ${name} failed (registry unreachable or unauthorized):\n${stderr.trim() || err.message}`);
   }
+
+  const parsed = raw.trim() ? JSON.parse(raw) : null;
+  // npm >= 12 wraps single-spec results in an array; npm <= 11 does not.
+  const data = (Array.isArray(parsed) ? parsed[0] : parsed) ?? {};
+  const versions = Array.isArray(data.versions)
+    ? data.versions
+    : data.versions ? [data.versions] : [];
+
+  if (!versions.length) {
+    await assertGenuinelyAbsent(name, 'npm view returned no versions');
+    return { published: false, versions: [], latest: null };
+  }
+  return { published: true, versions, latest: data['dist-tags']?.latest ?? null };
+}
+
+/**
+ * Confirm — anonymously, without the npm CLI — that a package really has no
+ * published versions. Throws if the registry disagrees, because concluding
+ * "new package" about an existing one makes the release attempt an
+ * impossible republish.
+ */
+async function assertGenuinelyAbsent(name, why) {
+  const url = `https://registry.npmjs.org/${name.replace('/', '%2F')}`;
+  let res;
+  try {
+    res = await fetch(url, { headers: { accept: 'application/json' } });
+  } catch (err) {
+    throw new Error(`${name}: ${why}, and the registry could not be reached to confirm (${err.message}). Refusing to guess.`);
+  }
+  if (res.status === 404) return;   // genuinely new
+  throw new Error(
+    `${name}: ${why}, but the registry answers HTTP ${res.status} for it — the package EXISTS. `
+    + `Refusing to treat it as new (this is an npm CLI output-shape or credential problem, `
+    + `not a new package). npm --version: ${safeNpmVersion()}`
+  );
+}
+
+function safeNpmVersion() {
+  try {
+    return execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim();
+  } catch { return 'unknown'; }
 }
 
 // --- plan -------------------------------------------------------------------
@@ -244,14 +297,24 @@ function readPkg(dir) {
 
 const cache = new Map();
 function lookup(name) {
-  if (!cache.has(name)) cache.set(name, registryInfo(name));
-  return cache.get(name);
+  const hit = cache.get(name);
+  if (!hit) throw new Error(`registry info for ${name} was not prefetched`);
+  return hit;
+}
+
+/** Read every package's registry state up front (async: see fetchRegistryInfo). */
+async function prefetchRegistry(packages) {
+  for (const { dir } of packages) {
+    const { name } = readPkg(dir);
+    if (!cache.has(name)) cache.set(name, await fetchRegistryInfo(name));
+  }
 }
 
 // Importable for tests without running the registry queries.
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   let result;
   try {
+    await prefetchRegistry(PACKAGES);
     result = buildPlan(PACKAGES, readPkg, lookup, { distTag, allowEmpty });
   } catch (err) {
     console.error(`release-preflight: ${err.message}`);
