@@ -45,9 +45,10 @@ yarn --cwd packages/core api:check # @poa-box/core export surface (run after bui
 (cd packages/core && npm version patch)
 npm version patch                  # or minor / major — updates package.json + git tag
 (cd packages/agent && npm version patch)
-#    If @poa-box/cli's major/minor changed: update the "^x.y.z" range in
-#    packages/agent's prepack script. When @poa-box/core starts publishing to npm,
-#    swap @poa-box/cli's "link:./packages/core" the same way at pack time.
+#    Inter-package ranges need no hand-editing: each prepack DERIVES the
+#    caret range from the dependency's actual version (scripts/
+#    prepack-core-range.mjs, packages/agent/scripts/prepack-cli-range.mjs)
+#    and postpack restores the local link:.
 
 # 4. Publish (order matters: core → cli → agent)
 (cd packages/core && npm publish --access public --otp=<code>)
