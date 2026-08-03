@@ -1,12 +1,16 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { query } from '../../lib/subgraph';
+import { queryWithFieldFallback } from '../../lib/subgraph';
 import { resolveOrgId, resolveOrgModules } from '../../lib/resolve';
 import { resolveNetworkConfig } from '../../config/networks';
 import { fetchJson } from '../../lib/ipfs';
-import { FETCH_PROJECTS_DATA } from '../../queries/task';
+import {
+  projectsDataTiers,
+  FETCH_TASK_RELEASE_HISTORY,
+  FETCH_TASK_RELEASE_HISTORY_LEGACY,
+} from '../../queries/task';
 import { formatAddress, formatDeadline } from '../../lib/encoding';
-import { formatCountdown } from '../../lib/format';
+import { formatCountdown, formatRelativeTime } from '../../lib/format';
 import {
   getTaskOnChain,
   getTaskApplicants,
@@ -49,9 +53,15 @@ function deadlineSentence(onChain: TaskOnChain, claimState: ClaimState): string 
   }
   if (onChain.status === TASK_STATUS.UNCLAIMED && onChain.absoluteDeadline) {
     const now = Math.floor(Date.now() / 1000);
+    // NOT "can no longer be claimed": verified against TaskManager v7 source
+    // that claimTask checks only CLAIM permission, requiresApplication and
+    // status — `_claimExpired` (the sole reader of absoluteDeadline) is
+    // consulted only on the CLAIMED takeover branch — and submitTask checks no
+    // deadline at all. A past absolute deadline makes the resulting claim
+    // instantly takeover-able; it does not close the task.
     return onChain.absoluteDeadline <= now
-      ? 'claim deadline passed — this task can no longer be claimed'
-      : `open for claims — closes ${formatDeadline(onChain.absoluteDeadline)} (${formatCountdown(onChain.absoluteDeadline)})`;
+      ? 'absolute deadline passed — still claimable, but the claim is takeover-able the moment it is made'
+      : `open for claims — after ${formatDeadline(onChain.absoluteDeadline)} (${formatCountdown(onChain.absoluteDeadline)}) any claim is instantly takeover-able`;
   }
   if (
     onChain.status === TASK_STATUS.SUBMITTED &&
@@ -78,7 +88,15 @@ export const viewHandler = {
 
     try {
       const orgId = await resolveOrgId(argv.org, argv.chain);
-      const result = await query<any>(FETCH_PROJECTS_DATA, { orgId }, argv.chain);
+      // Tiered: tier 0 carries the v7 release fields (Gnosis only today), tier 1
+      // is the same document without them, tier 2 drops the v6 deadline fields
+      // too. This read was previously untiered, which meant ANY schema drift
+      // between deployments broke `task view` outright rather than degrading.
+      const { data: result, tierIndex } = await queryWithFieldFallback<any>(
+        projectsDataTiers(orgId),
+        { chainId: argv.chain }
+      );
+      const hasReleaseData = tierIndex === 0;
       const projects = result.organization?.taskManager?.projects || [];
 
       let found: any = null;
@@ -243,6 +261,33 @@ export const viewHandler = {
         reason: r.metadata?.rejection || (i === 0 ? ipfsFallbackReason : null),
       }));
 
+      // v7 release history. The shared document above already reported the
+      // count, so the dedicated per-task query only fires when there is
+      // something to show — `task view` is the one place the full attribution
+      // (who released, self vs forced, when) is worth a second round-trip.
+      //
+      // This matters more than it looks: handleTaskUnclaimed nulls assignee,
+      // assigneeUsername, assigneeUser AND assignedAt, so on a released task
+      // `releaseCount` is the ONLY surviving evidence it was ever claimed.
+      const releaseCount = Number(found.releaseCount ?? 0);
+      let releases: Array<Record<string, any>> = [];
+      if (hasReleaseData && releaseCount > 0 && taskManagerAddress) {
+        try {
+          const entityId = `${taskManagerAddress.toLowerCase()}-${found.taskId}`;
+          const { data: history } = await queryWithFieldFallback<any>([
+            { query: FETCH_TASK_RELEASE_HISTORY, variables: { taskId: entityId, first: 20 } },
+            { query: FETCH_TASK_RELEASE_HISTORY_LEGACY, variables: { taskId: entityId } },
+          ], { chainId: argv.chain });
+          releases = (history?.task?.releases || []).map((r: any) => ({
+            previousClaimer: r.previousClaimerUsername || r.previousClaimer,
+            caller: r.callerUsername || r.caller,
+            selfRelease: r.selfRelease,
+            releasedAt: r.releasedAt,
+            transactionHash: r.transactionHash,
+          }));
+        } catch { /* history is additive — never fail the view over it */ }
+      }
+
       if (output.isJsonMode()) {
         output.json({
           taskId: found.taskId,
@@ -281,6 +326,14 @@ export const viewHandler = {
             applicants: lensApplicants,
             applicantCount: lensApplicants.length,
           } : {}),
+          // Additive v7 release keys, APPENDED at the end — never inserted
+          // mid-object. Gated on the served tier, so a chain that does not
+          // index releases omits them rather than reporting a false 0.
+          ...(hasReleaseData ? {
+            releaseCount,
+            lastReleasedAt: found.lastReleasedAt ?? null,
+            releases,
+          } : {}),
         });
       } else {
         console.log('');
@@ -314,6 +367,17 @@ export const viewHandler = {
           for (const r of rejections) {
             const reason = r.reason || 'no reason given';
             console.log(`    - by ${r.rejector} — ${reason}`);
+          }
+        }
+        // Deliberately NOT nested inside the `if (found.assignee)` block above:
+        // a release nulls the assignee, so nesting it there would hide this
+        // section for exactly the tasks that have release history.
+        if (hasReleaseData && releaseCount > 0) {
+          const last = found.lastReleasedAt ? ` (last ${formatRelativeTime(found.lastReleasedAt)})` : '';
+          console.log(`  Releases:    ${releaseCount}${last}`);
+          for (const r of releases) {
+            const how = r.selfRelease ? 'self-released' : `force-released by ${r.caller}`;
+            console.log(`    - ${r.previousClaimer} ${how} — ${formatRelativeTime(r.releasedAt)}`);
           }
         }
         if (found.applications?.length) {

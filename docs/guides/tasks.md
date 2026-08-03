@@ -3,8 +3,9 @@
 Tasks are how work gets funded in a Perpetual Organization. A member claims a
 task, does the work, submits it, and a reviewer approves — at which point the
 participation-token (PT) payout is minted to the worker. This guide covers the
-full v6 task lifecycle: deadlines, expired-claim takeover, applications,
-post-claim edits, batch creation, projects, and the task-permission bitmask.
+full v6/v7 task lifecycle: deadlines, expired-claim takeover, releasing a
+claim, applications, post-claim edits, batch creation, projects, and the
+task-permission bitmask.
 
 Every command here is grounded in the CLI reference:
 [task.md](../reference/cli/task.md) and
@@ -30,8 +31,11 @@ Every command here is grounded in the CLI reference:
                           │  ▲            (or assign/           │                     │
                           │  │            approve-app)         │                     ├─ review approve ─▶ COMPLETED  (PT minted)
                           │  │                                 │                     │
-                          │  └── takeover ◀── claim expired ◀──┘                     └─ review reject ──▶ back to CLAIMED
-                          │        (anyone with CLAIM)                                     (worker fixes & re-submits)
+                          │  ├── takeover ◀── claim expired ◀──┤                     └─ review reject ──▶ back to CLAIMED
+                          │  │     (anyone with CLAIM)         │                           (worker fixes & re-submits)
+                          │  │                                 │
+                          │  └── pop task unclaim ◀────────────┘
+                          │        (the claimer any time; ASSIGN once expired)
                           ▼
                       CANCELLED
 ```
@@ -39,7 +43,7 @@ Every command here is grounded in the CLI reference:
 | State | Meaning | Who acts next |
 | --- | --- | --- |
 | `UNCLAIMED` | Open. Anyone with `CLAIM` can take it (or apply, if it requires an application). | claimer / applicant / assigner |
-| `CLAIMED` | Someone owns it and is working. A `claimDeadline` may be ticking. | the claimer (submit) — or, once expired, anyone with `CLAIM` (takeover) |
+| `CLAIMED` | Someone owns it and is working. A `claimDeadline` may be ticking. | the claimer (submit, or `unclaim` to hand it back) — or, once expired, anyone with `CLAIM` (takeover) or `ASSIGN` (force-release) |
 | `SUBMITTED` | Work is in for review. | a reviewer (`REVIEW`) |
 | `COMPLETED` | Approved. PT payout minted to the worker; bounty (if any) released. | — terminal |
 | `CANCELLED` | Killed while still unclaimed. | — terminal |
@@ -109,7 +113,7 @@ derives for you on claim.
 
 | Deadline | Flag | What it gates | Accepted formats |
 | --- | --- | --- | --- |
-| **Absolute deadline** | `--deadline` | Hard cutoff for *claiming*. No new claim can be made after it. Does not, by itself, force a submission. | `7d`, `48h`, `90m`, `3600s`, ISO date `2026-08-01`, ISO datetime `2026-08-01T12:30:00Z`, unix seconds, or `0` for none |
+| **Absolute deadline** | `--deadline` | The point past which *any* claim on the task counts as expired — instantly takeover-able, and force-releasable by an ASSIGN holder. It is **not** a hard cutoff for claiming: claiming and submitting both still succeed after it, the claim is simply never safe. Does not, by itself, force a submission. | `7d`, `48h`, `90m`, `3600s`, ISO date `2026-08-01`, ISO datetime `2026-08-01T12:30:00Z`, unix seconds, or `0` for none |
 | **Completion window** | `--completion-window` | How long a worker has to *submit* after they claim. | `48h`, `90m`, `3600s`, bare seconds, or `0` for none |
 | **Claim deadline** | (derived) | The concrete "submit-by" time for the current claim: `claimTime + completionWindow`, capped by the absolute deadline. Set automatically on claim and echoed back. | — read-only |
 
@@ -161,6 +165,69 @@ pop task claim --task 12
 
 The CLI refuses (before spending gas) to claim a task that is claimed but
 **not** expired, naming the current claimer and the time remaining.
+
+## Releasing a claim
+
+Takeover needs a replacement worker. v7 adds the other direction: hand the task
+back to the pool with nobody holding it.
+
+```bash
+# Give up your own claim — allowed at any time, no permission check.
+pop task unclaim --task 12
+
+# Force-release someone else's claim. Needs ASSIGN *and* an expired claim.
+pop task unclaim --task 12 --yes
+```
+
+Two routes, deliberately asymmetric:
+
+| Who | When | Needs |
+| --- | --- | --- |
+| **The claimer** | Any time | Nothing — no mask, no deadline check. An assignee never had to hold `CLAIM`, and hats get revoked mid-claim; gating this would trap exactly the people it frees. |
+| **Anyone else** | Only once the claim has **already expired** | `ASSIGN` on the project (PM / executor bypass included). |
+
+`SUBMITTED` is excluded on purpose — a zeroed claimer would let the approval
+path mint the payout to `address(0)`. Reject first, then release:
+
+```bash
+pop task review --task 12 --action reject --reason "Abandoned — releasing"
+pop task unclaim --task 12
+```
+
+**A claim with no deadline can never be force-released**, because it never
+expires. The documented unstick is to give it one in the past and then release:
+
+```bash
+pop task update --task 12 --deadline 2020-01-01   # needs EDIT_FULL
+pop task unclaim --task 12 --yes
+```
+
+Releasing and re-claiming your own task is a legitimate way to refresh the
+completion window — but `absoluteDeadline` is never reset, so the hard claim
+cutoff still applies and you may not get the task back at all.
+
+**Release is not cancel.** Budgets and application hashes are untouched
+on-chain: nothing is refunded, no applicant is dropped, and the task is
+immediately claimable again. `pop task cancel` remains the only refund path —
+and it becomes reachable again, because it only works on an unclaimed task.
+
+**What the subgraph shows afterwards.** A release resets the task to `Open` and
+nulls `assignee`, `assignedAt`, and `claimDeadline` — it looks like it was never
+claimed. The only surviving evidence is `releaseCount`, which `pop task list`
+renders as a `↺N` suffix on the status:
+
+```bash
+pop task list --released      # tasks someone claimed and then handed back
+```
+
+That signal is indexed on **Gnosis only** today. Elsewhere the release lands
+on-chain but no read surface reflects it, and the task keeps showing as claimed
+by the previous assignee — `pop task unclaim` warns you at the moment it
+happens.
+
+> **Gas sponsorship:** the `unclaimTask` selector is auto-whitelisted only for
+> orgs deployed by OrgDeployer v18 or later. An existing org has to whitelist it
+> through a governance batch before releases can be sponsored.
 
 ## Applications vs open claim vs direct assign
 

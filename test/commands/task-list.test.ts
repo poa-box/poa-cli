@@ -1,15 +1,21 @@
 /**
- * pop task list — v6 deadline enrichment, decorations, and filters.
+ * pop task list — deadline enrichment, v7 release churn, decorations, filters.
  *
- * The deployed subgraph does not index v6 deadline data, so `task list`
- * enriches non-terminal rows from the chain via the task lens
- * (enrichTasksWithDeadlines) when the org's TaskManager supports deadlines.
+ * The projects document is served by three tiers (src/queries/task.ts):
+ *   0 — v6 deadlines + v7 release fields (Gnosis)
+ *   1 — v6 deadlines only (Arbitrum today)
+ *   2 — neither; deadlines must then come from the chain via the task lens
  * These tests mock the subgraph + lens + version detection and verify:
  *   - the Deadline/Age columns and status decorations in human output
- *   - --claimable keeps unclaimed + expired-claim rows only
+ *   - tier 1 still counts as "subgraph has deadlines" (no per-task RPC lens)
+ *   - --claimable keeps unclaimed + expired-claim rows only, and drops
+ *     unclaimed rows whose absolute deadline already passed
+ *   - --released keeps rows with releaseCount > 0, and says so when the
+ *     chain's subgraph cannot answer the question
  *   - --expiring keeps rows whose governing deadline is inside the window
  *   - --fast and legacy orgs skip enrichment entirely
- *   - JSON output keeps the legacy keys and only ADDS deadline fields
+ *   - JSON output keeps the contracted keys and only ADDS deadline/release
+ *     fields, gated on the served tier rather than on truthiness
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -83,8 +89,11 @@ const NOW = Math.floor(Date.now() / 1000);
 const HOUR = 3600;
 const DAY = 86400;
 
-const V6_FEATURES = { deadlines: true, batchCreate: true, editMeta: true, folders: true, legacyCreate7: false };
-const LEGACY_FEATURES = { deadlines: false, batchCreate: false, editMeta: false, folders: false, legacyCreate7: true };
+// `unclaim` is v7-only, so both of these older shapes carry it as false.
+// Nothing type-checks these literals against TaskManagerFeatures — a missing
+// key reads as undefined at the call site rather than failing the build.
+const V6_FEATURES = { deadlines: true, batchCreate: true, editMeta: true, folders: true, legacyCreate7: false, unclaim: false };
+const LEGACY_FEATURES = { deadlines: false, batchCreate: false, editMeta: false, folders: false, legacyCreate7: true, unclaim: false };
 
 function sgTask(taskId: string, title: string, status: string, overrides: Record<string, any> = {}) {
   return {
@@ -124,6 +133,71 @@ function subgraphFixture() {
       },
     },
   };
+}
+
+/**
+ * subgraphFixture plus the indexed v6 deadline fields — what tiers 0 and 1
+ * actually return. #2's claim has expired, #3's is comfortably on track.
+ */
+function indexedFixture() {
+  const fixture = subgraphFixture();
+  const tasks = fixture.organization.taskManager.projects[0].tasks as any[];
+  tasks[1].claimDeadline = String(NOW - HOUR);
+  tasks[1].completionWindow = '3600';
+  tasks[2].claimDeadline = String(NOW + 30 * HOUR);
+  tasks[2].completionWindow = '3600';
+  return fixture;
+}
+
+/**
+ * Tier 0 (Gnosis, subgraph #201). `releaseCount` is `Int!` in the schema, so
+ * it is present and 0 on every unreleased row — the case that has to stay
+ * distinguishable from a tier that does not serve the field at all.
+ */
+function tier0Fixture(releases: Record<string, { count: number; at?: number }> = {}) {
+  const fixture = indexedFixture();
+  for (const task of fixture.organization.taskManager.projects[0].tasks as any[]) {
+    const r = releases[task.taskId];
+    task.releaseCount = r?.count ?? 0;
+    task.lastReleasedAt = r?.at != null ? String(r.at) : null;
+  }
+  return fixture;
+}
+
+/**
+ * Mirrors the UNEXPORTED isUnknownFieldError in src/lib/subgraph.ts. Duplicated
+ * on purpose: it is what makes a fixture whose wording does NOT trip the real
+ * matcher fail loudly here instead of quietly skipping the fallback the test
+ * was written to prove.
+ */
+const UNKNOWN_FIELD_PATTERNS = [
+  /cannot query field/i,
+  /has no field/i,
+  /unknown field/i,
+  /unknown argument/i,
+  /undefined field/i,
+];
+
+/**
+ * Stand-in for queryWithFieldFallback over the projects tiers. Each entry is
+ * either that tier's data or an Error it rejects with; only a rejection the
+ * real matcher would classify as schema drift falls through to the next tier,
+ * exactly as the production walker behaves.
+ */
+function mockProjectsTiers(responses: Array<any>) {
+  mocks.queryWithFieldFallback.mockImplementation(async () => {
+    for (let tierIndex = 0; tierIndex < responses.length; tierIndex++) {
+      const response = responses[tierIndex];
+      if (!(response instanceof Error)) return { data: response, tierIndex };
+      if (!UNKNOWN_FIELD_PATTERNS.some(p => p.test(response.message))) throw response;
+    }
+    throw new Error('every tier rejected');
+  });
+}
+
+/** The exact wording poa-arb-v-1 returns for the v7 release fields. */
+function arbitrumRejection() {
+  return new Error('Type `Task` has no field `releaseCount`');
 }
 
 function onChainTask(status: number, absoluteDeadline: number, completionWindow: number, claimDeadline: number) {
@@ -191,11 +265,12 @@ describe('pop task list — v6 deadline enrichment + filters', () => {
     mocks.isJsonMode.mockReturnValue(false);
     mocks.resolveOrgId.mockResolvedValue(ORG_ID);
     mocks.query.mockResolvedValue(subgraphFixture());
-    // Default to the LEGACY tier (index 1): a subgraph that predates the v6 deadline fields,
-    // which is what forces the on-chain lens path these tests exercise.
+    // Default to the LEGACY tier (index 2 since the v7 release tier was prepended):
+    // a subgraph that predates the v6 deadline fields, which is what forces the
+    // on-chain lens path these tests exercise.
     mocks.queryWithFieldFallback.mockImplementation(async () => ({
       data: subgraphFixture(),
-      tierIndex: 1,
+      tierIndex: 2,
     }));
     mocks.resolveNetworkConfig.mockReturnValue({ chainId: 100, resolvedRpc: 'http://127.0.0.1:1', resolvedSubgraph: 'http://127.0.0.1:2' });
     mocks.detectTaskManagerFeatures.mockResolvedValue(V6_FEATURES);
@@ -380,5 +455,199 @@ describe('pop task list — v6 deadline enrichment + filters', () => {
     const { headers, rows } = renderedRows();
     expect(headers).not.toContain('Deadline');
     expect(rows).toHaveLength(5);
+  });
+
+  // -------------------------------------------------------------------------
+  // v7 release churn (TaskManager unclaimTask + subgraph #201, Gnosis only)
+  // -------------------------------------------------------------------------
+
+  it('tier 0: release churn folds into the status cell as ↺N', async () => {
+    mockProjectsTiers([tier0Fixture({ '2': { count: 2, at: NOW - DAY } })]);
+
+    await listHandler.handler(baseArgv());
+
+    const { headers, rows } = renderedRows();
+    const statusCol = headers.indexOf('Status');
+    const byId = Object.fromEntries(rows.map((r: string[]) => [r[0], r]));
+    expect(byId['2'][statusCol]).toContain('↺2');
+    // A never-released row must stay undecorated — the suffix is signal, not chrome.
+    expect(byId['3'][statusCol]).not.toContain('↺');
+  });
+
+  it('tier 0 --json: releaseCount/lastReleasedAt are appended after the deadline block', async () => {
+    mocks.isJsonMode.mockReturnValue(true);
+    mockProjectsTiers([tier0Fixture({ '2': { count: 2, at: NOW - DAY } })]);
+
+    await listHandler.handler(baseArgv());
+
+    const byId = Object.fromEntries(mocks.json.mock.calls[0][0].map((r: any) => [r.ID, r]));
+    expect(byId['2']).toMatchObject({ releaseCount: 2, lastReleasedAt: NOW - DAY });
+    // Additive keys go at the END — agents parse this shape positionally-ish.
+    expect(Object.keys(byId['2']).slice(-2)).toEqual(['releaseCount', 'lastReleasedAt']);
+  });
+
+  it('tier 1 (Arbitrum): the release tier drops cleanly and no release keys appear', async () => {
+    mocks.isJsonMode.mockReturnValue(true);
+    mockProjectsTiers([arbitrumRejection(), indexedFixture()]);
+
+    await listHandler.handler(baseArgv());
+
+    const byId = Object.fromEntries(mocks.json.mock.calls[0][0].map((r: any) => [r.ID, r]));
+    expect(byId['2']).not.toHaveProperty('releaseCount');
+    expect(byId['2']).not.toHaveProperty('lastReleasedAt');
+    expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it('tier 1 still counts as "subgraph has deadlines" — no per-task RPC lens', async () => {
+    // The guard for `tierIndex <= 1`. Reverting that to `=== 0` sends every
+    // Arbitrum org down the feature-probe + per-task multicall path on the
+    // CLI's hottest command, and NOTHING in the rendered output reveals it.
+    mocks.isJsonMode.mockReturnValue(true);
+    mockProjectsTiers([arbitrumRejection(), indexedFixture()]);
+
+    await listHandler.handler(baseArgv());
+
+    expect(mocks.detectTaskManagerFeatures).not.toHaveBeenCalled();
+    expect(mocks.enrichTasksWithDeadlines).not.toHaveBeenCalled();
+
+    const byId = Object.fromEntries(mocks.json.mock.calls[0][0].map((r: any) => [r.ID, r]));
+    expect(byId['2']).toMatchObject({
+      claimDeadline: NOW - HOUR,
+      completionWindow: HOUR,
+      claimState: 'expired-claimable',
+    });
+  });
+
+  it('releaseCount 0 (indexed, never released) is reported; absent (not indexed) is omitted', async () => {
+    mocks.isJsonMode.mockReturnValue(true);
+    mockProjectsTiers([tier0Fixture()]);
+
+    await listHandler.handler(baseArgv());
+    const indexed = Object.fromEntries(mocks.json.mock.calls[0][0].map((r: any) => [r.ID, r]));
+    expect(indexed['1']).toHaveProperty('releaseCount', 0);
+
+    mocks.json.mockClear();
+    mockProjectsTiers([arbitrumRejection(), indexedFixture()]);
+
+    await listHandler.handler(baseArgv());
+    const notIndexed = Object.fromEntries(mocks.json.mock.calls[0][0].map((r: any) => [r.ID, r]));
+    expect(notIndexed['1']).not.toHaveProperty('releaseCount');
+  });
+
+  it('--released keeps only rows with releaseCount > 0', async () => {
+    mockProjectsTiers([tier0Fixture({ '1': { count: 1, at: NOW - HOUR }, '3': { count: 3, at: NOW - DAY } })]);
+
+    await listHandler.handler(baseArgv({ released: true }));
+
+    const { rows } = renderedRows();
+    expect(rows.map((r: string[]) => r[0])).toEqual(['1', '3']);
+  });
+
+  it('--released on tier 1 matches nothing and says why', async () => {
+    mockProjectsTiers([arbitrumRejection(), indexedFixture()]);
+
+    await listHandler.handler(baseArgv({ released: true }));
+
+    expect(mocks.info).toHaveBeenCalledWith(expect.stringContaining('--released needs release data'));
+    expect(mocks.info).toHaveBeenCalledWith('No tasks found matching filters');
+    expect(mocks.table).not.toHaveBeenCalled();
+  });
+
+  it('a zero-row result still emits [] under --json, never empty stdout', async () => {
+    // output.info is a no-op under --json, so the zero-row branch used to return
+    // having printed NOTHING: exit 0 with completely empty stdout, which is not
+    // parseable JSON. `--released` on a chain without release indexing makes that
+    // the normal case, but it was always reachable via any filter that matched
+    // nothing.
+    mocks.isJsonMode.mockReturnValue(true);
+    mockProjectsTiers([arbitrumRejection(), indexedFixture()]);
+
+    await listHandler.handler(baseArgv({ released: true }));
+
+    expect(mocks.json).toHaveBeenCalledWith([]);
+  });
+
+  it('under --json the degradation note goes to stderr so it is not silently lost', async () => {
+    // stdout is contractually a bare array, so the note has nowhere to go in the
+    // payload — but dropping it entirely makes a degraded result look identical
+    // to a genuinely empty one.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.isJsonMode.mockReturnValue(true);
+    mockProjectsTiers([arbitrumRejection(), indexedFixture()]);
+
+    await listHandler.handler(baseArgv({ released: true }));
+
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('--released needs release data'));
+    errSpy.mockRestore();
+  });
+
+  it('the contracted JSON keys survive on every tier, including a released task', async () => {
+    // A release nulls assignee/assigneeUsername in the subgraph, and `Assignee`
+    // is a promised key — it must still be emitted (empty is fine), not dropped.
+    const CONTRACTED = ['ID', 'Name', 'Status', 'Assignee', 'Payout', 'Project', 'createdAt'];
+    const tiers: Array<[string, any[]]> = [
+      ['tier 0', [tier0Fixture({ '1': { count: 1, at: NOW - HOUR } })]],
+      ['tier 1', [arbitrumRejection(), indexedFixture()]],
+      ['tier 2', [arbitrumRejection(), arbitrumRejection(), subgraphFixture()]],
+    ];
+
+    for (const [label, responses] of tiers) {
+      mocks.json.mockClear();
+      mocks.isJsonMode.mockReturnValue(true);
+      mockProjectsTiers(responses);
+
+      await listHandler.handler(baseArgv());
+
+      const byId = Object.fromEntries(mocks.json.mock.calls[0][0].map((r: any) => [r.ID, r]));
+      expect(Object.keys(byId['1']).slice(0, CONTRACTED.length), label).toEqual(CONTRACTED);
+      expect(byId['1'].Assignee, label).toBe('');
+    }
+  });
+
+  it('a released task with no absolute deadline is still --claimable', async () => {
+    // Post-release the subgraph nulls assignee/assignedAt/claimDeadline and the
+    // status goes back to Open, so releaseCount is the only surviving evidence.
+    const fixture = tier0Fixture({ '1': { count: 1, at: NOW - HOUR } });
+    Object.assign(fixture.organization.taskManager.projects[0].tasks[0], {
+      status: 'Open', assignee: null, assigneeUsername: null, assignedAt: null, claimDeadline: null,
+    });
+    mockProjectsTiers([fixture]);
+
+    await listHandler.handler(baseArgv({ claimable: true }));
+
+    expect(renderedRows().rows.map((r: string[]) => r[0])).toContain('1');
+  });
+
+  it('a released task whose absolute deadline is still in the future is --claimable', async () => {
+    const fixture = tier0Fixture({ '1': { count: 1, at: NOW - HOUR } });
+    Object.assign(fixture.organization.taskManager.projects[0].tasks[0], {
+      status: 'Open', assignee: null, assigneeUsername: null, assignedAt: null,
+      claimDeadline: null, absoluteDeadline: String(NOW + DAY),
+    });
+    mockProjectsTiers([fixture]);
+
+    await listHandler.handler(baseArgv({ claimable: true }));
+
+    expect(renderedRows().rows.map((r: string[]) => r[0])).toContain('1');
+  });
+
+  it('--claimable KEEPS a released Open task whose absolute deadline already passed', async () => {
+    // Verified against TaskManager v7 source: claimTask checks only the CLAIM
+    // permission, requiresApplication and status — `_claimExpired` (the sole
+    // reader of absoluteDeadline) is consulted only on the CLAIMED takeover
+    // branch — and submitTask checks no deadline at all. So this task really is
+    // claimable and submittable; the resulting claim is merely takeover-able
+    // immediately. Filtering it out would hide genuinely available work, which
+    // v7 makes common: unclaimTask returns a task to Open without resetting
+    // absoluteDeadline.
+    const fixture = tier0Fixture({ '1': { count: 1, at: NOW - HOUR } });
+    Object.assign(fixture.organization.taskManager.projects[0].tasks[0], {
+      status: 'Open', assignee: null, claimDeadline: null, absoluteDeadline: String(NOW - HOUR),
+    });
+    mockProjectsTiers([fixture]);
+
+    await listHandler.handler(baseArgv({ claimable: true }));
+
+    expect(renderedRows().rows.map((r: string[]) => r[0])).toContain('1');
   });
 });

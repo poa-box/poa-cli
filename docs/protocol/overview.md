@@ -20,7 +20,7 @@ modules (all upgradeable proxies behind the protocol's beacon system):
 
 | Contract | Role |
 |---|---|
-| **TaskManager** (v6) | Projects and tasks: create, claim, submit, review, deadlines, per-project + global permission masks. |
+| **TaskManager** (v7) | Projects and tasks: create, claim, release, submit, review, deadlines, per-project + global permission masks. |
 | **HybridVoting** | N-class hybrid governance (democratic + token-weighted classes) with quorum and support threshold; can execute on-chain calls. |
 | **DirectDemocracyVoting** | Pure 1-member-1-vote governance track. |
 | **ParticipationToken** | Non-transferable ERC-20 reward/governance token (PT). |
@@ -90,20 +90,22 @@ governance) with `pop task perms propose-global`. See
 [membership-roles-vouching.md](../guides/membership-roles-vouching.md) and
 [tasks.md](../guides/tasks.md).
 
-## Tasks: statuses & deadlines (v6)
+## Tasks: statuses & deadlines (v6/v7)
 
 A task moves through:
 
-```
+```text
 UNCLAIMED → CLAIMED → SUBMITTED → COMPLETED
-                                 ↘ CANCELLED
+    ▲          │                 ↘ CANCELLED
+    └──────────┘
+    takeover (expired claim) · unclaimTask (release back to the pool)
 ```
 
 v6 adds **deadlines** and **expired-claim takeover**:
 
 | Concept | Meaning |
 |---|---|
-| `absoluteDeadline` | No new claims after this time. |
+| `absoluteDeadline` | Past this time, any claim on the task counts as **expired** — instantly takeover-able, and force-releasable by an ASSIGN holder. It does *not* block a new claim: it is read only by `_claimExpired`, which `claimTask` consults solely on the takeover branch, and `submitTask` checks no deadline at all. |
 | `completionWindow` | How long a claimer has to submit after claiming. |
 | `claimDeadline` | Auto-set when a task is claimed (from the completion window). |
 
@@ -112,6 +114,17 @@ claim the task away (emitting `TaskClaimExpired`). The original claimer can
 still submit right up until someone actually takes it over — expiry opens the
 door, it doesn't slam it. `pop task list --claimable` surfaces both unclaimed
 tasks and claimed-but-expired ones.
+
+**Release (v7)**: takeover is no longer the only way a claimed task gets back to
+the pool. `unclaimTask` hands it back with *no* replacement claimer — the
+claimer may do so at any time (no permission mask, no deadline check), and
+anyone with ASSIGN may force-release a claim that has **already** expired. It is
+a distinct transition, not a takeover in disguise: `TaskUnclaimed(id,
+previousClaimer, caller)` is emitted, `TaskClaimExpired` is **not**, and
+`TaskClaimDeadlineSet(id, 0)` follows only when a claim window was actually
+running. Budgets and application hashes are untouched, so the task is instantly
+re-claimable and `cancelTask` — still the only refund path — becomes reachable
+again. Surfaced as `pop task unclaim` and `pop task list --released`.
 
 **Post-claim edits** are permission-split so a claimer's work isn't disrupted:
 `pop task edit-meta` changes only title/description (EDIT_META) and is
@@ -173,10 +186,15 @@ also lets a plain EOA receive sponsored UserOps. The bundler is configured via
 `POP_BUNDLER_URL` (self-hosted) or `PIMLICO_API_KEY`. See
 [gas-sponsorship.md](../guides/gas-sponsorship.md).
 
-## What changed in v5 / v6
+## What changed in v5 / v6 / v7
 
-The CLI targets the current v6 protocol. The notable additions since v4/v5:
+The CLI targets the current protocol. The notable additions since v4/v5:
 
+- **Task release (TaskManager v7)** — `unclaimTask` returns a CLAIMED task to
+  the pool with no replacement claimer, emitting `TaskUnclaimed` (never
+  `TaskClaimExpired`). The claimer may release at any time; ASSIGN holders only
+  once the claim has expired. Exposed as `pop task unclaim`, with
+  `pop task list --released` to find handed-back work.
 - **Task deadlines + expired-claim takeover** — `absoluteDeadline`,
   `completionWindow`, `claimDeadline`; anyone with CLAIM can take over an
   expired claim (`TaskClaimExpired`).

@@ -71,6 +71,7 @@ describe('pop mcp serve', () => {
     expect(tools.has('pop_manifest')).toBe(true);
     // writes excluded
     expect(tools.has('pop_task_claim')).toBe(false);
+    expect(tools.has('pop_task_unclaim')).toBe(false);
     expect(tools.has('pop_vote_announce_all')).toBe(false);
     // destructive excluded
     expect(tools.has('pop_vote_execute')).toBe(false);
@@ -93,6 +94,9 @@ describe('pop mcp serve', () => {
     expect(tools.has('pop_vote_cast')).toBe(true);
     expect(tools.has('pop_vote_execute')).toBe(false);
     expect(tools.has('pop_token_approve')).toBe(false);
+    // task unclaim is classified destructive (its force-release route takes a
+    // task off another member), so --allow-writes alone must NOT expose it.
+    expect(tools.has('pop_task_unclaim')).toBe(false);
   }, 60_000);
 
   it('POP_MCP_ALLOW_DESTRUCTIVE=1 exposes everything, loudly labelled', async () => {
@@ -102,6 +106,9 @@ describe('pop mcp serve', () => {
     expect(tools.has('pop_vote_execute')).toBe(true);
     const execute = listed.find((t: any) => t.name === 'pop_vote_execute');
     expect(execute.description).toContain('DESTRUCTIVE');
+    expect(tools.has('pop_task_unclaim')).toBe(true);
+    const unclaim = listed.find((t: any) => t.name === 'pop_task_unclaim');
+    expect(unclaim.description).toContain('DESTRUCTIVE');
   }, 60_000);
 
   it('tools/call pop_manifest returns the machine-readable manifest', async () => {

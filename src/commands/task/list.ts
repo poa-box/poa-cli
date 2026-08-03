@@ -4,7 +4,7 @@ import { ethers } from 'ethers';
 import { queryWithFieldFallback } from '../../lib/subgraph';
 import { resolveOrgId } from '../../lib/resolve';
 import { resolveNetworkConfig } from '../../config/networks';
-import { FETCH_PROJECTS_DATA, FETCH_PROJECTS_DATA_LEGACY } from '../../queries/task';
+import { projectsDataTiers } from '../../queries/task';
 import { formatAddress, parseDurationSeconds } from '../../lib/encoding';
 import { formatCountdown, formatRelativeTime, statusColor } from '../../lib/format';
 import { detectTaskManagerFeatures } from '../../lib/version';
@@ -21,6 +21,7 @@ interface ListArgs {
   open?: boolean;
   'for-review'?: boolean;
   claimable?: boolean;
+  released?: boolean;
   expiring?: string;
   fast?: boolean;
   'sort-by'?: string;
@@ -53,6 +54,15 @@ interface TaskRow {
    * only this flag can, and the --json deadline block keys off it.
    */
   deadlinesResolved?: boolean;
+  /** v7 release churn (subgraph #201). Undefined when the tier didn't serve it. */
+  releaseCount?: number;
+  lastReleasedAt?: number;
+  /**
+   * True once release data was served for THIS row. Same reasoning as
+   * `deadlinesResolved`: a `releaseCount` of 0 ("indexed, never released") must
+   * stay distinguishable from absent ("this deployment does not index it").
+   */
+  releasesResolved?: boolean;
 }
 
 /** Subgraph statuses that map to non-terminal on-chain states. */
@@ -71,15 +81,19 @@ function governingDeadline(row: TaskRow): number | undefined {
   return dl || undefined;
 }
 
-/** Human-mode status cell: colorized + deadline-state decorations. */
+/**
+ * Human-mode status cell: colorized + deadline-state decorations, with the
+ * release count folded in as a `↺N` suffix rather than a ninth table column
+ * (the enriched table is already 8 wide and the value is 0 for nearly every
+ * row). Mirrors how `Rejected(N)` is already folded into the status string.
+ */
 function statusCell(row: TaskRow): string {
-  if (row.claimState === 'expired-claimable') {
-    return `${statusColor('Claimed')} (expired — claimable)`;
-  }
-  if (row.claimState === 'expiring-soon') {
-    return `${statusColor(row.status)} ⚠`;
-  }
-  return statusColor(row.status);
+  const base = row.claimState === 'expired-claimable'
+    ? `${statusColor('Claimed')} (expired — claimable)`
+    : row.claimState === 'expiring-soon'
+      ? `${statusColor(row.status)} ⚠`
+      : statusColor(row.status);
+  return row.releaseCount ? `${base} ↺${row.releaseCount}` : base;
 }
 
 export const listHandler = {
@@ -91,6 +105,7 @@ export const listHandler = {
     .option('open', { type: 'boolean', describe: 'Shortcut for --status Open' })
     .option('for-review', { type: 'boolean', describe: 'Shortcut for --status Submitted' })
     .option('claimable', { type: 'boolean', describe: 'Only tasks you could claim right now: unclaimed tasks plus claimed tasks whose deadline expired (v6 takeover)' })
+    .option('released', { type: 'boolean', describe: 'Only tasks that were previously claimed and handed back (releaseCount > 0; v7, Gnosis only today)' })
     .option('expiring', { type: 'string', describe: 'Only tasks whose governing deadline falls within this window (e.g. "24h", "7d"; default 24h)' })
     .option('fast', { type: 'boolean', default: false, describe: 'Skip on-chain deadline enrichment (subgraph data only)' })
     .option('sort-by', { type: 'string', choices: ['id', 'payout', 'status', 'created'], default: 'id', describe: 'Sort field' })
@@ -111,11 +126,19 @@ export const listHandler = {
       const orgId = await resolveOrgId(argv.org, argv.chain);
       // Prefer the subgraph: it indexes the v6 deadline fields (subgraph #192), so the
       // per-task on-chain lens below is only needed when this falls through to the legacy tier.
-      const { data: result, tierIndex } = await queryWithFieldFallback<any>([
-        { query: FETCH_PROJECTS_DATA, variables: { orgId } },
-        { query: FETCH_PROJECTS_DATA_LEGACY, variables: { orgId } },
-      ], { chainId: argv.chain });
-      const subgraphHasDeadlines = tierIndex === 0;
+      const { data: result, tierIndex } = await queryWithFieldFallback<any>(
+        projectsDataTiers(orgId),
+        { chainId: argv.chain }
+      );
+      // Tier 0 adds the v7 release fields (subgraph #201, Gnosis only today);
+      // tier 1 is the same document WITHOUT them, so it still carries deadlines.
+      // `<= 1` and not `=== 0`: inserting the release tier shifted every index,
+      // and reading this as `=== 0` would send every Arbitrum org down the
+      // per-task RPC lens path below — a feature probe plus one multicall per
+      // non-terminal task, on the CLI's hottest command — while silently
+      // degrading --claimable/--expiring. Nothing in the output would reveal it.
+      const subgraphHasDeadlines = tierIndex <= 1;
+      const hasReleaseData = tierIndex === 0;
 
       if (!result.organization?.taskManager?.projects) {
         spin.stop();
@@ -173,6 +196,10 @@ export const listHandler = {
             absoluteDeadline: task.absoluteDeadline != null ? Number(task.absoluteDeadline) : undefined,
             completionWindow: task.completionWindow != null ? Number(task.completionWindow) : undefined,
             claimDeadline: task.claimDeadline != null ? Number(task.claimDeadline) : undefined,
+            // v7 release churn — served by tier 0 only.
+            releaseCount: task.releaseCount != null ? Number(task.releaseCount) : undefined,
+            lastReleasedAt: task.lastReleasedAt != null ? Number(task.lastReleasedAt) : undefined,
+            releasesResolved: hasReleaseData,
           });
         }
       }
@@ -249,6 +276,16 @@ export const listHandler = {
 
       // --claimable: unclaimed tasks + claimed tasks whose deadline expired
       // (v6 allows claimTask/assignTask to take over an expired claim).
+      //
+      // A passed `absoluteDeadline` deliberately does NOT exclude an UNCLAIMED
+      // row. Verified against TaskManager v7 src: claimTask checks only the
+      // CLAIM permission, requiresApplication, and status — it consults
+      // `_claimExpired` (the only reader of absoluteDeadline) solely on the
+      // CLAIMED takeover branch — and submitTask checks no deadline at all. So
+      // such a task really is claimable and submittable; the claim is simply
+      // takeover-able from the moment it is made. Filtering it out here would
+      // hide genuinely available work, which v7 makes common: unclaimTask
+      // returns a task to UNCLAIMED without resetting absoluteDeadline.
       if (argv.claimable) {
         rows = rows.filter(r =>
           UNCLAIMED_STATUSES.has(r.statusRaw.toLowerCase()) || r.claimState === 'expired-claimable'
@@ -256,6 +293,20 @@ export const listHandler = {
         if (!enriched) {
           enrichmentNote = (enrichmentNote ? enrichmentNote + '; ' : '')
             + '--claimable could not check for expired claims (no deadline data) — showing unclaimed tasks only';
+        }
+      }
+
+      // --released: tasks previously claimed and handed back (v7).
+      // In-memory like every other list filter — a server-side
+      // `where: { releaseCount_gt: 0 }` produces an "Invalid value provided for
+      // argument `where`" error on deployments that lack the field, and
+      // isUnknownFieldError does NOT match that, so it would escape the tier
+      // machinery and kill the command instead of degrading.
+      if (argv.released) {
+        rows = rows.filter(r => (r.releaseCount ?? 0) > 0);
+        if (!hasReleaseData) {
+          enrichmentNote = (enrichmentNote ? enrichmentNote + '; ' : '')
+            + '--released needs release data, which this chain\'s subgraph does not index — no tasks matched';
         }
       }
 
@@ -280,9 +331,28 @@ export const listHandler = {
 
       spin.stop();
 
-      if (enrichmentNote) output.info(enrichmentNote);
+      // `--json` stdout is contractually a bare ARRAY, so a degradation note has
+      // nowhere to go in the payload. Without this it vanishes entirely under
+      // --json (output.info is a no-op there) and a degraded result is
+      // indistinguishable from a genuinely empty one — e.g. `--released` on a
+      // chain with no release indexing looks exactly like "nothing was ever
+      // released". stderr keeps stdout parseable while preserving the signal.
+      if (enrichmentNote) {
+        if (output.isJsonMode()) console.error(`note: ${enrichmentNote}`);
+        else output.info(enrichmentNote);
+      }
 
       if (rows.length === 0) {
+        // JSON mode must still emit a parseable document. output.info is a
+        // no-op under --json, so returning here used to exit 0 with COMPLETELY
+        // EMPTY stdout — every `--json` consumer of a filter that matched
+        // nothing got a parse error instead of an empty list. `--released` on a
+        // chain without release indexing makes that the normal case, but it was
+        // always reachable (`--status Nonexistent`, `--mine`, …).
+        if (output.isJsonMode()) {
+          output.json([]);
+          return;
+        }
         output.info('No tasks found matching filters');
         return;
       }
@@ -312,6 +382,14 @@ export const listHandler = {
             completionWindow: r.completionWindow ?? 0,
             claimDeadline: r.claimDeadline ?? 0,
             claimState: r.claimState ?? 'none',
+          } : {}),
+          // Additive v7 release keys, gated on the SERVED TIER rather than on
+          // truthiness for the same reason as the deadline block above: a
+          // released-zero task must still report 0, and a chain that does not
+          // index releases must omit the keys entirely rather than claim 0.
+          ...(r.releasesResolved ? {
+            releaseCount: r.releaseCount ?? 0,
+            lastReleasedAt: r.lastReleasedAt ?? 0,
           } : {}),
         })));
         return;

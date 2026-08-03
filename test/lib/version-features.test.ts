@@ -39,6 +39,8 @@ const PROXY = '0x3d93f0d090356d25e7a1614f0f8764b103ca99bc';
 const BEACON = '0x4af43d512c5f3cae665b42e07d9295461d4da7c5';
 /** Live Gnosis TaskManager v6 implementation — a row in the memo table. */
 const V6_IMPL = '0x7833c4670c42dbce1a7ab1bab7e7baf0a982ff57';
+/** v7 (contracts PR #187) — same implementation address on Gnosis and Arbitrum. */
+const V7_IMPL = '0xcfae1dadf1a48b363aad3bbb8f94f67bb3785988';
 const UNKNOWN_IMPL = '0x' + 'cd'.repeat(20);
 
 const BEACON_IFACE = new ethers.utils.Interface(['function implementation() view returns (address)']);
@@ -86,7 +88,13 @@ describe('KNOWN_TM_IMPLEMENTATION_FEATURES — memo table integrity', () => {
 
   it('the v6 row matches the shipped v6 capability set (deadlines in, 7-arg create out)', () => {
     expect(KNOWN_TM_IMPLEMENTATION_FEATURES[V6_IMPL]).toEqual({
-      deadlines: true, batchCreate: true, editMeta: true, folders: true, legacyCreate7: false,
+      deadlines: true, batchCreate: true, editMeta: true, folders: true, legacyCreate7: false, unclaim: false,
+    });
+  });
+
+  it('the v7 row is v6 plus unclaimTask', () => {
+    expect(KNOWN_TM_IMPLEMENTATION_FEATURES[V7_IMPL]).toEqual({
+      deadlines: true, batchCreate: true, editMeta: true, folders: true, legacyCreate7: false, unclaim: true,
     });
   });
 
@@ -183,7 +191,7 @@ describe('detectTaskManagerFeatures — feature memo', () => {
     const features = await detectTaskManagerFeatures(provider, PROXY, 100);
     expect(counts.getCode).toBe(1);
     expect(features).toEqual({
-      deadlines: false, batchCreate: false, editMeta: false, folders: false, legacyCreate7: false,
+      deadlines: false, batchCreate: false, editMeta: false, folders: false, legacyCreate7: false, unclaim: false,
     });
   });
 

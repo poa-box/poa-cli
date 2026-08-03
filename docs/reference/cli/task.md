@@ -65,6 +65,7 @@ pop task list [flags]
 | `--mine` | boolean | no | - | Show only tasks assigned to me |
 | `--open` | boolean | no | - | Shortcut for --status Open |
 | `--project` | string | no | - | Filter by project ID |
+| `--released` | boolean | no | - | Only tasks that were previously claimed and handed back (releaseCount > 0; v7, Gnosis only today) |
 | `--sort-by` | string | no | `id` | Sort field (choices: `id`, `payout`, `status`, `created`) |
 | `--status` | string | no | - | Filter by status (Open/Assigned/Submitted/Completed/Cancelled) |
 
@@ -91,6 +92,20 @@ pop task claim [flags]
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `--idempotency-key` | string | no | - | Task #370 (HB#214): explicit idempotency key. Two claims for the same task within 15 minutes return the same result without re-submitting. Default: auto-derived from argv. |
+| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
+| `--task` | string | yes | - | Task ID |
+
+## pop task unclaim
+
+Release a claimed task back to the pool — the claimer any time, ASSIGN holders once the claim expired. Refunds nothing and deletes nothing (that is cancel); v7
+
+```text
+pop task unclaim [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--idempotency-key` | string | no | - | Explicit idempotency key. Two releases of the same task within 15 minutes return the same result without re-submitting. Default: auto-derived from argv. |
 | `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
 | `--task` | string | yes | - | Task ID |
 

@@ -10,6 +10,7 @@
  * - src/TaskManager.sol — createTask (9-arg v6), createTasksBatch(bytes32,
  *   CreateTaskInput[]), updateTaskMetadata, setFolders signatures and the
  *   CreateTaskInput struct field order.
+ * - src/TaskManager.sol v7 (contracts PR #187) — unclaimTask(uint256).
  *
  * RPC COST (2026-07): this module is on the hot path of task
  * list/create/create-batch/update/edit-meta/folders, and each call used to cost
@@ -52,6 +53,8 @@ export interface TaskManagerFeatures {
   folders: boolean;
   /** pre-v6 7-arg createTask (no deadline params) */
   legacyCreate7: boolean;
+  /** v7 unclaimTask(uint256) — release a CLAIMED task back to the pool */
+  unclaim: boolean;
 }
 
 /**
@@ -67,6 +70,7 @@ export const TM_FEATURE_FRAGMENTS: Record<keyof TaskManagerFeatures, string> = {
   editMeta: 'function updateTaskMetadata(uint256 id, bytes newTitle, bytes32 newMetadataHash)',
   folders: 'function setFolders(bytes32 expectedCurrentRoot, bytes32 newRoot)',
   legacyCreate7: 'function createTask(uint256 payout, bytes title, bytes32 metadataHash, bytes32 pid, address bountyToken, uint256 bountyPayout, bool requiresApplication)',
+  unclaim: 'function unclaimTask(uint256 id)',
 };
 
 /**
@@ -146,6 +150,7 @@ export function featuresFromBytecode(code: string): TaskManagerFeatures {
     editMeta: has(TM_FEATURE_FRAGMENTS.editMeta),
     folders: has(TM_FEATURE_FRAGMENTS.folders),
     legacyCreate7: has(TM_FEATURE_FRAGMENTS.legacyCreate7),
+    unclaim: has(TM_FEATURE_FRAGMENTS.unclaim),
   };
 }
 
@@ -156,10 +161,10 @@ export function featuresFromBytecode(code: string): TaskManagerFeatures {
  * is a guess that fails silently when a release changes shape; deployed
  * bytecode at an address is immutable, so each row below is a recorded fact.
  * Every row was produced by running `featuresFromBytecode` against live
- * eth_getCode on 2026-07-30 — on BOTH Gnosis and Arbitrum, which return
- * byte-identical code at these addresses (deterministic deploys), so a row is
- * not chain-specific. The version comment is documentation only; nothing keys
- * off it.
+ * eth_getCode on 2026-07-30 (v7 row added 2026-08-02) — on BOTH Gnosis and
+ * Arbitrum, which return byte-identical code at these addresses (deterministic
+ * deploys), so a row is not chain-specific. The version comment is
+ * documentation only; nothing keys off it.
  *
  * FAIL CLOSED: an address that is not listed here is scanned over RPC. Adding a
  * new TaskManager release is optional — omitting it costs one eth_getCode, it
@@ -168,16 +173,23 @@ export function featuresFromBytecode(code: string): TaskManagerFeatures {
 export const KNOWN_TM_IMPLEMENTATION_FEATURES: Record<string, TaskManagerFeatures> = {
   // TaskManager v2
   '0xe5ce83cc15360d1948b70e699cd0fa779af320b7':
-    { deadlines: false, batchCreate: false, editMeta: false, folders: false, legacyCreate7: true },
+    { deadlines: false, batchCreate: false, editMeta: false, folders: false, legacyCreate7: true, unclaim: false },
   // TaskManager v4 — setFolders introduced
   '0xd1721e7bb458c21485cbc7175a557c23bb4be358':
-    { deadlines: false, batchCreate: false, editMeta: false, folders: true, legacyCreate7: true },
+    { deadlines: false, batchCreate: false, editMeta: false, folders: true, legacyCreate7: true, unclaim: false },
   // TaskManager v5 — updateTaskMetadata introduced
   '0xd388953eee145247e1f8a51c5a0ddefc2c3db915':
-    { deadlines: false, batchCreate: false, editMeta: true, folders: true, legacyCreate7: true },
+    { deadlines: false, batchCreate: false, editMeta: true, folders: true, legacyCreate7: true, unclaim: false },
   // TaskManager v6 — deadlines + createTasksBatch; 7-arg createTask removed
   '0x7833c4670c42dbce1a7ab1bab7e7baf0a982ff57':
-    { deadlines: true, batchCreate: true, editMeta: true, folders: true, legacyCreate7: false },
+    { deadlines: true, batchCreate: true, editMeta: true, folders: true, legacyCreate7: false, unclaim: false },
+  // TaskManager v7 — unclaimTask (release a claim back to the pool).
+  // Verified 2026-08-02: eth_getCode returns byte-identical code on Gnosis AND
+  // Arbitrum (same sha256) containing selector 0x6103955a, and the global
+  // TaskManager beacon on both chains reports version "v7" pointing here with
+  // every live SwitchableBeacon in Mirror mode — so all orgs resolve here today.
+  '0xcfae1dadf1a48b363aad3bbb8f94f67bb3785988':
+    { deadlines: true, batchCreate: true, editMeta: true, folders: true, legacyCreate7: false, unclaim: true },
 };
 
 const featureCache: Map<string, TaskManagerFeatures> = new Map();

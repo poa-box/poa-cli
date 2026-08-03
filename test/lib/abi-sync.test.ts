@@ -6,7 +6,7 @@ import path from 'path';
  * ABI drift canary.
  *
  * Asserts that the checked-in ABIs carry the protocol surface the CLI is
- * written against (contracts origin/main, TaskManager v6 era). If the
+ * written against (contracts origin/main, plus TaskManager v7 from PR #187). If the
  * contracts change and `yarn sync-abis` regenerates these files, a failure
  * here means CLI code that depends on a signature below needs attention —
  * update the CLI, then update this list.
@@ -73,7 +73,7 @@ describe('ABI sync canary (contracts origin/main)', () => {
     }
   });
 
-  it('TaskManager v6 surface', () => {
+  it('TaskManager v6 + v7 surface', () => {
     expectSigs('TaskManagerNew', [
       // v6: 9-arg createTask with deadlines
       'function createTask(uint256,bytes,bytes32,bytes32,address,uint256,bool,uint48,uint32)',
@@ -89,6 +89,11 @@ describe('ABI sync canary (contracts origin/main)', () => {
       'event TaskDeadlinesSet(uint256,uint48,uint32)',
       'event TaskClaimDeadlineSet(uint256,uint48)',
       'event TaskClaimExpired(uint256,address,address)',
+      // v7 (contracts PR #187). TaskManagerNew.json is synced from the pr-187 build, which is
+      // AHEAD of contracts origin/main — `yarn sync-abis` would delete both of these and break
+      // `pop task unclaim` at runtime. That regression must land here as a red test.
+      'function unclaimTask(uint256)',
+      'event TaskUnclaimed(uint256,address,address)',
       'error InvalidDeadline()',
       'error FoldersRootStale(bytes32,bytes32)',
     ]);

@@ -3,6 +3,8 @@
  * Ported from frontend queries.js
  */
 
+import type { FieldFallbackTier } from '../lib/subgraph';
+
 export const FETCH_USERNAME = `
   query FetchUsernameNew($id: Bytes!) {
     account(id: $id) {
@@ -289,3 +291,40 @@ export const FETCH_USER_DATA = `
     }
   }
 `;
+
+/**
+ * FETCH_USER_DATA plus the per-user claim-churn counters (subgraph #201,
+ * TaskManager v7): how many claims this member released themselves, and how
+ * many were force-released out from under them after their claim expired.
+ *
+ * GNOSIS ONLY as of 2026-08-02. `totalTasksLostToExpiry` exists on BOTH
+ * deployments and only rides along here because a GraphQL document validates
+ * as a whole — there is no way to ask for it next to `totalTasksReleased`
+ * without the pair standing or falling together. Verified live that
+ * poa-arb-v-1 rejects this document with ``Type `User` has no field
+ * `totalTasksReleased``` (`isUnknownFieldError` matches /has no field/i, so
+ * the tier drops cleanly to FETCH_USER_DATA), while poa-gnosis-v-1 serves it.
+ *
+ * Both counters are zero on every live row on both chains today, so callers
+ * must gate rendering on the SERVED TIER: `0` ("indexed, never churned") has
+ * to stay distinguishable from absent ("not indexed here").
+ *
+ * Built by INSERTION so the two documents cannot drift apart, and so a
+ * reflow that broke the anchor would produce a visibly identical tier rather
+ * than a silently degraded one.
+ */
+export const FETCH_USER_DATA_WITH_CHURN = FETCH_USER_DATA.replace(
+  /^(\s*)totalTasksCompleted$/m,
+  '$1totalTasksCompleted\n$1totalTasksReleased\n$1totalTasksLostToExpiry',
+);
+
+/** Tier order for `pop user profile`. Tier 1 is the untouched original. */
+export const USER_DATA_TIERS = [
+  FETCH_USER_DATA_WITH_CHURN, // 0: Gnosis — v7 claim-churn counters
+  FETCH_USER_DATA,            // 1: Arbitrum today — no releases indexed
+];
+
+/** Build the tier array for `queryWithFieldFallback`. */
+export function userDataTiers(orgUserID: string, userAddress: string): FieldFallbackTier[] {
+  return USER_DATA_TIERS.map((query) => ({ query, variables: { orgUserID, userAddress } }));
+}

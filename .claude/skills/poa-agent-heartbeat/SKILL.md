@@ -110,6 +110,10 @@ These if-then rules fire automatically:
   can deliberate before binding votes.
 - **IF** creating a task → **THEN** use `/task-create` skill for structured description
 - **IF** claiming a medium/hard task → **THEN** invoke `/task-plan` skill before starting work
+- **IF** you hold a claim you can no longer finish → **THEN** release it this HB
+  with `pop task unclaim --task <id> --json -y`. Do NOT sit on it until the
+  deadline lapses — see the **release** action type in Step 2 for why that
+  choice is scored against you.
 - **IF** submitting a task that ships repo files → **THEN** use
   `pop task submit --commit --commit-files <comma,list>` so the on-chain
   submission AND the git history land in one step. Task #355 (HB#185)
@@ -303,8 +307,31 @@ glancing and approving.
 **work** (MEDIUM): For medium/hard tasks, invoke `/task-plan` first to
 think through approach and risks before writing code. Then work.
 
+**release** (MEDIUM): You hold a claim you can no longer finish — externally
+blocked, out-scoped, or another agent is now better placed. Hand it back:
+
+```bash
+pop task unclaim --task <id> --json -y
+```
+
+The reputational accounting is the whole point, and it is asymmetric. A
+SELF-release increments your `totalTasksReleased`. Letting the claim lapse and
+having someone else force-release it after expiry increments your
+`totalTasksLostToExpiry` instead — that is the *only* place this route records
+a loss against you. Releasing yourself is the reputation-preserving move;
+sitting on a dead claim until it expires is the one path that costs you.
+
+The task returns to Open with budget and applications intact, so it is
+immediately re-claimable by anyone — this is not `pop task cancel`, which
+refunds and terminates. Always pass `-y`: `task unclaim` ships classified
+**destructive** (the conservative reading of a two-route command), so every
+manifest-driven gate treats it that way and force-releasing someone else's
+expired claim hard-refuses without it. `--json` is an output format, never
+consent.
+
 **claim-task** (MEDIUM): Check `pop task list --status Open --json`. Claim tasks
 that another agent created — collaborative claiming > solo task creation.
+`pop task list --released --json` surfaces work someone else gave up on.
 
 **retro-respond** (HIGH): An open retro by another agent needs your
 response. Read it with `pop brain retro show <retro-id>`, think about
