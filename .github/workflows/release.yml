@@ -20,8 +20,8 @@ name: Release
 #     and the captured PUT body is asserted free of `link:` ranges — this is
 #     the artifact that shipped agent@0.1.0 uninstallable, and the one a
 #     tarball inspection cannot see
-#   * npm auth is verified before the first publish, so a bad token cannot
-#     leave the chain half-published
+#   * npm auth is established before the first publish, so a credential
+#     problem cannot leave the chain half-published
 #   * already-published versions are SKIPPED, so re-running after a partial
 #     failure resumes instead of erroring
 #   * tags are pushed BEFORE post-publish verification, so an irreversible
@@ -29,10 +29,20 @@ name: Release
 #   * after publishing: the registry is polled, the ranges this run published
 #     are re-read from it, and the CLI is cold-installed from npm and executed
 #
-# Setup (once): Settings → Secrets and variables → Actions → new secret
-#   NPM_TOKEN = an npm **Automation** token for an account with publish rights
-#   on the poa-box org. Automation tokens bypass 2FA, which is why no --otp
-#   appears below.
+# AUTH — prefer TRUSTED PUBLISHING (OIDC); no credential is stored anywhere:
+#   npmjs.com → each package → Settings → Trusted Publisher → GitHub Actions
+#     Organization/user: poa-box     Repository: poa-cli
+#     Workflow filename: release.yml (filename only, no path)
+#   Then delete the NPM_TOKEN secret. npm mints a short-lived, workflow-scoped
+#   credential per run, and provenance is generated automatically.
+#
+#   CAVEAT: npm cannot configure a trusted publisher for a package that does
+#   not exist yet, so a BRAND-NEW package name needs exactly one token-based
+#   publish first. Set the NPM_TOKEN secret (an npm **Automation** token —
+#   they bypass 2FA, which is why no --otp appears below), run this once, then
+#   configure the trusted publisher and remove the secret.
+#
+# This workflow supports both and reports which one it used.
 
 on:
   workflow_dispatch:
@@ -70,25 +80,50 @@ jobs:
         with:
           fetch-depth: 0     # tags
 
-      - name: Use Node 20
+      # Node 22.14+ AND npm 11.5.1+ are REQUIRED for trusted publishing (OIDC).
+      # registry-url is deliberately NOT set: it makes setup-node write an
+      # .npmrc auth line referencing NODE_AUTH_TOKEN, which is empty in OIDC
+      # mode and muddies the auth path. Auth is configured explicitly below.
+      - name: Use Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: '22'
           cache: yarn
           cache-dependency-path: |
             yarn.lock
             packages/core/yarn.lock
             packages/agent/yarn.lock
 
-      - name: Guard — NPM_TOKEN is configured
+      # Two supported auth modes, preferring the one npm recommends:
+      #   TRUSTED PUBLISHING (OIDC) — no stored credential at all. npm trusts
+      #     this repo + workflow filename directly and mints a short-lived
+      #     token per run. Configure per package at
+      #     npmjs.com → package → Settings → Trusted Publisher.
+      #   TOKEN — the NPM_TOKEN secret, used only when trusted publishing is
+      #     not yet configured. npm CANNOT configure a trusted publisher for a
+      #     package that does not exist yet, so a brand-new package name needs
+      #     exactly one token-based publish before it can switch to OIDC.
+      - name: Configure npm auth (trusted publishing, or token as fallback)
+        id: npmauth
         if: ${{ !inputs.dry_run }}
+        shell: bash
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          if [ -z "${NPM_TOKEN:-}" ]; then
-            echo "::error::NPM_TOKEN secret is not set. Settings → Secrets and variables → Actions."
-            exit 1
+          set -euo pipefail
+          npm install -g npm@latest >/dev/null
+          ver=$(npm --version); echo "npm $ver, node $(node --version)"
+          case "$ver" in
+            11.*|1[2-9].*|[2-9][0-9].*) ;;
+            *) echo "::error::npm $ver is too old for trusted publishing (need >= 11.5.1)"; exit 1 ;;
+          esac
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
+            echo 'mode=token' >> "$GITHUB_OUTPUT"
+            echo "auth: NPM_TOKEN secret (consider migrating to trusted publishing)"
+          else
+            echo 'mode=trusted' >> "$GITHUB_OUTPUT"
+            echo "auth: trusted publishing (OIDC) — no long-lived credential in this repo"
           fi
 
       # --- Decide (and validate) what would publish, before any work ---------
@@ -185,10 +220,10 @@ jobs:
             exit 1
           fi
 
+      # Only meaningful in token mode: trusted publishing has no user identity
+      # to report — its credential is minted during the publish call itself.
       - name: Verify npm authentication (before the first publish)
-        if: ${{ !inputs.dry_run }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        if: ${{ !inputs.dry_run && steps.npmauth.outputs.mode == 'token' }}
         run: |
           who=$(npm whoami) || {
             echo "::error::npm authentication failed — NPM_TOKEN is invalid or expired."; exit 1; }
@@ -205,20 +240,14 @@ jobs:
       # reaches the registry metadata) and restores the link: form in a finally.
       - name: Publish @poa-box/core
         if: ${{ !inputs.dry_run && steps.preflight.outputs.core_action == 'publish' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node scripts/publish-package.mjs packages/core --access public --provenance --tag '${{ inputs.dist_tag }}'
 
       - name: Publish @poa-box/cli
         if: ${{ !inputs.dry_run && steps.preflight.outputs.cli_action == 'publish' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node scripts/publish-package.mjs . --access public --provenance --tag '${{ inputs.dist_tag }}'
 
       - name: Publish @poa-box/agent
         if: ${{ !inputs.dry_run && steps.preflight.outputs.agent_action == 'publish' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node scripts/publish-package.mjs packages/agent --access public --provenance --tag '${{ inputs.dist_tag }}'
 
       # Tag BEFORE verification: the publishes are irreversible, so the record

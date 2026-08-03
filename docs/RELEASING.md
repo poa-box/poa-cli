@@ -41,7 +41,8 @@ yarn --cwd packages/core api:check # @poa-box/core export surface (run after bui
 # 3. Version bumps (keep all three packages in lockstep unless truly independent)
 #    Or skip 3-6 entirely: run the "Release" GitHub Action (workflow_dispatch,
 #    dry_run=false) — it does everything below, skipping already-published
-#    versions, and verifies the registry afterwards.
+#    versions, and verifies the registry afterwards. See "Publishing auth"
+#    below: the workflow prefers trusted publishing and stores no credential.
 #    --no-git-tag-version: `npm version` otherwise tries to commit each bump,
 #    and the second call then aborts on the dirty tree left by the first,
 #    leaving the chain half-bumped. Bump all three, then commit once; the
@@ -50,15 +51,20 @@ yarn --cwd packages/core api:check # @poa-box/core export surface (run after bui
 npm version patch --no-git-tag-version   # or minor / major
 (cd packages/agent  && npm version patch --no-git-tag-version)
 git commit -am "Release: core X.Y.Z, cli X.Y.Z, agent X.Y.Z"
-#    Inter-package ranges need no hand-editing: each prepack DERIVES the
-#    caret range from the dependency's actual version (scripts/
-#    prepack-core-range.mjs, packages/agent/scripts/prepack-cli-range.mjs)
-#    and postpack restores the local link:.
+#    Inter-package ranges need no hand-editing — see step 4.
 
 # 4. Publish (order matters: core → cli → agent)
-(cd packages/core && npm publish --access public --otp=<code>)
-npm publish --access public --otp=<fresh code>
-(cd packages/agent && npm publish --access public --otp=<fresh code>)
+#    NEVER run `npm publish` directly here. npm reads the manifest it uploads
+#    BEFORE running prepack, so a direct publish ships the local
+#    "@poa-box/core": "link:./packages/core" range as REGISTRY METADATA and
+#    the package is uninstallable — that is exactly how @poa-box/agent@0.1.0
+#    shipped broken (`npm view @poa-box/agent@0.1.0 dependencies` still shows
+#    it). publish-package.mjs applies the real range before invoking npm and
+#    restores the link: afterwards, even if the publish fails or is killed.
+yarn release:verify-metadata       # proves what npm WOULD send; publishes nothing
+node scripts/publish-package.mjs packages/core  --access public --otp=<code>
+node scripts/publish-package.mjs .              --access public --otp=<fresh code>
+node scripts/publish-package.mjs packages/agent --access public --otp=<fresh code>
 
 # 5. Prove the published artifacts cold
 npx -y @poa-box/cli@latest --version
@@ -73,6 +79,45 @@ npm view @poa-box/agent dependencies.@poa-box/cli
 # 6. Push the tags
 git push && git push --tags
 ```
+
+## Publishing auth: trusted publishing (preferred) vs a token
+
+npm warns that automation tokens carry security risk, and it is right: a
+long-lived token stored as a repo secret can publish as you forever if it
+leaks — via an exfiltrated secret, a compromised third-party action, or a
+departing collaborator. **Trusted publishing** removes the credential
+entirely: npm trusts *this repository + this workflow filename* over OIDC and
+mints a short-lived, workflow-scoped token per run. Provenance is generated
+automatically.
+
+Set it up once per package (npmjs.com → package → **Settings** → **Trusted
+Publisher** → GitHub Actions):
+
+| Field | Value |
+|---|---|
+| Organization or user | `poa-box` |
+| Repository | `poa-cli` |
+| Workflow filename | `release.yml` (filename only, no path) |
+| Environment | leave blank |
+
+Then **delete the `NPM_TOKEN` secret**. The Release workflow detects which
+mode is in play and prints it; it already sets `id-token: write` and runs
+Node 22 + npm ≥ 11.5.1, which trusted publishing requires.
+
+**The one catch — new packages.** npm cannot configure a trusted publisher for
+a package that does not exist yet, so a brand-new name needs exactly one
+token-based publish first. For the current release that means:
+
+1. `@poa-box/cli` and `@poa-box/agent` already exist → configure trusted
+   publishing for them now.
+2. `@poa-box/core` is new → either (a) run this release once with an
+   `NPM_TOKEN` secret set, then configure core's trusted publisher and delete
+   the secret; or (b) publish a throwaway `0.0.0` of core by hand with a
+   token, configure its trusted publisher, then run the release with no
+   secret at all.
+
+Either way the end state is the same: no long-lived npm credential anywhere in
+the repo.
 
 ## Version meaning while on 0.x
 

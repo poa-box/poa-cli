@@ -63,7 +63,15 @@ function startCaptureServer(capturePath) {
  */
 function runNpm(args, cwd) {
   return new Promise((resolve) => {
-    const child = spawn('npm', args, { cwd, env: process.env });
+    // Strip the GitHub OIDC variables. Under trusted publishing npm sees them
+    // and tries to exchange an OIDC token for the target registry — against
+    // this capture server that exchange fails and npm aborts BEFORE the PUT,
+    // which would make this check report a false "npm sent no PUT" in CI.
+    const env = { ...process.env };
+    delete env.ACTIONS_ID_TOKEN_REQUEST_URL;
+    delete env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+    delete env.NODE_AUTH_TOKEN;
+    const child = spawn('npm', args, { cwd, env });
     let stderr = '';
     child.stderr.on('data', (d) => { stderr += d; });
     child.stdout.on('data', () => {});
