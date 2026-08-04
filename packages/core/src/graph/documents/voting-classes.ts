@@ -195,8 +195,12 @@ export function selectClassSnapshot(
   if (hasRepeatedClassIndex(matched)) {
     // Two emissions share this version. The live one is still identifiable; a
     // superseded one is not, without the per-emission pointer newer subgraphs
-    // expose. Rather than blend two configurations, say nothing and let the
-    // contract answer — it is authoritative either way.
+    // expose. Blending them would report slices summing past 100, so say
+    // nothing and leave it to the caller's contract fallback. That fallback is
+    // not always free — `vote analyze` re-derives voters from a ~200k-block
+    // VoteCast window and throws for older proposals — but a wrong tally is
+    // worse than a loud one, and this path is unreachable until two setClasses
+    // land on one version.
     const live = matched.filter(r => r.isActive !== false);
     if (live.length === 0 || hasRepeatedClassIndex(live)) return [];
     matched = live;
