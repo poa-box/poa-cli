@@ -91,10 +91,57 @@ describe('selectClassSnapshot', () => {
     expect(selectClassSnapshot(rows, undefined).map(c => c.slicePct)).toEqual([70, 30]);
   });
 
-  it('drops deactivated rows and returns [] when nothing matches', () => {
+  it('returns [] when nothing matches', () => {
     expect(selectClassSnapshot(rows, '999')).toEqual([]);
     expect(selectClassSnapshot([], '100')).toEqual([]);
     expect(selectClassSnapshot(undefined, '100')).toEqual([]);
+    // No version pinned and no live row: nothing identifies a current config.
     expect(selectClassSnapshot([cls({ isActive: false })], null)).toEqual([]);
+  });
+
+  // isActive means "belongs to the config live RIGHT NOW". Every superseded
+  // version is false, so filtering on it before pinning the version returns
+  // nothing for exactly the proposals a frozen snapshot exists to serve.
+  it('keeps a superseded version when it is the one asked for', () => {
+    const superseded = [
+      cls({ version: '100', classIndex: 0, slicePct: 60, isActive: false }),
+      cls({ version: '100', classIndex: 1, slicePct: 40, isActive: false }),
+      cls({ version: '200', classIndex: 0, slicePct: 30, isActive: true }),
+      cls({ version: '200', classIndex: 1, slicePct: 70, isActive: true }),
+    ];
+
+    const picked = selectClassSnapshot(superseded, '100');
+    expect(picked.map(c => c.classIndex)).toEqual([0, 1]);
+    expect(picked.map(c => c.slicePct)).toEqual([60, 40]);
+
+    // The live version still resolves, pinned or not.
+    expect(selectClassSnapshot(superseded, '200').map(c => c.slicePct)).toEqual([30, 70]);
+    expect(selectClassSnapshot(superseded, null).map(c => c.slicePct)).toEqual([30, 70]);
+  });
+
+  // `version` is the contract's block.number, so it is NOT unique per setClasses:
+  // two land in one block on Gnosis, and on Arbitrum block.number is the L1
+  // block, which spans ~48 indexed L2 blocks.
+  describe('when two setClasses share a version', () => {
+    const collided = (secondActive: boolean) => [
+      cls({ version: '100', classIndex: 0, slicePct: 60, isActive: false }),
+      cls({ version: '100', classIndex: 1, slicePct: 40, isActive: false }),
+      cls({ version: '100', classIndex: 0, slicePct: 30, isActive: secondActive }),
+      cls({ version: '100', classIndex: 1, slicePct: 70, isActive: secondActive }),
+    ];
+
+    it('picks the live config rather than blending both', () => {
+      const picked = selectClassSnapshot(collided(true), '100');
+      expect(picked.map(c => c.classIndex)).toEqual([0, 1]);
+      expect(picked.map(c => c.slicePct)).toEqual([30, 70]);
+      // Blending would sum to 200 and double every slice.
+      expect(picked.reduce((n, c) => n + c.slicePct, 0)).toBe(100);
+    });
+
+    it('returns [] when the shared version is itself superseded, so the contract answers', () => {
+      // Both emissions inactive: nothing distinguishes them without the
+      // per-emission pointer, and a blended answer would be wrong.
+      expect(selectClassSnapshot(collided(false), '100')).toEqual([]);
+    });
   });
 });
