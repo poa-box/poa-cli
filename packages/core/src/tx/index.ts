@@ -5,7 +5,6 @@
 
 export * from './intent';
 export * as education from './education';
-export * as eligibility from './eligibility';
 export * as governance from './governance';
 export * as org from './org';
 export * as paymaster from './paymaster';
@@ -16,3 +15,5 @@ export * as treasury from './treasury';
 export * as user from './user';
 export * as vote from './vote';
 export * as zkemail from './zkemail';
+
+export * as authority from './authority';

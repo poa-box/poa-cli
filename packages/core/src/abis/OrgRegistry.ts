@@ -488,6 +488,19 @@ export const OrgRegistryAbi = [
   },
   {
     "type": "function",
+    "name": "setHats",
+    "inputs": [
+      {
+        "name": "newHats",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setOrgExecutor",
     "inputs": [
       {
@@ -638,6 +651,19 @@ export const OrgRegistryAbi = [
         "name": "owner",
         "type": "address",
         "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "HatsSet",
+    "inputs": [
+      {
+        "name": "hats",
+        "type": "address",
+        "indexed": true,
         "internalType": "address"
       }
     ],
@@ -813,6 +839,11 @@ export const OrgRegistryAbi = [
   {
     "type": "error",
     "name": "NotOrgMetadataAdmin",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotRegistryAdmin",
     "inputs": []
   },
   {

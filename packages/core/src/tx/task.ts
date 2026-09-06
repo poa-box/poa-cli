@@ -5,8 +5,7 @@
  * resolved addresses + prepared values and return a TxIntent. ALL argument
  * encoding lives here, byte-for-byte as the CLI encodes it: stringToBytes
  * titles, ipfsCidToBytes32 hashes, parseUnits amounts (18d PT payouts, token
- * registry decimals for bounties), and the v6/legacy createTask arity switch
- * via TaskManagerFeatures + LEGACY_TM_FRAGMENTS.
+ * registry decimals for bounties), using the authority-only nine-argument createTask signature.
  *
  * Level 2 — resolved builders (async, `<action>Intent(ctx, params)`). They
  * resolve the org's TaskManager via reads/resolve, replicate the CLI's
@@ -17,6 +16,7 @@
  */
 
 import { ethers } from 'ethers';
+import { AUTHORITY_KEYS, permissionWord, projectContext } from './authority';
 import type { TxIntent } from './intent';
 import { buildGovernanceProposal, encodeExecutorCall, type ExecutionCall } from './governance';
 import { getAbi } from '../contracts';
@@ -31,7 +31,6 @@ import {
 import {
   detectTaskManagerFeatures,
   featureUnavailable,
-  LEGACY_TM_FRAGMENTS,
   type TaskManagerFeatures,
 } from '../version';
 import { getTokenDecimals } from '../chains';
@@ -176,7 +175,7 @@ export interface CreateTaskArgs {
   completionWindow?: number;
   /**
    * Feature probe result: `deadlines` picks the 9-arg v6 createTask; without
-   * it the pre-v6 7-arg signature is encoded via LEGACY_TM_FRAGMENTS (the
+   * it older unsupported implementations are rejected (the
    * synced ABI no longer contains it).
    */
   features: Pick<TaskManagerFeatures, 'deadlines'>;
@@ -187,9 +186,10 @@ export interface CreateTaskArgs {
  * Port of `pop task create` — src/commands/task/create.ts (createTask send).
  * v6 9-arg: [payoutWei, titleBytes, metadataHash, pid, bountyToken,
  * bountyPayoutWei, requiresApplication, absoluteDeadline, completionWindow];
- * legacy 7-arg drops the two deadline words and uses LEGACY_TM_FRAGMENTS.
+ * The removed seven-argument form is never encoded.
  */
 export function buildCreateTask(a: CreateTaskArgs): TxIntent {
+  if (!a.features.deadlines) throw new Error('Unsupported TaskManager: the authority CLI requires the current task creation signature.');
   const payoutWei = ethers.utils.parseUnits(a.payout.toString(), 18);
   const titleBytes = stringToBytes(a.title);
   const metadataHash = ipfsCidToBytes32(a.metadataHash);
@@ -197,19 +197,17 @@ export function buildCreateTask(a: CreateTaskArgs): TxIntent {
   const bountyPayoutWei = computeBountyPayoutWei(bountyToken, a.bountyAmount);
   const requiresApp = a.requiresApplication || false;
 
-  const v6 = a.features.deadlines;
+
   return {
     to: a.taskManagerAddress,
-    abi: v6 ? getAbi('TaskManagerNew') : (LEGACY_TM_FRAGMENTS as any[]),
+    abi: getAbi('TaskManagerNew'),
     method: 'createTask',
-    args: v6
-      ? [payoutWei, titleBytes, metadataHash, a.projectId, bountyToken, bountyPayoutWei, requiresApp, a.absoluteDeadline ?? 0, a.completionWindow ?? 0]
-      : [payoutWei, titleBytes, metadataHash, a.projectId, bountyToken, bountyPayoutWei, requiresApp],
+    args: [payoutWei, titleBytes, metadataHash, a.projectId, bountyToken, bountyPayoutWei, requiresApp, a.absoluteDeadline ?? 0, a.completionWindow ?? 0],
     meta: {
       domain: 'task',
       action: 'create',
       orgId: a.orgId,
-      summary: { name: a.title, projectId: a.projectId, payout: String(a.payout), signature: v6 ? 'v6' : 'legacy7' },
+      summary: { name: a.title, projectId: a.projectId, payout: String(a.payout), signature: 'authority' },
     },
   };
 }
@@ -495,26 +493,26 @@ export function buildUpdateTaskMetadata(a: UpdateTaskMetadataArgs): TxIntent {
 }
 
 export interface SetProjectRolePermArgs {
-  taskManagerAddress: string;
+  authorityAddress: string;
   /** Resolved bytes32 project id. */
   projectId: string;
   hatId: ethers.BigNumberish;
   /** TaskPerm bitmask (uint8). */
   mask: number;
   orgId?: string;
+  inheritGlobal?: boolean;
 }
 
 /**
- * Port of `pop task perms set` — src/commands/task/perms.ts:309
- * (setProjectRolePerm send; creator-hat/executor gate stays on-chain).
+ * Low-level executor-only authority write. Normal users use setProjectRolePermIntent to propose it through governance.
  */
 export function buildSetProjectRolePerm(a: SetProjectRolePermArgs): TxIntent {
   const hatId = ethers.BigNumber.from(a.hatId);
   return {
-    to: a.taskManagerAddress,
-    abi: getAbi('TaskManagerNew'),
-    method: 'setProjectRolePerm',
-    args: [a.projectId, hatId, a.mask],
+    to: a.authorityAddress,
+    abi: getAbi('MembershipAuthority'),
+    method: 'setPerm',
+    args: [hatId, AUTHORITY_KEYS.TM_PERMS, projectContext(a.projectId), permissionWord(a.mask, a.inheritGlobal)],
     meta: {
       domain: 'task',
       action: 'perms-set',
@@ -525,27 +523,22 @@ export function buildSetProjectRolePerm(a: SetProjectRolePermArgs): TxIntent {
 }
 
 /**
- * The executor-gated setConfig(ROLE_PERM, abi.encode(uint256 hatId, uint8
- * mask)) call `pop task perms propose-global` wraps in a proposal —
+ * The executor-gated MembershipAuthority.setPerm call `pop task perms propose-global` wraps in a proposal —
  * src/commands/task/perms.ts:418. The CLI encodes via an inline
  * `setConfig(uint8,bytes)` interface; the synced TaskManagerNew ABI carries
  * the same signature, so the calldata is byte-identical.
  */
 export function buildSetGlobalRolePermCall(
-  taskManagerAddress: string,
+  authorityAddress: string,
   hatId: ethers.BigNumberish,
   mask: number
 ): ExecutionCall {
-  const encodedValue = ethers.utils.defaultAbiCoder.encode(
-    ['uint256', 'uint8'],
-    [ethers.BigNumber.from(hatId), mask]
-  );
-  return encodeExecutorCall('TaskManagerNew', taskManagerAddress, 'setConfig', [CONFIG_KEY_ROLE_PERM, encodedValue]);
+  return encodeExecutorCall('MembershipAuthority', authorityAddress, 'setPerm', [hatId, AUTHORITY_KEYS.TM_PERMS, ethers.constants.HashZero, permissionWord(mask)]);
 }
 
 export interface ProposeGlobalRolePermArgs {
   hybridVotingAddress: string;
-  taskManagerAddress: string;
+  authorityAddress: string;
   hatId: ethers.BigNumberish;
   mask: number;
   durationMinutes: ethers.BigNumberish;
@@ -563,7 +556,7 @@ export interface ProposeGlobalRolePermArgs {
 export function buildProposeGlobalRolePerm(a: ProposeGlobalRolePermArgs): TxIntent {
   const hatId = ethers.BigNumber.from(a.hatId);
   const permsLabel = formatMask(a.mask);
-  const title = `Set global task permissions for hat ${hatId.toString()} to ${permsLabel}`;
+  const title = `Set global task permissions for subject ${hatId.toString()} to ${permsLabel}`;
   return buildGovernanceProposal({
     votingAddress: a.hybridVotingAddress,
     votingAbiName: 'HybridVotingNew',
@@ -572,7 +565,7 @@ export function buildProposeGlobalRolePerm(a: ProposeGlobalRolePermArgs): TxInte
     durationMinutes: a.durationMinutes,
     numOptions: 2,
     batches: [
-      [buildSetGlobalRolePermCall(a.taskManagerAddress, hatId, a.mask)], // option 0: apply
+      [buildSetGlobalRolePermCall(a.authorityAddress, hatId, a.mask)], // option 0: apply
       [], // option 1: keep current
     ],
     hatIds: [],
@@ -767,7 +760,7 @@ export async function createTaskIntent(ctx: PopContext, p: CreateTaskParams): Pr
 
   // Feature-gate: pre-v6 TaskManagers only expose the 7-arg createTask.
   const features = await requireFeatures(ctx, taskManagerAddress, orgId, p.features, 'createTask');
-  if (!features.deadlines && deadlineFlagsSet) {
+  if (!features.deadlines) {
     throw new CliError(
       featureUnavailable(
         'task deadlines',
@@ -975,7 +968,7 @@ export async function createTasksBatchIntents(
     pinned.push({ row, cid, metadata });
   }
 
-  if (features.batchCreate) {
+  {
     const intent = buildCreateTasksBatch({
       taskManagerAddress,
       projectId: pid,
@@ -995,23 +988,6 @@ export async function createTasksBatchIntents(
     return [intent];
   }
 
-  // Legacy pre-v6 org: per-task 7-arg createTask intents (sequential sends).
-  return pinned.map(({ row, cid, metadata }) => {
-    const intent = buildCreateTask({
-      taskManagerAddress,
-      payout: row.payout,
-      title: row.name,
-      metadataHash: cid,
-      projectId: pid,
-      bountyToken: row.bountyToken,
-      bountyAmount: row.bountyAmount,
-      requiresApplication: row.requiresApplication,
-      features: { deadlines: false },
-      orgId,
-    });
-    intent.meta.ipfs = { cid, metadata };
-    return intent;
-  });
 }
 
 export interface TaskActionParams {
@@ -1510,20 +1486,14 @@ export async function editTaskMetadataIntent(
 
 export interface SetProjectRolePermParams {
   org: string;
-  /** Project bytes32 id or title (resolved via the perms tiers, like the CLI). */
   project: string;
-  /** Hat id (decimal or 0x hex). */
   hat: string | number | ethers.BigNumber;
-  /** Comma-separated permission list ('create,claim' / 'none') or a raw mask. */
   perms: string | number;
+  duration?: number;
+  inheritGlobal?: boolean;
 }
 
-/**
- * Port of `pop task perms set` — src/commands/task/perms.ts:309. Resolves the
- * project by hex or title (PERMS_QUERY_FULL/LEGACY tiers), parses the perm
- * list into a mask, and builds setProjectRolePerm. The creator-hat/executor
- * gate stays on-chain (masks are not readable per-wearer).
- */
+/** Resolve project and authority, then propose the executor-only permission write through governance. */
 export async function setProjectRolePermIntent(
   ctx: PopContext,
   p: SetProjectRolePermParams
@@ -1531,7 +1501,9 @@ export async function setProjectRolePermIntent(
   const mask = typeof p.perms === 'number' ? p.perms : parsePermList(p.perms);
   const hatId = parseHatId(p.hat);
 
-  const { orgId, taskManagerAddress } = await resolveTaskManager(ctx, p.org);
+  const modules = await resolveOrgModules(ctx.client, p.org, ctx.chainId);
+  const orgId = modules.orgId;
+  const authorityAddress = requireModule(modules, 'membershipAuthorityAddress');
 
   let pid: string;
   if (p.project.startsWith('0x') && p.project.length === 66) {
@@ -1544,7 +1516,14 @@ export async function setProjectRolePermIntent(
     pid = resolveProjectFromList(data.organization?.taskManager?.projects || [], p.project).pid;
   }
 
-  return buildSetProjectRolePerm({ taskManagerAddress, projectId: pid, hatId, mask, orgId });
+  const action = buildSetProjectRolePerm({ authorityAddress, projectId: pid, hatId, mask, orgId, inheritGlobal: p.inheritGlobal });
+  return buildGovernanceProposal({
+    votingAddress: requireModule(modules, 'hybridVotingAddress'), votingAbiName: 'HybridVotingNew',
+    title: `Set project task permissions for subject ${hatId.toString()}`, descriptionHash: ethers.constants.HashZero,
+    durationMinutes: p.duration ?? 60, numOptions: 2, hatIds: [], orgId,
+    batches: [[{ target: authorityAddress, value: 0, calldata: new ethers.utils.Interface(action.abi).encodeFunctionData(action.method, action.args) }], []],
+    domain: 'task', action: 'perms-set', summary: action.meta.summary,
+  });
 }
 
 export interface ProposeGlobalRolePermParams {
@@ -1557,10 +1536,7 @@ export interface ProposeGlobalRolePermParams {
 
 /**
  * Port of `pop task perms propose-global` — src/commands/task/perms.ts:400.
- * setConfig(ROLE_PERM) is executor-only, so the change ships as a HybridVoting
- * proposal whose option-0 batch targets the TaskManager. Pins the proposal
- * metadata {description, optionNames, createdAt} (exact key order), then
- * delegates to buildProposeGlobalRolePerm.
+ * MembershipAuthority.setPerm is executor-only; option 0 applies the change through the org executor.
  */
 export async function proposeGlobalRolePermIntent(
   ctx: PopContext,
@@ -1570,32 +1546,15 @@ export async function proposeGlobalRolePermIntent(
   const hatId = parseHatId(p.hat);
   const duration = p.duration ?? 60;
 
-  const { orgId, taskManagerAddress, hybridVotingAddress } = await resolveTaskManager(ctx, p.org);
+  const modules = await resolveOrgModules(ctx.client, p.org, ctx.chainId);
+  const { orgId, hybridVotingAddress } = modules;
+  const authorityAddress = requireModule(modules, 'membershipAuthorityAddress');
   if (!hybridVotingAddress) {
     throw new CliError('HybridVoting not deployed for this org — cannot create a governance proposal.', EXIT.PRECONDITION);
   }
 
-  const permsLabel = formatMask(mask);
-  const title = `Set global task permissions for hat ${hatId.toString()} to ${permsLabel}`;
-  // Proposal metadata — key order {description, optionNames, createdAt} is a
-  // protocol contract (same shape every governance wrap pins).
-  const metadata = buildProposalMetadata({
-    description: `Set the GLOBAL TaskPerm mask for hat ${hatId.toString()} to ${mask} (${permsLabel}) via TaskManager.setConfig(ROLE_PERM). ${describeMask(mask).join('; ') || 'Revokes all global task permissions for this hat.'}`,
-    optionNames: [title, 'Keep current permissions'],
-  });
-  const cid = await pinJson(serializeProposalMetadata(metadata), ctx.ipfs);
-
-  const intent = buildProposeGlobalRolePerm({
-    hybridVotingAddress,
-    taskManagerAddress,
-    hatId,
-    mask,
-    durationMinutes: duration,
-    descriptionHash: cid,
-    orgId,
-  });
-  intent.meta.ipfs = { cid, metadata };
-  return intent;
+  return buildProposeGlobalRolePerm({ hybridVotingAddress, authorityAddress, hatId, mask,
+    durationMinutes: duration, descriptionHash: ethers.constants.HashZero, orgId });
 }
 
 export interface SetFoldersParams {

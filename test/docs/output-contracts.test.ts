@@ -11,6 +11,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { unobservableItemKeys } from '../../scripts/lib/output-contract';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -44,4 +45,11 @@ describe('output contracts (CI-safe validity)', () => {
       expect(contractDoc.contracts[name], `"${name}" must stay contracted`).toBeDefined();
     }
   });
+});
+
+it('empty live collections carry item promises, but missing or populated collections must satisfy them', () => {
+  const promised = ['claims', 'claims[].id', 'claims[].claimedAt'];
+  expect(unobservableItemKeys({ claims: [] }, promised)).toEqual(['claims[].id', 'claims[].claimedAt']);
+  expect(unobservableItemKeys({}, promised)).toEqual([]);
+  expect(unobservableItemKeys({ claims: [{}] }, promised)).toEqual([]);
 });

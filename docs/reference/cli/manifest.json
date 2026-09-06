@@ -168,11 +168,6 @@
           "type": "string",
           "description": "Time a claimer has to submit after claiming (v6 orgs only; batch-wide default, rows may override)"
         },
-        "continue-on-error": {
-          "type": "boolean",
-          "description": "Skip failed tasks instead of stopping (legacy orgs only — v6 batches are all-or-nothing)",
-          "default": false
-        },
         "deadline": {
           "type": "string",
           "description": "Absolute claim deadline — no claims after this time (v6 orgs only; batch-wide default, rows may override)"
@@ -641,7 +636,7 @@
     {
       "name": "task perms show",
       "kind": "command",
-      "description": "Show global + per-project task permission masks",
+      "description": "Show authority task permissions",
       "readOnly": true,
       "broadcasts": false,
       "destructive": false,
@@ -650,43 +645,14 @@
       "options": {
         "project": {
           "type": "string",
-          "description": "Also show this project's per-hat overrides (ID or name)"
+          "description": "Project bytes32 ID"
         }
       }
     },
     {
       "name": "task perms set",
       "kind": "command",
-      "description": "Set a hat's permission mask on one project (direct tx; creator-hat/executor)",
-      "readOnly": false,
-      "broadcasts": true,
-      "destructive": false,
-      "sideEffects": [
-        "ipfs-pin"
-      ],
-      "positionals": [],
-      "options": {
-        "hat": {
-          "type": "string",
-          "description": "Hat ID whose project mask to set",
-          "required": true
-        },
-        "perms": {
-          "type": "string",
-          "description": "Comma-separated permission list (create, claim, review, assign, self-review, budget, edit-meta, edit-full) or \"none\" to remove the override",
-          "required": true
-        },
-        "project": {
-          "type": "string",
-          "description": "Project ID (bytes32) or name",
-          "required": true
-        }
-      }
-    },
-    {
-      "name": "task perms propose-global",
-      "kind": "command",
-      "description": "Propose an org-wide permission mask change (governance vote)",
+      "description": "Propose a project task permission row",
       "readOnly": false,
       "broadcasts": true,
       "destructive": false,
@@ -695,17 +661,77 @@
       "options": {
         "duration": {
           "type": "number",
-          "description": "Vote duration in minutes",
+          "description": "Governance vote duration in minutes",
           "default": 60
         },
-        "hat": {
-          "type": "string",
-          "description": "Hat ID whose GLOBAL mask to set",
-          "required": true
+        "inherit-global": {
+          "type": "boolean",
+          "default": false
         },
         "perms": {
           "type": "string",
-          "description": "Comma-separated permission list (create, claim, review, assign, self-review, budget, edit-meta, edit-full) or \"none\" to revoke",
+          "required": true
+        },
+        "project": {
+          "type": "string",
+          "description": "Project ID (bytes32); encoded as projectId + 1",
+          "required": true
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task perms clear",
+      "kind": "command",
+      "description": "Propose clearing a permission row (restores inheritance for project rows)",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "project": {
+          "type": "string",
+          "description": "Project ID (omit to clear global permissions)"
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task perms propose-global",
+      "kind": "command",
+      "description": "Propose an org-wide task permission row",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "perms": {
+          "type": "string",
+          "required": true
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
           "required": true
         }
       }
@@ -767,10 +793,6 @@
       ],
       "positionals": [],
       "options": {
-        "assign-hats": {
-          "type": "string",
-          "description": "Comma-separated hat IDs for assign permission"
-        },
         "bounty-caps": {
           "type": "string",
           "description": "Comma-separated bounty caps (wei)"
@@ -784,30 +806,18 @@
           "description": "PT cap (0 = unlimited)",
           "default": 0
         },
-        "claim-hats": {
-          "type": "string",
-          "description": "Comma-separated hat IDs for claim permission"
-        },
-        "create-hats": {
-          "type": "string",
-          "description": "Comma-separated hat IDs for create permission"
-        },
         "description": {
           "type": "string",
           "description": "Project description"
         },
         "managers": {
           "type": "string",
-          "description": "Comma-separated manager addresses"
+          "description": "Comma-separated project manager addresses"
         },
         "name": {
           "type": "string",
           "description": "Project name",
           "required": true
-        },
-        "review-hats": {
-          "type": "string",
-          "description": "Comma-separated hat IDs for review permission"
         }
       }
     },
@@ -823,22 +833,10 @@
       ],
       "positionals": [],
       "options": {
-        "assign-hats": {
-          "type": "string",
-          "description": "Hat IDs for task assign permission"
-        },
         "cap": {
           "type": "number",
           "description": "PT budget cap (0 = unlimited)",
           "default": 0
-        },
-        "claim-hats": {
-          "type": "string",
-          "description": "Hat IDs for task claim permission"
-        },
-        "create-hats": {
-          "type": "string",
-          "description": "Hat IDs for task creation permission"
         },
         "description": {
           "type": "string",
@@ -849,14 +847,14 @@
           "description": "Vote duration in minutes (default 24h)",
           "default": 1440
         },
+        "managers": {
+          "type": "string",
+          "description": "Comma-separated project manager addresses"
+        },
         "name": {
           "type": "string",
           "description": "Project name",
           "required": true
-        },
-        "review-hats": {
-          "type": "string",
-          "description": "Hat IDs for task review permission"
         }
       }
     },
@@ -1028,8 +1026,12 @@
       "options": {
         "config": {
           "type": "string",
-          "description": "Path to org deploy config JSON file",
+          "description": "Path to native authority org deploy config JSON file",
           "required": true
+        },
+        "deployer": {
+          "type": "string",
+          "description": "Public deployer address for an unsigned dry run (no private key needed)"
         }
       }
     },
@@ -1096,7 +1098,13 @@
       "destructive": false,
       "sideEffects": [],
       "positionals": [],
-      "options": {}
+      "options": {
+        "all": {
+          "type": "boolean",
+          "description": "Include lapsed or unaccepted membership records",
+          "default": false
+        }
+      }
     },
     {
       "name": "org audit",
@@ -2004,8 +2012,7 @@
             "threshold",
             "quorum",
             "target-allowed",
-            "executor",
-            "hat-allowed"
+            "executor"
           ],
           "required": true
         },
@@ -2164,32 +2171,6 @@
       }
     },
     {
-      "name": "user claim-hats",
-      "kind": "command",
-      "description": "Claim additional role hats after joining (e.g. a hat you were vouched for)",
-      "readOnly": false,
-      "broadcasts": true,
-      "destructive": false,
-      "sideEffects": [],
-      "positionals": [],
-      "options": {
-        "hats": {
-          "type": "string",
-          "description": "Comma-separated hat IDs to claim (decimal or 0x-hex), e.g. after being vouched for a role",
-          "required": true
-        },
-        "idempotency-key": {
-          "type": "string",
-          "description": "Explicit idempotency key. Two identical claims within the TTL return the same result without re-submitting. Default: auto-derived from argv."
-        },
-        "no-idempotency": {
-          "type": "boolean",
-          "description": "Bypass the idempotency cache and always submit.",
-          "default": false
-        }
-      }
-    },
-    {
       "name": "user whoami",
       "kind": "command",
       "description": "Show signer identity: address, username, gas balance, and org standing",
@@ -2198,13 +2179,7 @@
       "destructive": false,
       "sideEffects": [],
       "positionals": [],
-      "options": {
-        "on-chain": {
-          "type": "boolean",
-          "description": "Re-verify membership with a live Hats.balanceOf call instead of the subgraph's indexed hat state (slower; catches a dynamically revoked eligibility that burned no token)",
-          "default": false
-        }
-      }
+      "options": {}
     },
     {
       "name": "user profile",
@@ -2419,194 +2394,91 @@
     {
       "name": "vouch for",
       "kind": "command",
-      "description": "Vouch for a user to claim a role",
+      "description": "for a role vouch through MembershipAuthority",
       "readOnly": false,
       "broadcasts": true,
       "destructive": false,
       "sideEffects": [],
       "positionals": [],
       "options": {
-        "address": {
+        "subject": {
           "type": "string",
-          "description": "Address of the user to vouch for",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
           "required": true
         },
-        "hat": {
+        "user": {
           "type": "string",
-          "description": "Hat ID of the role"
-        },
-        "idempotency-key": {
-          "type": "string",
-          "description": "Explicit idempotency key. Repeat vouches for the same wearer+hat within the TTL return the prior result without re-submitting."
-        },
-        "no-idempotency": {
-          "type": "boolean",
-          "description": "Bypass the idempotency cache and always submit.",
-          "default": false
-        },
-        "role": {
-          "type": "string",
-          "description": "Role name (e.g. MEMBER, Agent) — resolves to hat ID"
+          "description": "Member wallet address",
+          "required": true
         }
       }
     },
     {
       "name": "vouch revoke",
       "kind": "command",
-      "description": "Revoke a vouch",
+      "description": "revoke a role vouch through MembershipAuthority",
       "readOnly": false,
       "broadcasts": true,
       "destructive": false,
       "sideEffects": [],
       "positionals": [],
       "options": {
-        "address": {
+        "subject": {
           "type": "string",
-          "description": "Address whose vouch to revoke",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
           "required": true
         },
-        "hat": {
+        "user": {
           "type": "string",
-          "description": "Hat ID of the role",
+          "description": "Member wallet address",
           "required": true
-        },
-        "idempotency-key": {
-          "type": "string",
-          "description": "Explicit idempotency key (repeat calls within the TTL return the prior result)."
-        },
-        "no-idempotency": {
-          "type": "boolean",
-          "description": "Bypass the idempotency cache and always submit.",
-          "default": false
         }
       }
     },
     {
       "name": "vouch claim",
       "kind": "command",
-      "description": "Claim a role after receiving enough vouches",
+      "description": "Claim a role after meeting its vouch quorum",
       "readOnly": false,
       "broadcasts": true,
       "destructive": false,
       "sideEffects": [],
       "positionals": [],
       "options": {
-        "hat": {
+        "subject": {
           "type": "string",
-          "description": "Hat ID to claim",
-          "required": true
-        },
-        "idempotency-key": {
-          "type": "string",
-          "description": "Explicit idempotency key (repeat claims within the TTL return the prior result)."
-        },
-        "no-idempotency": {
-          "type": "boolean",
-          "description": "Bypass the idempotency cache and always submit.",
-          "default": false
-        }
-      }
-    },
-    {
-      "name": "vouch list",
-      "kind": "command",
-      "description": "List active vouches for an org",
-      "readOnly": true,
-      "broadcasts": false,
-      "destructive": false,
-      "sideEffects": [],
-      "positionals": [],
-      "options": {
-        "hat": {
-          "type": "string",
-          "description": "Filter by hat ID"
-        }
-      }
-    },
-    {
-      "name": "vouch status",
-      "kind": "command",
-      "description": "Check vouch status for a user and role (plus your own daily quota)",
-      "readOnly": true,
-      "broadcasts": false,
-      "destructive": false,
-      "sideEffects": [],
-      "positionals": [],
-      "options": {
-        "address": {
-          "type": "string",
-          "description": "Wearer address to check",
-          "required": true
-        },
-        "hat": {
-          "type": "string",
-          "description": "Hat ID to check",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
           "required": true
         }
       }
     },
     {
-      "name": "vouch config",
-      "kind": "group",
-      "description": "Show or set a hat's vouching config (show / set; set is superAdmin-only)",
-      "readOnly": true,
-      "broadcasts": false,
-      "destructive": false,
-      "sideEffects": [],
-      "positionals": [
-        {
-          "name": "sub",
-          "type": "string",
-          "required": true
-        }
-      ],
-      "options": {}
-    },
-    {
-      "name": "vouch config show",
+      "name": "vouch configure",
       "kind": "command",
-      "description": "Show a hat's vouching config (quorum, membership hat, rate limit)",
-      "readOnly": true,
-      "broadcasts": false,
-      "destructive": false,
-      "sideEffects": [],
-      "positionals": [],
-      "options": {
-        "hat": {
-          "type": "string",
-          "description": "Hat ID whose vouching config to show",
-          "required": true
-        }
-      }
-    },
-    {
-      "name": "vouch config set",
-      "kind": "command",
-      "description": "Configure vouching for a hat (superAdmin-only)",
+      "description": "Propose a subject vouch attestor",
       "readOnly": false,
       "broadcasts": true,
       "destructive": false,
       "sideEffects": [],
       "positionals": [],
       "options": {
-        "combine-hierarchy": {
-          "type": "boolean",
-          "description": "Also honor hierarchy eligibility and let hat admins vouch",
-          "default": false
-        },
-        "hat": {
-          "type": "string",
-          "description": "Hat ID to configure vouching for",
-          "required": true
-        },
-        "membership-hat": {
-          "type": "string",
-          "description": "Hat whose wearers are allowed to vouch",
-          "required": true
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
         },
         "quorum": {
           "type": "number",
-          "description": "Vouches required to become claimable (0 disables vouching)",
+          "description": "Required vouches (0 disables the attestor)",
+          "required": true
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        },
+        "voucher-subject": {
+          "type": "string",
           "required": true
         }
       }
@@ -2614,21 +2486,106 @@
     {
       "name": "vouch reset",
       "kind": "command",
-      "description": "Reset vouches for a hat or one wearer (superAdmin-only, destructive)",
+      "description": "Propose invalidating every vouch in the subject epoch",
       "readOnly": false,
       "broadcasts": true,
       "destructive": true,
       "sideEffects": [],
       "positionals": [],
       "options": {
-        "hat": {
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "subject": {
           "type": "string",
-          "description": "Hat ID whose vouch state to reset",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "vouch clear-user",
+      "kind": "command",
+      "description": "Propose clearing the received vouches of one user",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
           "required": true
         },
-        "wearer": {
+        "user": {
           "type": "string",
-          "description": "Only clear this wearer's vouches (surgical; hat config kept)"
+          "description": "Member wallet address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "vouch set-rate-limit",
+      "kind": "command",
+      "description": "Propose the daily vouch rate limit",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "max": {
+          "type": "number",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "vouch status",
+      "kind": "command",
+      "description": "Read authority vouch status",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "subject": {
+          "type": "string"
+        },
+        "user": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "vouch list",
+      "kind": "command",
+      "description": "Read authority vouch list",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "subject": {
+          "type": "string"
+        },
+        "user": {
+          "type": "string"
         }
       }
     },
@@ -3117,342 +3074,742 @@
       }
     },
     {
-      "name": "role apply",
-      "kind": "command",
-      "description": "Apply for a role",
-      "readOnly": false,
-      "broadcasts": true,
-      "destructive": false,
-      "sideEffects": [
-        "ipfs-pin"
-      ],
-      "positionals": [],
-      "options": {
-        "experience": {
-          "type": "string",
-          "description": "Relevant experience"
-        },
-        "hat": {
-          "type": "string",
-          "description": "Hat ID of the role to apply for",
-          "required": true
-        },
-        "idempotency-key": {
-          "type": "string",
-          "description": "Explicit idempotency key (repeat applies within the TTL return the prior result)."
-        },
-        "no-idempotency": {
-          "type": "boolean",
-          "description": "Bypass the idempotency cache and always submit.",
-          "default": false
-        },
-        "notes": {
-          "type": "string",
-          "description": "Application notes"
-        }
-      }
-    },
-    {
-      "name": "role applications",
-      "kind": "command",
-      "description": "List role applications",
-      "readOnly": true,
-      "broadcasts": false,
-      "destructive": false,
-      "sideEffects": [],
-      "positionals": [],
-      "options": {
-        "hat": {
-          "type": "string",
-          "description": "Filter by hat ID"
-        },
-        "mine": {
-          "type": "boolean",
-          "description": "Show only my applications"
-        }
-      }
-    },
-    {
-      "name": "role withdraw-application",
-      "kind": "command",
-      "description": "Withdraw your pending role application",
-      "readOnly": false,
-      "broadcasts": true,
-      "destructive": false,
-      "sideEffects": [],
-      "positionals": [],
-      "options": {
-        "hat": {
-          "type": "string",
-          "description": "Hat ID whose application to withdraw",
-          "required": true
-        },
-        "idempotency-key": {
-          "type": "string",
-          "description": "Explicit idempotency key (repeat withdrawals within the TTL return the prior result)."
-        },
-        "no-idempotency": {
-          "type": "boolean",
-          "description": "Bypass the idempotency cache and always submit.",
-          "default": false
-        }
-      }
-    },
-    {
       "name": "role create",
       "kind": "command",
-      "description": "Create a new role hat (superAdmin-only)",
+      "description": "Propose creation of an authority role",
       "readOnly": false,
       "broadcasts": true,
       "destructive": false,
       "sideEffects": [],
       "positionals": [],
       "options": {
-        "default-eligible": {
-          "type": "boolean",
-          "description": "Wearers eligible by default",
-          "default": false
-        },
-        "default-standing": {
-          "type": "boolean",
-          "description": "Wearers in good standing by default",
-          "default": false
-        },
-        "idempotency-key": {
-          "type": "string",
-          "description": "Explicit idempotency key (repeat creates within the TTL return the prior result)."
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
         },
         "image": {
           "type": "string",
-          "description": "Hat image URI (optional)"
+          "description": "Image URI",
+          "default": ""
         },
-        "max-supply": {
+        "max-members": {
           "type": "number",
-          "description": "Max simultaneous wearers (uint32)",
-          "default": 1000
+          "description": "Member cap (0 = unlimited)",
+          "default": 0
         },
-        "mint-to": {
+        "metadata-hash": {
           "type": "string",
-          "description": "Comma-separated addresses to mint the new hat to immediately"
-        },
-        "mutable": {
-          "type": "boolean",
-          "description": "Allow the hat's properties to be changed later",
-          "default": false
+          "description": "IPFS SHA-256 digest (bytes32)",
+          "default": "0x0000000000000000000000000000000000000000000000000000000000000000"
         },
         "name": {
           "type": "string",
-          "description": "Role name (stored as the hat details)",
-          "required": true
-        },
-        "no-idempotency": {
-          "type": "boolean",
-          "description": "Bypass the idempotency cache and always submit.",
-          "default": false
-        },
-        "parent-hat": {
-          "type": "string",
-          "description": "Parent hat ID the new role hangs under",
+          "description": "Subject name",
           "required": true
         }
       }
     },
     {
-      "name": "role eligibility",
-      "kind": "group",
-      "description": "Manage wearer/default eligibility (set / clear / set-default; superAdmin-only)",
-      "readOnly": true,
-      "broadcasts": false,
-      "destructive": false,
-      "sideEffects": [],
-      "positionals": [
-        {
-          "name": "sub",
-          "type": "string",
-          "required": true
-        }
-      ],
-      "options": {}
-    },
-    {
-      "name": "role eligibility set",
+      "name": "role claim",
       "kind": "command",
-      "description": "Set a wearer's eligibility/standing (or batch via --file); superAdmin-only",
+      "description": "claim your role membership",
       "readOnly": false,
       "broadcasts": true,
       "destructive": false,
       "sideEffects": [],
       "positionals": [],
       "options": {
-        "eligible": {
-          "type": "boolean",
-          "description": "Wearer is eligible (--no-eligible to unset)",
-          "default": true
-        },
-        "file": {
+        "subject": {
           "type": "string",
-          "description": "Batch JSON file: [{\"wearer\": \"0x…\", \"eligible\": true, \"standing\": true}, …]"
-        },
-        "hat": {
-          "type": "string",
-          "description": "Hat ID whose eligibility to set",
-          "required": true
-        },
-        "standing": {
-          "type": "boolean",
-          "description": "Wearer is in good standing (--no-standing to unset)",
-          "default": true
-        },
-        "wearer": {
-          "type": "string",
-          "description": "Wearer address (single-wearer mode)"
-        }
-      }
-    },
-    {
-      "name": "role eligibility clear",
-      "kind": "command",
-      "description": "Clear a wearer-specific rule so hat defaults apply; superAdmin-only",
-      "readOnly": false,
-      "broadcasts": true,
-      "destructive": false,
-      "sideEffects": [],
-      "positionals": [],
-      "options": {
-        "hat": {
-          "type": "string",
-          "description": "Hat ID",
-          "required": true
-        },
-        "wearer": {
-          "type": "string",
-          "description": "Wearer whose specific rule to clear (hat defaults apply again)",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
           "required": true
         }
       }
     },
     {
-      "name": "role eligibility set-default",
+      "name": "role renounce",
       "kind": "command",
-      "description": "Set the hat-wide default eligibility/standing; superAdmin-only",
-      "readOnly": false,
-      "broadcasts": true,
-      "destructive": false,
-      "sideEffects": [],
-      "positionals": [],
-      "options": {
-        "eligible": {
-          "type": "boolean",
-          "description": "Wearers eligible by default (--no-eligible to unset)",
-          "default": true
-        },
-        "hat": {
-          "type": "string",
-          "description": "Hat ID whose defaults to set",
-          "required": true
-        },
-        "standing": {
-          "type": "boolean",
-          "description": "Wearers in good standing by default (--no-standing to unset)",
-          "default": true
-        }
-      }
-    },
-    {
-      "name": "role admin",
-      "kind": "group",
-      "description": "Module superAdmin operations (transfer / mint / pause / unpause / set-join-time)",
-      "readOnly": true,
-      "broadcasts": false,
-      "destructive": false,
-      "sideEffects": [],
-      "positionals": [
-        {
-          "name": "sub",
-          "type": "string",
-          "required": true
-        }
-      ],
-      "options": {}
-    },
-    {
-      "name": "role admin transfer",
-      "kind": "command",
-      "description": "Transfer the module superAdmin (DESTRUCTIVE — hands over the whole module)",
+      "description": "renounce your role membership",
       "readOnly": false,
       "broadcasts": true,
       "destructive": true,
       "sideEffects": [],
       "positionals": [],
       "options": {
-        "to": {
+        "subject": {
           "type": "string",
-          "description": "New superAdmin address",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
           "required": true
         }
       }
     },
     {
-      "name": "role admin mint",
+      "name": "role grant",
       "kind": "command",
-      "description": "Mint a hat to one or more wearers (superAdmin-only)",
+      "description": "Propose a role grant",
       "readOnly": false,
       "broadcasts": true,
       "destructive": false,
       "sideEffects": [],
       "positionals": [],
       "options": {
-        "hat": {
-          "type": "string",
-          "description": "Hat ID to mint",
-          "required": true
+        "delegable": {
+          "type": "boolean",
+          "description": "Allow delegated managers to clear this governance grant",
+          "default": false
         },
-        "wearer": {
-          "type": "string",
-          "description": "Recipient address (comma-separate for several)",
-          "required": true
-        }
-      }
-    },
-    {
-      "name": "role admin pause",
-      "kind": "command",
-      "description": "Pause the eligibility module (superAdmin-only)",
-      "readOnly": false,
-      "broadcasts": true,
-      "destructive": false,
-      "sideEffects": [],
-      "positionals": [],
-      "options": {}
-    },
-    {
-      "name": "role admin unpause",
-      "kind": "command",
-      "description": "Unpause the eligibility module (superAdmin-only)",
-      "readOnly": false,
-      "broadcasts": true,
-      "destructive": false,
-      "sideEffects": [],
-      "positionals": [],
-      "options": {}
-    },
-    {
-      "name": "role admin set-join-time",
-      "kind": "command",
-      "description": "Set a user's join time for the vouching grace period (superAdmin-only)",
-      "readOnly": false,
-      "broadcasts": true,
-      "destructive": false,
-      "sideEffects": [],
-      "positionals": [],
-      "options": {
-        "timestamp": {
+        "duration": {
           "type": "number",
-          "description": "Unix seconds (omit to use the current block time via setUserJoinTimeNow)"
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
         },
         "user": {
           "type": "string",
-          "description": "User whose join time to set",
+          "description": "Member wallet address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role offer",
+      "kind": "command",
+      "description": "Propose a role offer",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "delegable": {
+          "type": "boolean",
+          "description": "Allow delegated managers to clear this governance grant",
+          "default": false
+        },
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        },
+        "user": {
+          "type": "string",
+          "description": "Member wallet address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role remove",
+      "kind": "command",
+      "description": "Propose member removal",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "ban": {
+          "type": "boolean",
+          "description": "Ban membership instead of attempting soft removal",
+          "default": false
+        },
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        },
+        "user": {
+          "type": "string",
+          "description": "Member wallet address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role unremove",
+      "kind": "command",
+      "description": "Propose unremove",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        },
+        "user": {
+          "type": "string",
+          "description": "Member wallet address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role withdraw-offer",
+      "kind": "command",
+      "description": "Propose withdraw-offer",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        },
+        "user": {
+          "type": "string",
+          "description": "Member wallet address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role clear-rule",
+      "kind": "command",
+      "description": "Propose clear-rule",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        },
+        "user": {
+          "type": "string",
+          "description": "Member wallet address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role set-rule",
+      "kind": "command",
+      "description": "Propose an explicit grant or ban rule",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "delegable": {
+          "type": "boolean",
+          "default": false
+        },
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "kind": {
+          "type": "string",
+          "choices": [
+            "none",
+            "grant",
+            "ban"
+          ],
+          "required": true
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        },
+        "user": {
+          "type": "string",
+          "description": "Member wallet address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role set-default",
+      "kind": "command",
+      "description": "Propose default role eligibility",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "allow": {
+          "type": "boolean",
+          "required": true
+        },
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "force": {
+          "type": "boolean",
+          "description": "Permit closing a role with accepted members",
+          "default": false
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role rename",
+      "kind": "command",
+      "description": "Rename an authority subject using SUBJECT_RENAME permission",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "image": {
+          "type": "string",
+          "description": "Image URI",
+          "default": ""
+        },
+        "metadata-hash": {
+          "type": "string",
+          "description": "IPFS SHA-256 digest (bytes32)",
+          "default": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "name": {
+          "type": "string",
+          "description": "Subject name",
+          "required": true
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role set-max-members",
+      "kind": "command",
+      "description": "Propose the role membership cap",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "max-members": {
+          "type": "number",
+          "required": true
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role set-manager",
+      "kind": "command",
+      "description": "Propose manager delegation for a subject",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "caps": {
+          "type": "number",
+          "description": "Capability mask: 1 grant/offer, 2 remove",
+          "required": true
+        },
+        "delay": {
+          "type": "number",
+          "description": "Review delay in seconds",
+          "default": 0
+        },
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "manager": {
+          "type": "string",
+          "description": "Manager subject ID (0 clears delegation)",
+          "required": true
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role delegate-grant",
+      "kind": "command",
+      "description": "delegate-grant through configured manager authority",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        },
+        "user": {
+          "type": "string",
+          "description": "Member wallet address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role delegate-offer",
+      "kind": "command",
+      "description": "delegate-offer through configured manager authority",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        },
+        "user": {
+          "type": "string",
+          "description": "Member wallet address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role delegate-unremove",
+      "kind": "command",
+      "description": "delegate-unremove through configured manager authority",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        },
+        "user": {
+          "type": "string",
+          "description": "Member wallet address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role delegate-remove",
+      "kind": "command",
+      "description": "Queue delegated member removal",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "ban": {
+          "type": "boolean",
+          "default": false
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        },
+        "user": {
+          "type": "string",
+          "description": "Member wallet address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role finalize",
+      "kind": "command",
+      "description": "finalize a pending delegated action",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "pending": {
+          "type": "string",
+          "description": "Authority pending action ID",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role cancel",
+      "kind": "command",
+      "description": "cancel a pending delegated action",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "pending": {
+          "type": "string",
+          "description": "Authority pending action ID",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role reconcile",
+      "kind": "command",
+      "description": "Repair a lapsed membership",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        },
+        "user": {
+          "type": "string",
+          "description": "Member wallet address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role set-perm",
+      "kind": "command",
+      "description": "Propose an authority permission row",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "context": {
+          "type": "string",
+          "description": "bytes32 context (global is zero; task project context is projectId + 1)",
+          "default": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "inherit-global": {
+          "type": "boolean",
+          "default": false
+        },
+        "key": {
+          "type": "string",
+          "description": "Semantic key name (DD_VOTE, PT_MEMBER, etc.) or bytes32 key",
+          "required": true
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        },
+        "value": {
+          "type": "string",
+          "description": "Permission value without flag bits",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role clear-perm",
+      "kind": "command",
+      "description": "Propose clearing an authority permission row",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "context": {
+          "type": "string",
+          "default": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "key": {
+          "type": "string",
+          "required": true
+        },
+        "subject": {
+          "type": "string",
+          "description": "Authority subject ID (adopted role IDs keep their historical value)",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role set-paused",
+      "kind": "command",
+      "description": "Propose pausing or unpausing non-governance authority writes",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "paused": {
+          "type": "boolean",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "group create",
+      "kind": "command",
+      "description": "Propose a group derived from role memberships",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "image": {
+          "type": "string",
+          "description": "Image URI",
+          "default": ""
+        },
+        "metadata-hash": {
+          "type": "string",
+          "description": "IPFS SHA-256 digest (bytes32)",
+          "default": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "name": {
+          "type": "string",
+          "description": "Subject name",
+          "required": true
+        },
+        "roles": {
+          "type": "string",
+          "description": "Member role subject IDs",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "group add-role",
+      "kind": "command",
+      "description": "Propose add-role in a group",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "group": {
+          "type": "string",
+          "required": true
+        },
+        "role": {
+          "type": "string",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "group remove-role",
+      "kind": "command",
+      "description": "Propose remove-role in a group",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "group": {
+          "type": "string",
+          "required": true
+        },
+        "role": {
+          "type": "string",
           "required": true
         }
       }

@@ -10,6 +10,8 @@ jobs:
   build-and-test:
     name: build + test (node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    env:
+      POP_READONLY: '1'
 
     strategy:
       fail-fast: false

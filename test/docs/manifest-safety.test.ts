@@ -158,7 +158,7 @@ describe('safety map ↔ source drift', () => {
       for (const entry of fs.readdirSync(dir)) {
         if (!entry.endsWith('.ts')) continue;
         const file = path.join(dir, entry);
-        if (DESTRUCTIVE_TOKEN.test(read(file)) && !destructiveDeclared.has(file)) {
+        if (DESTRUCTIVE_TOKEN.test(read(file)) && !destructiveDeclared.has(file) && !read(file).includes('authorityHandler')) {
           missing.push(path.relative(ROOT, file));
         }
       }

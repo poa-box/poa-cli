@@ -87,6 +87,24 @@ export const HybridVotingNewAbi = [
   },
   {
     "type": "function",
+    "name": "addHatToClass",
+    "inputs": [
+      {
+        "name": "classIdx",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "hatId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "announceWinner",
     "inputs": [
       {
@@ -108,6 +126,57 @@ export const HybridVotingNewAbi = [
       }
     ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "classIdOfIndex",
+    "inputs": [
+      {
+        "name": "classIdx",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "classId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "classSubjectOf",
+    "inputs": [
+      {
+        "name": "classId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "subjectId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "configAdmin",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -159,6 +228,71 @@ export const HybridVotingNewAbi = [
         "name": "hatIds",
         "type": "uint256[]",
         "internalType": "uint256[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createProposalV2",
+    "inputs": [
+      {
+        "name": "title",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "descriptionHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "minutesDuration",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "numOptions",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "batches",
+        "type": "tuple[][]",
+        "internalType": "struct IExecutor.Call[][]",
+        "components": [
+          {
+            "name": "target",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "value",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "data",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      },
+      {
+        "name": "hatIds",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "quorumOverride",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "equalWeight",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -304,29 +438,19 @@ export const HybridVotingNewAbi = [
     "name": "initialize",
     "inputs": [
       {
-        "name": "hats_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "executor_",
         "type": "address",
         "internalType": "address"
       },
       {
-        "name": "initialCreatorHats",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "initialTargets",
-        "type": "address[]",
-        "internalType": "address[]"
-      },
-      {
         "name": "thresholdPct_",
         "type": "uint8",
         "internalType": "uint8"
+      },
+      {
+        "name": "quorum_",
+        "type": "uint32",
+        "internalType": "uint32"
       },
       {
         "name": "initialClasses",
@@ -368,6 +492,19 @@ export const HybridVotingNewAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "membershipAuthority",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -434,6 +571,49 @@ export const HybridVotingNewAbi = [
   },
   {
     "type": "function",
+    "name": "proposalClassSubject",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "classIdx",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "subjectId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "proposalCreatedAt",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "proposalEndTimestamp",
     "inputs": [
       {
@@ -447,6 +627,25 @@ export const HybridVotingNewAbi = [
         "name": "",
         "type": "uint64",
         "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "proposalQuorumOverride",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
     "stateMutability": "view"
@@ -476,6 +675,42 @@ export const HybridVotingNewAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "removeHatFromClass",
+    "inputs": [
+      {
+        "name": "classIdx",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "hatId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setClassSubject",
+    "inputs": [
+      {
+        "name": "classIdx",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "subjectId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -542,17 +777,12 @@ export const HybridVotingNewAbi = [
   },
   {
     "type": "function",
-    "name": "setCreatorHatAllowed",
+    "name": "setMembershipAuthority",
     "inputs": [
       {
-        "name": "h",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "ok",
-        "type": "bool",
-        "internalType": "bool"
+        "name": "authority",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -603,6 +833,19 @@ export const HybridVotingNewAbi = [
   },
   {
     "type": "event",
+    "name": "ConfigAdminSet",
+    "inputs": [
+      {
+        "name": "admin",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "ExecutorUpdated",
     "inputs": [
       {
@@ -641,25 +884,6 @@ export const HybridVotingNewAbi = [
   },
   {
     "type": "event",
-    "name": "HatToggled",
-    "inputs": [
-      {
-        "name": "hatId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "allowed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Initialized",
     "inputs": [
       {
@@ -667,6 +891,19 @@ export const HybridVotingNewAbi = [
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MembershipAuthoritySet",
+    "inputs": [
+      {
+        "name": "authority",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -1016,6 +1253,31 @@ export const HybridVotingNewAbi = [
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "ProposalConfigV2",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "quorumOverride",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      },
+      {
+        "name": "equalWeight",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "error",
     "name": "DurationOutOfRange",
     "inputs": []
@@ -1028,6 +1290,11 @@ export const HybridVotingNewAbi = [
   {
     "type": "error",
     "name": "InvalidClassCount",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidQuorum",
     "inputs": []
   },
   {
@@ -1049,6 +1316,56 @@ export const HybridVotingNewAbi = [
     "type": "error",
     "name": "TooManyPollHats",
     "inputs": []
+  },
+  {
+    "type": "event",
+    "name": "ClassHatSet",
+    "inputs": [
+      {
+        "name": "classIdx",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "uint8"
+      },
+      {
+        "name": "hatId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "added",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ClassSubjectSet",
+    "inputs": [
+      {
+        "name": "classId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "classIdx",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "subjectId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -1130,7 +1447,7 @@ export const HybridVotingNewAbi = [
   },
   {
     "type": "error",
-    "name": "InvalidQuorum",
+    "name": "InvalidConfigKey",
     "inputs": []
   },
   {

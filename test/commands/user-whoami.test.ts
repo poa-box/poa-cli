@@ -76,7 +76,7 @@ vi.mock('../../src/lib/output', () => {
 });
 
 import { ethers } from 'ethers';
-import { whoamiHandler, resolveHatName, wearsAnyMemberHat } from '../../src/commands/user/whoami';
+import { whoamiHandler } from '../../src/commands/user/whoami';
 import { HOME_CHAIN_ID } from '../../src/config/networks';
 import { Call } from '../../src/lib/multicall';
 import { formatToken } from '../../src/lib/format';
@@ -190,9 +190,10 @@ function orgDataFixture(overrides: Record<string, any> = {}) {
 }
 
 /** Route each mocked subgraph document to its fixture. */
-function installSubgraph(opts: { orgData?: any; homeAccount?: any } = {}) {
+function installSubgraph(opts: { orgData?: any; homeAccount?: any; memberships?: any[] } = {}) {
   const orgData = 'orgData' in opts ? opts.orgData : orgDataFixture();
   mocks.query.mockImplementation(async (doc: string) => {
+    if (String(doc).includes('AuthorityMemberships')) return { subjectMemberships: opts.memberships ?? [{ id: 'membership', user: WALLET, isMember: true, subject: { subjectId: MEMBER_HAT.toString(), name: 'Member' } }] };
     if (String(doc).includes('WhoamiOrgData')) return orgData;
     if (String(doc).includes('AccountUsername')) return { account: opts.homeAccount ?? null };
     return { universalAccountRegistries: [{ id: REGISTRY_ADDR }] };
@@ -248,7 +249,7 @@ describe('pop user whoami — identity + org standing', () => {
       id: ORG_ID,
       name: 'Test Org',
       member: true,
-      memberSource: 'subgraph',
+      memberSource: 'membership-authority subgraph',
       ptBalance: {
         wei: PT_BALANCE.toString(),
         formatted: formatToken(PT_BALANCE, 18, 'PT'),
@@ -296,147 +297,19 @@ describe('pop user whoami — identity + org standing', () => {
     expect((output.json as any).mock.calls[0][0].balance.wei).toBe(BALANCE_WEI.toString());
   });
 
-  it('membership uses the on-chain predicate: wearing none of the QuickJoin member hats → member: false', async () => {
-    installSubgraph({
-      orgData: orgDataFixture({
-        user: {
-          id: `${ORG_ID}-${WALLET.toLowerCase()}`,
-          membershipStatus: 'Active',
-          participationTokenBalance: PT_BALANCE.toString(),
-          currentHatIds: ['999'], // some other role hat, not the member hat
-        },
-      }),
-    });
-
+  it('authority eligibility overrides historical accepted hats', async () => {
+    installSubgraph({ memberships: [{ id: 'membership', user: WALLET, accepted: true, eligible: false, isMember: false, subject: { subjectId: MEMBER_HAT.toString(), name: 'Member' } }] });
     await whoamiHandler.handler(baseArgv());
-
     const payload = (output.json as any).mock.calls[0][0];
     expect(payload.org.member).toBe(false);
-    expect(payload.org.memberSource).toBe('subgraph');
+    expect(payload.org.hats).toEqual([]);
     expect(mocks.tryAggregate).not.toHaveBeenCalled();
   });
 
-  it('a TOGGLED-OFF member hat is not membership, even though currentHatIds still lists it', async () => {
-    // The divergence the live sweep could not sample: there is currently no
-    // inactive hat on Gnosis. Hats does NOT burn the token when a hat is
-    // toggled off, so User.currentHatIds keeps listing it while
-    // Hats.isWearerOfHat/balanceOf return false for EVERY wearer. Reading
-    // currentHatIds alone would report `member: true` here.
-    installSubgraph({
-      orgData: orgDataFixture({
-        organization: {
-          id: ORG_ID,
-          name: 'Test Org',
-          roles: [{ hatId: MEMBER_HAT.toString(), name: 'Member', hat: { active: false } }],
-        },
-      }),
-    });
-
+  it('an empty authority membership list does not inherit historical Active status', async () => {
+    installSubgraph({ memberships: [] });
     await whoamiHandler.handler(baseArgv());
-
-    const payload = (output.json as any).mock.calls[0][0];
-    expect(payload.org.member).toBe(false);
-  });
-
-  it('an UNKNOWN active flag defers to the chain rather than guessing membership', async () => {
-    // Member hat that is not one of the org's indexed roles: the toggle state
-    // is simply not in the payload, so the indexed answer must not be invented.
-    installSubgraph({
-      orgData: orgDataFixture({
-        organization: { id: ORG_ID, name: 'Test Org', roles: [] },
-      }),
-    });
-
-    await whoamiHandler.handler(baseArgv());
-
-    // Falls through to the authoritative Hats.balanceOf batch.
-    expect(mocks.tryAggregate).toHaveBeenCalled();
-    const payload = (output.json as any).mock.calls[0][0];
-    expect(payload.org.memberSource).toBe('on-chain hat check');
-  });
-
-  it("no member hats configured: maps the enum — 'Inactive' → member: false (regression: truthiness would say true)", async () => {
-    installSubgraph({
-      orgData: orgDataFixture({
-        quickJoinContract: {
-          id: QJ_ADDR.toLowerCase(),
-          accountRegistry: REGISTRY_ADDR,
-          hatsContract: HATS_ADDR,
-          memberHatIds: [],
-        },
-        user: {
-          id: `${ORG_ID}-${WALLET.toLowerCase()}`,
-          membershipStatus: 'Inactive',
-          participationTokenBalance: '0',
-          currentHatIds: [],
-        },
-      }),
-    });
-
-    await whoamiHandler.handler(baseArgv());
-
-    const payload = (output.json as any).mock.calls[0][0];
-    expect(payload.org.member).toBe(false);
-    expect(payload.org.memberSource).toBe('subgraph');
-  });
-
-  it("no member hats configured: 'Active' → member: true", async () => {
-    installSubgraph({
-      orgData: orgDataFixture({
-        quickJoinContract: {
-          id: QJ_ADDR.toLowerCase(),
-          accountRegistry: REGISTRY_ADDR,
-          hatsContract: HATS_ADDR,
-          memberHatIds: [],
-        },
-      }),
-    });
-
-    await whoamiHandler.handler(baseArgv());
-
-    const payload = (output.json as any).mock.calls[0][0];
-    expect(payload.org.member).toBe(true);
-    expect(payload.org.memberSource).toBe('subgraph');
-  });
-
-  it('--on-chain: re-verifies membership with Hats.balanceOf, overriding the indexer', async () => {
-    installChain({ hatBalance: ethers.BigNumber.from(0) });
-
-    await whoamiHandler.handler(baseArgv({ 'on-chain': true }));
-
-    const payload = (output.json as any).mock.calls[0][0];
-    // The subgraph says the member hat is worn; Hats.balanceOf says 0 (a
-    // dynamically revoked eligibility burns no token, so the indexer cannot
-    // see it). The chain wins.
-    expect(payload.org.member).toBe(false);
-    expect(payload.org.memberSource).toBe('on-chain hat check');
-
-    const hatCalls = mocks.tryAggregate.mock.calls
-      .flatMap((c: any[]) => c[1] as Call[])
-      .filter((call: Call) => call.data.startsWith(HATS_IFACE.getSighash('balanceOf')));
-    expect(hatCalls).toHaveLength(1);
-    expect(hatCalls[0].to).toBe(HATS_ADDR);
-  });
-
-  it('--on-chain with an unreadable Hats contract falls back to the indexer rather than "unknown"', async () => {
-    installChain({ hatReadFails: true });
-
-    await whoamiHandler.handler(baseArgv({ 'on-chain': true }));
-
-    const payload = (output.json as any).mock.calls[0][0];
-    expect(payload.org.member).toBe(true);
-    expect(payload.org.memberSource).toBe('subgraph');
-  });
-
-  it('no indexed User (subgraph gap): falls back to the on-chain member-hat check', async () => {
-    installSubgraph({ orgData: orgDataFixture({ user: null }) });
-    installChain({ hatBalance: ethers.BigNumber.from(1) });
-
-    await whoamiHandler.handler(baseArgv());
-
-    const payload = (output.json as any).mock.calls[0][0];
-    expect(payload.org.member).toBe(true);
-    expect(payload.org.memberSource).toBe('on-chain hat check');
+    expect((output.json as any).mock.calls[0][0].org.member).toBe(false);
   });
 
   it('no indexed account: falls back to registry.getUsername on the indexed registry address', async () => {
@@ -556,7 +429,7 @@ describe('pop user whoami — identity + org standing', () => {
     expect(payload.orgError).toContain('not found');
   });
 
-  it('dead subgraph: every org field degrades to the on-chain reads instead of throwing', async () => {
+  it('dead subgraph: identity remains readable while authority membership is unknown', async () => {
     mocks.query.mockRejectedValue(new Error('subgraph 503'));
     installChain({ username: 'argus', hatBalance: ethers.BigNumber.from(1), ptBalance: PT_BALANCE });
 
@@ -564,8 +437,9 @@ describe('pop user whoami — identity + org standing', () => {
 
     const payload = (output.json as any).mock.calls[0][0];
     expect(payload.username).toBe('argus');
-    expect(payload.org.member).toBe(true);
-    expect(payload.org.memberSource).toBe('on-chain hat check');
+    expect(payload.org.member).toBe(null);
+    expect(payload.org.memberSource).toBe('authority index unavailable');
+    expect(payload.orgError).toContain('503');
     expect(payload.org.ptBalance.wei).toBe(PT_BALANCE.toString());
     expect(payload.balance.wei).toBe(BALANCE_WEI.toString());
   });
@@ -582,45 +456,11 @@ describe('pop user whoami — identity + org standing', () => {
       network: 'Sepolia (11155111)',
     }));
     expect(output.keyValueBlock).toHaveBeenCalledWith('Org standing', expect.objectContaining({
-      member: 'yes (subgraph)',
+      member: 'yes (membership-authority subgraph)',
       hats: `Member (${MEMBER_HAT.toString()})`,
       'pending token requests': 2,
     }));
     expect(output.json).not.toHaveBeenCalled();
     logSpy.mockRestore();
-  });
-});
-
-describe('resolveHatName — decimal/hex tolerant matching', () => {
-  const roles = [
-    { hatId: MEMBER_HAT.toString(), name: 'Member' },
-    { hatId: '12', name: 'Reviewer' },
-  ];
-
-  it('matches identical decimal strings', () => {
-    expect(resolveHatName(MEMBER_HAT.toString(), roles)).toBe('Member');
-  });
-
-  it('matches a hex-form worn hat against the decimal role entry', () => {
-    expect(resolveHatName(MEMBER_HAT.toHexString(), roles)).toBe('Member');
-  });
-
-  it('returns undefined for unknown hats without throwing on non-numeric entries', () => {
-    expect(resolveHatName('99', [...roles, { hatId: 'not-a-number', name: 'Broken' }])).toBeUndefined();
-  });
-});
-
-describe('wearsAnyMemberHat — uint256-safe membership predicate', () => {
-  it('matches across decimal/hex spellings of the same uint256', () => {
-    expect(wearsAnyMemberHat([MEMBER_HAT.toHexString()], [MEMBER_HAT.toString()])).toBe(true);
-  });
-
-  it('is false when none of the member hats are worn', () => {
-    expect(wearsAnyMemberHat(['5', '6'], [MEMBER_HAT.toString()])).toBe(false);
-  });
-
-  it('is false for an empty worn list and skips unparseable entries', () => {
-    expect(wearsAnyMemberHat([], [MEMBER_HAT.toString()])).toBe(false);
-    expect(wearsAnyMemberHat(['nope'], ['also-nope', MEMBER_HAT.toString()])).toBe(false);
   });
 });

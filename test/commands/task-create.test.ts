@@ -217,26 +217,11 @@ describe('pop task create — v6/legacy signature selection', () => {
     expect(fields.completionWindowSeconds).toBeUndefined();
   });
 
-  it('legacy org without flags: 7-arg createTask on a LEGACY_TM_FRAGMENTS contract that still parses TaskCreated', async () => {
+  it('old task implementations are rejected without a seven-argument fallback', async () => {
     mocks.detectTaskManagerFeatures.mockResolvedValue(LEGACY_FEATURES);
-
-    await createHandler.handler(baseArgv());
-
-    expect(mocks.executeTx).toHaveBeenCalledTimes(1);
-    const [contract, method, args] = mocks.executeTx.mock.calls[0];
-    expect(method).toBe('createTask');
-    expect(args).toHaveLength(7);
-    expect(args[6]).toBe(false);
-
-    const fnSigs = Object.keys(contract.interface.functions);
-    expect(fnSigs).toContain(SIG_LEGACY);
-    expect(fnSigs).not.toContain(SIG_V6);
-    // Legacy fragments must include the TaskCreated event so executeTx's
-    // receipt log parsing can still extract the created task id
-    expect(() => contract.interface.getEvent('TaskCreated')).not.toThrow();
-    expect(() => contract.interface.encodeFunctionData('createTask', args)).not.toThrow();
-
-    expect(output.success).toHaveBeenCalledWith('Task created', expect.objectContaining({ taskId: '42' }));
+    await expect(createHandler.handler(baseArgv())).rejects.toBeInstanceOf(ExitError);
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+    expect(mocks.executeTx).not.toHaveBeenCalled();
   });
 
   it('legacy org + --deadline: exits EXIT.PRECONDITION with featureUnavailable text before any pin/tx', async () => {
@@ -247,7 +232,7 @@ describe('pop task create — v6/legacy signature selection', () => {
     expect(exitSpy.mock.calls[0][0]).toBe(EXIT.PRECONDITION);
     expect(output.error).toHaveBeenCalledWith(expect.stringContaining('task deadlines is unavailable'));
     expect(output.error).toHaveBeenCalledWith(expect.stringContaining('predates TaskManager v6'));
-    expect(output.error).toHaveBeenCalledWith(expect.stringContaining('Re-run without --deadline/--completion-window'));
+    expect(output.error).toHaveBeenCalledWith(expect.stringContaining('Upgrade the organization TaskManager'));
     expect(mocks.executeTx).not.toHaveBeenCalled();
     expect(mocks.pinJson).not.toHaveBeenCalled();
   });
@@ -291,7 +276,7 @@ describe('pop task create — v6/legacy signature selection', () => {
     expect(mocks.executeTx).not.toHaveBeenCalled();
   });
 
-  it('--dry-run passes through on both the v6 and legacy paths', async () => {
+  it('--dry-run uses only the supported task signature', async () => {
     mocks.executeTx.mockResolvedValue({
       success: true,
       dryRun: true,
@@ -304,13 +289,13 @@ describe('pop task create — v6/legacy signature selection', () => {
     await createHandler.handler(baseArgv({ dryRun: true, deadline: String(DEADLINE_TS) }));
 
     mocks.detectTaskManagerFeatures.mockResolvedValueOnce(LEGACY_FEATURES);
-    await createHandler.handler(baseArgv({ dryRun: true }));
+    await expect(createHandler.handler(baseArgv({ dryRun: true }))).rejects.toBeInstanceOf(ExitError);
 
-    expect(mocks.executeTx).toHaveBeenCalledTimes(2);
+    expect(mocks.executeTx).toHaveBeenCalledTimes(1);
     expect(mocks.executeTx.mock.calls[0][2]).toHaveLength(9);
     expect(mocks.executeTx.mock.calls[0][3]).toEqual({ dryRun: true });
-    expect(mocks.executeTx.mock.calls[1][2]).toHaveLength(7);
-    expect(mocks.executeTx.mock.calls[1][3]).toEqual({ dryRun: true });
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+    expect(mocks.executeTx.mock.calls[0][2][2]).toBe(ethers.constants.HashZero);
   });
 });
 

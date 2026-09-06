@@ -2,8 +2,14 @@
   "orgName": "My DAO",
   "description": "A decentralized organization built on POP",
   "links": [
-    { "name": "Website", "url": "https://example.com" },
-    { "name": "Discord", "url": "https://discord.gg/example" }
+    {
+      "name": "Website",
+      "url": "https://example.com"
+    },
+    {
+      "name": "Discord",
+      "url": "https://discord.gg/example"
+    }
   ],
   "autoUpgrade": true,
   "hybridVoting": {
@@ -13,14 +19,14 @@
         "strategy": "DIRECT",
         "slicePct": 50,
         "quadratic": false,
-        "hatIds": []
+        "subjectIds": []
       },
       {
         "strategy": "ERC20_BAL",
         "slicePct": 50,
         "quadratic": false,
         "minBalance": "1",
-        "hatIds": []
+        "subjectIds": []
       }
     ]
   },
@@ -31,35 +37,70 @@
     {
       "name": "Admin",
       "canVote": true,
-      "defaults": { "eligible": true, "standing": true },
-      "distribution": { "mintToDeployer": true },
-      "hatConfig": { "maxSupply": 10, "mutableHat": true }
+      "distribution": {
+        "mintToDeployer": true
+      },
+      "maxMembers": 10,
+      "open": false
     },
     {
       "name": "Member",
       "canVote": true,
-      "defaults": { "eligible": true, "standing": true },
-      "distribution": { "mintToDeployer": true },
-      "hatConfig": { "maxSupply": 1000, "mutableHat": true }
+      "distribution": {
+        "mintToDeployer": true
+      },
+      "maxMembers": 1000,
+      "open": true
     },
     {
       "name": "Contributor",
       "canVote": false,
-      "defaults": { "eligible": true, "standing": true },
-      "distribution": { "mintToDeployer": false },
-      "hatConfig": { "maxSupply": 1000, "mutableHat": true }
+      "distribution": {
+        "mintToDeployer": false
+      },
+      "maxMembers": 1000,
+      "open": false
     }
   ],
   "roleAssignments": {
-    "quickJoinRoles": [1],
-    "tokenMemberRoles": [0, 1, 2],
-    "tokenApproverRoles": [0],
-    "taskCreatorRoles": [0, 1],
-    "educationCreatorRoles": [0],
-    "educationMemberRoles": [0, 1, 2],
-    "hybridProposalCreatorRoles": [0, 1],
-    "ddVotingRoles": [0, 1],
-    "ddCreatorRoles": [0, 1]
+    "quickJoinRoles": [
+      1
+    ],
+    "tokenMemberRoles": [
+      0,
+      1,
+      2
+    ],
+    "tokenApproverRoles": [
+      0
+    ],
+    "taskCreatorRoles": [
+      0,
+      1
+    ],
+    "educationCreatorRoles": [
+      0
+    ],
+    "educationMemberRoles": [
+      0,
+      1,
+      2
+    ],
+    "hybridProposalCreatorRoles": [
+      0,
+      1
+    ],
+    "ddVotingRoles": [
+      0,
+      1
+    ],
+    "ddCreatorRoles": [
+      0,
+      1
+    ]
   },
-  "educationHub": { "enabled": true }
+  "educationHub": {
+    "enabled": true
+  },
+  "groups": []
 }

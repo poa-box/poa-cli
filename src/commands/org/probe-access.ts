@@ -453,7 +453,7 @@ export const probeAccessHandler = {
         '  pop org probe-access --address 0x409f51250dc5c66bb1d6952f947d841192f1140e \\\n' +
         '    --abi src/abi/PaymentManager.json\n' +
         '  pop org probe-access --address 0xb37a97c8136f6d300c399162cefab5b61c675caf \\\n' +
-        '    --abi src/abi/EligibilityModuleNew.json --selectors transferSuperAdmin,setUserJoinTime\n'
+        '    --abi src/abi/MembershipAuthority.json --selectors grant,setPerm\n'
       ),
 
   handler: async (argv: ArgumentsCamelCase<ProbeAccessArgs>) => {

@@ -155,7 +155,7 @@ const MODULE_LABELS: Array<{ key: keyof OrgModules; label: string; abi: string }
   { key: 'educationHubAddress', label: 'EducationHub', abi: 'EducationHubNew' },
   { key: 'executorAddress', label: 'Executor', abi: 'Executor' },
   { key: 'quickJoinAddress', label: 'QuickJoin', abi: 'QuickJoinNew' },
-  { key: 'eligibilityModuleAddress', label: 'EligibilityModule', abi: 'EligibilityModuleNew' },
+  { key: 'membershipAuthorityAddress', label: 'MembershipAuthority', abi: 'MembershipAuthority' },
   { key: 'paymentManagerAddress', label: 'PaymentManager', abi: 'PaymentManager' },
   { key: 'zkEmailInvitesAddress', label: 'ZkEmailInvites', abi: 'ZkEmailInvites' },
 ];

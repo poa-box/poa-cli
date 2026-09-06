@@ -320,7 +320,7 @@ describe('doc-commands: documented CLI invocations match the command tree', () =
     // 14 human domains — agent and brain moved to @poa-box/agent and are no
     // longer part of this package's documented surface; mcp is the MCP
     // server surface for integrators.
-    expect(tree).toHaveLength(14);
+    expect(tree).toHaveLength(15);
     expect(domains.has('mcp')).toBe(true);
     expect(domains.get('task')?.commands.has('create')).toBe(true);
     expect(domains.get('zkemail')?.commands.has('build-allowlist')).toBe(true);

@@ -176,66 +176,13 @@ export const EducationHubNewAbi = [
         "internalType": "address"
       },
       {
-        "name": "hatsAddr",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "executorAddr",
         "type": "address",
         "internalType": "address"
-      },
-      {
-        "name": "creatorHatIds",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "memberHatIds",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "isCreatorHat",
-    "inputs": [
-      {
-        "name": "hatId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isMemberHat",
-    "inputs": [
-      {
-        "name": "hatId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -259,6 +206,19 @@ export const EducationHubNewAbi = [
         "name": "",
         "type": "uint256[]",
         "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "membershipAuthority",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -311,24 +271,6 @@ export const EducationHubNewAbi = [
   },
   {
     "type": "function",
-    "name": "setCreatorHatAllowed",
-    "inputs": [
-      {
-        "name": "h",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "ok",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "setExecutor",
     "inputs": [
       {
@@ -355,17 +297,12 @@ export const EducationHubNewAbi = [
   },
   {
     "type": "function",
-    "name": "setMemberHatAllowed",
+    "name": "setMembershipAuthority",
     "inputs": [
       {
-        "name": "h",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "ok",
-        "type": "bool",
-        "internalType": "bool"
+        "name": "authority",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -434,6 +371,19 @@ export const EducationHubNewAbi = [
   },
   {
     "type": "event",
+    "name": "ConfigAdminSet",
+    "inputs": [
+      {
+        "name": "admin",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "CreatorHatSet",
     "inputs": [
       {
@@ -460,25 +410,6 @@ export const EducationHubNewAbi = [
         "type": "address",
         "indexed": true,
         "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "HatToggled",
-    "inputs": [
-      {
-        "name": "hatId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "allowed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
       }
     ],
     "anonymous": false
@@ -524,6 +455,19 @@ export const EducationHubNewAbi = [
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MembershipAuthoritySet",
+    "inputs": [
+      {
+        "name": "authority",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       }
     ],
     "anonymous": false

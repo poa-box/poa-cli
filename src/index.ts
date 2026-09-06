@@ -23,6 +23,7 @@ import { registerVouchCommands } from './commands/vouch';
 import { registerTokenCommands } from './commands/token';
 import { registerTreasuryCommands } from './commands/treasury';
 import { registerPaymasterCommands } from './commands/paymaster';
+import { registerGroupCommands } from './commands/group';
 import { registerRoleCommands } from './commands/role';
 import { registerZkEmailCommands } from './commands/zkemail';
 import { registerConfigCommands } from './commands/config';
@@ -104,7 +105,8 @@ async function main() {
     .command('token <action>', 'Participation token requests', registerTokenCommands)
     .command('treasury <action>', 'Treasury & distributions', registerTreasuryCommands)
     .command('paymaster <action>', 'Gas sponsorship (ERC-4337)', registerPaymasterCommands)
-    .command('role <action>', 'Role applications', registerRoleCommands)
+    .command('role <action>', 'Authority roles and membership', registerRoleCommands)
+    .command('group <action>', 'Authority groups', registerGroupCommands)
     .command('zkemail <action>', 'ZK Email role invites (allowlists)', registerZkEmailCommands)
     .command('config <action>', 'View and validate configuration', registerConfigCommands)
     .command('mcp <action>', 'Serve the CLI as an MCP server for AI integrations', registerMcpCommands)

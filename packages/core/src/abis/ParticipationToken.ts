@@ -433,63 +433,10 @@ export const ParticipationTokenAbi = [
         "name": "symbol_",
         "type": "string",
         "internalType": "string"
-      },
-      {
-        "name": "hatsAddr",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "initialMemberHats",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "initialApproverHats",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "isApproverHat",
-    "inputs": [
-      {
-        "name": "hatId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isMemberHat",
-    "inputs": [
-      {
-        "name": "hatId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -513,6 +460,19 @@ export const ParticipationTokenAbi = [
         "name": "",
         "type": "uint256[]",
         "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "membershipAuthority",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -653,24 +613,6 @@ export const ParticipationTokenAbi = [
   },
   {
     "type": "function",
-    "name": "setApproverHatAllowed",
-    "inputs": [
-      {
-        "name": "h",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "ok",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "setEducationHub",
     "inputs": [
       {
@@ -684,17 +626,12 @@ export const ParticipationTokenAbi = [
   },
   {
     "type": "function",
-    "name": "setMemberHatAllowed",
+    "name": "setMembershipAuthority",
     "inputs": [
       {
-        "name": "h",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "ok",
-        "type": "bool",
-        "internalType": "bool"
+        "name": "authority",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -877,6 +814,19 @@ export const ParticipationTokenAbi = [
   },
   {
     "type": "event",
+    "name": "ConfigAdminSet",
+    "inputs": [
+      {
+        "name": "admin",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "DelegateChanged",
     "inputs": [
       {
@@ -946,25 +896,6 @@ export const ParticipationTokenAbi = [
   },
   {
     "type": "event",
-    "name": "HatToggled",
-    "inputs": [
-      {
-        "name": "hatId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "allowed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Initialized",
     "inputs": [
       {
@@ -991,6 +922,19 @@ export const ParticipationTokenAbi = [
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MembershipAuthoritySet",
+    "inputs": [
+      {
+        "name": "authority",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       }
     ],
     "anonymous": false

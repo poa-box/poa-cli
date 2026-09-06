@@ -1,3 +1,4 @@
+import { refreshAuthorityUsers } from '../../lib/authority';
 /**
  * pop org status — quick org health summary (+ module version panel).
  *
@@ -45,7 +46,7 @@ import { fetchRegisteredImplementations, loadImplementationVersions } from '../.
 import type { VersionIndex } from '../../lib/versions';
 import { tryAggregate } from '../../lib/multicall';
 import { resolveNetworkConfig } from '../../config/networks';
-import { FETCH_ORG_ACTIVITY } from '../../queries/activity';
+import { FETCH_ORG_ACTIVITY, normalizeAuthorityVouches } from '../../queries/activity';
 import { FETCH_INFRASTRUCTURE_ADDRESSES } from '../../queries/infrastructure';
 import type { InfrastructureAddresses } from '../../queries/infrastructure';
 import {
@@ -81,7 +82,7 @@ export const MODULE_TYPES: Array<{ key: keyof OrgModules; label: string; typeNam
   { key: 'educationHubAddress', label: 'EducationHub', typeName: 'EducationHub' },
   { key: 'paymentManagerAddress', label: 'PaymentManager', typeName: 'PaymentManager' },
   { key: 'quickJoinAddress', label: 'QuickJoin', typeName: 'QuickJoin' },
-  { key: 'eligibilityModuleAddress', label: 'EligibilityModule', typeName: 'EligibilityModule' },
+  { key: 'membershipAuthorityAddress', label: 'MembershipAuthority', typeName: 'MembershipAuthority' },
   { key: 'zkEmailInvitesAddress', label: 'ZkEmailInvites', typeName: 'ZkEmailInvites' },
 ];
 
@@ -284,10 +285,11 @@ export const statusHandler = {
       const result = await query<any>(FETCH_ORG_ACTIVITY, {
         orgId: modules.orgId,
         hybridVotingId: modules.hybridVotingAddress || '',
-        eligibilityModuleId: modules.eligibilityModuleAddress || '',
+        authorityId: modules.membershipAuthorityAddress || '',
         tokenAddress: modules.participationTokenAddress || '',
       }, argv.chain);
 
+      result.activeVouches = normalizeAuthorityVouches(result.activeVouches ?? []);
       const org = result.organization;
       if (!org) {
         spin.stop();
@@ -295,6 +297,8 @@ export const statusHandler = {
         process.exit(1);
         return;
       }
+
+      await refreshAuthorityUsers(org, modules.orgId, argv.chain);
 
       // ── Module version panel (best-effort; --fast skips) ──────────────
       let versionRows: ModuleVersionRow[] | null = null;

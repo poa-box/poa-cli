@@ -1,21 +1,4 @@
-/**
- * User & account reads — typed wrappers over graph/documents/user.
- *
- * Serves the read paths of `pop user whoami` (src/commands/user/whoami.ts),
- * `pop user profile` (src/commands/user/profile.ts), and the pre-write reads
- * of `pop user join` / `pop user claim-hats` / `pop user update-profile`.
- *
- * Usernames and profile metadata are HOME-CHAIN account-registry state
- * (that's where `pop user register` writes and `pop user profile` reads), so
- * the account-scoped helpers default to HOME_CHAIN_ID rather than the
- * client's default chain. An explicit chainId always wins.
- *
- * A null row from any of these means NOT-INDEXED, not nonexistent — the CLI
- * keeps live RPC fallbacks (getUsername, balanceOf, Hats.balanceOf) for every
- * decision where that difference matters, and `isAccountAuthoritative`
- * (re-exported below) is the guard that says when an indexed account may
- * stand in for a live registry read.
- */
+/** Account/token history is retained; current organization membership comes from MembershipAuthority. */
 
 import { ethers } from 'ethers';
 import type { GraphClient } from '../graph/client';
@@ -33,6 +16,7 @@ import {
 } from '../graph/documents/user';
 import { HOME_CHAIN_ID } from '../chains';
 import { resolveOrgId } from './resolve';
+import { readAuthorityUsers, readAuthorityRows, FETCH_AUTHORITY_SUBJECTS, FETCH_AUTHORITY_MEMBERSHIPS } from './authority';
 
 // Pure selection helpers live in the documents module — re-exported here so
 // read-layer consumers get the guard next to the reads it guards.
@@ -146,13 +130,7 @@ export async function getQuickJoinAccount(
   };
 }
 
-/**
- * Just the QuickJoin module pointers (accountRegistry / hatsContract /
- * memberHatIds) — the address read of `pop user claim-hats`
- * (src/commands/user/claim-hats.ts). The pointers are static deploy-time
- * values, byte-verified against the live eth_calls on Gnosis and Arbitrum;
- * the claim pre-flight probes themselves stay on-chain in the CLI.
- */
+/** Read the indexed account registry pointer for QuickJoin. */
 export async function getQuickJoinModules(
   client: GraphClient,
   quickJoinAddress: string,
@@ -211,6 +189,8 @@ export interface OrgUser {
   id: string;
   address: string;
   participationTokenBalance: string | null;
+  /** False when authority membership exists but its historical User is not indexed. */
+  historyIndexed?: boolean;
   membershipStatus: string | null;
   currentHatIds: string[] | null;
   joinMethod: string | null;
@@ -264,8 +244,10 @@ export async function getOrgUserProfile(
     account: { id: string; username: string } | null;
   }>(userDataTiers(orgUserID, address.toLowerCase()), { chainId });
 
+  const users = await readAuthorityUsers(client, orgId, data.user ? [data.user] : [], chainId);
+  const currentUser = users.find(user => user.address.toLowerCase() === address.toLowerCase());
   return {
-    user: data.user ?? null,
+    user: currentUser ?? null,
     account: data.account ?? null,
     hasChurnCounters: tierIndex === 0,
   };
@@ -276,7 +258,7 @@ export interface WhoamiOrgData {
   organization: {
     id: string;
     name: string | null;
-    roles: Array<{ hatId: string; name: string | null; hat: { active: boolean } | null }>;
+    roles: Array<{ hatId: string; subjectId: string; name: string | null }>;
   } | null;
   quickJoinContract: IndexedQuickJoin | null;
   account: IndexedAccount | null;
@@ -291,21 +273,7 @@ export interface WhoamiOrgData {
   tokenRequests: Array<{ id: string }>;
 }
 
-/**
- * One-round-trip org snapshot for `pop user whoami`
- * (src/commands/user/whoami.ts): org name + role hats (with the Hats toggle
- * flag), QuickJoin pointers, the caller's account/PT balance/org-user row,
- * and their pending token requests. Variables are composed exactly as the
- * CLI does — AddressZero placeholders keep the document valid when a module
- * is missing (those selections then simply return null).
- *
- * Interpretation stays with the caller (the CLI keeps RPC fallbacks for
- * username/PT/membership): gate `account.username` with
- * isAccountAuthoritative(account, quickJoinContract?.accountRegistry), AND
- * membership derived from currentHatIds with the role's `hat.active` flag —
- * a toggled-off hat still appears in currentHatIds because Hats does not
- * burn the token.
- */
+/** Account/token history merged with current authority roles and membership. */
 export async function getWhoamiOrgData(
   client: GraphClient,
   params: {
@@ -320,6 +288,7 @@ export async function getWhoamiOrgData(
   },
   chainId?: number
 ): Promise<WhoamiOrgData | null> {
+  const orgId = await resolveOrgId(client, params.orgId, chainId);
   const address = params.address.toLowerCase();
   const tokenAddress = params.participationTokenAddress || ethers.constants.AddressZero;
   const quickJoinAddress = (params.quickJoinAddress || ethers.constants.AddressZero).toLowerCase();
@@ -327,8 +296,8 @@ export async function getWhoamiOrgData(
   const result = await client.query<WhoamiOrgData>(
     FETCH_WHOAMI_ORG_DATA,
     {
-      orgId: params.orgId,
-      orgUserID: `${params.orgId}-${address}`,
+      orgId,
+      orgUserID: `${orgId}-${address}`,
       tokenAddress,
       userAddress: address,
       quickJoinAddress,
@@ -337,5 +306,13 @@ export async function getWhoamiOrgData(
     },
     chainId
   );
-  return result ?? null;
+  if (!result) return null;
+  const [subjects, memberships] = await Promise.all([
+    readAuthorityRows(client, orgId, FETCH_AUTHORITY_SUBJECTS, 'subjects', chainId),
+    readAuthorityRows(client, orgId, FETCH_AUTHORITY_MEMBERSHIPS, 'subjectMemberships', chainId),
+  ]);
+  const current = memberships.filter(row => row.user.toLowerCase() === address && row.isMember && row.subject.kind === 'Role');
+  if (result.organization) result.organization.roles = subjects.filter(subject => subject.kind === 'Role').map(subject => ({ hatId: subject.subjectId, subjectId: subject.subjectId, name: subject.name }));
+  if (result.user) result.user = { ...result.user, membershipStatus: current.length ? 'Active' : 'Inactive', currentHatIds: current.map(row => row.subject.subjectId) };
+  return result;
 }

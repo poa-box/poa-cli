@@ -27,7 +27,7 @@ const abiDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'ab
 const MAPPING = {
   TaskManager: 'TaskManagerNew',
   QuickJoin: 'QuickJoinNew',
-  EligibilityModule: 'EligibilityModuleNew',
+  MembershipAuthority: 'MembershipAuthority',
   HybridVoting: 'HybridVotingNew',
   DirectDemocracyVoting: 'DirectDemocracyVotingNew',
   EducationHub: 'EducationHubNew',
@@ -40,7 +40,6 @@ const MAPPING = {
   PoaManager: 'PoaManager',
   UniversalAccountRegistry: 'UniversalAccountRegistry',
   ImplementationRegistry: 'ImplementationRegistry',
-  ToggleModule: 'ToggleModule',
   PasskeyAccount: 'PasskeyAccount',
   PasskeyAccountFactory: 'PasskeyAccountFactory',
   ZkEmailInvites: 'ZkEmailInvites',
@@ -56,13 +55,13 @@ const MAPPING = {
 const MERGE_COMPANIONS = {
   HybridVoting: ['HybridVotingCore', 'HybridVotingProposals', 'HybridVotingConfig', 'VotingErrors', 'VotingMath'],
   DirectDemocracyVoting: ['VotingErrors', 'VotingMath'],
-  TaskManager: ['TaskPerm', 'BudgetLib', 'ValidationLib', 'HatManager'],
+  TaskManager: ['TaskPerm', 'BudgetLib', 'ValidationLib'],
   PaymasterHub: ['PaymasterHubErrors', 'PaymasterGraceLib', 'PaymasterPostOpLib', 'PaymasterCalldataLib'],
-  EligibilityModule: ['ValidationLib', 'HatManager'],
-  EducationHub: ['ValidationLib', 'HatManager'],
-  ParticipationToken: ['ValidationLib', 'HatManager'],
+  MembershipAuthority: ['MembershipAuthorityLogic', 'MembershipAuthoritySeed'],
+  EducationHub: ['ValidationLib'],
+  ParticipationToken: ['ValidationLib'],
   QuickJoin: ['ValidationLib'],
-  Executor: ['ValidationLib', 'HatManager'],
+  Executor: ['ValidationLib'],
   OrgDeployer: ['ModuleDeploymentLib', 'BeaconDeploymentLib', 'ModuleTypes', 'RoleResolver'],
 };
 

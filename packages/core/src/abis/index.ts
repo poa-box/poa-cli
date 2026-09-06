@@ -4,10 +4,10 @@
 import { DirectDemocracyVotingNewAbi } from './DirectDemocracyVotingNew';
 import { ERC20Abi } from './ERC20';
 import { EducationHubNewAbi } from './EducationHubNew';
-import { EligibilityModuleNewAbi } from './EligibilityModuleNew';
 import { ExecutorAbi } from './Executor';
 import { HybridVotingNewAbi } from './HybridVotingNew';
 import { ImplementationRegistryAbi } from './ImplementationRegistry';
+import { MembershipAuthorityAbi } from './MembershipAuthority';
 import { OrgDeployerNewAbi } from './OrgDeployerNew';
 import { OrgRegistryAbi } from './OrgRegistry';
 import { ParticipationTokenAbi } from './ParticipationToken';
@@ -18,7 +18,6 @@ import { PaymentManagerAbi } from './PaymentManager';
 import { PoaManagerAbi } from './PoaManager';
 import { QuickJoinNewAbi } from './QuickJoinNew';
 import { TaskManagerNewAbi } from './TaskManagerNew';
-import { ToggleModuleAbi } from './ToggleModule';
 import { UniversalAccountRegistryAbi } from './UniversalAccountRegistry';
 import { ZkEmailInvitesAbi } from './ZkEmailInvites';
 import { AaveGovernanceV2Abi } from './external/AaveGovernanceV2';
@@ -34,10 +33,10 @@ import { SolidlyVotingEscrowAbi } from './external/SolidlyVotingEscrow';
 export { DirectDemocracyVotingNewAbi };
 export { ERC20Abi };
 export { EducationHubNewAbi };
-export { EligibilityModuleNewAbi };
 export { ExecutorAbi };
 export { HybridVotingNewAbi };
 export { ImplementationRegistryAbi };
+export { MembershipAuthorityAbi };
 export { OrgDeployerNewAbi };
 export { OrgRegistryAbi };
 export { ParticipationTokenAbi };
@@ -48,7 +47,6 @@ export { PaymentManagerAbi };
 export { PoaManagerAbi };
 export { QuickJoinNewAbi };
 export { TaskManagerNewAbi };
-export { ToggleModuleAbi };
 export { UniversalAccountRegistryAbi };
 export { ZkEmailInvitesAbi };
 export { AaveGovernanceV2Abi };
@@ -66,10 +64,10 @@ export const ALL_ABIS: Record<string, readonly unknown[]> = {
   "DirectDemocracyVotingNew": DirectDemocracyVotingNewAbi,
   "ERC20": ERC20Abi,
   "EducationHubNew": EducationHubNewAbi,
-  "EligibilityModuleNew": EligibilityModuleNewAbi,
   "Executor": ExecutorAbi,
   "HybridVotingNew": HybridVotingNewAbi,
   "ImplementationRegistry": ImplementationRegistryAbi,
+  "MembershipAuthority": MembershipAuthorityAbi,
   "OrgDeployerNew": OrgDeployerNewAbi,
   "OrgRegistry": OrgRegistryAbi,
   "ParticipationToken": ParticipationTokenAbi,
@@ -80,7 +78,6 @@ export const ALL_ABIS: Record<string, readonly unknown[]> = {
   "PoaManager": PoaManagerAbi,
   "QuickJoinNew": QuickJoinNewAbi,
   "TaskManagerNew": TaskManagerNewAbi,
-  "ToggleModule": ToggleModuleAbi,
   "UniversalAccountRegistry": UniversalAccountRegistryAbi,
   "ZkEmailInvites": ZkEmailInvitesAbi,
 };

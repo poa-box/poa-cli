@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => ({
   checkGasBalance: vi.fn(),
   readTokenGates: vi.fn(),
   readTokenRequest: vi.fn(),
-  checkWearsAnyHat: vi.fn(),
+  checkTokenPermission: vi.fn(),
 }));
 
 vi.mock('../../src/lib/tx', () => ({ executeTx: mocks.executeTx }));
@@ -37,7 +37,7 @@ vi.mock('../../src/lib/preflight', () => ({
 vi.mock('../../src/commands/token/helpers', () => ({
   readTokenGates: mocks.readTokenGates,
   readTokenRequest: mocks.readTokenRequest,
-  checkWearsAnyHat: mocks.checkWearsAnyHat,
+  checkTokenPermission: mocks.checkTokenPermission,
 }));
 vi.mock('../../src/lib/output', () => {
   const makeSpinner = () => {
@@ -62,6 +62,7 @@ vi.mock('../../src/lib/output', () => {
 });
 
 import { ethers } from 'ethers';
+import { AUTHORITY_KEYS } from '../../packages/core/src/tx/authority';
 import { approveHandler } from '../../src/commands/token/approve';
 import { _clearWriteContextCacheForTest } from '../../src/lib/command';
 import { _setStreamsForTest } from '../../src/lib/prompt';
@@ -128,12 +129,12 @@ describe('pop token approve — destructive gate + mint pre-flight', () => {
     });
     mocks.readTokenRequest.mockResolvedValue(requestFixture());
     mocks.readTokenGates.mockResolvedValue({
-      hatsAddress: HATS_ADDR,
+      authorityAddress: HATS_ADDR,
       executor: EXECUTOR,
       memberHatIds: [ethers.BigNumber.from(1)],
       approverHatIds: [ethers.BigNumber.from(2)],
     });
-    mocks.checkWearsAnyHat.mockReturnValue({ label: 'approver role (approver hat)' });
+    mocks.checkTokenPermission.mockReturnValue({ label: 'approver role (approver hat)' });
     mocks.runPreflight.mockResolvedValue(undefined);
     mocks.checkGasBalance.mockReturnValue({ label: 'gas balance' });
     mocks.executeTx.mockResolvedValue({
@@ -205,13 +206,7 @@ describe('pop token approve — destructive gate + mint pre-flight', () => {
   it('approver-hat check is wired into the pre-flight for non-executor signers', async () => {
     await approveHandler.handler(baseArgv({ yes: true }));
 
-    expect(mocks.checkWearsAnyHat).toHaveBeenCalledWith(
-      expect.anything(),
-      HATS_ADDR,
-      WALLET,
-      [ethers.BigNumber.from(2)],
-      expect.objectContaining({ label: 'approver role (approver hat)' })
-    );
+    expect(mocks.checkTokenPermission).toHaveBeenCalledWith(HATS_ADDR, WALLET, AUTHORITY_KEYS.PT_APPROVE);
     const checks = mocks.runPreflight.mock.calls[0][1];
     expect(checks).toHaveLength(2); // gas + approver hat
   });

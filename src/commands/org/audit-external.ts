@@ -1,3 +1,4 @@
+import { refreshAuthorityUsers } from '../../lib/authority';
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { queryAllChains } from '../../lib/subgraph';
@@ -12,7 +13,7 @@ interface AuditExternalArgs {
 
 const AUDIT_QUERY = `
   query AuditOrg($name: String!) {
-    organizations(where: { name: $name }, first: 1) {
+    organizations(where: { name: $name, membershipAuthority_: { isRouterBound: true, cutoverAt_gt: "0" } }, first: 1) {
       id name deployedAt
       participationToken { totalSupply symbol }
       users(orderBy: participationTokenBalance, orderDirection: desc, first: 100) {
@@ -52,10 +53,12 @@ export const auditExternalHandler = {
 
       let org: any = null;
       let chainName = '';
+      let chainId: number | undefined;
       for (const r of results) {
         if (r.data?.organizations?.[0]) {
           org = r.data.organizations[0];
           chainName = r.name;
+          chainId = r.chainId;
           break;
         }
       }
@@ -66,6 +69,8 @@ export const auditExternalHandler = {
         process.exit(1);
         return;
       }
+
+      await refreshAuthorityUsers(org, org.id, chainId);
 
       // Analyze
       const members = (org.users || []).filter((u: any) => u.membershipStatus === 'Active');

@@ -1,8 +1,9 @@
+import { refreshAuthorityUsers } from '../../lib/authority';
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { query } from '../../lib/subgraph';
 import { resolveOrgModules } from '../../lib/resolve';
-import { FETCH_ORG_ACTIVITY } from '../../queries/activity';
+import { FETCH_ORG_ACTIVITY, normalizeAuthorityVouches } from '../../queries/activity';
 import { formatAddress } from '../../lib/encoding';
 import * as output from '../../lib/output';
 
@@ -30,18 +31,21 @@ export const activityHandler = {
       const result = await query<any>(FETCH_ORG_ACTIVITY, {
         orgId: modules.orgId,
         hybridVotingId: modules.hybridVotingAddress || '',
-        eligibilityModuleId: modules.eligibilityModuleAddress || '',
+        authorityId: modules.membershipAuthorityAddress || '',
         tokenAddress: modules.participationTokenAddress || '',
       }, argv.chain);
 
       spin.stop();
 
+      result.activeVouches = normalizeAuthorityVouches(result.activeVouches ?? []);
       const org = result.organization;
       if (!org) {
         output.error('Organization not found');
         process.exit(1);
         return;
       }
+
+      await refreshAuthorityUsers(org, modules.orgId, argv.chain);
 
       // Extract tasks from nested org query, then filter by --since client-side
       const allTasks: any[] = [];
@@ -56,7 +60,8 @@ export const activityHandler = {
 
       // Filter recent members by --since
       const allUsers = org.users || [];
-      const recentJoins = allUsers.filter((u: any) => parseInt(u.firstSeenAt || '0') >= since);
+      const recentJoins = allUsers.filter((u: any) => parseInt(u.firstSeenAt || '0') >= since)
+        .sort((a: any, b: any) => Number(b.firstSeenAt) - Number(a.firstSeenAt));
 
       // Proposal data from top-level queries
       const activeHybrid = result.activeHybridProposals || [];

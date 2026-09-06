@@ -348,15 +348,9 @@ per-permission hat lists that decide *who can do what* to their tasks.
 | `pop project delete` | Destructive removal (creator hat / executor). |
 
 ```bash
-# Direct create with a 5,000-PT budget cap and per-permission hat lists
-pop project create --name "Docs" --description "Documentation work" \
-  --cap 5000 \
-  --create-hats 0xHAT_A --claim-hats 0xHAT_A,0xHAT_B \
-  --review-hats 0xHAT_C --assign-hats 0xHAT_C
-
-# Same idea, but let the org vote on it (24h default duration)
-pop project propose --name "Docs" --description "Documentation work" \
-  --cap 5000 --claim-hats 0xHAT_A,0xHAT_B --review-hats 0xHAT_C
+# Create the project, then configure its authority permissions through a vote
+pop project create --name "Docs" --description "Documentation work" --cap 5000
+pop project propose --name "Docs" --description "Documentation work" --cap 5000
 ```
 
 **Budgets & caps.** `--cap` is the total PT a project may pay out (`0` =
@@ -371,9 +365,7 @@ pop project create --name "Bounties" \
 
 ## Task permissions
 
-Task actions are gated by an 8-bit **`TaskPerm` bitmask** (`uint8`). Each hat
-holds a mask; a bit set means that hat may perform that action. Permissions can
-be set **per-project** (a direct tx) or **globally** (via governance).
+Task actions use the authority `TM_PERMS` bitmask. Roles and groups hold permission rows. Global and project changes both require governance.
 
 | Bit | Value | Permission | Grants the ability to… |
 | --- | --- | --- | --- |
@@ -401,24 +393,19 @@ The CLI takes permissions by **name** (comma-separated) so you don't have to do
 the bitmath by hand — it computes the mask for you.
 
 ```bash
-# Show global masks; add --project to include that project's per-hat overrides
-pop task perms show
-pop task perms show --project Docs
+# Read current authority masks
+pop task perms show --json
+pop task perms show --project 0xPROJECT_BYTES32 --json
 
-# Grant a reviewer role (REVIEW + ASSIGN = 12) on one project — direct tx,
-# needs the creator hat / executor
-pop task perms set --project Docs --hat 0xHAT_C --perms review,assign
+# Propose project and global permissions
+pop task perms set --project 0xPROJECT_BYTES32 --subject ROLE_ID --perms review,assign --dry-run
+pop task perms propose-global --subject ROLE_ID --perms create,claim --dry-run
 
-# Remove a project override entirely
-pop task perms set --project Docs --hat 0xHAT_C --perms none
-
-# Change an org-WIDE mask via governance vote (60-minute default duration)
-pop task perms propose-global --hat 0xHAT_A --perms create,claim
+# Clear a project row to restore global inheritance
+pop task perms clear --project 0xPROJECT_BYTES32 --subject ROLE_ID --dry-run
 ```
 
-> Per-project masks (`perms set`) override the global mask for that hat on that
-> project. Global changes (`perms propose-global`) always go through a vote —
-> they affect the whole org.
+A project row replaces the subject's global row unless `--inherit-global` is set. Setting `--perms none` writes an explicit zero; clearing removes the row. The CLI encodes project contexts as `projectId + 1` to avoid colliding with the global zero context.
 
 ## Where to go next
 

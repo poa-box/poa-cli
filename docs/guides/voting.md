@@ -107,8 +107,7 @@ pop vote propose-config --key threshold --value 60 --duration 60
 ```
 
 `pop vote propose-config` also drives other governance parameters via `--key`:
-`target-allowed` (whitelist an execution target), `executor`, and `hat-allowed`
-(whitelist a hat for restricted voting).
+`target-allowed` (DD execution targets) and `executor`. Authorize DD voters with `role set-perm --key DD_VOTE --value 1`.
 
 ## Proposal lifecycle
 
@@ -207,9 +206,7 @@ pop vote create --type hybrid --name "Council-only: ratify the budget" \
   --options "Ratify,Reject" --hat-ids 0xCOUNCIL_HAT
 ```
 
-Only wearers of the listed hats can cast. (The hat must be allowed for
-restricted voting — authorize it via `propose-config --key hat-allowed` if
-needed.)
+The restricted IDs are authority subject IDs. Migrated roles retain their original IDs. DD voting eligibility is configured through `role set-perm --key DD_VOTE --value 1`.
 
 ## Reading results
 

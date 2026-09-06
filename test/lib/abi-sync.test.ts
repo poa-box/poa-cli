@@ -81,8 +81,6 @@ describe('ABI sync canary (contracts origin/main)', () => {
       'function updateTask(uint256,uint256,bytes,bytes32,address,uint256,uint48,uint32)',
       'function updateTaskMetadata(uint256,bytes,bytes32)',
       'function setFolders(bytes32,bytes32)',
-      'function setProjectRolePerm(bytes32,uint256,uint8)',
-      'function bootstrapGlobalPerms(uint256[],uint8[])',
       'function getLensData(uint8,bytes)',
       'function applyForTask(uint256,bytes32)',
       'function approveApplication(uint256,address)',
@@ -116,16 +114,10 @@ describe('ABI sync canary (contracts origin/main)', () => {
     ]);
   });
 
-  it('EligibilityModule v4 surface', () => {
-    expectSigs('EligibilityModuleNew', [
-      'function configureVouching(uint256,uint32,uint256,bool)',
-      'function resetVouches(uint256)',
-      'function vouchFor(address,uint256)',
-      'function revokeVouch(address,uint256)',
-      'function transferSuperAdmin(address)',
-      'function applyForRole(uint256,bytes32)',
-      'function claimVouchedHat(uint256)',
-      'error VouchingRateLimitExceeded()',
+  it('MembershipAuthority native surface', () => {
+    expectSigs('MembershipAuthority', [
+      'function createRole(string,bytes32,string,uint32)', 'function createGroup(string,bytes32,string,uint256[])',
+      'function claim(uint256)', 'function vouch(uint256,address)', 'function setPerm(uint256,bytes32,bytes32,uint256)',
     ]);
   });
 
@@ -148,7 +140,6 @@ describe('ABI sync canary (contracts origin/main)', () => {
   it('QuickJoin surface', () => {
     expectSigs('QuickJoinNew', [
       'function quickJoinWithUser()',
-      'function claimHatsWithUser(uint256[])',
     ]);
   });
 

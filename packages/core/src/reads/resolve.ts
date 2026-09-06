@@ -7,6 +7,7 @@
 
 import type { GraphClient } from '../graph/client';
 import { FETCH_ORG_BY_ID, GET_ORG_BY_NAME } from '../graph/documents/org';
+import { isAuthorityReady, FETCH_ORG_AUTHORITY } from './authority';
 
 /**
  * Resolve an org identifier (name or hex ID) to its bytes32 ID.
@@ -21,10 +22,12 @@ export async function resolveOrgId(
     throw new Error('Missing --org flag. Provide --org or set POP_DEFAULT_ORG in .env');
   }
   if (orgIdOrName.startsWith('0x')) {
-    return orgIdOrName;
+    const result = await client.query<any>(FETCH_ORG_AUTHORITY, { id: orgIdOrName.toLowerCase() }, chainId);
+    if (!isAuthorityReady(result.organization)) throw new Error('Organization is retired or has not completed its MembershipAuthority cutover. Only authority-ready organizations are supported.');
+    return result.organization.id;
   }
 
-  const result = await client.query<{ organizations: Array<{ id: string; name: string }> }>(
+  const result = await client.query<{ organizations: Array<{ id: string; name: string; membershipAuthority?: any }> }>(
     GET_ORG_BY_NAME,
     { name: orgIdOrName },
     chainId
@@ -34,7 +37,9 @@ export async function resolveOrgId(
     throw new Error(`Organization "${orgIdOrName}" not found. Use the hex ID or check the org name.`);
   }
 
-  return result.organizations[0].id;
+  const org = result.organizations.find(isAuthorityReady);
+  if (!org) throw new Error('Organization is retired or has not completed its MembershipAuthority cutover. Only authority-ready organizations are supported.');
+  return org.id;
 }
 
 export interface OrgModules {
@@ -46,7 +51,7 @@ export interface OrgModules {
   educationHubAddress: string | null;
   executorAddress: string | null;
   quickJoinAddress: string | null;
-  eligibilityModuleAddress: string | null;
+  membershipAuthorityAddress: string | null;
   paymentManagerAddress: string | null;
   /** ZkEmailInvites proxy — null for orgs deployed without the optional ZK Email module. */
   zkEmailInvitesAddress: string | null;
@@ -72,7 +77,7 @@ export async function resolveOrgModules(
       educationHub: { id: string } | null;
       executorContract: { id: string } | null;
       quickJoin: { id: string } | null;
-      eligibilityModule: { id: string } | null;
+      membershipAuthority: { id: string } | null;
       paymentManager: { id: string } | null;
       zkEmailInvites: { id: string } | null;
     } | null;
@@ -83,6 +88,7 @@ export async function resolveOrgModules(
   }
 
   const org = result.organization;
+  if (!isAuthorityReady(org)) throw new Error('Organization is retired or has not completed its MembershipAuthority cutover.');
   return {
     orgId: org.id,
     taskManagerAddress: org.taskManager?.id || null,
@@ -92,7 +98,7 @@ export async function resolveOrgModules(
     educationHubAddress: org.educationHub?.id || null,
     executorAddress: org.executorContract?.id || null,
     quickJoinAddress: org.quickJoin?.id || null,
-    eligibilityModuleAddress: org.eligibilityModule?.id || null,
+    membershipAuthorityAddress: org.membershipAuthority?.id || null,
     paymentManagerAddress: org.paymentManager?.id || null,
     zkEmailInvitesAddress: org.zkEmailInvites?.id || null,
   };

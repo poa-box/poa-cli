@@ -1,6 +1,6 @@
 {
   "name": "@poa-box/agent",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "description": "Autonomous governance agent runtime for the POP protocol — agent + brain (P2P CRDT) command surface over @poa-box/cli",
   "main": "dist/index.js",
   "bin": {

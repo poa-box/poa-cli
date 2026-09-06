@@ -207,6 +207,16 @@ export const OrgDeployerNewAbi = [
                 "internalType": "bool"
               },
               {
+                "name": "open",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "maxMembers",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
                 "name": "vouching",
                 "type": "tuple",
                 "internalType": "struct RoleConfigStructs.RoleVouchingConfig",
@@ -223,40 +233,6 @@ export const OrgDeployerNewAbi = [
                   },
                   {
                     "name": "voucherRoleIndex",
-                    "type": "uint256",
-                    "internalType": "uint256"
-                  },
-                  {
-                    "name": "combineWithHierarchy",
-                    "type": "bool",
-                    "internalType": "bool"
-                  }
-                ]
-              },
-              {
-                "name": "defaults",
-                "type": "tuple",
-                "internalType": "struct RoleConfigStructs.RoleEligibilityDefaults",
-                "components": [
-                  {
-                    "name": "eligible",
-                    "type": "bool",
-                    "internalType": "bool"
-                  },
-                  {
-                    "name": "standing",
-                    "type": "bool",
-                    "internalType": "bool"
-                  }
-                ]
-              },
-              {
-                "name": "hierarchy",
-                "type": "tuple",
-                "internalType": "struct RoleConfigStructs.RoleHierarchyConfig",
-                "components": [
-                  {
-                    "name": "adminRoleIndex",
                     "type": "uint256",
                     "internalType": "uint256"
                   }
@@ -278,23 +254,23 @@ export const OrgDeployerNewAbi = [
                     "internalType": "address[]"
                   }
                 ]
+              }
+            ]
+          },
+          {
+            "name": "groups",
+            "type": "tuple[]",
+            "internalType": "struct RoleConfigStructs.GroupConfig[]",
+            "components": [
+              {
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
               },
               {
-                "name": "hatConfig",
-                "type": "tuple",
-                "internalType": "struct RoleConfigStructs.HatConfig",
-                "components": [
-                  {
-                    "name": "maxSupply",
-                    "type": "uint32",
-                    "internalType": "uint32"
-                  },
-                  {
-                    "name": "mutableHat",
-                    "type": "bool",
-                    "internalType": "bool"
-                  }
-                ]
+                "name": "memberRoleIndices",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
               }
             ]
           },
@@ -546,6 +522,26 @@ export const OrgDeployerNewAbi = [
                 "internalType": "uint8[]"
               }
             ]
+          },
+          {
+            "name": "hybridQuorum",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "ddQuorum",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "tokenName",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "tokenSymbol",
+            "type": "string",
+            "internalType": "string"
           }
         ]
       }
@@ -597,7 +593,7 @@ export const OrgDeployerNewAbi = [
             "internalType": "address"
           },
           {
-            "name": "eligibilityModule",
+            "name": "membershipAuthority",
             "type": "address",
             "internalType": "address"
           },
@@ -748,6 +744,16 @@ export const OrgDeployerNewAbi = [
                 "internalType": "bool"
               },
               {
+                "name": "open",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "maxMembers",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
                 "name": "vouching",
                 "type": "tuple",
                 "internalType": "struct RoleConfigStructs.RoleVouchingConfig",
@@ -764,40 +770,6 @@ export const OrgDeployerNewAbi = [
                   },
                   {
                     "name": "voucherRoleIndex",
-                    "type": "uint256",
-                    "internalType": "uint256"
-                  },
-                  {
-                    "name": "combineWithHierarchy",
-                    "type": "bool",
-                    "internalType": "bool"
-                  }
-                ]
-              },
-              {
-                "name": "defaults",
-                "type": "tuple",
-                "internalType": "struct RoleConfigStructs.RoleEligibilityDefaults",
-                "components": [
-                  {
-                    "name": "eligible",
-                    "type": "bool",
-                    "internalType": "bool"
-                  },
-                  {
-                    "name": "standing",
-                    "type": "bool",
-                    "internalType": "bool"
-                  }
-                ]
-              },
-              {
-                "name": "hierarchy",
-                "type": "tuple",
-                "internalType": "struct RoleConfigStructs.RoleHierarchyConfig",
-                "components": [
-                  {
-                    "name": "adminRoleIndex",
                     "type": "uint256",
                     "internalType": "uint256"
                   }
@@ -819,23 +791,23 @@ export const OrgDeployerNewAbi = [
                     "internalType": "address[]"
                   }
                 ]
+              }
+            ]
+          },
+          {
+            "name": "groups",
+            "type": "tuple[]",
+            "internalType": "struct RoleConfigStructs.GroupConfig[]",
+            "components": [
+              {
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
               },
               {
-                "name": "hatConfig",
-                "type": "tuple",
-                "internalType": "struct RoleConfigStructs.HatConfig",
-                "components": [
-                  {
-                    "name": "maxSupply",
-                    "type": "uint32",
-                    "internalType": "uint32"
-                  },
-                  {
-                    "name": "mutableHat",
-                    "type": "bool",
-                    "internalType": "bool"
-                  }
-                ]
+                "name": "memberRoleIndices",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
               }
             ]
           },
@@ -1087,6 +1059,26 @@ export const OrgDeployerNewAbi = [
                 "internalType": "uint8[]"
               }
             ]
+          },
+          {
+            "name": "hybridQuorum",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "ddQuorum",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "tokenName",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "tokenSymbol",
+            "type": "string",
+            "internalType": "string"
           }
         ]
       },
@@ -1160,7 +1152,7 @@ export const OrgDeployerNewAbi = [
             "internalType": "address"
           },
           {
-            "name": "eligibilityModule",
+            "name": "membershipAuthority",
             "type": "address",
             "internalType": "address"
           },
@@ -1173,6 +1165,29 @@ export const OrgDeployerNewAbi = [
       }
     ],
     "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "factories",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "governance",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "access",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "modules",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1222,57 +1237,9 @@ export const OrgDeployerNewAbi = [
         "internalType": "address"
       },
       {
-        "name": "_hatsTreeSetup",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "_paymasterHub",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "registerContract",
-    "inputs": [
-      {
-        "name": "orgId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "typeId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "proxy",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "beacon",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "autoUpgrade",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "moduleOwner",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "lastRegister",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -1355,6 +1322,63 @@ export const OrgDeployerNewAbi = [
   },
   {
     "type": "event",
+    "name": "AccessFactoryUpdated",
+    "inputs": [
+      {
+        "name": "factory",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "GovernanceFactoryUpdated",
+    "inputs": [
+      {
+        "name": "factory",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "GroupsCreated",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "subjectIds",
+        "type": "uint256[]",
+        "indexed": false,
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "names",
+        "type": "string[]",
+        "indexed": false,
+        "internalType": "string[]"
+      },
+      {
+        "name": "memberSubjectIds",
+        "type": "uint256[][]",
+        "indexed": false,
+        "internalType": "uint256[][]"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "InitialWearersAssigned",
     "inputs": [
       {
@@ -1364,7 +1388,7 @@ export const OrgDeployerNewAbi = [
         "internalType": "bytes32"
       },
       {
-        "name": "eligibilityModule",
+        "name": "membershipAuthority",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -1376,7 +1400,7 @@ export const OrgDeployerNewAbi = [
         "internalType": "address[]"
       },
       {
-        "name": "hatIds",
+        "name": "subjectIds",
         "type": "uint256[]",
         "indexed": false,
         "internalType": "uint256[]"
@@ -1393,6 +1417,19 @@ export const OrgDeployerNewAbi = [
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ModulesFactoryUpdated",
+    "inputs": [
+      {
+        "name": "factory",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -1456,25 +1493,19 @@ export const OrgDeployerNewAbi = [
         "internalType": "address"
       },
       {
-        "name": "eligibilityModule",
+        "name": "membershipAuthority",
         "type": "address",
         "indexed": false,
         "internalType": "address"
       },
       {
-        "name": "toggleModule",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
-        "name": "topHatId",
+        "name": "adminSubjectId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "roleHatIds",
+        "name": "roleSubjectIds",
         "type": "uint256[]",
         "indexed": false,
         "internalType": "uint256[]"
@@ -1493,7 +1524,7 @@ export const OrgDeployerNewAbi = [
         "internalType": "bytes32"
       },
       {
-        "name": "hatIds",
+        "name": "subjectIds",
         "type": "uint256[]",
         "indexed": false,
         "internalType": "uint256[]"
@@ -1527,6 +1558,27 @@ export const OrgDeployerNewAbi = [
   },
   {
     "type": "error",
+    "name": "DeploymentComplete",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DuplicateGroupMemberRole",
+    "inputs": [
+      {
+        "name": "groupIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "roleIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "InvalidAddress",
     "inputs": []
   },
@@ -1552,8 +1604,40 @@ export const OrgDeployerNewAbi = [
   },
   {
     "type": "error",
+    "name": "QuickJoinRoleNotOpen",
+    "inputs": [
+      {
+        "name": "roleIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "Reentrant",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RoleCapacityBelowGenesisSeed",
+    "inputs": [
+      {
+        "name": "roleIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxMembers",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "seededWearers",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "event",

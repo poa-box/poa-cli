@@ -13,12 +13,11 @@ import { ethers } from 'ethers';
 import { encodeIntent } from '../src/tx/intent';
 import { getAbi } from '../src/contracts';
 import { stringToBytes, ipfsCidToBytes32 } from '../src/encoding';
-import { LEGACY_TM_FRAGMENTS } from '../src/version';
 import { buildCreateTask, buildClaimTask, buildSubmitTask } from '../src/tx/task';
 import { buildVote, buildAnnounceWinner } from '../src/tx/vote';
 import { buildGovernanceProposal, encodeExecutorCall } from '../src/tx/governance';
 import { buildRequestTokens } from '../src/tx/token';
-import { buildVouchFor } from '../src/tx/eligibility';
+import { buildAuthorityAction } from '../src/tx/authority';
 import { buildClaimDistribution } from '../src/tx/treasury';
 
 const TM = '0x00000000000000000000000000000000000000a1';
@@ -56,27 +55,9 @@ describe('calldata parity with the CLI recipes', () => {
     expect(intent.to).toBe(TM);
   });
 
-  it('task create — legacy 7-arg createTask via LEGACY_TM_FRAGMENTS', () => {
-    const payoutWei = ethers.utils.parseUnits('10', 18);
-    const title = stringToBytes('Fix bug');
-    const metadataHash = ipfsCidToBytes32(CID);
-    const pid = ethers.utils.hexZeroPad('0x02', 32);
-
-    const intent = buildCreateTask({
-      taskManagerAddress: TM,
-      features: { deadlines: false },
-      payout: 10,
-      title: 'Fix bug',
-      metadataHash: CID,
-      projectId: pid,
-      requiresApplication: true,
-    });
-
-    const legacy = new ethers.utils.Interface(LEGACY_TM_FRAGMENTS);
-    const expected = legacy.encodeFunctionData('createTask', [
-      payoutWei, title, metadataHash, pid, ethers.constants.AddressZero, 0, true,
-    ]);
-    expect(encodeIntent(intent).data).toBe(expected);
+  it('rejects the removed seven-argument task signature', () => {
+    expect(() => buildCreateTask({ taskManagerAddress: TM, features: { deadlines: false },
+      payout: 10, title: 'Unsupported', metadataHash: CID, projectId: ethers.constants.HashZero })).toThrow('Unsupported TaskManager');
   });
 
   it('task claim / submit', () => {
@@ -155,11 +136,11 @@ describe('calldata parity with the CLI recipes', () => {
   });
 
   it('vouch for', () => {
-    const iface = new ethers.utils.Interface(getAbi('EligibilityModuleNew'));
+    const iface = new ethers.utils.Interface(getAbi('MembershipAuthority'));
     const wearer = '0x00000000000000000000000000000000000000f6';
-    const intent = buildVouchFor({ eligibilityModuleAddress: ELIG, wearer, hatId: 1n });
+    const intent = buildAuthorityAction({ authorityAddress: ELIG, method: 'vouch', args: [1n, wearer] });
     expect(encodeIntent(intent).data)
-      .toBe(iface.encodeFunctionData('vouchFor', [wearer, 1n]));
+      .toBe(iface.encodeFunctionData('vouch', [1n, wearer]));
   });
 
   it('treasury claim distribution', () => {

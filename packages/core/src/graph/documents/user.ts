@@ -33,27 +33,7 @@ export const GET_ACCOUNT_BY_USERNAME = `
   }
 `;
 
-/**
- * One-round-trip org snapshot for `pop user whoami`: org name + role-hat
- * names, the org's QuickJoin module pointers, the caller's account
- * (username + which registry it lives on), their ERC-20 participation-token
- * balance, their org-user entity (membership, PT balance, hats worn), and
- * their pending participation-token requests. The `status: Pending`
- * filter is inlined (enum literal) to match FETCH_PENDING_TOKEN_REQUESTS
- * in queries/token.ts.
- *
- * Every field here was verified NON-NULL against the live Gnosis
- * (poa-gnosis-v-1) AND Arbitrum (poa-arb-v-1) deployments, and
- * quickJoinContract.{accountRegistry,hatsContract,memberHatIds} were
- * byte-compared against the matching eth_calls on both chains — including
- * the empty-array memberHatIds case, which is genuinely empty on-chain and
- * not an indexing gap.
- *
- * `account.registry` is carried so callers can prove the indexed account
- * belongs to the SAME registry the org's QuickJoin consults before trusting
- * the indexed username (a legacy org can point at a registry this subgraph
- * does not index).
- */
+/** Historical account and token snapshot; current membership is projected from the authority index. */
 export const FETCH_WHOAMI_ORG_DATA = `
   query WhoamiOrgData(
     $orgId: Bytes!
@@ -67,23 +47,10 @@ export const FETCH_WHOAMI_ORG_DATA = `
     organization(id: $orgId) {
       id
       name
-      roles(where: { isUserRole: true }) {
-        hatId
-        name
-        # Hats Protocol's toggle flag. When it is false, Hats.isWearerOfHat returns
-        # false for EVERY wearer regardless of token balance, and the tokens are NOT
-        # burned — so User.currentHatIds still lists the hat. A membership answer
-        # derived from currentHatIds alone must AND it with this flag.
-        hat {
-          active
-        }
-      }
     }
     quickJoinContract(id: $quickJoinAddress) {
       id
       accountRegistry
-      hatsContract
-      memberHatIds
     }
     account(id: $accountID) {
       id
@@ -147,8 +114,6 @@ export const FETCH_QUICKJOIN_ACCOUNT = `
     quickJoinContract(id: $quickJoinAddress) {
       id
       accountRegistry
-      hatsContract
-      memberHatIds
     }
     account(id: $accountID) {
       id
@@ -161,17 +126,12 @@ export const FETCH_QUICKJOIN_ACCOUNT = `
   }
 `;
 
-/**
- * Just the QuickJoin module pointers — the addresses `pop user claim-hats`
- * needs before running its (deliberately on-chain) pre-flight probes.
- */
+/** Indexed QuickJoin account registry pointer. */
 export const FETCH_QUICKJOIN_MODULES = `
   query QuickJoinModules($quickJoinAddress: ID!) {
     quickJoinContract(id: $quickJoinAddress) {
       id
       accountRegistry
-      hatsContract
-      memberHatIds
     }
   }
 `;
@@ -214,8 +174,6 @@ export interface IndexedAccount {
 export interface IndexedQuickJoin {
   id: string;
   accountRegistry: string;
-  hatsContract: string;
-  memberHatIds: string[];
 }
 
 /**
