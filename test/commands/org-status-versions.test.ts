@@ -255,7 +255,7 @@ describe('buildVersionPanel — impl vs latest comparison', () => {
 
 describe('pop org status handler — panel degradation is additive-only', () => {
   const orgFixture = {
-    subjectMemberships: [],
+    subjectMemberships: [], users: [],
     organization: {
       name: 'TestOrg',
       taskManager: { projects: [] },
@@ -303,7 +303,7 @@ describe('pop org status handler — panel degradation is additive-only', () => 
 
     await statusHandler.handler({ _: [], $0: 'pop', org: 'testorg', chain: 11155111, fast: true } as any);
 
-    expect(mocks.query).toHaveBeenCalledTimes(2); // Activity plus current authority membership
+    expect(mocks.query).toHaveBeenCalledTimes(3); // Activity, current memberships and complete user history
     expect(mocks.getImplementation).not.toHaveBeenCalled();
     const payload = mocks.json.mock.calls[0][0];
     expect(payload.moduleVersions).toBeUndefined();

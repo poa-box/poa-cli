@@ -94,7 +94,7 @@ const ADMIN_HAT = '3022210062525828364185862113205513741390807280976805051515657
 
 function orgFullData(metadataAdminHatId: string | null) {
   return {
-    subjects: [], subjectMemberships: [],
+    subjects: [], subjectMemberships: [], users: [],
     organization: {
       id: ORG_ID,
       name: 'Kansas Blockchain',
@@ -121,7 +121,7 @@ describe('pop org view — metadataAdminHat from the subgraph', () => {
     await viewHandler.handler({ _: [], $0: 'pop', org: ORG_ID, chain: 100 } as any);
 
     // Org context, subjects and membership; no infrastructure lookup.
-    expect(mocks.query).toHaveBeenCalledTimes(3);
+    expect(mocks.query).toHaveBeenCalledTimes(4);
     expect(mocks.query.mock.calls.some((c) => c[0] === FETCH_INFRASTRUCTURE_ADDRESSES)).toBe(false);
     expect(mocks.json.mock.calls[0][0].metadataAdminHat).toBe(ADMIN_HAT);
   });
@@ -133,7 +133,7 @@ describe('pop org view — metadataAdminHat from the subgraph', () => {
 
     // 0 is meaningful (override cleared → topHat fallback) and must NOT be
     // treated as "missing" and pushed onto the RPC fallback.
-    expect(mocks.query).toHaveBeenCalledTimes(3);
+    expect(mocks.query).toHaveBeenCalledTimes(4);
     expect(mocks.json.mock.calls[0][0].metadataAdminHat).toBe('0');
   });
 

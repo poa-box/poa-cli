@@ -189,6 +189,8 @@ export interface OrgUser {
   id: string;
   address: string;
   participationTokenBalance: string | null;
+  /** False when authority membership exists but its historical User is not indexed. */
+  historyIndexed?: boolean;
   membershipStatus: string | null;
   currentHatIds: string[] | null;
   joinMethod: string | null;

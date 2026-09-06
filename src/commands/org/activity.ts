@@ -60,7 +60,8 @@ export const activityHandler = {
 
       // Filter recent members by --since
       const allUsers = org.users || [];
-      const recentJoins = allUsers.filter((u: any) => parseInt(u.firstSeenAt || '0') >= since);
+      const recentJoins = allUsers.filter((u: any) => parseInt(u.firstSeenAt || '0') >= since)
+        .sort((a: any, b: any) => Number(b.firstSeenAt) - Number(a.firstSeenAt));
 
       // Proposal data from top-level queries
       const activeHybrid = result.activeHybridProposals || [];

@@ -31,7 +31,7 @@ import type { InfrastructureAddresses } from '../graph/documents/infrastructure'
 import { createReadContract } from '../contracts';
 import { fetchJson } from '../ipfs';
 import type { IpfsOptions } from '../ipfs';
-import { FETCH_ORG_AUTHORITY, FETCH_AUTHORITY_SUBJECTS, FETCH_AUTHORITY_MEMBERSHIPS, readAuthorityRows, isAuthorityReady, projectAuthorityUsers, readAuthorityUsers } from './authority';
+import { FETCH_ORG_AUTHORITY, FETCH_AUTHORITY_SUBJECTS, readAuthorityRows, isAuthorityReady, readAuthorityUsers } from './authority';
 
 // ---------------------------------------------------------------------------
 // Row shapes (raw subgraph entities — minimal, not exhaustive)
@@ -319,7 +319,9 @@ export interface OrgMembersResult {
   participationToken: { totalSupply: string } | null;
   users: Array<{
     address: string;
-    participationTokenBalance: string;
+    participationTokenBalance: string | null;
+    /** False for a real authority wallet whose historical User entity is not indexed. */
+    historyIndexed?: boolean;
     membershipStatus: string;
     totalTasksCompleted: string | null;
     totalVotes: string | null;
@@ -330,7 +332,7 @@ export interface OrgMembersResult {
 
 /**
  * Port of the `pop org members` read — src/commands/org/members.ts.
- * Raw member rows ordered by PT balance desc (top 100), plus totalSupply for
+ * Complete current member rows, plus totalSupply for
  * share math. Null when the org is not indexed.
  */
 export async function listMembers(
@@ -338,12 +340,12 @@ export async function listMembers(
 ): Promise<OrgMembersResult | null> {
   const ready = await client.query<any>(FETCH_ORG_AUTHORITY, { id: orgId }, chainId);
   if (!isAuthorityReady(ready.organization)) return null;
-  const [result, memberships] = await Promise.all([
+  const [result, users] = await Promise.all([
     client.query<{ organization: OrgMembersResult | null }>(FETCH_MEMBERS, { orgId }, chainId),
-    readAuthorityRows(client, orgId, FETCH_AUTHORITY_MEMBERSHIPS, 'subjectMemberships', chainId),
+    readAuthorityUsers(client, orgId, [], chainId),
   ]);
   if (!result.organization) return null;
-  return { ...result.organization, users: projectAuthorityUsers(result.organization.users, memberships).filter(user => user.membershipStatus === 'Active') };
+  return { ...result.organization, users: users.filter(user => user.membershipStatus === 'Active') };
 }
 
 export interface OrgRolesResult {
@@ -368,7 +370,8 @@ export interface OrgRolesResult {
     }>;
     users: Array<{
       address: string;
-      participationTokenBalance: string;
+      participationTokenBalance: string | null;
+      historyIndexed?: boolean;
       membershipStatus: string;
       currentHatIds: string[] | null;
       account: { username: string | null } | null;
@@ -390,11 +393,10 @@ export async function listRoles(
   }`, { orgId }, chainId);
   const org = result.organization;
   if (!isAuthorityReady(org)) return { data: { organization: null }, tierIndex: 0 };
-  const [subjects, memberships] = await Promise.all([
+  const [subjects, users] = await Promise.all([
     readAuthorityRows(client, orgId, FETCH_AUTHORITY_SUBJECTS, 'subjects', chainId),
-    readAuthorityRows(client, orgId, FETCH_AUTHORITY_MEMBERSHIPS, 'subjectMemberships', chainId),
+    readAuthorityUsers(client, orgId, org.users, chainId),
   ]);
-  const current = memberships.filter(m => m.isMember && m.subject.kind === 'Role');
   const roles = subjects.filter(s => s.kind === 'Role').map(subject => {
     const continuity = org.roles.find((r: any) => r.hatId === subject.subjectId);
     return { ...subject, id: orgId + '-' + subject.subjectId, hatId: subject.subjectId,
@@ -402,7 +404,6 @@ export async function listRoles(
       hat: null,
     };
   });
-  const users = projectAuthorityUsers(org.users, current);
   return { data: { organization: { roles, users, membershipAuthority: org.membershipAuthority } }, tierIndex: 0 };
 }
 

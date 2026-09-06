@@ -37,6 +37,7 @@ it('retired org permission reads do not fall back to legacy masks', async () => 
 
 it('roles derive active subject memberships while retaining user history rows', async () => {
   const client = { query: vi.fn(async (document: string) => {
+    if (document.includes('AuthorityUserHistory')) return { organization: {}, users: [{ address: USER, participationTokenBalance: '12', account: null }] };
     if (document.includes('AuthorityRoleContext')) return { organization: { membershipAuthority: READY,
       roles: [{ hatId: '1', canVote: true, isUserRole: true }],
       users: [{ address: USER, participationTokenBalance: '12', account: null }],
@@ -54,6 +55,7 @@ it('roles derive active subject memberships while retaining user history rows', 
 
 it('member lists exclude a historical Active User without current authority membership', async () => {
   const client = { query: vi.fn(async (document: string) => {
+    if (document.includes('AuthorityUserHistory')) return { organization: {}, users: [{ address: USER, membershipStatus: 'Active' }] };
     if (document.includes('OrgAuthority')) return { organization: { membershipAuthority: READY } };
     if (document.includes('FetchMembers')) return { organization: { participationToken: { totalSupply: '12' }, users: [{ address: USER, membershipStatus: 'Active' }] } };
     return { subjectMemberships: [{ id: '1-' + USER, user: USER, isMember: false, subject: { kind: 'Role' } }] };

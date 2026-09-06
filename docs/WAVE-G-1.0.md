@@ -15,6 +15,8 @@ Kansas Blockchain, Decentral Park, Poa and Test6 retain their organization, modu
 
 Task, batch-task and project dry runs use zero metadata-hash placeholders and do not publish metadata. Existing contracted JSON keys remain unless listed as a removed access surface. Role `hatId` and whoami `hats` keys retain adopted IDs for consumers; `canVote` role metadata is explicitly historical, and current policy is read from the authority.
 
+Member and role wearer lists exclude the org executor and retired eligibility contract by address, matching indexed User identity rules. Historical user metrics are cursor-paginated independently of authority memberships, so larger organizations retain earlier balances, task/vote totals and join timestamps. Genuine authority wallet members without an indexed User remain visible with `historyIndexed: false`; their member/wearer metrics are `null` and their original join date is unknown. Aggregate reports are incomplete while those histories are unavailable. Low-level `projectAuthorityUsers` callers must supply those system addresses and complete history themselves; `readAuthorityUsers` resolves both automatically.
+
 ## SDK changes
 
 `@poa-box/core` 1.0 removes `reads.eligibility`, `tx.eligibility`, the EligibilityModule/ToggleModule ABIs, the role-application metadata builder namespace, QuickJoin claim-hat builders, `parseHatIds`, `checkHasHat`, legacy task encoding fragments and legacy task-permission query/mask fallback exports. Replace them with `reads/authority`, `tx/authority` and `checkSubjectMembership`.
