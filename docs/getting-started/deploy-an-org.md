@@ -14,12 +14,11 @@ If you just want to *join* an org and start earning, do the
 | Module | What it does |
 | --- | --- |
 | **Executor** | The org's on-chain "hands" — governance-approved calls run through it. |
-| **Hats (roles)** | Each role is a Hats Protocol hat; wearing a hat grants permissions. |
+| **MembershipAuthority** | Role and group subjects, membership, vouching and permissions. |
 | **HybridVoting** | Multi-class governance (direct democracy + token-weighted). |
 | **DirectDemocracy** | One-person-one-vote track for membership-level decisions. |
 | **Participation Token (PT)** | Non-transferable token minted for work; also voting weight. |
 | **TaskManager** | Projects, tasks, claims, reviews, deadlines, bounties. |
-| **EligibilityModule** | Vouching + membership gating for onboarding. |
 | **EducationHub** | Optional quiz-based learning modules that reward PT. |
 | **Paymaster** (optional) | ERC-4337 gas sponsorship so members transact for free. |
 
@@ -58,22 +57,21 @@ complete annotated example and the
 
 ### The parts that matter most
 
-**Roles** — each entry becomes a hat. `canVote` decides whether wearers vote in
-direct democracy; `hatConfig.maxSupply` caps how many people can wear it;
+**Roles** — each entry becomes an authority role subject. `canVote` selects the default hybrid electorate; `open` controls permissionless claiming and `maxMembers` caps membership (`0` means unlimited);
 `distribution.mintToDeployer` mints it to you at deploy time so you can bootstrap.
 
 ```json
 "roles": [
-  { "name": "Admin",       "canVote": true,  "distribution": { "mintToDeployer": true } },
-  { "name": "Member",      "canVote": true,  "distribution": { "mintToDeployer": true } },
-  { "name": "Contributor", "canVote": false, "distribution": { "mintToDeployer": false } }
+  { "name": "Admin",       "canVote": true, "open": false,  "distribution": { "mintToDeployer": true } },
+  { "name": "Member",      "canVote": true, "open": false,  "distribution": { "mintToDeployer": true } },
+  { "name": "Contributor", "canVote": false, "open": false, "distribution": { "mintToDeployer": false } }
 ]
 ```
 
 **Role assignments** — bitmap-style permission grants that reference roles *by
 index* into the `roles` array. For example `"taskCreatorRoles": [0, 1]` means the
 roles at index 0 (Admin) and 1 (Member) may create tasks; `"quickJoinRoles": [1]`
-means new members join straight into the Member role.
+means new members join straight into the Member role; set that role to `open: true`.
 
 | Assignment | Grants |
 | --- | --- |
@@ -95,7 +93,7 @@ sum to 100% of the vote. Each class picks a `strategy`:
 | `slicePct` | This class's share of the total vote (all slices sum to 100). |
 | `quadratic` | Optional: dampen large balances via quadratic weighting. |
 | `minBalance` | Minimum balance to participate in an `ERC20_BAL` class. |
-| `hatIds` | Optional: restrict the class to specific role hats. |
+| `subjectIds` | Optional authority subject IDs as decimal strings. |
 
 The default 50/50 split (one DIRECT class + one ERC20_BAL class) means half the
 power is one-person-one-vote and half is PT-weighted. `thresholdPct` (e.g. `51`)
@@ -110,8 +108,10 @@ Point `pop org deploy` at your config. Add `--dry-run` first to simulate and
 catch config errors before spending gas:
 
 ```bash
-pop org deploy --config org-deploy-config.json --dry-run
+pop org deploy --config org-deploy-config.json --dry-run --deployer 0xYourAddress
 ```
+
+The preview publishes no metadata, signs no registration, and sends no transaction. Its zero metadata hash and omitted registration are placeholders; final execution gas is estimated during the real run.
 
 When it looks right, deploy for real:
 
@@ -147,8 +147,8 @@ pop org roles
 ```
 
 `org status` is a quick health summary (modules, member count, treasury).
-`org roles` lists each role with its **hat ID** and vouch requirements — you'll
-need those hat IDs to onboard people and grant permissions.
+`org roles` lists each role with its **subject ID** and vouch requirements — you'll
+need those subject IDs to onboard people and grant permissions.
 
 Register your own username if you haven't:
 
@@ -187,7 +187,7 @@ see the [paymaster reference](../reference/cli/paymaster.md).
 
 ## Step 5 — Create your first project and task
 
-Tasks live under projects. Create a project directly (your creator hat allows it)
+Tasks live under projects. Create a project directly (your role has the required authority permissions)
 or propose one through governance:
 
 ```bash
@@ -229,17 +229,17 @@ for brand-new users.
 
 ```bash
 # You vouch (find the hat ID via `pop org roles`)
-pop vouch for --address 0xNEW_MEMBER --hat <role-hat-id>
+pop vouch for --user 0xNEW_MEMBER --subject <role-hat-id>
 
 # Track progress toward quorum
-pop vouch status --hat <role-hat-id> --address 0xNEW_MEMBER
+pop vouch status --subject <role-hat-id> --user 0xNEW_MEMBER
 
 # The new member claims the role once quorum is met
-pop vouch claim --hat <role-hat-id>
+pop vouch claim --subject <role-hat-id>
 ```
 
 Configure or inspect a hat's vouching rules (quorum, membership hat) with
-`pop vouch config show --hat <id>`. For patterns and trade-offs, see
+`pop vouch config show --subject <id>`. For patterns and trade-offs, see
 [governance templates](../guides/governance-templates.md).
 
 ---

@@ -10,13 +10,14 @@ Command reference generated from the yargs command tree. Regenerate with `yarn d
 | `project` | Project management | 4 | [project.md](project.md) |
 | `org` | Organization management | 32 | [org.md](org.md) |
 | `vote` | Governance & voting | 11 | [vote.md](vote.md) |
-| `user` | User & membership | 6 | [user.md](user.md) |
+| `user` | User & membership | 5 | [user.md](user.md) |
 | `education` | Education modules | 5 | [education.md](education.md) |
-| `vouch` | Vouching system | 7 | [vouch.md](vouch.md) |
+| `vouch` | Vouching system | 9 | [vouch.md](vouch.md) |
 | `token` | Participation token requests | 5 | [token.md](token.md) |
 | `treasury` | Treasury & distributions | 14 | [treasury.md](treasury.md) |
 | `paymaster` | Gas sponsorship (ERC-4337) | 3 | [paymaster.md](paymaster.md) |
-| `role` | Role applications | 6 | [role.md](role.md) |
+| `role` | Authority roles and membership | 24 | [role.md](role.md) |
+| `group` | Authority groups | 3 | [group.md](group.md) |
 | `zkemail` | ZK Email role invites (allowlists) | 6 | [zkemail.md](zkemail.md) |
 | `config` | View and validate configuration | 2 | [config.md](config.md) |
 | `mcp` | Serve the CLI as an MCP server for AI integrations | 1 | [mcp.md](mcp.md) |

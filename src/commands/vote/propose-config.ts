@@ -98,24 +98,7 @@ const CONFIG_PARAMS: Record<string, ConfigParam> = {
       if (v.trim() === ethers.constants.AddressZero) throw new Error('Cannot set executor to zero address');
     },
   },
-  'hat-allowed': {
-    name: 'hat-allowed',
-    hybridKey: -1, // not available on Hybrid
-    ddKey: 3,
-    hybridUnavailableReason:
-      'HAT_ALLOWED is not a HybridVoting config key; this key only applies to DirectDemocracyVoting',
-    valueType: 'uint256,bool',
-    description: 'Allow/disallow a hat ID for DD voting (format: hatId,true/false)',
-    encode: (v) => {
-      const [hatId, allowed] = v.split(',');
-      return ethers.utils.defaultAbiCoder.encode(['uint256', 'bool'], [hatId.trim(), allowed.trim() === 'true']);
-    },
-    validate: (v) => {
-      const parts = v.split(',');
-      if (parts.length !== 2) throw new Error('Format: hatId,true/false');
-      if (!['true', 'false'].includes(parts[1].trim())) throw new Error('Second value must be true or false');
-    },
-  },
+
 };
 
 interface ProposeConfigArgs {

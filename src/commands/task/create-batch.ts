@@ -13,7 +13,7 @@ import {
   parseDurationSeconds,
   formatDeadline,
 } from '../../lib/encoding';
-import { detectTaskManagerFeatures, featureUnavailable, LEGACY_TM_FRAGMENTS } from '../../lib/version';
+import { detectTaskManagerFeatures, featureUnavailable } from '../../lib/version';
 import { confirmWrite, finishWrite } from '../../lib/command';
 import { formatToken } from '../../lib/format';
 import { CliError } from '../../lib/errors';
@@ -86,8 +86,7 @@ export const createBatchHandler = {
     .option('project', { type: 'string', demandOption: true, describe: 'Project ID (shared for all tasks)' })
     .option('file', { type: 'string', demandOption: true, describe: 'JSONL file (one task JSON per line)' })
     .option('deadline', { type: 'string', describe: 'Absolute claim deadline — no claims after this time (v6 orgs only; batch-wide default, rows may override)' })
-    .option('completion-window', { type: 'string', describe: 'Time a claimer has to submit after claiming (v6 orgs only; batch-wide default, rows may override)' })
-    .option('continue-on-error', { type: 'boolean', default: false, describe: 'Skip failed tasks instead of stopping (legacy orgs only — v6 batches are all-or-nothing)' }),
+    .option('completion-window', { type: 'string', describe: 'Time a claimer has to submit after claiming (v6 orgs only; batch-wide default, rows may override)' }),
 
   handler: async (argv: ArgumentsCamelCase<BatchArgs>) => {
     // Validate file
@@ -202,7 +201,7 @@ export const createBatchHandler = {
       const pid = parseProjectId(argv.project);
 
       const features = await detectTaskManagerFeatures(provider, taskManagerAddress, chainId);
-      if (tasks.some(t => t.deadlineSet) && !features.deadlines) {
+      if (!features.deadlines || !features.batchCreate) {
         output.error(featureUnavailable(
           'task deadlines',
           'TaskManager v6',
@@ -224,10 +223,10 @@ export const createBatchHandler = {
         totalPayout: formatToken(totalPayoutWei, 18, 'PT'),
         deadline: defaultDeadline > 0 ? formatDeadline(defaultDeadline) : undefined,
         completionWindow: defaultWindow > 0 ? `${defaultWindow}s` : undefined,
-        mode: features.batchCreate ? 'one all-or-nothing transaction (v6)' : `${tasks.length} sequential transactions (legacy)`,
+        mode: 'one all-or-nothing transaction',
       }, { actionLabel: 'About to create task batch' });
 
-      if (features.batchCreate) {
+      {
         // v6: one all-or-nothing createTasksBatch transaction — the contract
         // reverts the whole batch if any task fails.
         if (argv.continueOnError) {
@@ -243,8 +242,8 @@ export const createBatchHandler = {
         // requiresApplication, absoluteDeadline, completionWindow
         const inputs: any[][] = [];
         for (const task of tasks) {
-          const cid = await pinJson(JSON.stringify(buildMetadata(task)));
-          const metadataHash = ipfsCidToBytes32(cid);
+          const cid = argv.dryRun ? undefined : await pinJson(JSON.stringify(buildMetadata(task)));
+          const metadataHash = cid ? ipfsCidToBytes32(cid) : ethers.constants.HashZero;
           const titleBytes = stringToBytes(task.name);
           const payoutWei = ethers.utils.parseUnits(task.payout.toString(), 18);
 
@@ -312,70 +311,6 @@ export const createBatchHandler = {
         return;
       }
 
-      // Legacy pre-v6 org: per-task 7-arg createTask loop via the fallback
-      // fragments (the current ABI no longer contains the 7-arg signature).
-      // --continue-on-error only applies here.
-      const contract = new ethers.Contract(taskManagerAddress, LEGACY_TM_FRAGMENTS, signer);
-
-      const results: Array<{ name: string; taskId?: string; txHash?: string; status: string; error?: string }> = [];
-
-      for (let i = 0; i < tasks.length; i++) {
-        const task = tasks[i];
-        const spin = output.spinner(`[${i + 1}/${tasks.length}] Creating "${task.name}"...`);
-        spin.start();
-
-        try {
-          const cid = await pinJson(JSON.stringify(buildMetadata(task)));
-          const metadataHash = ipfsCidToBytes32(cid);
-          const titleBytes = stringToBytes(task.name);
-          const payoutWei = ethers.utils.parseUnits(task.payout.toString(), 18);
-
-          const bountyToken = task.bountyToken || ethers.constants.AddressZero;
-          let bountyPayoutWei: ethers.BigNumber | number = 0;
-          if (task.bountyAmount && task.bountyAmount > 0 && bountyToken !== ethers.constants.AddressZero) {
-            const decimals = getTokenDecimals(bountyToken);
-            bountyPayoutWei = ethers.utils.parseUnits(task.bountyAmount.toString(), decimals);
-          }
-
-          const result = await executeTx(
-            contract,
-            'createTask',
-            [payoutWei, titleBytes, metadataHash, pid, bountyToken, bountyPayoutWei, task.requiresApplication || false],
-            { dryRun: argv.dryRun }
-          );
-
-          spin.stop();
-
-          if (result.success) {
-            const taskCreatedEvent = result.logs?.find(l => l.name === 'TaskCreated');
-            const taskId = taskCreatedEvent?.args?.id?.toString();
-            results.push({ name: task.name, taskId, txHash: result.txHash, status: 'ok' });
-            output.success(`[${i + 1}/${tasks.length}] "${task.name}" created`, { taskId });
-          } else {
-            results.push({ name: task.name, status: 'failed', error: result.error });
-            output.error(`[${i + 1}/${tasks.length}] "${task.name}" failed: ${result.error}`);
-            if (!argv.continueOnError) break;
-          }
-        } catch (err: any) {
-          spin.stop();
-          results.push({ name: task.name, status: 'failed', error: err.message });
-          output.error(`[${i + 1}/${tasks.length}] "${task.name}" failed: ${err.message}`);
-          if (!argv.continueOnError) break;
-        }
-      }
-
-      // Summary
-      const succeeded = results.filter(r => r.status === 'ok').length;
-      const failed = results.filter(r => r.status === 'failed').length;
-
-      if (output.isJsonMode()) {
-        output.json({ results, total: tasks.length, succeeded, failed });
-      } else {
-        console.log('');
-        output.info(`Batch complete: ${succeeded} succeeded, ${failed} failed out of ${tasks.length}`);
-      }
-
-      if (failed > 0) process.exit(2);
     } catch (err: any) {
       if (err instanceof CliError) {
         output.error(err.message, { suggestion: err.suggestion });

@@ -125,7 +125,7 @@ pop vote propose-config [flags]
 | --- | --- | --- | --- | --- |
 | `--duration` | number | no | `60` | Vote duration in minutes |
 | `--idempotency-key` | string | no | - | Explicit idempotency key (default: derived from argv). |
-| `--key` | string | yes | - | Configuration parameter name (choices: `threshold`, `quorum`, `target-allowed`, `executor`, `hat-allowed`) |
+| `--key` | string | yes | - | Configuration parameter name (choices: `threshold`, `quorum`, `target-allowed`, `executor`) |
 | `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
 | `--value` | string | yes | - | New value |
 

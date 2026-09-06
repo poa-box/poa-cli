@@ -1,5 +1,7 @@
 # @poa-box/core
 
+Version 1.0 is authority-only. MembershipAuthority replaces EligibilityModule/Hats access; retired organizations are unavailable, and adopted IDs and earlier history remain intact. The CLI repository documents the removed exports and replacements in `docs/WAVE-G-1.0.md`.
+
 The stable protocol layer for POP (Proof of Participation): **transaction
 creation** and **data reads** for every consumer — the `pop` CLI, web
 frontends, autonomous agents, and third-party integrations. Protocol changes

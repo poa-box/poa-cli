@@ -41,7 +41,6 @@ pop task create-batch [flags]
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `--completion-window` | string | no | - | Time a claimer has to submit after claiming (v6 orgs only; batch-wide default, rows may override) |
-| `--continue-on-error` | boolean | no | `false` | Skip failed tasks instead of stopping (legacy orgs only — v6 batches are all-or-nothing) |
 | `--deadline` | string | no | - | Absolute claim deadline — no claims after this time (v6 orgs only; batch-wide default, rows may override) |
 | `--file` | string | yes | - | JSONL file (one task JSON per line) |
 | `--project` | string | yes | - | Project ID (shared for all tasks) |
@@ -258,7 +257,7 @@ pop task perms <sub> [flags]
 
 ### pop task perms show
 
-Show global + per-project task permission masks
+Show authority task permissions
 
 ```text
 pop task perms show [flags]
@@ -266,11 +265,11 @@ pop task perms show [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--project` | string | no | - | Also show this project's per-hat overrides (ID or name) |
+| `--project` | string | no | - | Project bytes32 ID |
 
 ### pop task perms set
 
-Set a hat's permission mask on one project (direct tx; creator-hat/executor)
+Propose a project task permission row
 
 ```text
 pop task perms set [flags]
@@ -278,13 +277,29 @@ pop task perms set [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--hat` | string | yes | - | Hat ID whose project mask to set |
-| `--perms` | string | yes | - | Comma-separated permission list (create, claim, review, assign, self-review, budget, edit-meta, edit-full) or "none" to remove the override |
-| `--project` | string | yes | - | Project ID (bytes32) or name |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--inherit-global` | boolean | no | `false` | - |
+| `--perms` | string | yes | - | - |
+| `--project` | string | yes | - | Project ID (bytes32); encoded as projectId + 1 |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+
+### pop task perms clear
+
+Propose clearing a permission row (restores inheritance for project rows)
+
+```text
+pop task perms clear [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--project` | string | no | - | Project ID (omit to clear global permissions) |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
 
 ### pop task perms propose-global
 
-Propose an org-wide permission mask change (governance vote)
+Propose an org-wide task permission row
 
 ```text
 pop task perms propose-global [flags]
@@ -292,9 +307,9 @@ pop task perms propose-global [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--duration` | number | no | `60` | Vote duration in minutes |
-| `--hat` | string | yes | - | Hat ID whose GLOBAL mask to set |
-| `--perms` | string | yes | - | Comma-separated permission list (create, claim, review, assign, self-review, budget, edit-meta, edit-full) or "none" to revoke |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--perms` | string | yes | - | - |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
 
 ## pop task folders
 

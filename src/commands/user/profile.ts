@@ -1,3 +1,5 @@
+import { readAuthorityUsers } from '@poa-box/core/reads/authority';
+import { subgraphModuleClient } from '../../lib/subgraph-module-client';
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { resolveIdentityAddress } from '../../lib/signer';
 import { ethers } from 'ethers';
@@ -59,7 +61,8 @@ export const profileHandler = {
         );
         const hasChurn = tierIndex === 0;
 
-        const user = userResult.user;
+        const users = await readAuthorityUsers(subgraphModuleClient(), orgId, userResult.user ? [{ ...userResult.user, address }] : [], argv.chain);
+        const user = users.find(row => row.address.toLowerCase() === address.toLowerCase());
 
         spin.stop();
 
@@ -124,7 +127,7 @@ export const profileHandler = {
             }
 
             if (user.currentHatIds?.length) {
-              console.log(`  Hats: ${user.currentHatIds.join(', ')}`);
+              console.log(`  Subjects: ${user.currentHatIds.join(', ')}`);
             }
 
             // `assignedTasks` is @derivedFrom(assigneeUser), and handleTaskUnclaimed

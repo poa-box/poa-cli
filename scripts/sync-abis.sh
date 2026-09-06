@@ -8,12 +8,12 @@ set -euo pipefail
 # touched, then extracts bare ABI arrays into src/abi/ via extract-abis.mjs.
 #
 # Env overrides:
-#   POP_CONTRACTS_REPO      path to the contracts repo   (default: /Users/hudsonheadley/Desktop/Code/POP)
+#   POP_CONTRACTS_REPO      path to the contracts repo   (required)
 #   POP_CONTRACTS_REF       git ref to build             (default: origin/main)
 #   POP_CONTRACTS_WORKTREE  temp worktree location       (default: /tmp/pop-main)
 #   POP_SKIP_FETCH=1        skip `git fetch origin`
 
-CONTRACTS_REPO="${POP_CONTRACTS_REPO:-/Users/hudsonheadley/Desktop/Code/POP}"
+CONTRACTS_REPO="${POP_CONTRACTS_REPO:?Set POP_CONTRACTS_REPO to the authorized contracts checkout}"
 WORKTREE_DIR="${POP_CONTRACTS_WORKTREE:-/tmp/pop-main}"
 REF="${POP_CONTRACTS_REF:-origin/main}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

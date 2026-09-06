@@ -84,6 +84,29 @@ export const PaymasterHubAbi = [
   },
   {
     "type": "function",
+    "name": "adoptGlobalRules",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "targets",
+        "type": "address[]",
+        "internalType": "address[]"
+      },
+      {
+        "name": "selectors",
+        "type": "bytes4[]",
+        "internalType": "bytes4[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "clearRule",
     "inputs": [
       {
@@ -226,6 +249,96 @@ export const PaymasterHubAbi = [
             "internalType": "uint32"
           }
         ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getGlobalRule",
+    "inputs": [
+      {
+        "name": "typeId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "selector",
+        "type": "bytes4",
+        "internalType": "bytes4"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct PaymasterHub.Rule",
+        "components": [
+          {
+            "name": "maxCallGasHint",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "allowed",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getGlobalRuleAt",
+    "inputs": [
+      {
+        "name": "index",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "typeId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "selector",
+        "type": "bytes4",
+        "internalType": "bytes4"
+      },
+      {
+        "name": "rule",
+        "type": "tuple",
+        "internalType": "struct PaymasterHub.Rule",
+        "components": [
+          {
+            "name": "maxCallGasHint",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "allowed",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getGlobalRuleCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -509,6 +622,25 @@ export const PaymasterHubAbi = [
   },
   {
     "type": "function",
+    "name": "getRulesMode",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getSolidarityFund",
     "inputs": [],
     "outputs": [
@@ -544,6 +676,30 @@ export const PaymasterHubAbi = [
   },
   {
     "type": "function",
+    "name": "getTargetType",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "initialize",
     "inputs": [
       {
@@ -564,6 +720,35 @@ export const PaymasterHubAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "isGlobalRuleBlocked",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "selector",
+        "type": "bytes4",
+        "internalType": "bytes4"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -630,7 +815,7 @@ export const PaymasterHubAbi = [
       {
         "name": "config",
         "type": "tuple",
-        "internalType": "struct PaymasterHub.DeployConfig",
+        "internalType": "struct PaymasterRuleLib.DeployConfig",
         "components": [
           {
             "name": "operatorHatId",
@@ -696,6 +881,21 @@ export const PaymasterHubAbi = [
             "name": "budgetEpochLens",
             "type": "uint32[]",
             "internalType": "uint32[]"
+          },
+          {
+            "name": "typeTargets",
+            "type": "address[]",
+            "internalType": "address[]"
+          },
+          {
+            "name": "typeIds",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          },
+          {
+            "name": "rulesMode",
+            "type": "uint8",
+            "internalType": "uint8"
           }
         ]
       }
@@ -835,6 +1035,62 @@ export const PaymasterHubAbi = [
   },
   {
     "type": "function",
+    "name": "setGlobalRuleBlock",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "selector",
+        "type": "bytes4",
+        "internalType": "bytes4"
+      },
+      {
+        "name": "blocked",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setGlobalRulesBatch",
+    "inputs": [
+      {
+        "name": "typeIds",
+        "type": "bytes32[]",
+        "internalType": "bytes32[]"
+      },
+      {
+        "name": "selectors",
+        "type": "bytes4[]",
+        "internalType": "bytes4[]"
+      },
+      {
+        "name": "allowed",
+        "type": "bool[]",
+        "internalType": "bool[]"
+      },
+      {
+        "name": "maxCallGasHints",
+        "type": "uint32[]",
+        "internalType": "uint32[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setGracePeriodConfig",
     "inputs": [
       {
@@ -851,6 +1107,19 @@ export const PaymasterHubAbi = [
         "name": "_minDepositRequired",
         "type": "uint128",
         "internalType": "uint128"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setHats",
+    "inputs": [
+      {
+        "name": "newHats",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -1052,12 +1321,71 @@ export const PaymasterHubAbi = [
   },
   {
     "type": "function",
+    "name": "setRulesMode",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "mode",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setSolidarityFee",
     "inputs": [
       {
         "name": "feePercentageBps",
         "type": "uint16",
         "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setTargetTypesBatch",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "targets",
+        "type": "address[]",
+        "internalType": "address[]"
+      },
+      {
+        "name": "typeIds",
+        "type": "bytes32[]",
+        "internalType": "bytes32[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "snapshotGlobalRules",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "targets",
+        "type": "address[]",
+        "internalType": "address[]"
       }
     ],
     "outputs": [],
@@ -1336,6 +1664,19 @@ export const PaymasterHubAbi = [
   },
   {
     "type": "event",
+    "name": "HatsSet",
+    "inputs": [
+      {
+        "name": "hats",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Initialized",
     "inputs": [
       {
@@ -1555,43 +1896,6 @@ export const PaymasterHubAbi = [
   },
   {
     "type": "event",
-    "name": "RuleSet",
-    "inputs": [
-      {
-        "name": "orgId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "target",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "selector",
-        "type": "bytes4",
-        "indexed": true,
-        "internalType": "bytes4"
-      },
-      {
-        "name": "allowed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      },
-      {
-        "name": "maxCallGasHint",
-        "type": "uint32",
-        "indexed": false,
-        "internalType": "uint32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "SolidarityDistributionPaused",
     "inputs": [],
     "anonymous": false
@@ -1738,11 +2042,6 @@ export const PaymasterHubAbi = [
   },
   {
     "type": "error",
-    "name": "InvalidRuleId",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "InvalidSubjectType",
     "inputs": []
   },
@@ -1798,22 +2097,6 @@ export const PaymasterHubAbi = [
   },
   {
     "type": "error",
-    "name": "RuleDenied",
-    "inputs": [
-      {
-        "name": "target",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "selector",
-        "type": "bytes4",
-        "internalType": "bytes4"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "UUPSUnauthorizedCallContext",
     "inputs": []
   },
@@ -1853,6 +2136,68 @@ export const PaymasterHubAbi = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "GlobalRuleBlockSet",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "target",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "selector",
+        "type": "bytes4",
+        "indexed": true,
+        "internalType": "bytes4"
+      },
+      {
+        "name": "blocked",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "GlobalRuleSet",
+    "inputs": [
+      {
+        "name": "typeId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "selector",
+        "type": "bytes4",
+        "indexed": true,
+        "internalType": "bytes4"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      },
+      {
+        "name": "maxCallGasHint",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
       }
     ],
     "anonymous": false
@@ -1928,6 +2273,62 @@ export const PaymasterHubAbi = [
   },
   {
     "type": "event",
+    "name": "RuleSet",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "target",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "selector",
+        "type": "bytes4",
+        "indexed": true,
+        "internalType": "bytes4"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      },
+      {
+        "name": "maxCallGasHint",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RulesModeSet",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "mode",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "SolidarityFeeCollected",
     "inputs": [
       {
@@ -1941,6 +2342,31 @@ export const PaymasterHubAbi = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "TargetTypeSet",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "target",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "typeId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -1984,6 +2410,11 @@ export const PaymasterHubAbi = [
   },
   {
     "type": "error",
+    "name": "GlobalRuleUnknown",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "GracePeriodSpendLimitReached",
     "inputs": []
   },
@@ -1995,6 +2426,21 @@ export const PaymasterHubAbi = [
   {
     "type": "error",
     "name": "InsufficientFunds",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidRuleId",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidRulesMode",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidTypeId",
     "inputs": []
   },
   {
@@ -2031,6 +2477,22 @@ export const PaymasterHubAbi = [
     "type": "error",
     "name": "OrgIsBanned",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RuleDenied",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "selector",
+        "type": "bytes4",
+        "internalType": "bytes4"
+      }
+    ]
   },
   {
     "type": "error",

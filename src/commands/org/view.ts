@@ -1,8 +1,12 @@
+import { resolveOrgId } from '../../lib/resolve';
+import { refreshAuthorityUsers } from '../../lib/authority';
+import { FETCH_AUTHORITY_SUBJECTS, readAuthorityRows } from '@poa-box/core/reads/authority';
+import { subgraphModuleClient } from '../../lib/subgraph-module-client';
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { query } from '../../lib/subgraph';
 import { fetchJson } from '../../lib/ipfs';
-import { FETCH_ORG_FULL_DATA, GET_ORG_BY_NAME } from '../../queries/org';
+import { FETCH_ORG_FULL_DATA } from '../../queries/org';
 import { FETCH_INFRASTRUCTURE_ADDRESSES } from '../../queries/infrastructure';
 import type { InfrastructureAddresses } from '../../queries/infrastructure';
 import { createReadContract } from '../../lib/contracts';
@@ -59,23 +63,7 @@ export const viewHandler = {
     spin.start();
 
     try {
-      let orgId = argv.org;
-
-      // Resolve by name if not hex
-      if (!orgId.startsWith('0x')) {
-        const nameResult = await query<{ organizations: Array<{ id: string }> }>(
-          GET_ORG_BY_NAME,
-          { name: orgId },
-          argv.chain
-        );
-        if (!nameResult.organizations?.length) {
-          spin.stop();
-          output.error(`Organization "${orgId}" not found`);
-          process.exit(1);
-          return;
-        }
-        orgId = nameResult.organizations[0].id;
-      }
+      const orgId = await resolveOrgId(argv.org, argv.chain);
 
       const result = await query<any>(FETCH_ORG_FULL_DATA, { orgId }, argv.chain);
       const org = result.organization;
@@ -86,6 +74,15 @@ export const viewHandler = {
         process.exit(1);
         return;
       }
+
+      const subjects = await readAuthorityRows(subgraphModuleClient(), orgId, FETCH_AUTHORITY_SUBJECTS, 'subjects', argv.chain);
+      await refreshAuthorityUsers(org, orgId, argv.chain);
+      const roles = subjects.map(subject => ({
+        hatId: subject.subjectId, subjectId: subject.subjectId, name: subject.name,
+        kind: subject.kind, canVoteSource: 'historical role metadata',
+        canVote: org.roles?.find((role: any) => role.hatId === subject.subjectId)?.canVote ?? false,
+      }));
+      const memberCount = org.users.filter((user: any) => user.membershipStatus === 'Active').length;
 
       // Fetch IPFS metadata if available
       let metadata = org.metadata || null;
@@ -118,7 +115,7 @@ export const viewHandler = {
             educationHub: org.educationHub?.id,
             executor: org.executorContract?.id,
             quickJoin: org.quickJoin?.id,
-            eligibilityModule: org.eligibilityModule?.id,
+            membershipAuthority: org.membershipAuthority?.id,
             paymentManager: org.paymentManager?.id,
             zkEmailInvites: org.zkEmailInvites?.id,
           },
@@ -137,12 +134,8 @@ export const viewHandler = {
               quorum: org.directDemocracyVoting.quorum,
             } : null,
           },
-          roles: (org.roles || []).map((r: any) => ({
-            hatId: r.hatId,
-            name: r.name,
-            canVote: r.canVote,
-          })),
-          memberCount: (org.users || []).length,
+          roles,
+          memberCount,
           projectCount: (org.taskManager?.projects || []).length,
         });
       } else {
@@ -164,19 +157,19 @@ export const viewHandler = {
         if (org.executorContract) console.log(`    Executor:      ${org.executorContract.id}`);
         if (org.quickJoin) console.log(`    QuickJoin:     ${org.quickJoin.id}`);
         if (org.educationHub) console.log(`    EducationHub:  ${org.educationHub.id}`);
-        if (org.eligibilityModule) console.log(`    Eligibility:   ${org.eligibilityModule.id}`);
+        if (org.membershipAuthority) console.log(`    Authority:     ${org.membershipAuthority.id}`);
         if (org.paymentManager) console.log(`    Payments:      ${org.paymentManager.id}`);
         console.log('');
 
-        if (org.roles?.length) {
+        if (roles.length) {
           console.log('  Roles:');
-          for (const role of org.roles) {
-            console.log(`    - ${role.name || 'Unnamed'} (hat: ${role.hatId}, vote: ${role.canVote ? 'yes' : 'no'})`);
+          for (const role of roles) {
+            console.log(`    - ${role.name || 'Unnamed'} (subject: ${role.hatId})`);
           }
           console.log('');
         }
 
-        console.log(`  Members: ${(org.users || []).length}`);
+        console.log(`  Members: ${memberCount}`);
         console.log(`  Projects: ${(org.taskManager?.projects || []).length}`);
 
         if (metadata?.links?.length) {

@@ -93,7 +93,7 @@ function modulesFixture(overrides: Partial<OrgModules> = {}): OrgModules {
     educationHubAddress: null,
     executorAddress: null,
     quickJoinAddress: null,
-    eligibilityModuleAddress: null,
+    membershipAuthorityAddress: null,
     paymentManagerAddress: null,
     zkEmailInvitesAddress: null,
     ...overrides,
@@ -244,7 +244,7 @@ describe('buildVersionPanel — impl vs latest comparison', () => {
     // registered beacon typeId. Verified against the live Gnosis beacon set.
     const verified = new Set([
       'TaskManager', 'HybridVoting', 'DirectDemocracyVoting', 'ParticipationToken',
-      'EducationHub', 'PaymentManager', 'QuickJoin', 'EligibilityModule',
+      'EducationHub', 'PaymentManager', 'QuickJoin', 'MembershipAuthority',
       'ZkEmailInvites',
     ]);
     for (const m of MODULE_TYPES) {
@@ -255,6 +255,7 @@ describe('buildVersionPanel — impl vs latest comparison', () => {
 
 describe('pop org status handler — panel degradation is additive-only', () => {
   const orgFixture = {
+    subjectMemberships: [],
     organization: {
       name: 'TestOrg',
       taskManager: { projects: [] },
@@ -297,12 +298,12 @@ describe('pop org status handler — panel degradation is additive-only', () => 
     expect(payload.moduleVersionsError).toContain('subgraph down');
   });
 
-  it('--fast skips the version panel entirely (single subgraph query, no version fields)', async () => {
+  it('--fast skips the version panel entirely (authority membership and activity reads only)', async () => {
     mocks.query.mockResolvedValue(orgFixture);
 
     await statusHandler.handler({ _: [], $0: 'pop', org: 'testorg', chain: 11155111, fast: true } as any);
 
-    expect(mocks.query).toHaveBeenCalledTimes(1); // FETCH_ORG_ACTIVITY only
+    expect(mocks.query).toHaveBeenCalledTimes(2); // Activity plus current authority membership
     expect(mocks.getImplementation).not.toHaveBeenCalled();
     const payload = mocks.json.mock.calls[0][0];
     expect(payload.moduleVersions).toBeUndefined();

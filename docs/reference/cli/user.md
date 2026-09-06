@@ -30,20 +30,6 @@ pop user join [flags]
 | `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
 | `--username` | string | no | - | Username to register (only needed if not already registered) |
 
-## pop user claim-hats
-
-Claim additional role hats after joining (e.g. a hat you were vouched for)
-
-```text
-pop user claim-hats [flags]
-```
-
-| Flag | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `--hats` | string | yes | - | Comma-separated hat IDs to claim (decimal or 0x-hex), e.g. after being vouched for a role |
-| `--idempotency-key` | string | no | - | Explicit idempotency key. Two identical claims within the TTL return the same result without re-submitting. Default: auto-derived from argv. |
-| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
-
 ## pop user whoami
 
 Show signer identity: address, username, gas balance, and org standing
@@ -51,10 +37,6 @@ Show signer identity: address, username, gas balance, and org standing
 ```text
 pop user whoami [flags]
 ```
-
-| Flag | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `--on-chain` | boolean | no | `false` | Re-verify membership with a live Hats.balanceOf call instead of the subgraph's indexed hat state (slower; catches a dynamically revoked eligibility that burned no token) |
 
 ## pop user profile
 

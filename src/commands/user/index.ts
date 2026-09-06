@@ -3,14 +3,12 @@ import { registerHandler } from './register';
 import { joinHandler } from './join';
 import { profileHandler } from './profile';
 import { updateProfileHandler } from './update-profile';
-import { claimHatsHandler } from './claim-hats';
 import { whoamiHandler } from './whoami';
 
 export function registerUserCommands(yargs: Argv) {
   return yargs
     .command('register', 'Register a username on the account registry', registerHandler.builder, registerHandler.handler)
     .command('join', 'Join an organization (registers your username first if needed)', joinHandler.builder, joinHandler.handler)
-    .command('claim-hats', 'Claim additional role hats after joining (e.g. a hat you were vouched for)', claimHatsHandler.builder, claimHatsHandler.handler)
     .command('whoami', 'Show signer identity: address, username, gas balance, and org standing', whoamiHandler.builder, whoamiHandler.handler)
     .command('profile', 'View user profile', profileHandler.builder, profileHandler.handler)
     .command('update-profile', 'Update profile (bio, avatar, links) or change your username', updateProfileHandler.builder, updateProfileHandler.handler)

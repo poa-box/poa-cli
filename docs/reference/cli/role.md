@@ -2,54 +2,11 @@
 
 # pop role
 
-Role applications
-
-## pop role apply
-
-Apply for a role
-
-```text
-pop role apply [flags]
-```
-
-| Flag | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `--experience` | string | no | - | Relevant experience |
-| `--hat` | string | yes | - | Hat ID of the role to apply for |
-| `--idempotency-key` | string | no | - | Explicit idempotency key (repeat applies within the TTL return the prior result). |
-| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
-| `--notes` | string | no | - | Application notes |
-
-## pop role applications
-
-List role applications
-
-```text
-pop role applications [flags]
-```
-
-| Flag | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `--hat` | string | no | - | Filter by hat ID |
-| `--mine` | boolean | no | - | Show only my applications |
-
-## pop role withdraw-application
-
-Withdraw your pending role application
-
-```text
-pop role withdraw-application [flags]
-```
-
-| Flag | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `--hat` | string | yes | - | Hat ID whose application to withdraw |
-| `--idempotency-key` | string | no | - | Explicit idempotency key (repeat withdrawals within the TTL return the prior result). |
-| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
+Authority roles and membership
 
 ## pop role create
 
-Create a new role hat (superAdmin-only)
+Propose creation of an authority role
 
 ```text
 pop role create [flags]
@@ -57,136 +14,332 @@ pop role create [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--default-eligible` | boolean | no | `false` | Wearers eligible by default |
-| `--default-standing` | boolean | no | `false` | Wearers in good standing by default |
-| `--idempotency-key` | string | no | - | Explicit idempotency key (repeat creates within the TTL return the prior result). |
-| `--image` | string | no | - | Hat image URI (optional) |
-| `--max-supply` | number | no | `1000` | Max simultaneous wearers (uint32) |
-| `--mint-to` | string | no | - | Comma-separated addresses to mint the new hat to immediately |
-| `--mutable` | boolean | no | `false` | Allow the hat's properties to be changed later |
-| `--name` | string | yes | - | Role name (stored as the hat details) |
-| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
-| `--parent-hat` | string | yes | - | Parent hat ID the new role hangs under |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--image` | string | no | `""` | Image URI |
+| `--max-members` | number | no | `0` | Member cap (0 = unlimited) |
+| `--metadata-hash` | string | no | `0x0000000000000000000000000000000000000000000000000000000000000000` | IPFS SHA-256 digest (bytes32) |
+| `--name` | string | yes | - | Subject name |
 
-## pop role eligibility
+## pop role claim
 
-Manage wearer/default eligibility (set / clear / set-default; superAdmin-only)
+claim your role membership
 
 ```text
-pop role eligibility <sub> [flags]
-```
-
-| Positional | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `<sub>` | - | yes | - | - |
-
-### pop role eligibility set
-
-Set a wearer's eligibility/standing (or batch via --file); superAdmin-only
-
-```text
-pop role eligibility set [flags]
+pop role claim [flags]
 ```
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--eligible` | boolean | no | `true` | Wearer is eligible (--no-eligible to unset) |
-| `--file` | string | no | - | Batch JSON file: [{"wearer": "0x…", "eligible": true, "standing": true}, …] |
-| `--hat` | string | yes | - | Hat ID whose eligibility to set |
-| `--standing` | boolean | no | `true` | Wearer is in good standing (--no-standing to unset) |
-| `--wearer` | string | no | - | Wearer address (single-wearer mode) |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
 
-### pop role eligibility clear
+## pop role renounce
 
-Clear a wearer-specific rule so hat defaults apply; superAdmin-only
+renounce your role membership
 
 ```text
-pop role eligibility clear [flags]
+pop role renounce [flags]
 ```
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--hat` | string | yes | - | Hat ID |
-| `--wearer` | string | yes | - | Wearer whose specific rule to clear (hat defaults apply again) |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
 
-### pop role eligibility set-default
+## pop role grant
 
-Set the hat-wide default eligibility/standing; superAdmin-only
+Propose a role grant
 
 ```text
-pop role eligibility set-default [flags]
+pop role grant [flags]
 ```
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--eligible` | boolean | no | `true` | Wearers eligible by default (--no-eligible to unset) |
-| `--hat` | string | yes | - | Hat ID whose defaults to set |
-| `--standing` | boolean | no | `true` | Wearers in good standing by default (--no-standing to unset) |
+| `--delegable` | boolean | no | `false` | Allow delegated managers to clear this governance grant |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--user` | string | yes | - | Member wallet address |
 
-## pop role admin
+## pop role offer
 
-Module superAdmin operations (transfer / mint / pause / unpause / set-join-time)
-
-```text
-pop role admin <sub> [flags]
-```
-
-| Positional | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `<sub>` | - | yes | - | - |
-
-### pop role admin transfer
-
-Transfer the module superAdmin (DESTRUCTIVE — hands over the whole module)
+Propose a role offer
 
 ```text
-pop role admin transfer [flags]
+pop role offer [flags]
 ```
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--to` | string | yes | - | New superAdmin address |
+| `--delegable` | boolean | no | `false` | Allow delegated managers to clear this governance grant |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--user` | string | yes | - | Member wallet address |
 
-### pop role admin mint
+## pop role remove
 
-Mint a hat to one or more wearers (superAdmin-only)
+Propose member removal
 
 ```text
-pop role admin mint [flags]
+pop role remove [flags]
 ```
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--hat` | string | yes | - | Hat ID to mint |
-| `--wearer` | string | yes | - | Recipient address (comma-separate for several) |
+| `--ban` | boolean | no | `false` | Ban membership instead of attempting soft removal |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--user` | string | yes | - | Member wallet address |
 
-### pop role admin pause
+## pop role unremove
 
-Pause the eligibility module (superAdmin-only)
-
-```text
-pop role admin pause [flags]
-```
-
-### pop role admin unpause
-
-Unpause the eligibility module (superAdmin-only)
+Propose unremove
 
 ```text
-pop role admin unpause [flags]
-```
-
-### pop role admin set-join-time
-
-Set a user's join time for the vouching grace period (superAdmin-only)
-
-```text
-pop role admin set-join-time [flags]
+pop role unremove [flags]
 ```
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--timestamp` | number | no | - | Unix seconds (omit to use the current block time via setUserJoinTimeNow) |
-| `--user` | string | yes | - | User whose join time to set |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--user` | string | yes | - | Member wallet address |
+
+## pop role withdraw-offer
+
+Propose withdraw-offer
+
+```text
+pop role withdraw-offer [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--user` | string | yes | - | Member wallet address |
+
+## pop role clear-rule
+
+Propose clear-rule
+
+```text
+pop role clear-rule [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--user` | string | yes | - | Member wallet address |
+
+## pop role set-rule
+
+Propose an explicit grant or ban rule
+
+```text
+pop role set-rule [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--delegable` | boolean | no | `false` | - |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--kind` | string | yes | - | Choices: `none`, `grant`, `ban` |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--user` | string | yes | - | Member wallet address |
+
+## pop role set-default
+
+Propose default role eligibility
+
+```text
+pop role set-default [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--allow` | boolean | yes | - | - |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--force` | boolean | no | `false` | Permit closing a role with accepted members |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+
+## pop role rename
+
+Rename an authority subject using SUBJECT_RENAME permission
+
+```text
+pop role rename [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--image` | string | no | `""` | Image URI |
+| `--metadata-hash` | string | no | `0x0000000000000000000000000000000000000000000000000000000000000000` | IPFS SHA-256 digest (bytes32) |
+| `--name` | string | yes | - | Subject name |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+
+## pop role set-max-members
+
+Propose the role membership cap
+
+```text
+pop role set-max-members [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--max-members` | number | yes | - | - |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+
+## pop role set-manager
+
+Propose manager delegation for a subject
+
+```text
+pop role set-manager [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--caps` | number | yes | - | Capability mask: 1 grant/offer, 2 remove |
+| `--delay` | number | no | `0` | Review delay in seconds |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--manager` | string | yes | - | Manager subject ID (0 clears delegation) |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+
+## pop role delegate-grant
+
+delegate-grant through configured manager authority
+
+```text
+pop role delegate-grant [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--user` | string | yes | - | Member wallet address |
+
+## pop role delegate-offer
+
+delegate-offer through configured manager authority
+
+```text
+pop role delegate-offer [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--user` | string | yes | - | Member wallet address |
+
+## pop role delegate-unremove
+
+delegate-unremove through configured manager authority
+
+```text
+pop role delegate-unremove [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--user` | string | yes | - | Member wallet address |
+
+## pop role delegate-remove
+
+Queue delegated member removal
+
+```text
+pop role delegate-remove [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--ban` | boolean | no | `false` | - |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--user` | string | yes | - | Member wallet address |
+
+## pop role finalize
+
+finalize a pending delegated action
+
+```text
+pop role finalize [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--pending` | string | yes | - | Authority pending action ID |
+
+## pop role cancel
+
+cancel a pending delegated action
+
+```text
+pop role cancel [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--pending` | string | yes | - | Authority pending action ID |
+
+## pop role reconcile
+
+Repair a lapsed membership
+
+```text
+pop role reconcile [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--user` | string | yes | - | Member wallet address |
+
+## pop role set-perm
+
+Propose an authority permission row
+
+```text
+pop role set-perm [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--context` | string | no | `0x0000000000000000000000000000000000000000000000000000000000000000` | bytes32 context (global is zero; task project context is projectId + 1) |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--inherit-global` | boolean | no | `false` | - |
+| `--key` | string | yes | - | Semantic key name (DD_VOTE, PT_MEMBER, etc.) or bytes32 key |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--value` | string | yes | - | Permission value without flag bits |
+
+## pop role clear-perm
+
+Propose clearing an authority permission row
+
+```text
+pop role clear-perm [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--context` | string | no | `0x0000000000000000000000000000000000000000000000000000000000000000` | - |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--key` | string | yes | - | - |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+
+## pop role set-paused
+
+Propose pausing or unpausing non-governance authority writes
+
+```text
+pop role set-paused [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--paused` | boolean | yes | - | - |
 
 _Global flags: --org, --chain, --rpc, --json, --address, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

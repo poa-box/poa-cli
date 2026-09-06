@@ -1,6 +1,7 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { query, queryAllChains } from '../../lib/subgraph';
-import { FETCH_USER_ORGANIZATIONS } from '../../queries/org';
+import { listUserOrganizations } from '@poa-box/core/reads/org';
+import { subgraphModuleClient } from '../../lib/subgraph-module-client';
 import { formatAddress } from '../../lib/encoding';
 import * as output from '../../lib/output';
 
@@ -11,7 +12,7 @@ interface ListArgs {
 
 const LIST_ORGS_QUERY = `
   query ListOrgs($first: Int!) {
-    organizations(first: $first, orderBy: deployedAt, orderDirection: desc) {
+    organizations(where: { membershipAuthority_: { isRouterBound: true, cutoverAt_gt: "0" } }, first: $first, orderBy: deployedAt, orderDirection: desc) {
       id
       name
       deployedAt
@@ -31,14 +32,8 @@ export const listHandler = {
     try {
       if (argv.member) {
         // Search for orgs where this address is a member
-        const result = await query<any>(
-          FETCH_USER_ORGANIZATIONS,
-          { userAddress: argv.member },
-          argv.chain
-        );
-
+        const users = await listUserOrganizations(subgraphModuleClient(), argv.member, argv.chain);
         spin.stop();
-        const users = result.users || [];
 
         if (users.length === 0) {
           output.info('No organizations found for this member');

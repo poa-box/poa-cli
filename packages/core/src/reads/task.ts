@@ -17,7 +17,8 @@ import {
   FETCH_TASK_RELEASE_HISTORY_LEGACY,
 } from '../graph/documents/task';
 import { parseProjectId } from '../encoding';
-import { PERM_BITS } from '../perms';
+import { FETCH_AUTHORITY_PERMS, readAuthorityRows, isAuthorityReady } from './authority';
+import { AUTHORITY_KEYS, projectContext } from '../tx/authority';
 import { CliError } from '../errors';
 import { EXIT } from '../exit-codes';
 import { ethers } from 'ethers';
@@ -255,66 +256,23 @@ export async function fetchTaskStats(
 
 // ────────────────────── permission masks ──────────────────────
 
-/**
- * Tier 0: deployed v4 schema — GlobalRolePermission masks, organizerHatIds,
- * per-project ProjectRolePermission masks.
- * Port of PERMS_QUERY_FULL at src/commands/task/perms.ts:55. Masks are
- * subgraph-only: they are NOT readable per-wearer on-chain.
- */
-export const PERMS_QUERY_FULL = `
-  query TaskPermsFull($orgId: Bytes!) {
-    organization(id: $orgId) {
-      id
-      taskManager {
-        id
-        creatorHatIds
-        organizerHatIds
-        globalRolePermissions { hatId mask }
-        projects(where: { deleted: false }, first: 50) {
-          id
-          title
-          rolePermissions { hatId mask }
-        }
-      }
-    }
+/** Historical project identity plus current authority readiness; no legacy permission rows. */
+export const PERMS_QUERY_FULL = `query TaskPermsFull($orgId: Bytes!) {
+  organization(id: $orgId) {
+    id membershipAuthority { id isRouterBound cutoverAt }
+    taskManager { id creatorHatIds organizerHatIds projects(where: { deleted: false }, first: 1000) { id title } }
   }
-`;
+}`;
 
-/** Tier 1: older schema — no global perms/organizer hats; boolean per-project flags. */
-export const PERMS_QUERY_LEGACY = `
-  query TaskPermsLegacy($orgId: Bytes!) {
-    organization(id: $orgId) {
-      id
-      taskManager {
-        id
-        creatorHatIds
-        projects(where: { deleted: false }, first: 50) {
-          id
-          title
-          rolePermissions { hatId canCreate canClaim canReview canAssign }
-        }
-      }
-    }
-  }
-`;
-
-/** Tier array for `queryWithFieldFallback`, matching the CLI's order. */
 export function taskPermsTiers(orgId: string): FieldFallbackTier[] {
-  return [
-    { query: PERMS_QUERY_FULL, variables: { orgId } },
-    { query: PERMS_QUERY_LEGACY, variables: { orgId } },
-  ];
+  return [{ query: PERMS_QUERY_FULL, variables: { orgId } }];
 }
 
 export interface SubgraphRolePermission {
+  /** Stable compatibility label; values are authority subject ids (including adopted legacy ids). */
   hatId: string;
-  /** Tier 0 field. */
+  subjectId?: string;
   mask?: number | string;
-  /** Tier 1 (legacy) boolean fields. */
-  canCreate?: boolean;
-  canClaim?: boolean;
-  canReview?: boolean;
-  canAssign?: boolean;
 }
 
 export interface TaskPermsResult {
@@ -344,24 +302,28 @@ export interface TaskPermsRead {
  * src/commands/task/perms.ts:175 (`pop task perms show`).
  */
 export async function fetchTaskPerms(
-  client: GraphClient,
-  orgId: string,
-  chainId?: number
+  client: GraphClient, orgId: string, chainId?: number
 ): Promise<TaskPermsRead> {
-  return client.queryWithFieldFallback<TaskPermsResult>(taskPermsTiers(orgId), { chainId });
-}
-
-/**
- * Rebuild a mask from tier-1 boolean flags (partial: only bits 1..8 indexable).
- * Port of src/commands/task/perms.ts maskFromBooleans.
- */
-export function maskFromBooleans(rp: SubgraphRolePermission): number {
-  let mask = 0;
-  if (rp.canCreate) mask |= PERM_BITS.create;
-  if (rp.canClaim) mask |= PERM_BITS.claim;
-  if (rp.canReview) mask |= PERM_BITS.review;
-  if (rp.canAssign) mask |= PERM_BITS.assign;
-  return mask;
+  const data = await client.query<any>(PERMS_QUERY_FULL, { orgId }, chainId);
+  if (!isAuthorityReady(data.organization)) return { data: { organization: null }, tierIndex: 0 };
+  const tm = data.organization.taskManager;
+  if (!tm) return { data, tierIndex: 0 };
+  const rows = (await readAuthorityRows(client, orgId, FETCH_AUTHORITY_PERMS, 'permRows', chainId))
+    .filter(row => row.exists && row.permKey.toLowerCase() === AUTHORITY_KEYS.TM_PERMS.toLowerCase());
+  const global = new Map<string, any>(rows.filter(row => row.ctx.toLowerCase() === ethers.constants.HashZero).map(row => [row.subject.subjectId, row]));
+  // TaskManager consumes the low uint8 of the authority's OR-mask result.
+  const mask = (row: any): number => row ? ethers.BigNumber.from(row.value).and(255).toNumber() : 0;
+  const projectRows = (pid: string): SubgraphRolePermission[] => {
+    const ctx = projectContext(parseProjectId(pid)).toLowerCase();
+    const scoped = new Map<string, any>(rows.filter(row => row.ctx.toLowerCase() === ctx).map(row => [row.subject.subjectId, row]));
+    return [...new Set([...global.keys(), ...scoped.keys()])].map(subjectId => {
+      const row = scoped.get(subjectId);
+      return { hatId: subjectId, subjectId, mask: row ? mask(row) | (row.inheritGlobal ? mask(global.get(subjectId)) : 0) : mask(global.get(subjectId)) };
+    });
+  };
+  tm.globalRolePermissions = [...global.entries()].map(([subjectId, row]) => ({ hatId: subjectId, subjectId, mask: mask(row) }));
+  tm.projects = tm.projects.map((p: any) => ({ ...p, rolePermissions: projectRows(p.id) }));
+  return { data, tierIndex: 0 };
 }
 
 /**

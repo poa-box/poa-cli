@@ -70,44 +70,32 @@ export interface OrgDeployConfig {
   autoUpgrade?: boolean;
   hybridVoting: {
     thresholdPct: number;
+    quorum?: number;
     classes: Array<{
       strategy: 'DIRECT' | 'ERC20_BAL';
       slicePct: number;
       quadratic?: boolean;
       minBalance?: string;
       asset?: string;
-      hatIds?: number[];
+      subjectIds?: string[];
     }>;
   };
-  directDemocracy: {
+  directDemocracy?: {
     thresholdPct: number;
+    quorum?: number;
   };
   roles: Array<{
     name: string;
     image?: string;
     canVote: boolean;
-    vouching?: {
-      enabled: boolean;
-      quorum: number;
-      voucherRoleIndex: number;
-      combineWithHierarchy?: boolean;
-    };
-    defaults?: {
-      eligible: boolean;
-      standing: boolean;
-    };
-    hierarchy?: {
-      adminRoleIndex: number;
-    };
-    distribution?: {
-      mintToDeployer: boolean;
-      additionalWearers?: string[];
-    };
-    hatConfig?: {
-      maxSupply: number;
-      mutableHat: boolean;
-    };
+    metadataCID?: string;
+    open: boolean;
+    maxMembers?: number;
+    vouching?: { enabled: boolean; quorum: number; voucherRoleIndex: number };
+    distribution?: { mintToDeployer: boolean; additionalWearers?: string[] };
   }>;
+  groups?: Array<{ name: string; memberRoleIndices: number[] }>;
+  token?: { name?: string; symbol?: string };
   roleAssignments: {
     quickJoinRoles: number[];
     tokenMemberRoles: number[];
@@ -131,7 +119,7 @@ export interface OrgDeployConfig {
   };
   /**
    * Optional org-wide TaskManager ROLE_PERM grants applied at deploy time
-   * (OrgDeployer.TaskManagerPermConfig — roleIndices resolve to hat IDs,
+   * (OrgDeployer.TaskManagerPermConfig — roleIndices resolve to subject IDs,
    * masks are TaskPerm bitmasks: 1=create 2=claim 4=review 8=assign …).
    */
   taskManagerPerms?: {
@@ -152,7 +140,7 @@ export function indicesToBitmap(indices: number[]): ethers.BigNumber {
 /**
  * Reject role indices that do not name a role in the config.
  *
- * RoleResolver reverts UnregisteredRole(roleIdx) when a bitmap bit has no registered hat
+ * The deployer rejects any bitmap bit without a registered role
  * (audit M-09) — previously hat 0 was silently stored as an "authorized" hat and the deploy
  * succeeded with a broken allowlist. Either way the config is wrong, and we know roles.length
  * here, so name the offending field instead of surfacing a bare index from gas estimation
@@ -172,6 +160,72 @@ export function assertRoleIndices(
           + 'or removing a role.'
       );
     }
+  }
+}
+
+/** Reject legacy access configs and validate the authority's genesis invariants before I/O. */
+export function validateOrgDeployConfig(config: OrgDeployConfig): void {
+  const invalid = (message: string): never => { throw new CliError('Config invalid: ' + message, EXIT.USAGE); };
+  const uint = (value: unknown, label: string, max = 4294967295): void => {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > max) invalid(label + ' must be an integer between 0 and ' + max);
+  };
+  if (!config?.orgName?.trim()) invalid('orgName is required');
+  if (!Array.isArray(config.roles) || config.roles.length < 1 || config.roles.length > 16) invalid('roles must contain 1–16 authority roles');
+  if (!config.hybridVoting || !Array.isArray(config.hybridVoting.classes) || !config.hybridVoting.classes.length) invalid('hybridVoting.classes is required');
+  uint(config.hybridVoting.thresholdPct, 'hybridVoting.thresholdPct', 100);
+  uint(config.directDemocracy?.thresholdPct ?? 51, 'directDemocracy.thresholdPct', 100);
+  if (config.hybridVoting.thresholdPct === 0 || config.directDemocracy?.thresholdPct === 0) invalid('voting thresholds must be between 1 and 100');
+  uint(config.hybridVoting.quorum ?? 0, 'hybridVoting.quorum');
+  uint(config.directDemocracy?.quorum ?? 0, 'directDemocracy.quorum');
+  let slices = 0;
+  for (const c of config.hybridVoting.classes) {
+    if ('hatIds' in c) invalid('hybridVoting.classes.hatIds is unsupported; use authority subjectIds');
+    if (c.strategy !== 'DIRECT' && c.strategy !== 'ERC20_BAL') invalid('unknown voting class strategy');
+    uint(c.slicePct, 'hybridVoting.classes.slicePct', 100);
+    slices += c.slicePct;
+    if (c.asset && !ethers.utils.isAddress(c.asset)) invalid('invalid voting asset address');
+    if (c.subjectIds && (!Array.isArray(c.subjectIds) || c.subjectIds.some(id => typeof id !== 'string' || !/^[0-9]+$/.test(id)))) invalid('subjectIds must be decimal strings');
+  }
+  if (slices !== 100) invalid('hybridVoting class slices must sum to 100');
+  for (const [i, role] of config.roles.entries()) {
+    if (!role.name?.trim()) invalid('roles[' + i + '].name is required');
+    if ('hatConfig' in role || 'defaults' in role || 'hierarchy' in role || (role.vouching && 'combineWithHierarchy' in role.vouching)) invalid('legacy Hats role configuration is unsupported; use open, maxMembers and authority vouching');
+    if (typeof role.open !== 'boolean') invalid('roles[' + i + '].open must explicitly be true or false');
+    if (typeof role.canVote !== 'boolean') invalid('roles[' + i + '].canVote must be a boolean');
+    uint(role.maxMembers ?? 0, 'roles[' + i + '].maxMembers');
+    if (role.vouching?.enabled) {
+      uint(role.vouching.quorum, 'roles[' + i + '].vouching.quorum');
+      if (!role.vouching.quorum) invalid('enabled vouching requires a positive quorum');
+      assertRoleIndices('roles[' + i + '].vouching.voucherRoleIndex', [role.vouching.voucherRoleIndex], config.roles.length);
+    }
+    const wearers = role.distribution?.additionalWearers ?? [];
+    if (!Array.isArray(wearers) || wearers.some(w => !ethers.utils.isAddress(w) || w === ethers.constants.AddressZero)) invalid('invalid additional wearer address');
+    if (new Set(wearers.map(w => w.toLowerCase())).size !== wearers.length) invalid('duplicate additional wearer');
+    const seeded = wearers.length + ((role.distribution?.mintToDeployer ?? true) ? 1 : 0);
+    if (role.maxMembers && seeded > role.maxMembers) invalid('roles[' + i + '].maxMembers is below the genesis membership count');
+  }
+  if (!config.roleAssignments || typeof config.roleAssignments !== 'object') invalid('roleAssignments is required');
+  const assignmentFields = ['quickJoinRoles', 'tokenMemberRoles', 'tokenApproverRoles', 'taskCreatorRoles', 'educationCreatorRoles', 'educationMemberRoles', 'hybridProposalCreatorRoles', 'ddVotingRoles', 'ddCreatorRoles'];
+  for (const field of Object.keys(config.roleAssignments)) if (!assignmentFields.includes(field)) invalid('unknown roleAssignments.' + field);
+  for (const field of assignmentFields) {
+    const indices = (config.roleAssignments as any)[field] ?? [];
+    if (!Array.isArray(indices)) invalid('roleAssignments.' + field + ' must be an array');
+    assertRoleIndices('roleAssignments.' + field, indices, config.roles.length);
+  }
+  for (const i of config.roleAssignments.quickJoinRoles ?? []) if (!config.roles[i].open) invalid('QuickJoin role ' + i + ' must be open');
+  if (config.groups && (!Array.isArray(config.groups) || config.groups.length > 8)) invalid('groups must contain at most 8 groups');
+  for (const [i, group] of (config.groups ?? []).entries()) {
+    if (!group.name?.trim() || !Array.isArray(group.memberRoleIndices) || group.memberRoleIndices.length < 1 || group.memberRoleIndices.length > 16) invalid('groups[' + i + '] requires a name and 1–16 memberRoleIndices');
+    assertRoleIndices('groups[' + i + '].memberRoleIndices', group.memberRoleIndices, config.roles.length);
+    if (new Set(group.memberRoleIndices).size !== group.memberRoleIndices.length) invalid('duplicate group member role');
+  }
+  if (config.metadataAdminRoleIndex !== undefined) assertRoleIndices('metadataAdminRoleIndex', [config.metadataAdminRoleIndex], config.roles.length);
+  if (config.paymaster) assertRoleIndices('paymaster.operatorRoleIndex', [config.paymaster.operatorRoleIndex], config.roles.length);
+  const tm = config.taskManagerPerms;
+  if (tm) {
+    if (!Array.isArray(tm.roleIndices) || !Array.isArray(tm.masks) || tm.roleIndices.length !== tm.masks.length) invalid('taskManagerPerms.roleIndices and masks must be arrays of equal length');
+    assertRoleIndices('taskManagerPerms.roleIndices', tm.roleIndices, config.roles.length);
+    for (const mask of tm.masks) uint(mask, 'taskManagerPerms.masks', 255);
   }
 }
 
@@ -281,7 +335,7 @@ export const DEPLOY_FULL_ORG_GAS_LIMIT = 15000000;
 /**
  * Pure assembly of the DeploymentParams struct — port of the param build in
  * `pop org deploy` (src/commands/org/deploy.ts:257-403), byte-for-byte the
- * same encoding. Validates taskManagerPerms lengths and every roleAssignments
+ * native authority encoding. Validates taskManagerPerms lengths and every roleAssignments
  * index exactly like the CLI (both gate the broadcast).
  *
  * ABI field order (verified against src/abi/OrgDeployerNew.json +
@@ -289,55 +343,29 @@ export const DEPLOY_FULL_ORG_GAS_LIMIT = 15000000;
  *   orgId, orgName, metadataHash, registryAddr, deployerAddress,
  *   deployerUsername, regDeadline, regNonce, regSignature, autoUpgrade,
  *   hybridThresholdPct, ddThresholdPct, hybridClasses, ddInitialTargets,
- *   roles, roleAssignments, metadataAdminRoleIndex, passkeyEnabled,
+ *   roles, groups, roleAssignments, metadataAdminRoleIndex, passkeyEnabled,
  *   educationHubConfig, bootstrap, paymasterConfig, taskManagerPerms
  */
 export function buildDeploymentParams(
   config: OrgDeployConfig,
   resolved: DeploymentResolvedInputs
 ): unknown[] {
-  // Build hybrid voting classes
-  // ABI: strategy(uint8), slicePct(uint8), quadratic(bool), minBalance(uint256), asset(address), hatIds(uint256[])
-  const hybridClasses = config.hybridVoting.classes.map((c) => [
-    c.strategy === 'DIRECT' ? 0 : 1,       // uint8
-    c.slicePct,                              // uint8 (0-100)
-    c.quadratic || false,                    // bool
-    c.minBalance ? ethers.utils.parseUnits(c.minBalance, 18) : 0, // uint256
-    c.asset || ethers.constants.AddressZero, // address
-    c.hatIds || [],                          // uint256[]
+  validateOrgDeployConfig(config);
+  const hybridClasses = config.hybridVoting.classes.map(c => [
+    c.strategy === 'DIRECT' ? 0 : 1,
+    c.slicePct,
+    c.quadratic ?? false,
+    c.minBalance ? ethers.utils.parseUnits(c.minBalance, 18) : 0,
+    c.asset || ethers.constants.AddressZero,
+    c.subjectIds || [], // ABI retains the hatIds label; values are authority subjects.
   ]);
-
-  // Build role configs
-  // ABI: name(string), image(string), metadataCID(bytes32), canVote(bool),
-  //      vouching(tuple), defaults(tuple), hierarchy(tuple), distribution(tuple), hatConfig(tuple)
-  const MAX_UINT32 = 4294967295; // 2^32 - 1
-  const roles = config.roles.map((r) => [
-    r.name,                                  // string
-    r.image || '',                           // string
-    ethers.constants.HashZero,               // bytes32 metadataCID
-    r.canVote,                               // bool
-    [ // vouching: enabled(bool), quorum(uint32), voucherRoleIndex(uint256), combineWithHierarchy(bool)
-      r.vouching?.enabled || false,
-      r.vouching?.quorum || 0,
-      r.vouching?.voucherRoleIndex ?? ethers.constants.MaxUint256,
-      r.vouching?.combineWithHierarchy || false,
-    ],
-    [ // defaults: eligible(bool), standing(bool)
-      r.defaults?.eligible ?? true,
-      r.defaults?.standing ?? true,
-    ],
-    [ // hierarchy: adminRoleIndex(uint256)
-      r.hierarchy?.adminRoleIndex ?? ethers.constants.MaxUint256,
-    ],
-    [ // distribution: mintToDeployer(bool), additionalWearers(address[])
-      r.distribution?.mintToDeployer ?? true,
-      r.distribution?.additionalWearers || [],
-    ],
-    [ // hatConfig: maxSupply(uint32), mutableHat(bool)
-      r.hatConfig?.maxSupply ?? MAX_UINT32,  // uint32, NOT uint256
-      r.hatConfig?.mutableHat ?? true,
-    ],
+  const roles = config.roles.map(r => [
+    r.name, r.image || '', r.metadataCID || ethers.constants.HashZero,
+    r.canVote, r.open, r.maxMembers ?? 0,
+    [r.vouching?.enabled ?? false, r.vouching?.quorum ?? 0, r.vouching?.voucherRoleIndex ?? 0],
+    [r.distribution?.mintToDeployer ?? true, r.distribution?.additionalWearers || []],
   ]);
+  const groups = (config.groups || []).map(g => [g.name, g.memberRoleIndices]);
 
   // Build role assignment bitmaps
   const ra = config.roleAssignments;
@@ -356,15 +384,15 @@ export function buildDeploymentParams(
   assertRoleIndices('roleAssignments.ddCreatorRoles', ra.ddCreatorRoles, roleCount);
 
   const roleAssignments = [
-    indicesToBitmap(ra.quickJoinRoles),
-    indicesToBitmap(ra.tokenMemberRoles),
-    indicesToBitmap(ra.tokenApproverRoles),
-    indicesToBitmap(ra.taskCreatorRoles),
+    indicesToBitmap(ra.quickJoinRoles || []),
+    indicesToBitmap(ra.tokenMemberRoles || []),
+    indicesToBitmap(ra.tokenApproverRoles || []),
+    indicesToBitmap(ra.taskCreatorRoles || []),
     indicesToBitmap(ra.educationCreatorRoles || []),
     indicesToBitmap(ra.educationMemberRoles || []),
-    indicesToBitmap(ra.hybridProposalCreatorRoles),
-    indicesToBitmap(ra.ddVotingRoles),
-    indicesToBitmap(ra.ddCreatorRoles),
+    indicesToBitmap(ra.hybridProposalCreatorRoles || []),
+    indicesToBitmap(ra.ddVotingRoles || []),
+    indicesToBitmap(ra.ddCreatorRoles || []),
   ];
 
   // Build paymaster config
@@ -395,21 +423,14 @@ export function buildDeploymentParams(
     0,                           // defaultBudgetEpochLen
   ];
 
-  // Optional org-wide TaskManager ROLE_PERM grants
-  // (OrgDeployer.TaskManagerPermConfig: roleIndices[] + masks[] — empty
-  // arrays skip the bootstrapGlobalPerms step entirely; verified against
-  // contracts origin/main src/OrgDeployer.sol).
-  const tmPerms = config.taskManagerPerms;
-  if (tmPerms && (tmPerms.roleIndices?.length || 0) !== (tmPerms.masks?.length || 0)) {
-    throw new CliError(
-      'Config invalid: taskManagerPerms.roleIndices and taskManagerPerms.masks must be the same length.',
-      EXIT.USAGE
-    );
+  // Config task creators can create both projects and tasks. The project creator
+  // array alone does not grant native TM_PERMS.CREATE, so seed that bit explicitly.
+  const taskMasks = new Map<number, number>();
+  for (const [i, role] of (config.taskManagerPerms?.roleIndices ?? []).entries()) {
+    taskMasks.set(role, config.taskManagerPerms!.masks[i]);
   }
-  const taskManagerPerms = [
-    tmPerms?.roleIndices || [], // uint256[] roleIndices
-    tmPerms?.masks || [],       // uint8[] masks
-  ];
+  for (const role of config.roleAssignments.taskCreatorRoles ?? []) taskMasks.set(role, (taskMasks.get(role) ?? 0) | 1);
+  const taskManagerPerms = [[...taskMasks.keys()], [...taskMasks.values()]];
 
   return [
     resolved.orgId,                                          // bytes32
@@ -423,10 +444,11 @@ export function buildDeploymentParams(
     resolved.regSignature,                                   // bytes
     config.autoUpgrade ?? true,                              // bool
     config.hybridVoting.thresholdPct,                        // uint8
-    config.directDemocracy?.thresholdPct || 51,              // uint8
+    config.directDemocracy?.thresholdPct ?? 51,              // uint8
     hybridClasses,                                           // ClassConfig[]
     [],                                                      // address[] ddInitialTargets
     roles,                                                   // RoleConfig[]
+    groups,                                                  // GroupConfig[]
     roleAssignments,                                         // RoleAssignments struct
     config.metadataAdminRoleIndex ?? ethers.constants.MaxUint256, // uint256
     true,                                                    // bool passkeyEnabled
@@ -434,7 +456,16 @@ export function buildDeploymentParams(
     [[], []],                                                // BootstrapConfig struct (projects, tasks)
     paymasterConfig,                                         // PaymasterConfig struct
     taskManagerPerms,                                        // TaskManagerPermConfig struct (roleIndices, masks)
+    config.hybridVoting.quorum ?? 0,
+    config.directDemocracy?.quorum ?? 0,
+    config.token?.name ?? "",
+    config.token?.symbol ?? "",
   ];
+}
+
+/** Fail before publishing or signing when serving infrastructure still uses the retired deployer. */
+export function requireAuthorityDeployerVersion(version: string): void {
+  if (!/^2\./.test(version)) throw new CliError(`OrgDeployer ${version || 'unknown'} is unsupported; deployer version 2 is required for native MembershipAuthority organizations.`, EXIT.PRECONDITION);
 }
 
 export interface DeployFullOrgArgs {
@@ -512,9 +543,17 @@ export async function deployFullOrgIntent(
   const config = params.config;
 
   // ── Fail fast on config problems before any network work ───────────
-  if (!config.orgName) throw new CliError('Config missing: orgName', EXIT.USAGE);
-  if (!config.roles?.length) throw new CliError('Config missing: roles', EXIT.USAGE);
-  if (!config.hybridVoting) throw new CliError('Config missing: hybridVoting', EXIT.USAGE);
+  validateOrgDeployConfig(config);
+  // Validate full ABI encoding before infrastructure reads, IPFS publication or signing.
+  const preview = buildDeploymentParams(config, {
+    orgId: ethers.constants.HashZero, metadataHash: ethers.constants.HashZero,
+    registryAddr: ethers.constants.AddressZero, deployerAddress: params.deployerAddress,
+    deployerUsername: '', regDeadline: 0, regNonce: 0, regSignature: '0x',
+  });
+  new ethers.utils.Interface(getAbi('OrgDeployerNew')).encodeFunctionData('deployFullOrg', [preview]);
+  if (config.paymaster?.funding && ethers.utils.parseEther(config.paymaster.funding).lt(0)) {
+    throw new CliError('Paymaster funding must not be negative', EXIT.USAGE);
+  }
   if (!ctx.provider) {
     throw new CliError('deployFullOrgIntent requires ctx.provider (UniversalAccountRegistry.nonces read)', EXIT.USAGE);
   }
@@ -532,6 +571,7 @@ export async function deployFullOrgIntent(
   const registryAddr = infra.poaManagerContracts?.[0]?.globalAccountRegistryProxy;
   if (!orgDeployerAddr) throw new CliError('Could not resolve OrgDeployer address', EXIT.INFRA);
   if (!registryAddr) throw new CliError('Could not resolve UniversalAccountRegistry address', EXIT.INFRA);
+  requireAuthorityDeployerVersion(await createReadContract(orgDeployerAddr, 'OrgDeployerNew', ctx.provider).VERSION());
 
   // Generate orgId: keccak256(orgName.toLowerCase().replace(/\s+/g, '-'))
   const { orgId, normalizedName } = deriveOrgId(config.orgName);

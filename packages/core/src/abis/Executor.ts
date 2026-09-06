@@ -85,42 +85,33 @@ export const ExecutorAbi = [
   },
   {
     "type": "function",
-    "name": "batchConfigureVouching",
-    "inputs": [
-      {
-        "name": "eligibilityModule",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "hatIds",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "quorums",
-        "type": "uint32[]",
-        "internalType": "uint32[]"
-      },
-      {
-        "name": "membershipHatIds",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "combineWithHierarchyFlags",
-        "type": "bool[]",
-        "internalType": "bool[]"
-      }
-    ],
+    "name": "cancelCallerChange",
+    "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "cancelCallerChange",
-    "inputs": [],
-    "outputs": [],
+    "name": "configureModule",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "data",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
     "stateMutability": "nonpayable"
   },
   {
@@ -141,39 +132,6 @@ export const ExecutorAbi = [
         "name": "educationHub",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "configureVouching",
-    "inputs": [
-      {
-        "name": "eligibilityModule",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "hatId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "quorum",
-        "type": "uint32",
-        "internalType": "uint32"
-      },
-      {
-        "name": "membershipHatId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "combineWithHierarchy",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -235,11 +193,6 @@ export const ExecutorAbi = [
         "name": "owner_",
         "type": "address",
         "internalType": "address"
-      },
-      {
-        "name": "hats_",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -260,6 +213,19 @@ export const ExecutorAbi = [
         "name": "",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "membershipAuthority",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -350,34 +316,6 @@ export const ExecutorAbi = [
   },
   {
     "type": "function",
-    "name": "setDefaultEligibility",
-    "inputs": [
-      {
-        "name": "eligibilityModule",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "hatId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "eligible",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "standing",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "setHatMinterAuthorization",
     "inputs": [
       {
@@ -389,6 +327,19 @@ export const ExecutorAbi = [
         "name": "authorized",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMembershipAuthority",
+    "inputs": [
+      {
+        "name": "authority",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -555,6 +506,19 @@ export const ExecutorAbi = [
   },
   {
     "type": "event",
+    "name": "HatsRepointed",
+    "inputs": [
+      {
+        "name": "hats",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "HatsSet",
     "inputs": [
       {
@@ -575,6 +539,25 @@ export const ExecutorAbi = [
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ModuleConfigured",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "selector",
+        "type": "bytes4",
+        "indexed": true,
+        "internalType": "bytes4"
       }
     ],
     "anonymous": false
@@ -770,25 +753,6 @@ export const ExecutorAbi = [
     "type": "error",
     "name": "TitleTooLong",
     "inputs": []
-  },
-  {
-    "type": "event",
-    "name": "HatToggled",
-    "inputs": [
-      {
-        "name": "hatId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "allowed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
   }
 ] as const;
 

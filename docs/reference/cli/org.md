@@ -89,7 +89,8 @@ pop org deploy [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--config` | string | yes | - | Path to org deploy config JSON file |
+| `--config` | string | yes | - | Path to native authority org deploy config JSON file |
+| `--deployer` | string | no | - | Public deployer address for an unsigned dry run (no private key needed) |
 
 ## pop org deploy-config
 
@@ -122,6 +123,10 @@ List org members with activity metrics
 ```text
 pop org members [flags]
 ```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--all` | boolean | no | `false` | Include lapsed or unaccepted membership records |
 
 ## pop org audit
 

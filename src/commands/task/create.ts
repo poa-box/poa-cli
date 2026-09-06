@@ -12,7 +12,7 @@ import {
   parseDurationSeconds,
   formatDeadline,
 } from '../../lib/encoding';
-import { detectTaskManagerFeatures, featureUnavailable, LEGACY_TM_FRAGMENTS } from '../../lib/version';
+import { detectTaskManagerFeatures, featureUnavailable } from '../../lib/version';
 import { confirmWrite, finishWrite } from '../../lib/command';
 import { formatToken } from '../../lib/format';
 import { CliError } from '../../lib/errors';
@@ -129,12 +129,12 @@ export const createHandler = {
       // Detection is a read call, so it runs on --dry-run too (the dry run
       // still needs the right signature to estimate gas against).
       const features = await detectTaskManagerFeatures(provider, taskManagerAddress, chainId);
-      if (!features.deadlines && deadlineFlagsSet) {
+      if (!features.deadlines) {
         spin.stop();
         output.error(featureUnavailable(
           'task deadlines',
           'TaskManager v6',
-          'Re-run without --deadline/--completion-window, or upgrade the org TaskManager beacon.'
+          'Upgrade the organization TaskManager beacon before creating tasks.'
         ));
         process.exit(EXIT.PRECONDITION);
         return;
@@ -294,21 +294,14 @@ export const createHandler = {
       };
 
       spin.text = 'Pinning metadata to IPFS...';
-      const cid = await pinJson(JSON.stringify(metadata));
-      const metadataHash = ipfsCidToBytes32(cid);
+      const cid = argv.dryRun ? undefined : await pinJson(JSON.stringify(metadata));
+      const metadataHash = cid ? ipfsCidToBytes32(cid) : ethers.constants.HashZero;
 
       const titleBytes = stringToBytes(argv.name);
 
       spin.text = 'Sending transaction...';
-      // v6 orgs get the 9-arg createTask (deadline params); legacy orgs fall
-      // back to the 7-arg signature via LEGACY_TM_FRAGMENTS (the current ABI
-      // no longer contains it).
-      const contract = features.deadlines
-        ? createWriteContract(taskManagerAddress, 'TaskManagerNew', signer)
-        : new ethers.Contract(taskManagerAddress, LEGACY_TM_FRAGMENTS, signer);
-      const txArgs = features.deadlines
-        ? [payoutWei, titleBytes, metadataHash, pid, bountyToken, bountyPayoutWei, requiresApp, absoluteDeadline, completionWindow]
-        : [payoutWei, titleBytes, metadataHash, pid, bountyToken, bountyPayoutWei, requiresApp];
+      const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', signer);
+      const txArgs = [payoutWei, titleBytes, metadataHash, pid, bountyToken, bountyPayoutWei, requiresApp, absoluteDeadline, completionWindow];
       const result = await executeTx(contract, 'createTask', txArgs, { dryRun: argv.dryRun });
 
       spin.stop();

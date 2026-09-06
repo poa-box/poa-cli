@@ -111,6 +111,19 @@ export const DirectDemocracyVotingNewAbi = [
   },
   {
     "type": "function",
+    "name": "configAdmin",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "createProposal",
     "inputs": [
       {
@@ -159,6 +172,66 @@ export const DirectDemocracyVotingNewAbi = [
         "name": "hatIds",
         "type": "uint256[]",
         "internalType": "uint256[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "createProposalV2",
+    "inputs": [
+      {
+        "name": "title",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "descriptionHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "minutesDuration",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "numOptions",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "batches",
+        "type": "tuple[][]",
+        "internalType": "struct IExecutor.Call[][]",
+        "components": [
+          {
+            "name": "target",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "value",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "data",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      },
+      {
+        "name": "hatIds",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "quorumOverride",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
     "outputs": [],
@@ -221,24 +294,9 @@ export const DirectDemocracyVotingNewAbi = [
     "name": "initialize",
     "inputs": [
       {
-        "name": "hats_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "executor_",
         "type": "address",
         "internalType": "address"
-      },
-      {
-        "name": "initialHats",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "initialCreatorHats",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
       },
       {
         "name": "initialTargets",
@@ -249,6 +307,11 @@ export const DirectDemocracyVotingNewAbi = [
         "name": "thresholdPct_",
         "type": "uint8",
         "internalType": "uint8"
+      },
+      {
+        "name": "quorum_",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
     "outputs": [],
@@ -269,6 +332,19 @@ export const DirectDemocracyVotingNewAbi = [
         "name": "",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "membershipAuthority",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -338,6 +414,25 @@ export const DirectDemocracyVotingNewAbi = [
   },
   {
     "type": "function",
+    "name": "proposalCreatedAt",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "proposalEndTimestamp",
     "inputs": [
       {
@@ -351,6 +446,25 @@ export const DirectDemocracyVotingNewAbi = [
         "name": "",
         "type": "uint64",
         "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "proposalQuorumOverride",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
     "stateMutability": "view"
@@ -394,6 +508,19 @@ export const DirectDemocracyVotingNewAbi = [
         "name": "value",
         "type": "bytes",
         "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMembershipAuthority",
+    "inputs": [
+      {
+        "name": "authority",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -470,6 +597,19 @@ export const DirectDemocracyVotingNewAbi = [
   },
   {
     "type": "event",
+    "name": "ConfigAdminSet",
+    "inputs": [
+      {
+        "name": "admin",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "CreatorHatSet",
     "inputs": [
       {
@@ -527,25 +667,6 @@ export const DirectDemocracyVotingNewAbi = [
   },
   {
     "type": "event",
-    "name": "HatToggled",
-    "inputs": [
-      {
-        "name": "hatId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "allowed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Initialized",
     "inputs": [
       {
@@ -553,6 +674,19 @@ export const DirectDemocracyVotingNewAbi = [
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MembershipAuthoritySet",
+    "inputs": [
+      {
+        "name": "authority",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -664,6 +798,31 @@ export const DirectDemocracyVotingNewAbi = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ProposalConfigV2",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "quorumOverride",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      },
+      {
+        "name": "equalWeight",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
       }
     ],
     "anonymous": false
@@ -821,6 +980,11 @@ export const DirectDemocracyVotingNewAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidConfigKey",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidIndex",
     "inputs": []
   },
@@ -832,6 +996,11 @@ export const DirectDemocracyVotingNewAbi = [
   {
     "type": "error",
     "name": "InvalidProposal",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidQuorum",
     "inputs": []
   },
   {
@@ -923,11 +1092,6 @@ export const DirectDemocracyVotingNewAbi = [
   {
     "type": "error",
     "name": "InvalidClassCount",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidQuorum",
     "inputs": []
   },
   {

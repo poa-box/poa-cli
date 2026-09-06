@@ -105,10 +105,6 @@ pop project propose \
 
 **Parameters**:
 - `--cap`: Maximum PT budget for the project (0 = unlimited)
-- `--create-hats`: Comma-separated hat IDs for task creation permission
-- `--claim-hats`: Hat IDs for task claiming
-- `--review-hats`: Hat IDs for task review
-- `--assign-hats`: Hat IDs for task assignment
 
 ---
 

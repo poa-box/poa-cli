@@ -35,19 +35,6 @@ export const QuickJoinNewAbi = [
   },
   {
     "type": "function",
-    "name": "claimHatsWithUser",
-    "inputs": [
-      {
-        "name": "claimHatIds",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "executor",
     "inputs": [],
     "outputs": [
@@ -82,11 +69,6 @@ export const QuickJoinNewAbi = [
         "internalType": "address"
       },
       {
-        "name": "hats_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "accountRegistry_",
         "type": "address",
         "internalType": "address"
@@ -95,34 +77,10 @@ export const QuickJoinNewAbi = [
         "name": "masterDeploy_",
         "type": "address",
         "internalType": "address"
-      },
-      {
-        "name": "memberHatIds_",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "isMemberHat",
-    "inputs": [
-      {
-        "name": "hatId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -159,6 +117,19 @@ export const QuickJoinNewAbi = [
         "name": "",
         "type": "uint256[]",
         "internalType": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "membershipAuthority",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -235,142 +206,6 @@ export const QuickJoinNewAbi = [
       }
     ],
     "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "registerAndClaimHats",
-    "inputs": [
-      {
-        "name": "user",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "username",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "deadline",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "nonce",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "signature",
-        "type": "bytes",
-        "internalType": "bytes"
-      },
-      {
-        "name": "claimHatIds",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "registerAndClaimHatsWithPasskey",
-    "inputs": [
-      {
-        "name": "passkey",
-        "type": "tuple",
-        "internalType": "struct QuickJoin.PasskeyEnrollment",
-        "components": [
-          {
-            "name": "credentialId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "publicKeyX",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "publicKeyY",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "salt",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "username",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "deadline",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "nonce",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "auth",
-        "type": "tuple",
-        "internalType": "struct WebAuthnLib.WebAuthnAuth",
-        "components": [
-          {
-            "name": "authenticatorData",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "clientDataJSON",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "challengeIndex",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "typeIndex",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "r",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "s",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          }
-        ]
-      },
-      {
-        "name": "claimHatIds",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
     "stateMutability": "nonpayable"
   },
   {
@@ -607,6 +442,19 @@ export const QuickJoinNewAbi = [
   },
   {
     "type": "function",
+    "name": "setMembershipAuthority",
+    "inputs": [
+      {
+        "name": "authority",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setUniversalFactory",
     "inputs": [
       {
@@ -636,11 +484,6 @@ export const QuickJoinNewAbi = [
     "name": "updateAddresses",
     "inputs": [
       {
-        "name": "hats_",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "accountRegistry_",
         "type": "address",
         "internalType": "address"
@@ -649,19 +492,6 @@ export const QuickJoinNewAbi = [
         "name": "masterDeploy_",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "updateMemberHatIds",
-    "inputs": [
-      {
-        "name": "memberHatIds_",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
       }
     ],
     "outputs": [],
@@ -694,12 +524,12 @@ export const QuickJoinNewAbi = [
   },
   {
     "type": "event",
-    "name": "ExecutorUpdated",
+    "name": "ConfigAdminSet",
     "inputs": [
       {
-        "name": "newExecutor",
+        "name": "admin",
         "type": "address",
-        "indexed": false,
+        "indexed": true,
         "internalType": "address"
       }
     ],
@@ -707,19 +537,13 @@ export const QuickJoinNewAbi = [
   },
   {
     "type": "event",
-    "name": "HatToggled",
+    "name": "ExecutorUpdated",
     "inputs": [
       {
-        "name": "hatId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "allowed",
-        "type": "bool",
+        "name": "newExecutor",
+        "type": "address",
         "indexed": false,
-        "internalType": "bool"
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -765,6 +589,19 @@ export const QuickJoinNewAbi = [
         "type": "uint256[]",
         "indexed": false,
         "internalType": "uint256[]"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MembershipAuthoritySet",
+    "inputs": [
+      {
+        "name": "authority",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -1005,17 +842,6 @@ export const QuickJoinNewAbi = [
       }
     ],
     "anonymous": false
-  },
-  {
-    "type": "error",
-    "name": "HatOpenlyClaimable",
-    "inputs": [
-      {
-        "name": "hatId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
   },
   {
     "type": "error",
