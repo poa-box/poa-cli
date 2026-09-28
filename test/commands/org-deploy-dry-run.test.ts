@@ -1,7 +1,7 @@
 /**
  * pop org deploy — DESTRUCTIVE confirm + dry-run zero-tx guarantee.
  *
- * The deploy flow has several network side-effects (IPFS pin, nonce read,
+ * Real execution has network side-effects (IPFS pin, nonce read,
  * local EIP-712 signature) but exactly ONE transaction:
  * OrgDeployer.deployFullOrg(params). These tests pin down that:
  *   - --dry-run fires ZERO transactions: executeTx receives dryRun:true
@@ -93,16 +93,16 @@ function validConfig(overrides: Record<string, any> = {}) {
     autoUpgrade: true,
     hybridVoting: {
       thresholdPct: 51,
-      classes: [{ strategy: 'DIRECT', slicePct: 100, quadratic: false, hatIds: [] }],
+      classes: [{ strategy: 'DIRECT', slicePct: 100, quadratic: false, subjectIds: [] }],
     },
     directDemocracy: { thresholdPct: 51 },
     roles: [
       {
         name: 'Member',
         canVote: true,
-        defaults: { eligible: true, standing: true },
+        open: true,
         distribution: { mintToDeployer: true },
-        hatConfig: { maxSupply: 50, mutableHat: true },
+        maxMembers: 50,
       },
     ],
     roleAssignments: {
@@ -178,6 +178,7 @@ describe('pop org deploy — destructive confirm + dry-run zero-tx', () => {
       }],
     });
     mocks.createReadContract.mockReturnValue({
+      VERSION: vi.fn().mockResolvedValue('2.0.0'),
       nonces: vi.fn().mockResolvedValue(ethers.BigNumber.from(0)),
     });
     mocks.pinJson.mockResolvedValue(CID);
@@ -198,55 +199,57 @@ describe('pop org deploy — destructive confirm + dry-run zero-tx', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('--dry-run fires ZERO transactions: executeTx gets dryRun:true and the signer never signs/sends', async () => {
+  it('--dry-run publishes nothing, signs nothing and returns native V2 calldata', async () => {
     writeConfig(validConfig());
-
-    await deployHandler.handler(baseArgv({ dryRun: true, yes: true }));
-
-    // Exactly one executeTx — the single deployFullOrg — in dry-run mode
-    // (executeTx stops at estimateGas; nothing is broadcast).
-    expect(mocks.executeTx).toHaveBeenCalledTimes(1);
-    const [contract, method, args, opts] = mocks.executeTx.mock.calls[0];
-    expect(method).toBe('deployFullOrg');
-    expect(opts).toEqual({ dryRun: true, gasLimit: 15000000, value: undefined });
-    expect(contract.address).toBe(ORG_DEPLOYER);
-    expect(() => contract.interface.getFunction('deployFullOrg')).not.toThrow();
-
-    // orgId derivation preserved: keccak256(lowercased hyphenated name)
-    const [deployParams] = args;
-    expect(deployParams[0]).toBe(ethers.utils.keccak256(ethers.utils.toUtf8Bytes('test-org')));
-    expect(deployParams[1]).toBe('Test Org');
-
-    // The params tuple must ENCODE against the real synced ABI — guards the
-    // full 22-field DeploymentParams arity (incl. taskManagerPerms, which
-    // pre-fix was missing and broke every deploy against the v6 ABI).
-    expect(deployParams).toHaveLength(22);
-    expect(() => contract.interface.encodeFunctionData('deployFullOrg', [deployParams])).not.toThrow();
-
-    // The wallet itself never signed or sent ANY transaction.
+    const signRegistration = vi.spyOn(wallet, '_signTypedData');
+    await deployHandler.handler(baseArgv({ dryRun: true, yes: false }));
+    expect(mocks.executeTx).not.toHaveBeenCalled();
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+    expect(mocks.createReadContract).not.toHaveBeenCalled();
+    expect(signRegistration).not.toHaveBeenCalled();
     expect(sendSpy).not.toHaveBeenCalled();
     expect(signTxSpy).not.toHaveBeenCalled();
-
-    expect(output.success).toHaveBeenCalledWith(
-      expect.stringContaining('DRY RUN'),
-      expect.objectContaining({ method: 'deployFullOrg', gasEstimate: '12000000' }),
-    );
+    const fields = vi.mocked(output.success).mock.calls[0][1] as any;
+    const { getAbi } = await import('../../src/lib/contracts');
+    const iface = new ethers.utils.Interface(getAbi('OrgDeployerNew'));
+    const [params] = iface.decodeFunctionData('deployFullOrg', fields.calldata);
+    expect(params).toHaveLength(27);
+    expect(params.orgName).toBe('Test Org');
+    expect(params.roles[0].open).toBe(true);
+    expect(params.roles[0].maxMembers).toBe(50);
+    expect(params.groups).toHaveLength(0);
+    expect(params.regSignature).toBe('0x');
+    expect(params.metadataHash).toBe(ethers.constants.HashZero);
+    expect(fields.requiresRegistrationSignature).toBe(true);
+    expect(fields.gasEstimate).toBeNull();
   });
 
-  it('destructive gate: non-TTY without --yes refuses with EXIT.ABORTED before the tx (even in dry-run)', async () => {
+  it('public-address dry run needs no signer or private key', async () => {
     writeConfig(validConfig());
-
-    await expect(
-      deployHandler.handler(baseArgv({ yes: false, dryRun: true }))
-    ).rejects.toBeInstanceOf(ExitError);
-
-    expect(exitSpy.mock.calls[0][0]).toBe(EXIT.ABORTED);
-    expect(output.error).toHaveBeenCalledWith(
-      expect.stringContaining('destructive'),
-      expect.anything(),
-    );
+    await deployHandler.handler(baseArgv({ deployer: wallet.address, yes: false }));
+    expect(mocks.createSigner).not.toHaveBeenCalled();
+    expect(mocks.pinJson).not.toHaveBeenCalled();
     expect(mocks.executeTx).not.toHaveBeenCalled();
-    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects a serving V1 deployer before metadata publication or signing', async () => {
+    writeConfig(validConfig());
+    mocks.createReadContract.mockReturnValue({ VERSION: vi.fn().mockResolvedValue('1.9.0') });
+    const signRegistration = vi.spyOn(wallet, '_signTypedData');
+    await expect(deployHandler.handler(baseArgv({ yes: true, dryRun: false }))).rejects.toBeInstanceOf(ExitError);
+    expect(mocks.pinJson).not.toHaveBeenCalled(); expect(signRegistration).not.toHaveBeenCalled();
+    expect(mocks.executeTx).not.toHaveBeenCalled();
+    expect(output.error).toHaveBeenCalledWith(expect.stringContaining('version 2 is required'), expect.anything());
+  });
+
+  it('unconfirmed real deployment stops before pinning, registration signing or any transaction', async () => {
+    writeConfig(validConfig());
+    const signRegistration = vi.spyOn(wallet, '_signTypedData');
+    await expect(deployHandler.handler(baseArgv({ yes: false, dryRun: false }))).rejects.toBeInstanceOf(ExitError);
+    expect(exitSpy.mock.calls[0][0]).toBe(EXIT.ABORTED);
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+    expect(signRegistration).not.toHaveBeenCalled();
+    expect(mocks.executeTx).not.toHaveBeenCalled();
   });
 
   it('config validation fails fast (EXIT.USAGE) before any subgraph or IPFS work', async () => {
@@ -276,24 +279,15 @@ describe('pop org deploy — destructive confirm + dry-run zero-tx', () => {
     );
   });
 
-  it('paymaster funding rides the SAME single tx as msg.value (not a second tx)', async () => {
-    writeConfig(validConfig({
-      paymaster: {
-        operatorRoleIndex: 0,
-        maxFeePerGas: '20',
-        maxPriorityFeePerGas: '5',
-        defaultBudgetCapPerEpoch: '1',
-        defaultBudgetEpochLen: 604800,
-        funding: '1',
-      },
-    }));
-
-    await deployHandler.handler(baseArgv({ dryRun: true, yes: true }));
-
-    expect(mocks.executeTx).toHaveBeenCalledTimes(1);
-    const [, , , opts] = mocks.executeTx.mock.calls[0];
-    expect(opts.value?.toString()).toBe(ethers.utils.parseEther('1').toString());
-    expect(sendSpy).not.toHaveBeenCalled();
+  it('paymaster funding is included in the unsigned preview without a second transaction', async () => {
+    writeConfig(validConfig({ paymaster: {
+      operatorRoleIndex: 0, maxFeePerGas: '20', maxPriorityFeePerGas: '5',
+      defaultBudgetCapPerEpoch: '1', defaultBudgetEpochLen: 604800, funding: '1',
+    } }));
+    await deployHandler.handler(baseArgv());
+    const fields = vi.mocked(output.success).mock.calls[0][1] as any;
+    expect(fields.value).toBe(ethers.utils.parseEther('1').toString());
+    expect(mocks.executeTx).not.toHaveBeenCalled();
   });
 
   it('real run preserves the legacy success fields through finishWrite', async () => {

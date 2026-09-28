@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
 import path from 'path';
+import { ethers } from 'ethers';
 
 /**
  * ABI drift canary.
  *
  * Asserts that the checked-in ABIs carry the protocol surface the CLI is
- * written against (contracts origin/main, plus TaskManager v7 from PR #187). If the
+ * written against (contracts fa37b3e, Access v2 PR #193). If the
  * contracts change and `yarn sync-abis` regenerates these files, a failure
  * here means CLI code that depends on a signature below needs attention —
  * update the CLI, then update this list.
@@ -22,10 +23,15 @@ function sigSet(abi: any[]): Set<string> {
   const sigs = new Set<string>();
   for (const item of abi) {
     if (!item.type || !item.name) continue;
-    const inputs = (item.inputs || []).map((i: any) => i.type).join(',');
-    sigs.add(`${item.type} ${item.name}(${inputs})`);
+    sigs.add(fragmentSignature(item));
   }
   return sigs;
+}
+
+// Use ethers independently of the generator: tuple component changes alter
+// selectors, and tuple overloads must never be mistaken for duplicate entries.
+function fragmentSignature(item: any): string {
+  return `${item.type} ${ethers.utils.Fragment.from(item).format(ethers.utils.FormatTypes.sighash)}`;
 }
 
 function expectSigs(abiName: string, expected: string[]) {
@@ -60,7 +66,7 @@ describe('ABI sync canary (contracts origin/main)', () => {
       if (!Array.isArray(abi)) continue;
       const sigs = abi
         .filter((i: any) => i.type && i.name)
-        .map((i: any) => `${i.type} ${i.name}(${(i.inputs || []).map((x: any) => x.type).join(',')})`);
+        .map(fragmentSignature);
       const dupes = [...new Set(sigs.filter((s2, i) => sigs.indexOf(s2) !== i))];
       expect(dupes, `${path.relative(ABI_DIR, file)} has duplicate fragments: ${dupes.join('; ')}`).toEqual([]);
     }
@@ -73,26 +79,23 @@ describe('ABI sync canary (contracts origin/main)', () => {
     }
   });
 
-  it('TaskManager v6 + v7 surface', () => {
+  it('TaskManager deadline, unclaim, and native authority surface', () => {
     expectSigs('TaskManagerNew', [
       // v6: 9-arg createTask with deadlines
       'function createTask(uint256,bytes,bytes32,bytes32,address,uint256,bool,uint48,uint32)',
-      'function createTasksBatch(bytes32,tuple[])',
+      'function createTasksBatch(bytes32,(uint256,bytes,bytes32,address,uint256,bool,uint48,uint32)[])',
       'function updateTask(uint256,uint256,bytes,bytes32,address,uint256,uint48,uint32)',
       'function updateTaskMetadata(uint256,bytes,bytes32)',
       'function setFolders(bytes32,bytes32)',
-      'function setProjectRolePerm(bytes32,uint256,uint8)',
-      'function bootstrapGlobalPerms(uint256[],uint8[])',
       'function getLensData(uint8,bytes)',
       'function applyForTask(uint256,bytes32)',
       'function approveApplication(uint256,address)',
       'event TaskDeadlinesSet(uint256,uint48,uint32)',
       'event TaskClaimDeadlineSet(uint256,uint48)',
       'event TaskClaimExpired(uint256,address,address)',
-      // v7 (contracts PR #187). TaskManagerNew.json is synced from the pr-187 build, which is
-      // AHEAD of contracts origin/main — `yarn sync-abis` would delete both of these and break
-      // `pop task unclaim` at runtime. That regression must land here as a red test.
+      // Both unclaim (PR #187) and the authority setter (PR #193) are now on main.
       'function unclaimTask(uint256)',
+      'function setMembershipAuthority(address)',
       'event TaskUnclaimed(uint256,address,address)',
       'error InvalidDeadline()',
       'error FoldersRootStale(bytes32,bytes32)',
@@ -106,6 +109,9 @@ describe('ABI sync canary (contracts origin/main)', () => {
       'function thresholdPct()',
       'function vote(uint256,uint8[],uint8[])',
       'function announceWinner(uint256)',
+      'function classSubjectOf(uint256)',
+      'function setClassSubject(uint256,uint256)',
+      'function proposalClassSubject(uint256,uint256)',
     ]);
   });
 
@@ -116,22 +122,61 @@ describe('ABI sync canary (contracts origin/main)', () => {
     ]);
   });
 
-  it('EligibilityModule v4 surface', () => {
-    expectSigs('EligibilityModuleNew', [
-      'function configureVouching(uint256,uint32,uint256,bool)',
-      'function resetVouches(uint256)',
-      'function vouchFor(address,uint256)',
-      'function revokeVouch(address,uint256)',
-      'function transferSuperAdmin(address)',
-      'function applyForRole(uint256,bytes32)',
-      'function claimVouchedHat(uint256)',
-      'error VouchingRateLimitExceeded()',
+  it('MembershipAuthority native surface', () => {
+    expectSigs('MembershipAuthority', [
+      'function createRole(string,bytes32,string,uint32)', 'function createGroup(string,bytes32,string,uint256[])',
+      'function claim(uint256)', 'function renounce(uint256)',
+      'function grant(uint256,address,bool)', 'function remove(uint256,address,bool)',
+      'function offer(uint256,address,bool)', 'function withdrawOffer(uint256,address)',
+      'function vouch(uint256,address)', 'function revokeVouch(uint256,address)',
+      'function getSubject(uint256)', 'function getStatus(uint256,address)',
+      'function isMember(uint256,address)', 'function memberCount(uint256)',
+      'function getManagerConfig(uint256)', 'function setManagerConfig(uint256,uint256,uint8,uint32)',
+      'function getPerm(uint256,bytes32,bytes32)', 'function setPerm(uint256,bytes32,bytes32,uint256)',
+      'function clearPerm(uint256,bytes32,bytes32)', 'function hasPerm(address,bytes32,bytes32)',
+      'function getRule(uint256,address)', 'function setRule(uint256,address,uint8,bool)',
+      'function setSubjectDefault(uint256,bool,bool)', 'function setMaxMembers(uint256,uint32)',
+      'function reconcile(uint256,address)', 'function reconcile(uint256,address[])',
+      'function activeMemberSince(uint256,address)', 'function activeMemberSince(address,bytes32,bytes32)',
+    ]);
+  });
+
+  it('Access v2 authority adapters exist on every migrated module', () => {
+    for (const name of [
+      'QuickJoinNew', 'Executor', 'ParticipationToken', 'EducationHubNew',
+      'HybridVotingNew', 'DirectDemocracyVotingNew',
+    ]) {
+      expectSigs(name, ['function membershipAuthority()', 'function setMembershipAuthority(address)']);
+    }
+  });
+
+  it('AuthorityRouter and cutover verifier include routing and post-cutover checks', () => {
+    expectSigs('AuthorityRouter', [
+      'function bindAuthority(bytes32,uint256,address)',
+      'function unbindAuthority(bytes32,uint256)',
+      'function authorityOf(uint256)',
+      'function isWearerOfHat(address,uint256)',
+      'function getWearerStatus(address,uint256)',
+      'event AuthorityBound(bytes32,uint256,address)',
+      'event AuthorityUnbound(bytes32,uint256,address)',
+    ]);
+    expectSigs('CutoverVerifier', [
+      'function verify(bytes32,address,address,uint256[],uint32[],uint32[])',
+      'error RouterNotCanonical(address,address)',
+      'error MemberCountDrift(uint256,uint256,uint256)',
+      'error SupplyDrift(uint256,uint32,uint32)',
     ]);
   });
 
   it('PaymasterHub surface', () => {
     expectSigs('PaymasterHub', [
       'function depositForOrg(bytes32)',
+      // Both tuples exist upstream. Shallow `tuple` signatures used to drop one.
+      'function registerAndConfigureOrg(bytes32,uint256,(uint256,uint256,uint256,uint32,uint32,uint32,address[],bytes4[],bool[],uint32[],bytes32[],uint128[],uint32[]))',
+      'function registerAndConfigureOrg(bytes32,uint256,(uint256,uint256,uint256,uint32,uint32,uint32,address[],bytes4[],bool[],uint32[],bytes32[],uint128[],uint32[],address[],bytes32[],uint8))',
+      'event OrgDepositWithdrawn(bytes32,address,uint256)',
+      'event ProtocolAdminSet(address,address)',
+      'event SolidarityWithdrawn(address,uint256)',
     ]);
   });
 
@@ -148,7 +193,6 @@ describe('ABI sync canary (contracts origin/main)', () => {
   it('QuickJoin surface', () => {
     expectSigs('QuickJoinNew', [
       'function quickJoinWithUser()',
-      'function claimHatsWithUser(uint256[])',
     ]);
   });
 

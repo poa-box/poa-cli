@@ -6,6 +6,7 @@ import * as output from '@poa-box/cli/lib/output';
 
 interface InitArgs {
   org: string;
+  subject?: string;
   chain: number;
   username?: string;
   'hat-id'?: string;
@@ -22,14 +23,14 @@ const CHAIN_INFO: Record<number, { name: string; currency: string; gasAmount: st
 export const initHandler = {
   builder: (yargs: Argv) => yargs
     .option('username', { type: 'string', describe: 'Agent username' })
-    .option('hat-id', { type: 'string', describe: 'Hat ID for gas sponsorship' })
+    .option('subject', { type: 'string', alias: 'hat-id', describe: 'Authority role or group subject ID for gas sponsorship' })
     .option('home', { type: 'string', describe: 'Agent home directory (default: ~/.pop-agent)' }),
 
   handler: async (argv: ArgumentsCamelCase<InitArgs>) => {
     const orgName = argv.org as string;
     const chainId = argv.chain as number || 100;
     const username = argv.username as string || '';
-    const hatId = argv.hatId as string || '';
+    const hatId = (argv.subject || argv.hatId) as string || '';
 
     if (!orgName) {
       output.error('--org is required. Specify the POP org name.');
@@ -66,7 +67,7 @@ export const initHandler = {
       `POP_DEFAULT_ORG=${orgName}`,
       `POP_DEFAULT_CHAIN=${chainId}`,
     ];
-    if (hatId) envLines.push(`POP_HAT_ID=${hatId}`);
+    if (hatId) envLines.push(`POP_SUBJECT_ID=${hatId}`, `POP_HAT_ID=${hatId}`);
     envLines.push('');
     fs.writeFileSync(path.join(agentHome, '.env'), envLines.join('\n'));
 
@@ -81,7 +82,7 @@ export const initHandler = {
 - **Org Name**: ${orgName}
 - **Username**: ${username || '(register with pop user register --username <name>)'}
 
-## Hats (Roles)
+## Authority roles and groups
 - (will be populated after vouching and joining)
 
 ## Operator

@@ -56,115 +56,14 @@ import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 import { resolveProposalId } from './helpers';
+import { tryAggregate } from '../../lib/multicall';
 
-/** ClassStrategy enum — verified origin/main src/HybridVoting.sol. */
-export const CLASS_STRATEGY = { DIRECT: 0, ERC20_BAL: 1 } as const;
+// One parser validates native subject IDs and ABI-compatible legacy hatIds in both hosts.
+import { CLASS_STRATEGY, MAX_CLASSES, parseClassConfigs, describeClass } from '@poa-box/core/tx/vote';
+import type { ParsedClassConfig } from '@poa-box/core/tx/vote';
+export { CLASS_STRATEGY, MAX_CLASSES, parseClassConfigs, describeClass };
+export type { ParsedClassConfig };
 const STRATEGY_NAMES = ['DIRECT', 'ERC20_BAL'] as const;
-
-/** Contract constant MAX_CLASSES (origin/main src/HybridVoting.sol). */
-export const MAX_CLASSES = 8;
-
-export interface ParsedClassConfig {
-  strategy: number;
-  slicePct: number;
-  quadratic: boolean;
-  minBalance: ethers.BigNumber;
-  asset: string;
-  hatIds: ethers.BigNumber[];
-}
-
-function usageError(message: string): CliError {
-  return new CliError(message, EXIT.USAGE,
-    'Expected a JSON array of ClassConfig objects: ' +
-    '[{"strategy":"DIRECT"|"ERC20_BAL"|0|1,"slicePct":n,"quadratic":bool,"minBalance":"0","asset":"0x…","hatIds":["…"]}] ' +
-    'with slicePct values summing to 100.');
-}
-
-function parseStrategy(value: any, index: number): number {
-  if (value === 0 || value === 1) return value;
-  if (typeof value === 'string') {
-    const upper = value.trim().toUpperCase();
-    if (upper === 'DIRECT' || upper === '0') return CLASS_STRATEGY.DIRECT;
-    if (upper === 'ERC20_BAL' || upper === '1') return CLASS_STRATEGY.ERC20_BAL;
-  }
-  throw usageError(`Class ${index}: invalid strategy ${JSON.stringify(value)} — use 'DIRECT'|'ERC20_BAL'|0|1.`);
-}
-
-/**
- * Validate + normalize a ClassConfig[] JSON document (exported for tests).
- * Mirrors HybridVotingConfig.setClasses so bad configs fail locally with a
- * pointer to the offending class instead of a generic on-chain revert.
- * Hat IDs are parsed as BigNumbers straight from their raw strings — real
- * Hats IDs exceed 2^53 and would be mangled by Number.
- */
-export function parseClassConfigs(doc: any): ParsedClassConfig[] {
-  if (!Array.isArray(doc)) throw usageError('Classes file must contain a JSON array of ClassConfig objects.');
-  if (doc.length === 0) throw usageError('At least one voting class is required.');
-  if (doc.length > MAX_CLASSES) {
-    throw usageError(`Too many classes: ${doc.length} (the contract allows at most ${MAX_CLASSES}).`);
-  }
-
-  const classes = doc.map((entry: any, i: number): ParsedClassConfig => {
-    if (typeof entry !== 'object' || entry === null) throw usageError(`Class ${i}: expected an object.`);
-
-    const strategy = parseStrategy(entry.strategy, i);
-
-    const slicePct = Number(entry.slicePct);
-    if (!Number.isInteger(slicePct) || slicePct < 1 || slicePct > 100) {
-      throw usageError(`Class ${i}: slicePct must be an integer 1-100 (got ${JSON.stringify(entry.slicePct)}).`);
-    }
-
-    let minBalance: ethers.BigNumber;
-    try {
-      minBalance = ethers.BigNumber.from(String(entry.minBalance ?? 0));
-    } catch {
-      throw usageError(`Class ${i}: invalid minBalance ${JSON.stringify(entry.minBalance)} — pass a base-unit integer string.`);
-    }
-
-    const asset = String(entry.asset ?? ethers.constants.AddressZero);
-    if (!ethers.utils.isAddress(asset)) {
-      throw usageError(`Class ${i}: invalid asset address ${JSON.stringify(entry.asset)}.`);
-    }
-    if (strategy === CLASS_STRATEGY.ERC20_BAL && asset === ethers.constants.AddressZero) {
-      throw usageError(`Class ${i}: ERC20_BAL strategy requires a non-zero asset address (the contract reverts ZeroAddress).`);
-    }
-
-    const rawHatIds = entry.hatIds ?? [];
-    if (!Array.isArray(rawHatIds)) throw usageError(`Class ${i}: hatIds must be an array.`);
-    const hatIds = rawHatIds.map((h: any) => {
-      try {
-        return ethers.BigNumber.from(String(h).trim());
-      } catch {
-        throw usageError(`Class ${i}: invalid hat ID ${JSON.stringify(h)}.`);
-      }
-    });
-
-    return { strategy, slicePct, quadratic: Boolean(entry.quadratic), minBalance, asset, hatIds };
-  });
-
-  const sliceSum = classes.reduce((sum, c) => sum + c.slicePct, 0);
-  if (sliceSum !== 100) {
-    throw new CliError(
-      `Class slice percentages must sum to exactly 100 — got ${sliceSum} ` +
-      `(${classes.map(c => `${c.slicePct}%`).join(' + ')}). The contract reverts InvalidSliceSum otherwise.`,
-      EXIT.USAGE,
-      'Adjust the slicePct values in the classes file so they total 100.'
-    );
-  }
-
-  return classes;
-}
-
-/** One-line human description of a class (confirm summary + metadata). */
-export function describeClass(c: ParsedClassConfig): string {
-  const name = STRATEGY_NAMES[c.strategy] ?? String(c.strategy);
-  const parts = [`${name} ${c.slicePct}%`];
-  if (c.quadratic) parts.push('quadratic');
-  if (!c.minBalance.isZero()) parts.push(`min balance ${formatToken(c.minBalance)}`);
-  if (c.asset !== ethers.constants.AddressZero) parts.push(`asset ${formatAddress(c.asset)}`);
-  if (c.hatIds.length > 0) parts.push(`hats ${c.hatIds.map(h => h.toString()).join(',')}`);
-  return parts.join(', ');
-}
 
 // ────────────────────────────── show ──────────────────────────────
 
@@ -184,6 +83,8 @@ interface NormalizedClass {
   minBalance: string;
   asset: string;
   hatIds: string[];
+  subjectId: string | null;
+  subjectBindingKnown: boolean;
 }
 
 /**
@@ -201,6 +102,8 @@ function normalizeSubgraphClasses(rows: SubgraphVotingClass[]): NormalizedClass[
     minBalance: ethers.BigNumber.from(String(c.minBalance ?? '0')).toString(),
     asset: ethers.utils.getAddress(String(c.asset)),
     hatIds: (c.hatIds ?? []).map(h => String(h)),
+    subjectId: null,
+    subjectBindingKnown: false,
   }));
 }
 
@@ -247,6 +150,9 @@ async function fetchClassConfigFromSubgraph(
       : contract.proposals?.[0]?.classesVersion;
     // For a proposal we must know its frozen version — no version, no answer.
     if (proposalId !== undefined && (version === null || version === undefined)) return null;
+    // Restricted V2 polls can have a synthetic equal-weight snapshot that the
+    // index's org-level classVersion cannot reconstruct.
+    if (proposalId !== undefined && contract.proposals?.[0]?.isHatRestricted !== false) return null;
 
     const rows = selectClassSnapshot(contract.votingClasses, version);
     if (rows.length === 0) return null;
@@ -339,7 +245,26 @@ const classesShowHandler = {
           minBalance: ethers.BigNumber.from(c.minBalance ?? 0).toString(),
           asset: String(c.asset),
           hatIds: (c.hatIds ?? []).map((h: any) => h.toString()),
+          subjectId: null,
+          subjectBindingKnown: false,
         }));
+        // A stable class binding takes precedence over the ABI's legacy hatIds
+        // list. Read it alongside the existing authoritative RPC fallback;
+        // old implementations or failed calls leave it explicitly unknown.
+        try {
+          const iface = new ethers.utils.Interface(loadAbi('HybridVotingNew'));
+          const first = await tryAggregate(provider, normalized.map(c => ({
+            to: modules.hybridVotingAddress!, data: proposalId !== undefined
+              ? iface.encodeFunctionData('proposalClassSubject', [proposalId, c.classIndex])
+              : iface.encodeFunctionData('classIdOfIndex', [c.classIndex]),
+          })));
+          const ids = first.map(r => r.success && r.returnData !== '0x' ? ethers.BigNumber.from(r.returnData) : null);
+          const bindings = proposalId !== undefined ? ids : await (async () => {
+            const rows = await tryAggregate(provider, ids.map(id => ({ to: modules.hybridVotingAddress!, data: iface.encodeFunctionData('classSubjectOf', [id ?? 0]) })));
+            return rows.map((r, i) => ids[i] !== null && r.success && r.returnData !== '0x' ? ethers.BigNumber.from(r.returnData) : null);
+          })();
+          normalized.forEach((c, i) => { c.subjectId = bindings[i]?.toString() ?? null; c.subjectBindingKnown = bindings[i] !== null; });
+        } catch { /* Unknown bindings must never be reported as a fallback electorate. */ }
         threshold = Number(rawThreshold);
         quorumCount = Number(rawQuorum);
         source = 'rpc';
@@ -353,6 +278,8 @@ const classesShowHandler = {
           classes: normalized,
           supportThresholdPct: threshold,
           quorumVoterCount: quorumCount,
+          quorumSource: 'current-global-config',
+          effectiveQuorumVoterCount: proposalId === undefined ? quorumCount : null,
           source,
         });
         return;
@@ -364,7 +291,7 @@ const classesShowHandler = {
         console.log('    (no classes configured)');
       } else {
         output.table(
-          ['#', 'Strategy', 'Slice %', 'Quadratic', 'Min balance', 'Asset', 'Hat IDs'],
+          ['#', 'Strategy', 'Slice %', 'Quadratic', 'Min balance', 'Asset', 'Authority subjects'],
           normalized.map(c => [
             String(c.classIndex),
             c.strategy,
@@ -372,7 +299,8 @@ const classesShowHandler = {
             c.quadratic ? 'yes' : 'no',
             c.minBalance === '0' ? '0' : formatToken(c.minBalance),
             c.asset === ethers.constants.AddressZero ? '—' : formatAddress(c.asset),
-            c.hatIds.join(', ') || '—',
+            !c.subjectBindingKnown ? `binding unknown; fallback: ${c.hatIds.join(', ') || 'open'}`
+              : c.subjectId !== '0' ? `binding: ${c.subjectId}` : c.hatIds.join(', ') || 'open',
           ])
         );
       }
@@ -380,7 +308,8 @@ const classesShowHandler = {
       // Two DISTINCT validity parameters — do not conflate them:
       // threshold is a % of weighted power, quorum is a raw voter count.
       console.log(`  Support threshold: ${threshold}% (weighted power the winning option needs)`);
-      console.log(`  Quorum: ${quorumCount} voters (0 = disabled)`);
+      console.log(`  Global quorum: ${quorumCount} voters (0 = disabled)`);
+      if (proposalId !== undefined) console.log('  Effective proposal quorum is unavailable: restricted polls can override the global quorum.');
       console.log('');
     } catch (err: any) {
       spin.stop();
@@ -415,7 +344,7 @@ const classesProposeHandler = {
     .option('file', {
       type: 'string',
       demandOption: true,
-      describe: 'Path to a ClassConfig[] JSON file (strategy, slicePct, quadratic, minBalance, asset, hatIds)',
+      describe: 'Path to a ClassConfig[] JSON file (strategy, slicePct, quadratic, minBalance, asset, subjectIds; optional subjectId sets a stable binding, 0 clears it)',
     })
     .option('duration', { type: 'number', default: 60, describe: 'Vote duration in minutes' })
     .option('idempotency-key', { type: 'string', describe: 'Explicit idempotency key (default: derived from argv).' })
@@ -459,7 +388,9 @@ const classesProposeHandler = {
         classes.map(c => [c.strategy, c.slicePct, c.quadratic, c.minBalance, c.asset, c.hatIds]),
       ]);
       const batches = [
-        [[hybridVotingAddress, ethers.BigNumber.from(0), setClassesCall]], // option 0: apply
+        [[hybridVotingAddress, ethers.BigNumber.from(0), setClassesCall], ...classes.flatMap((c, index) => c.subjectId === undefined ? [] : [
+          [hybridVotingAddress, ethers.BigNumber.from(0), iface.encodeFunctionData('setClassSubject', [index, c.subjectId])],
+        ])], // option 0: apply classes and explicit stable bindings
         [], // option 1: keep current
       ];
 
@@ -487,8 +418,8 @@ const classesProposeHandler = {
       const run = async (): Promise<Record<string, any>> => {
         const txSpin = output.spinner('Pinning metadata + creating proposal...');
         txSpin.start();
-        const cid = await pinJson(JSON.stringify(metadata));
-        const descriptionHash = ipfsCidToBytes32(cid);
+        const cid = argv.dryRun ? undefined : await pinJson(JSON.stringify(metadata));
+        const descriptionHash = cid ? ipfsCidToBytes32(cid) : ethers.constants.HashZero;
         const titleBytes = stringToBytes(title);
 
         const voting = createWriteContract(hybridVotingAddress, 'HybridVotingNew', ctx.signer);

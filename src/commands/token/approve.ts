@@ -1,3 +1,4 @@
+import { AUTHORITY_KEYS } from '@poa-box/core/tx/authority';
 /**
  * pop token approve — approve a pending token request (MINTS new PT).
  *
@@ -19,7 +20,7 @@ import { formatToken } from '../../lib/format';
 import { getWriteContext, confirmWrite, finishWrite } from '../../lib/command';
 import { runPreflight, checkGasBalance, PreflightCheck } from '../../lib/preflight';
 import { requireModule } from '../../lib/resolve';
-import { readTokenGates, readTokenRequest, checkWearsAnyHat, TokenRequestOnChain } from './helpers';
+import { readTokenGates, readTokenRequest, checkTokenPermission, TokenRequestOnChain } from './helpers';
 import { CliError, PreconditionError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
@@ -40,7 +41,7 @@ export const approveHandler = {
     .option('request', { type: 'number', demandOption: true, describe: 'Request ID to approve' })
     .example('pop token approve --request 3', 'Mint the PT for request #3 to its requester')
     .example('pop token approve --request 3 --yes --json', 'Non-interactive approval (agents): --yes is required because approval mints irreversibly')
-    .epilogue('Approvers only (executor or approver-hat wearers); you cannot approve your own request. List pending requests with: pop token requests'),
+    .epilogue('Approvers only (executor or holders of PT_APPROVE permission); you cannot approve your own request. List pending requests with: pop token requests'),
 
   handler: async (argv: ArgumentsCamelCase<ApproveArgs>) => {
     const spin = output.spinner('Checking token request...');
@@ -84,12 +85,8 @@ export const approveHandler = {
         }
         try {
           const gates = await readTokenGates(ctx.provider, tokenAddress);
-          if (ctx.address.toLowerCase() !== gates.executor.toLowerCase() && gates.approverHatIds.length > 0) {
-            checks.push(checkWearsAnyHat(ctx.provider, gates.hatsAddress, ctx.address, gates.approverHatIds, {
-              label: 'approver role (approver hat)',
-              detail: `${ctx.address} wears none of the token's approver hats — approveRequest would revert NotApprover`,
-              suggestion: 'see who can approve with pop org roles',
-            }));
+          if (ctx.address.toLowerCase() !== gates.executor.toLowerCase()) {
+            checks.push(checkTokenPermission(gates.authorityAddress, ctx.address, AUTHORITY_KEYS.PT_APPROVE));
           }
         } catch {
           // Gate reads failed — let the tx surface the real error.

@@ -1,3 +1,4 @@
+import { refreshAuthorityUsers } from '../../lib/authority';
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { query } from '../../lib/subgraph';
@@ -17,7 +18,7 @@ const FETCH_HEALTH_DATA = `
       name
       participationToken { totalSupply }
       users(first: 100) {
-        participationTokenBalance
+        address participationTokenBalance
         membershipStatus
         totalTasksCompleted
         totalVotes
@@ -52,6 +53,8 @@ export const healthScoreHandler = {
       const result = await query<any>(FETCH_HEALTH_DATA, { orgId: modules.orgId }, argv.chain);
       const org = result.organization;
       if (!org) throw new Error('Organization not found');
+
+      await refreshAuthorityUsers(org, modules.orgId, argv.chain);
 
       const activeMembers = org.users.filter((u: any) => u.membershipStatus === 'Active');
       const memberCount = activeMembers.length;

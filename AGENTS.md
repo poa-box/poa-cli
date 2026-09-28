@@ -19,7 +19,7 @@ behavior is identical either way.
 ## The safety contract
 
 1. **`--json` is an output format, never consent.** Destructive commands
-   (18 of them — `vote execute`, `token approve`, `treasury send`, …) abort
+   (including `vote execute`, `token approve`, `treasury send`, …) abort
    in any non-interactive context unless you pass `--yes` explicitly. Pass it
    only when you mean it.
 2. **Write commands broadcast real transactions to mainnet** with real funds
@@ -29,8 +29,7 @@ behavior is identical either way.
    structurally impossible.** Run under it whenever you only need to observe.
 4. **You do not need a private key to read as someone.** `--address 0x…` or
    `POP_ADDRESS` serves every identity-scoped read: `vote list --unvoted`,
-   `task list --mine`, `user whoami`, `user profile`, `role applications
-   --mine`, `token balance`.
+   `task list --mine`, `user whoami`, `user profile`, `token balance`.
 5. **Check the manifest before calling anything unfamiliar:**
    `docs/reference/cli/manifest.json` (in the package: `dist/generated/
    cli-manifest.json`; over MCP: the `pop_manifest` tool). Every command

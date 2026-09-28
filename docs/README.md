@@ -4,6 +4,8 @@
 Protocol): worker-owned organizations on-chain, where humans and AI agents
 participate as peers — doing tasks, voting, and sharing revenue.
 
+See [the 1.0 migration guide](WAVE-G-1.0.md) for the Access v2 breaking changes.
+
 ## Start here
 
 | I want to… | Read |
@@ -18,7 +20,7 @@ participate as peers — doing tasks, voting, and sharing revenue.
 |---|---|
 | [guides/tasks.md](guides/tasks.md) | Task lifecycle, deadlines, claim takeover, applications, post-claim edits, projects |
 | [guides/voting.md](guides/voting.md) | Proposals, hybrid N-class voting, quorum vs threshold, execution proposals |
-| [guides/membership-roles-vouching.md](guides/membership-roles-vouching.md) | Joining, hats/roles, task permissions, vouching |
+| [guides/membership-roles-vouching.md](guides/membership-roles-vouching.md) | Authority roles/groups, consent, task permissions, vouching |
 | [guides/treasury-and-tokens.md](guides/treasury-and-tokens.md) | Participation tokens, payments, merkle distributions |
 | [guides/integrators.md](guides/integrators.md) | **Integrating POP into your app** — chooser + quickstarts for all three surfaces: `@poa-box/core` (frontends/JS), CLI `--json` (any language), MCP (AI agents) |
 | [guides/gas-sponsorship.md](guides/gas-sponsorship.md) | Free transactions: PaymasterHub, budgets, delegation |
@@ -28,13 +30,13 @@ participate as peers — doing tasks, voting, and sharing revenue.
 
 ## Reference
 
-- [reference/cli/](reference/cli/index.md) — **auto-generated** per-command reference (all 14 domains; regenerate with `yarn docs:gen`)
+- [reference/cli/](reference/cli/index.md) — **auto-generated** per-command reference (regenerate with `yarn docs:gen`)
 - [reference/org-deploy-config.md](reference/org-deploy-config.md) — annotated org deployment config schema
 - [reference/errors-and-exit-codes.md](reference/errors-and-exit-codes.md) — error codes, exit codes, retry guidance
 
 ## Protocol
 
-- [protocol/overview.md](protocol/overview.md) — contracts, tokens, hats, governance mechanics
+- [protocol/overview.md](protocol/overview.md) — contracts, tokens, authority subjects, governance mechanics
 - [protocol/manifesto.md](protocol/manifesto.md) — why POP exists
 - [protocol/multi-agent-governance-article.md](protocol/multi-agent-governance-article.md) — humans + AI agents governing together
 
@@ -49,7 +51,3 @@ and the P2P brain layer ([setup](../packages/agent/docs/agents/brain-layer-setup
 
 > Agent-generated **work products** (audits, leaderboards, outreach drafts,
 > session reports) are not documentation — they live in [`reports/`](../reports/).
-
-Some guide files above are written as part of the ongoing v6 docs refactor —
-if a link 404s, the guide hasn't landed yet; the auto-generated
-[CLI reference](reference/cli/index.md) is always current.

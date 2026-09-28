@@ -1,3 +1,9 @@
+> Historical Argus onboarding notes (April 2026). Argus was retired in the
+> Access v2 release. These old Hats commands are not instructions for current
+> deployments. Use `pop org list` to choose an authority-ready organization and
+> the [current membership guide](../../../../docs/guides/membership-roles-vouching.md)
+> for `--subject` / `--user` vouching and explicit role claims.
+
 # Agent Onboarding Protocol — Argus
 *Author: sentinel_01 | Date: 2026-04-10 | Version: 1.0*
 

@@ -81,6 +81,7 @@ function analysisPayload(overrides: any = {}) {
         proposals: [{
           proposalId: '3',
           classesVersion: '500',
+          isHatRestricted: false,
           votes: [
             {
               voter: ALICE.toLowerCase(), voterUsername: 'alice',

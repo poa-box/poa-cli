@@ -76,24 +76,6 @@ export const TaskManagerNewAbi = [
   },
   {
     "type": "function",
-    "name": "bootstrapGlobalPerms",
-    "inputs": [
-      {
-        "name": "hatIds",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "masks",
-        "type": "uint8[]",
-        "internalType": "uint8[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "bootstrapProjectsAndTasks",
     "inputs": [
       {
@@ -552,11 +534,6 @@ export const TaskManagerNewAbi = [
         "internalType": "address"
       },
       {
-        "name": "hatsAddress",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "creatorHats",
         "type": "uint256[]",
         "internalType": "uint256[]"
@@ -631,22 +608,12 @@ export const TaskManagerNewAbi = [
   },
   {
     "type": "function",
-    "name": "setProjectRolePerm",
+    "name": "setMembershipAuthority",
     "inputs": [
       {
-        "name": "pid",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "hatId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "mask",
-        "type": "uint8",
-        "internalType": "uint8"
+        "name": "authority",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -787,6 +754,19 @@ export const TaskManagerNewAbi = [
   },
   {
     "type": "event",
+    "name": "ConfigAdminSet",
+    "inputs": [
+      {
+        "name": "admin",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "ExecutorUpdated",
     "inputs": [
       {
@@ -850,25 +830,6 @@ export const TaskManagerNewAbi = [
   },
   {
     "type": "event",
-    "name": "HatToggled",
-    "inputs": [
-      {
-        "name": "hatId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "allowed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Initialized",
     "inputs": [
       {
@@ -876,6 +837,19 @@ export const TaskManagerNewAbi = [
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MembershipAuthoritySet",
+    "inputs": [
+      {
+        "name": "authority",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -1479,6 +1453,11 @@ export const TaskManagerNewAbi = [
   {
     "type": "error",
     "name": "InvalidString",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LegacyConfigRemoved",
     "inputs": []
   },
   {

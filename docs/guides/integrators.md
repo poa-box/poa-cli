@@ -158,7 +158,7 @@ POP_READONLY=1 POP_ADDRESS=0xYourAddress POP_DEFAULT_CHAIN=100 pop vote list --u
   hand this process to untrusted automation.
 - **`POP_ADDRESS` / `--address`** serves every identity-scoped read (`vote
   list --unvoted`, `task list --mine`, `user whoami`, `user profile`,
-  `role applications --mine`, `token balance`) without a private key. Never
+  `token balance`) without a private key. Never
   give a signing key to a process that only reads.
 - **`--json`** is an output format, **never consent**. Destructive commands
   (`vote execute`, `token approve`, `treasury send`, …) require an explicit

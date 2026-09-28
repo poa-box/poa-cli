@@ -163,29 +163,20 @@ export function checkGasBalance(
   };
 }
 
-const HATS_IFACE = new ethers.utils.Interface([
-  'function balanceOf(address wearer, uint256 hatId) view returns (uint256 balance)',
+const AUTHORITY_MEMBERSHIP_IFACE = new ethers.utils.Interface([
+  'function isMember(uint256 subject,address user) view returns (bool)',
 ]);
 
-/** Wearer holds the given hat (IHats balanceOf(wearer, hatId) > 0). */
-export function checkHasHat(hatsAddress: string, wearer: string, hatId: ethers.BigNumberish): PreflightCheck {
-  const id = ethers.BigNumber.from(hatId);
-  return {
-    label: 'role (hat)',
-    call: { to: hatsAddress, data: HATS_IFACE.encodeFunctionData('balanceOf', [wearer, id]) },
-    interpret: (returnData, success) => {
-      if (!success || !returnData || returnData === '0x') {
-        return { ok: false, detail: 'could not read hat balance', suggestion: 'verify the Hats contract address' };
-      }
-      const balance = HATS_IFACE.decodeFunctionResult('balanceOf', returnData)[0] as ethers.BigNumber;
-      if (!balance.isZero()) return { ok: true };
-      return {
-        ok: false,
-        detail: `${wearer} does not wear hat ${id.toString()}`,
-        suggestion: 'list org roles with pop org roles, then request one via pop role apply',
-      };
-    },
-  };
+/** Live accepted-and-eligible membership check for transaction preflight. */
+export function checkSubjectMembership(authorityAddress: string, user: string, subject: ethers.BigNumberish): PreflightCheck {
+  const id = ethers.BigNumber.from(subject);
+  return { label: 'authority membership',
+    call: { to: authorityAddress, data: AUTHORITY_MEMBERSHIP_IFACE.encodeFunctionData('isMember', [id, user]) },
+    interpret: (data, success) => {
+      if (!success || !data || data === '0x') return { ok: false, detail: 'Could not read MembershipAuthority membership' };
+      if (AUTHORITY_MEMBERSHIP_IFACE.decodeFunctionResult('isMember', data)[0]) return { ok: true };
+      return { ok: false, detail: `${user} is not a member of subject ${id.toString()}`, suggestion: 'List roles with pop org roles and accept eligible roles with pop role claim' };
+    } };
 }
 
 let uarInterface: ethers.utils.Interface | null = null;

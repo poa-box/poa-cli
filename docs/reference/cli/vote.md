@@ -17,11 +17,14 @@ pop vote create [flags]
 | `--calls` | string | no | - | JSON array of execution calls for option 0: [{"target":"0x...","value":"0","data":"0x..."}] |
 | `--description` | string | yes | - | Proposal description |
 | `--duration` | number | yes | - | Duration in minutes |
-| `--hat-ids` | string | no | - | Comma-separated hat IDs for restricted voting |
+| `--equal-weight` | boolean | no | - | Restricted hybrid poll: count each eligible voter once |
+| `--hat-ids` | string | no | - | Legacy alias for --subject-ids |
 | `--idempotency-key` | string | no | - | Task #369 (HB#213): explicit idempotency key. Two calls with the same orgId + this key within 15 minutes return the same proposalId without re-submitting. Default: auto-derived from a hash of the full argv (transient fields like --private-key and --dry-run excluded). Use --no-idempotency to opt out entirely. |
 | `--name` | string | yes | - | Proposal title |
 | `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit a new proposal. Use only when you intentionally want a duplicate write. |
 | `--options` | string | yes | - | Comma-separated option names |
+| `--quorum-override` | number | no | - | Restricted poll voter-count quorum (executable polls cannot lower the global quorum) |
+| `--subject-ids` | string | no | - | Comma-separated authority subject IDs for restricted voting |
 | `--type` | string | yes | - | Voting type (choices: `hybrid`, `dd`) |
 
 ## pop vote cast
@@ -125,7 +128,7 @@ pop vote propose-config [flags]
 | --- | --- | --- | --- | --- |
 | `--duration` | number | no | `60` | Vote duration in minutes |
 | `--idempotency-key` | string | no | - | Explicit idempotency key (default: derived from argv). |
-| `--key` | string | yes | - | Configuration parameter name (choices: `threshold`, `quorum`, `target-allowed`, `executor`, `hat-allowed`) |
+| `--key` | string | yes | - | Configuration parameter name (choices: `threshold`, `quorum`, `target-allowed`, `executor`) |
 | `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
 | `--value` | string | yes | - | New value |
 
@@ -188,7 +191,7 @@ pop vote classes propose [flags]
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `--duration` | number | no | `60` | Vote duration in minutes |
-| `--file` | string | yes | - | Path to a ClassConfig[] JSON file (strategy, slicePct, quadratic, minBalance, asset, hatIds) |
+| `--file` | string | yes | - | Path to a ClassConfig[] JSON file (strategy, slicePct, quadratic, minBalance, asset, subjectIds; optional subjectId sets a stable binding, 0 clears it) |
 | `--idempotency-key` | string | no | - | Explicit idempotency key (default: derived from argv). |
 | `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
 

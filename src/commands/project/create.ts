@@ -3,7 +3,7 @@
  *
  * Gate — VERIFIED against contracts origin/main src/TaskManager.sol:
  * createProject(BootstrapProjectConfig) calls _requireCreator(), so a
- * creator-hat wearer or the executor can send this as a direct tx (no
+ * creator subject member or the executor can send this as a direct tx (no
  * governance needed; use `pop project propose` for the governance path).
  * Permissions are not pre-checked — masks are not readable per-wearer
  * on-chain, so a decoded Unauthorized revert is the authority.
@@ -21,17 +21,14 @@ import { requireModule } from '../../lib/resolve';
 import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
+import { encodeProjectStruct } from '@poa-box/core/tx/project';
 
 interface CreateArgs {
   org: string;
   name: string;
   cap: number;
-  description?: string;
   managers?: string;
-  'create-hats'?: string;
-  'claim-hats'?: string;
-  'review-hats'?: string;
-  'assign-hats'?: string;
+  description?: string;
   'bounty-tokens'?: string;
   'bounty-caps'?: string;
   chain?: number;
@@ -56,16 +53,12 @@ export const createHandler = {
   builder: (yargs: Argv) => yargs
     .option('name', { type: 'string', demandOption: true, describe: 'Project name' })
     .option('cap', { type: 'number', default: 0, describe: 'PT cap (0 = unlimited)' })
+    .option('managers', { type: 'string', describe: 'Comma-separated project manager addresses' })
     .option('description', { type: 'string', describe: 'Project description' })
-    .option('managers', { type: 'string', describe: 'Comma-separated manager addresses' })
-    .option('create-hats', { type: 'string', describe: 'Comma-separated hat IDs for create permission' })
-    .option('claim-hats', { type: 'string', describe: 'Comma-separated hat IDs for claim permission' })
-    .option('review-hats', { type: 'string', describe: 'Comma-separated hat IDs for review permission' })
-    .option('assign-hats', { type: 'string', describe: 'Comma-separated hat IDs for assign permission' })
     .option('bounty-tokens', { type: 'string', describe: 'Comma-separated bounty token addresses' })
     .option('bounty-caps', { type: 'string', describe: 'Comma-separated bounty caps (wei)' })
     .example('pop project create --name "Protocol Work" --cap 500', 'Create a project with a 500 PT budget cap')
-    .example('pop project create --name "Ops" --create-hats 123 --claim-hats 123,456', 'Create a project with per-hat task permissions'),
+    .epilogue('Configure project permissions with pop task perms set after creation.'),
 
   handler: async (argv: ArgumentsCamelCase<CreateArgs>) => {
     const spin = output.spinner('Preparing project...');
@@ -75,37 +68,11 @@ export const createHandler = {
       const ctx = await getWriteContext(argv);
       const taskManagerAddress = requireModule(ctx.modules, 'taskManagerAddress');
 
-      // Upload metadata if description provided
-      let metaHash = ethers.constants.HashZero;
+      const managers = parseCommaList(argv.managers);
+      const projectStruct = encodeProjectStruct({ taskManagerAddress, name: argv.name, cap: argv.cap,
+        managers, bountyTokens: parseCommaList(argv.bountyTokens as string),
+        bountyCaps: parseBigNumberList(argv.bountyCaps as string) });
       let metaCid: string | undefined;
-      if (argv.description) {
-        const metadata = { description: argv.description };
-        spin.text = 'Pinning metadata to IPFS...';
-        metaCid = await pinJson(JSON.stringify(metadata));
-        metaHash = ipfsCidToBytes32(metaCid);
-      }
-
-      const titleBytes = stringToBytes(argv.name);
-      const cap = argv.cap ? ethers.utils.parseUnits(argv.cap.toString(), 18) : 0;
-      const managers = parseCommaList(argv.managers as string);
-      const createHats = parseBigNumberList(argv.createHats as string);
-      const claimHats = parseBigNumberList(argv.claimHats as string);
-      const reviewHats = parseBigNumberList(argv.reviewHats as string);
-      const assignHats = parseBigNumberList(argv.assignHats as string);
-
-      // Build BootstrapProjectConfig struct
-      const projectStruct = [
-        titleBytes,
-        metaHash,
-        cap,
-        managers,
-        createHats,
-        claimHats,
-        reviewHats,
-        assignHats,
-        parseCommaList(argv.bountyTokens as string),  // address[]
-        parseBigNumberList(argv.bountyCaps as string), // uint256[] (wei)
-      ];
 
       // ── Pre-flight (skippable with --no-preflight) ────────────────────
       await runPreflight(ctx.provider, [checkGasBalance(ctx.address)], { skip: !argv.preflight });
@@ -115,13 +82,14 @@ export const createHandler = {
         project: argv.name,
         cap: argv.cap ? `${argv.cap} PT` : 'unlimited',
         managers: managers.length ? managers.join(', ') : undefined,
-        permissionHats: [createHats, claimHats, reviewHats, assignHats].some(h => h.length)
-          ? `create:[${createHats.join(',')}] claim:[${claimHats.join(',')}] review:[${reviewHats.join(',')}] assign:[${assignHats.join(',')}]`
-          : undefined,
         org: argv.org,
         chain: ctx.networkName,
       }, { actionLabel: 'About to create project' });
 
+      if (argv.description && !argv.dryRun) {
+        metaCid = await pinJson(JSON.stringify({ description: argv.description }));
+        projectStruct[1] = ipfsCidToBytes32(metaCid);
+      }
       const txSpin = output.spinner('Creating project...');
       txSpin.start();
       const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);

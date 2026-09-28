@@ -14,16 +14,12 @@ pop project create [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--assign-hats` | string | no | - | Comma-separated hat IDs for assign permission |
 | `--bounty-caps` | string | no | - | Comma-separated bounty caps (wei) |
 | `--bounty-tokens` | string | no | - | Comma-separated bounty token addresses |
 | `--cap` | number | no | `0` | PT cap (0 = unlimited) |
-| `--claim-hats` | string | no | - | Comma-separated hat IDs for claim permission |
-| `--create-hats` | string | no | - | Comma-separated hat IDs for create permission |
 | `--description` | string | no | - | Project description |
-| `--managers` | string | no | - | Comma-separated manager addresses |
+| `--managers` | string | no | - | Comma-separated project manager addresses |
 | `--name` | string | yes | - | Project name |
-| `--review-hats` | string | no | - | Comma-separated hat IDs for review permission |
 
 ## pop project propose
 
@@ -35,14 +31,11 @@ pop project propose [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--assign-hats` | string | no | - | Hat IDs for task assign permission |
 | `--cap` | number | no | `0` | PT budget cap (0 = unlimited) |
-| `--claim-hats` | string | no | - | Hat IDs for task claim permission |
-| `--create-hats` | string | no | - | Hat IDs for task creation permission |
 | `--description` | string | no | - | Project description |
 | `--duration` | number | no | `1440` | Vote duration in minutes (default 24h) |
+| `--managers` | string | no | - | Comma-separated project manager addresses |
 | `--name` | string | yes | - | Project name |
-| `--review-hats` | string | no | - | Hat IDs for task review permission |
 
 ## pop project list
 

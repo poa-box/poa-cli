@@ -19,17 +19,15 @@ import { requireModule } from '../../lib/resolve';
 import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
+import { encodeProjectStruct } from '@poa-box/core/tx/project';
 
 interface ProposeArgs {
   org: string;
   name: string;
   description?: string;
   cap: number;
+  managers?: string;
   duration: number;
-  'create-hats'?: string;
-  'claim-hats'?: string;
-  'review-hats'?: string;
-  'assign-hats'?: string;
   chain?: number;
   rpc?: string;
   'private-key'?: string;
@@ -46,15 +44,12 @@ function parseBigNumberList(val?: string): ethers.BigNumber[] {
 export const proposeHandler = {
   builder: (yargs: Argv) => yargs
     .option('name', { type: 'string', demandOption: true, describe: 'Project name' })
+    .option('managers', { type: 'string', describe: 'Comma-separated project manager addresses' })
     .option('description', { type: 'string', describe: 'Project description' })
     .option('cap', { type: 'number', default: 0, describe: 'PT budget cap (0 = unlimited)' })
     .option('duration', { type: 'number', default: 1440, describe: 'Vote duration in minutes (default 24h)' })
-    .option('create-hats', { type: 'string', describe: 'Hat IDs for task creation permission' })
-    .option('claim-hats', { type: 'string', describe: 'Hat IDs for task claim permission' })
-    .option('review-hats', { type: 'string', describe: 'Hat IDs for task review permission' })
-    .option('assign-hats', { type: 'string', describe: 'Hat IDs for task assign permission' })
     .example('pop project propose --name "Research" --cap 1000', 'Propose a 1000 PT project (24h vote)')
-    .example('pop project propose --name "Ops" --duration 60 --create-hats 123', 'One-hour vote; hat 123 can create tasks'),
+    .epilogue('Configure project permissions with pop task perms set after creation.'),
 
   handler: async (argv: ArgumentsCamelCase<ProposeArgs>) => {
     const spin = output.spinner('Creating project proposal...');
@@ -68,35 +63,14 @@ export const proposeHandler = {
         throw new CliError('No HybridVoting found for this org', EXIT.PRECONDITION, 'This org cannot run governance proposals.');
       }
 
-      // Pin project metadata to IPFS
-      let metaHash = ethers.constants.HashZero;
-      if (argv.description) {
-        const metadata = { description: argv.description };
-        spin.text = 'Pinning project metadata to IPFS...';
-        const cid = await pinJson(JSON.stringify(metadata));
-        metaHash = ipfsCidToBytes32(cid);
-      }
-
-      // Build BootstrapProjectConfig struct
-      const titleBytes = stringToBytes(argv.name);
-      const cap = argv.cap ? ethers.utils.parseUnits(argv.cap.toString(), 18) : 0;
-      const createHats = parseBigNumberList(argv.createHats as string);
-      const claimHats = parseBigNumberList(argv.claimHats as string);
-      const reviewHats = parseBigNumberList(argv.reviewHats as string);
-      const assignHats = parseBigNumberList(argv.assignHats as string);
-
-      const projectStruct = [
-        titleBytes, metaHash, cap,
-        [],          // managers (hat-based instead)
-        createHats, claimHats, reviewHats, assignHats,
-        [],          // bountyTokens
-        [],          // bountyCaps
-      ];
+      const projectStruct = encodeProjectStruct({ taskManagerAddress: taskManagerAddr,
+        name: argv.name, cap: argv.cap,
+        managers: (argv.managers ?? '').split(',').map(address => address.trim()).filter(Boolean) });
 
       // Encode the createProject call the executor performs if the vote passes
       const taskManagerAbi = loadAbi('TaskManagerNew');
       const iface = new ethers.utils.Interface(taskManagerAbi);
-      const calldata = iface.encodeFunctionData('createProject', [projectStruct]);
+      let calldata = iface.encodeFunctionData('createProject', [projectStruct]);
 
       // Build proposal metadata
       const proposalMeta = {
@@ -124,10 +98,16 @@ export const proposeHandler = {
         chain: ctx.networkName,
       }, { actionLabel: 'Propose project creation' });
 
+      if (argv.description && !argv.dryRun) {
+        const cid = await pinJson(JSON.stringify({ description: argv.description }));
+        projectStruct[1] = ipfsCidToBytes32(cid);
+        calldata = iface.encodeFunctionData('createProject', [projectStruct]);
+        batches[0][0][2] = calldata;
+      }
       const txSpin = output.spinner('Pinning metadata + creating proposal...');
       txSpin.start();
-      const proposalCid = await pinJson(JSON.stringify(proposalMeta));
-      const descriptionHash = ipfsCidToBytes32(proposalCid);
+      const proposalCid = argv.dryRun ? undefined : await pinJson(JSON.stringify(proposalMeta));
+      const descriptionHash = proposalCid ? ipfsCidToBytes32(proposalCid) : ethers.constants.HashZero;
       const proposalTitle = stringToBytes(`Create project: ${argv.name}`);
 
       const contract = createWriteContract(hybridVotingAddr, 'HybridVotingNew', ctx.signer);

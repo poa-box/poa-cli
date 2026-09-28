@@ -181,7 +181,7 @@ export const MODULE_LABELS: Array<{ key: keyof OrgModules; label: string; abi: s
   { key: 'educationHubAddress', label: 'EducationHub', abi: 'EducationHubNew' },
   { key: 'executorAddress', label: 'Executor', abi: 'Executor' },
   { key: 'quickJoinAddress', label: 'QuickJoin', abi: 'QuickJoinNew' },
-  { key: 'eligibilityModuleAddress', label: 'EligibilityModule', abi: 'EligibilityModuleNew' },
+  { key: 'membershipAuthorityAddress', label: 'MembershipAuthority', abi: 'MembershipAuthority' },
   { key: 'paymentManagerAddress', label: 'PaymentManager', abi: 'PaymentManager' },
   { key: 'zkEmailInvitesAddress', label: 'ZkEmailInvites', abi: 'ZkEmailInvites' },
 ];
@@ -311,6 +311,9 @@ export interface CreateProposalParams {
    * parsed as BigNumbers from the raw values.
    */
   hatIds?: Array<string | ethers.BigNumberish>;
+  subjectIds?: ethers.BigNumberish[];
+  quorumOverride?: number;
+  equalWeight?: boolean;
   /** Execution calls for option 0 ({target, value, data} — the --calls shape). */
   calls?: ExecutionCallInput[];
   /** Metadata createdAt override (default Date.now()). */
@@ -344,7 +347,8 @@ export async function createProposalIntent(
     throw new CliError('At least 2 options are required', EXIT.USAGE);
   }
 
-  const hatIds = (params.hatIds ?? []).map(h =>
+  if (params.subjectIds !== undefined && params.hatIds !== undefined) throw new CliError('Specify subjectIds or hatIds, not both.', EXIT.USAGE);
+  const hatIds = (params.subjectIds ?? params.hatIds ?? []).map(h =>
     ethers.BigNumber.from(typeof h === 'string' ? h.trim() : h)
   );
 
@@ -393,8 +397,6 @@ export async function createProposalIntent(
     optionNames,
     createdAt: params.createdAt,
   });
-  const { cid, descriptionHash } = await pinProposalMetadata(ctx, metadata);
-
   const summary: Record<string, unknown> = {
     type: params.type,
     title: params.name,
@@ -407,20 +409,26 @@ export async function createProposalIntent(
     });
   }
 
-  return buildGovernanceProposal({
+  // Build and validate before publishing proposal metadata.
+  const intent = buildGovernanceProposal({
     votingAddress,
     votingAbiName,
     title: params.name,
-    descriptionHash,
+    descriptionHash: ethers.constants.HashZero,
     durationMinutes: params.durationMinutes,
     numOptions,
     batches,
     hatIds,
+    quorumOverride: params.quorumOverride,
+    equalWeight: params.equalWeight,
     orgId: modules.orgId,
     action: 'create',
     summary,
-    ipfs: { cid, metadata },
   });
+  const { cid, descriptionHash } = await pinProposalMetadata(ctx, metadata);
+  intent.args[1] = descriptionHash;
+  intent.meta.ipfs = { cid, metadata };
+  return intent;
 }
 
 // ────────────────────────── Level 2 — vote cast ──────────────────────────
@@ -578,7 +586,7 @@ export async function proposeQuorumIntent(
 ): Promise<TxIntent> {
   const newQuorum = params.quorum;
   const durationMinutes = params.durationMinutes ?? 60;
-  if (newQuorum < 1) throw new CliError('Quorum must be at least 1', EXIT.USAGE);
+  if (!Number.isInteger(newQuorum) || newQuorum < 0 || newQuorum > 4294967295) throw new CliError('Quorum must be a uint32 voter count (0 disables)', EXIT.USAGE);
 
   const modules = await resolveOrgModules(ctx.client, params.org, ctx.chainId);
   if (!modules.hybridVotingAddress) throw new CliError('HybridVoting not deployed', EXIT.USAGE);
@@ -658,10 +666,10 @@ export const CONFIG_PARAMS: Record<string, ConfigParam> = {
     ddKey: 0,
     valueType: 'uint8',
     description: 'Support threshold percentage (1-100)',
-    encode: (v) => ethers.utils.defaultAbiCoder.encode(['uint8'], [parseInt(v, 10)]),
+    encode: (v) => ethers.utils.defaultAbiCoder.encode(['uint8'], [Number(v)]),
     validate: (v) => {
-      const n = parseInt(v, 10);
-      if (isNaN(n) || n < 1 || n > 100) throw new Error('Threshold must be 1-100');
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 1 || n > 100) throw new Error('Threshold must be 1-100');
     },
   },
   quorum: {
@@ -670,7 +678,7 @@ export const CONFIG_PARAMS: Record<string, ConfigParam> = {
     ddKey: 4,
     valueType: 'uint32',
     description: 'Minimum voter count for validity (0 disables)',
-    encode: (v) => ethers.utils.defaultAbiCoder.encode(['uint32'], [parseInt(v, 10)]),
+    encode: (v) => ethers.utils.defaultAbiCoder.encode(['uint32'], [Number(v)]),
     validate: (v) => {
       const n = Number(v);
       if (!Number.isInteger(n) || n < 0 || n > 4294967295) {
@@ -709,24 +717,7 @@ export const CONFIG_PARAMS: Record<string, ConfigParam> = {
       if (v.trim() === ethers.constants.AddressZero) throw new Error('Cannot set executor to zero address');
     },
   },
-  'hat-allowed': {
-    name: 'hat-allowed',
-    hybridKey: -1, // not available on Hybrid
-    ddKey: 3,
-    hybridUnavailableReason:
-      'HAT_ALLOWED is not a HybridVoting config key; this key only applies to DirectDemocracyVoting',
-    valueType: 'uint256,bool',
-    description: 'Allow/disallow a hat ID for DD voting (format: hatId,true/false)',
-    encode: (v) => {
-      const [hatId, allowed] = v.split(',');
-      return ethers.utils.defaultAbiCoder.encode(['uint256', 'bool'], [hatId.trim(), allowed.trim() === 'true']);
-    },
-    validate: (v) => {
-      const parts = v.split(',');
-      if (parts.length !== 2) throw new Error('Format: hatId,true/false');
-      if (!['true', 'false'].includes(parts[1].trim())) throw new Error('Second value must be true or false');
-    },
-  },
+
 };
 
 export interface ProposeConfigParams {
@@ -835,6 +826,8 @@ export interface ParsedClassConfig {
   minBalance: ethers.BigNumber;
   asset: string;
   hatIds: ethers.BigNumber[];
+  /** Stable authority class binding. Omit to preserve it; zero clears it. */
+  subjectId?: ethers.BigNumber;
 }
 
 function usageError(message: string): CliError {
@@ -883,6 +876,8 @@ export function parseClassConfigs(doc: any): ParsedClassConfig[] {
     let minBalance: ethers.BigNumber;
     try {
       minBalance = ethers.BigNumber.from(String(entry.minBalance ?? 0));
+      if (minBalance.lt(0) || minBalance.gt(ethers.constants.MaxUint256)) throw new Error('uint256 overflow');
+      if (typeof entry.minBalance === 'number' && !Number.isSafeInteger(entry.minBalance)) throw new Error('unsafe integer');
     } catch {
       throw usageError(`Class ${i}: invalid minBalance ${JSON.stringify(entry.minBalance)} — pass a base-unit integer string.`);
     }
@@ -895,17 +890,29 @@ export function parseClassConfigs(doc: any): ParsedClassConfig[] {
       throw usageError(`Class ${i}: ERC20_BAL strategy requires a non-zero asset address (the contract reverts ZeroAddress).`);
     }
 
-    const rawHatIds = entry.hatIds ?? [];
-    if (!Array.isArray(rawHatIds)) throw usageError(`Class ${i}: hatIds must be an array.`);
+    if (entry.subjectIds !== undefined && entry.hatIds !== undefined) throw usageError(`Class ${i}: specify subjectIds or hatIds, not both.`);
+    const rawHatIds = entry.subjectIds ?? entry.hatIds ?? [];
+    if (!Array.isArray(rawHatIds)) throw usageError(`Class ${i}: subjectIds (hatIds) must be an array.`);
     const hatIds = rawHatIds.map((h: any) => {
       try {
-        return ethers.BigNumber.from(String(h).trim());
+        if (typeof h === 'number' && !Number.isSafeInteger(h)) throw new Error('unsafe integer');
+        const id = ethers.BigNumber.from(String(h).trim());
+        if (id.lt(0) || id.gt(ethers.constants.MaxUint256)) throw new Error('uint256 overflow');
+        return id;
       } catch {
         throw usageError(`Class ${i}: invalid hat ID ${JSON.stringify(h)}.`);
       }
     });
 
-    return { strategy, slicePct, quadratic: Boolean(entry.quadratic), minBalance, asset, hatIds };
+    let subjectId: ethers.BigNumber | undefined;
+    if (entry.subjectId !== undefined) {
+      try {
+        subjectId = ethers.BigNumber.from(entry.subjectId);
+        if (subjectId.lt(0) || subjectId.gt(ethers.constants.MaxUint256)) throw new Error('uint256 overflow');
+      } catch { throw usageError(`Class ${i}: subjectId must be a uint256 integer string (0 clears the binding).`); }
+    }
+    if (entry.quadratic !== undefined && typeof entry.quadratic !== 'boolean') throw usageError(`Class ${i}: quadratic must be a boolean.`);
+    return { strategy, slicePct, quadratic: entry.quadratic ?? false, minBalance, asset, hatIds, ...(subjectId !== undefined ? { subjectId } : {}) };
   });
 
   const sliceSum = classes.reduce((sum, c) => sum + c.slicePct, 0);
@@ -931,7 +938,8 @@ export function describeClass(c: ParsedClassConfig): string {
   if (c.quadratic) parts.push('quadratic');
   if (!c.minBalance.isZero()) parts.push(`min balance ${formatToken(c.minBalance)}`);
   if (c.asset !== ethers.constants.AddressZero) parts.push(`asset ${formatAddress(c.asset)}`);
-  if (c.hatIds.length > 0) parts.push(`hats ${c.hatIds.map(h => h.toString()).join(',')}`);
+  if (c.subjectId !== undefined) parts.push(c.subjectId.isZero() ? 'clear subject binding' : `subject binding ${c.subjectId.toString()}`);
+  if (c.hatIds.length > 0) parts.push(`subjects ${c.hatIds.map(h => h.toString()).join(',')}`);
   return parts.join(', ');
 }
 
@@ -949,12 +957,6 @@ export interface ProposeClassesParams {
   createdAt?: number;
 }
 
-function isParsedClassConfigs(value: unknown): value is ParsedClassConfig[] {
-  return Array.isArray(value) && value.every(
-    (c: any) => c && typeof c === 'object' && ethers.BigNumber.isBigNumber(c.minBalance)
-  );
-}
-
 /**
  * Port of `pop vote classes propose` — src/commands/vote/classes.ts
  * (classesProposeHandler).
@@ -970,9 +972,7 @@ export async function proposeClassesIntent(
   params: ProposeClassesParams
 ): Promise<TxIntent> {
   const durationMinutes = params.durationMinutes ?? 60;
-  const classes = isParsedClassConfigs(params.classes)
-    ? params.classes
-    : parseClassConfigs(params.classes);
+  const classes = parseClassConfigs(params.classes);
 
   const modules = await resolveOrgModules(ctx.client, params.org, ctx.chainId);
   const hybridVotingAddress = modules.hybridVotingAddress;
@@ -987,7 +987,9 @@ export async function proposeClassesIntent(
     classes.map(c => [c.strategy, c.slicePct, c.quadratic, c.minBalance, c.asset, c.hatIds]),
   ]);
   const batches: ExecutionCall[][] = [
-    [setClassesCall], // option 0: apply
+    [setClassesCall, ...classes.flatMap((c, index) => c.subjectId === undefined ? [] : [
+      encodeExecutorCall('HybridVotingNew', hybridVotingAddress, 'setClassSubject', [index, c.subjectId]),
+    ])], // option 0: update classes and explicitly requested stable bindings
     [], // option 1: keep current
   ];
 

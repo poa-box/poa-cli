@@ -79,6 +79,7 @@ export const FETCH_PROPOSAL_VOTING_CLASSES = `
       proposals(where: { proposalId: $proposalId }) {
         proposalId
         classesVersion
+        isHatRestricted
       }
       votingClasses(first: 1000) {${VOTING_CLASS_FIELDS}
       }
@@ -106,6 +107,7 @@ export const FETCH_PROPOSAL_VOTE_ANALYSIS = `
       proposals(where: { proposalId: $proposalId }) {
         proposalId
         classesVersion
+        isHatRestricted
         votes(first: 1000, orderBy: votedAt, orderDirection: asc) {
           voter
           voterUsername

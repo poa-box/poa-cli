@@ -76,19 +76,6 @@ export const TM_FEATURE_FRAGMENTS: Record<keyof TaskManagerFeatures, string> = {
   unclaim: 'function unclaimTask(uint256 id)',
 };
 
-/**
- * Legacy (pre-v6) TaskManager write fragments, for building a fallback
- * Interface when the org's implementation predates the deadline fields.
- */
-export const LEGACY_TM_FRAGMENTS: string[] = [
-  TM_FEATURE_FRAGMENTS.legacyCreate7,
-  'function updateTask(uint256 id, uint256 newPayout, bytes newTitle, bytes32 newMetadataHash, address newBountyToken, uint256 newBountyPayout)',
-  // TaskCreated event (identical shape pre-v6 and v6 — verified against the
-  // pre-sync ABI at f3b7216~1) so executeTx's receipt log parsing can still
-  // extract the created task id on the legacy path.
-  'event TaskCreated(uint256 indexed id, bytes32 indexed project, uint256 payout, address bountyToken, uint256 bountyPayout, bool requiresApplication, bytes title, bytes32 metadataHash)',
-];
-
 const selectorCache: Map<string, string> = new Map();
 
 /**

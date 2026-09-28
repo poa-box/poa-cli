@@ -15,6 +15,7 @@ import * as output from '@poa-box/cli/lib/output';
 
 interface SetupSponsorshipArgs {
   org: string;
+  subject?: string;
   'hat-id': string;
   'org-id': string;
   'budget-per-day'?: number;
@@ -27,7 +28,7 @@ interface SetupSponsorshipArgs {
 export const setupSponsorshipHandler = {
   builder: (yargs: Argv) => yargs
     .option('org-id', { type: 'string', demandOption: true, describe: 'Org ID (bytes32 hex)' })
-    .option('hat-id', { type: 'string', demandOption: true, describe: 'Agent hat ID (decimal or hex)' })
+    .option('subject', { type: 'string', alias: 'hat-id', demandOption: true, describe: 'Authority role or group subject ID (decimal or hex)' })
     .option('budget-per-day', { type: 'number', default: 0.1, describe: 'Gas budget per day in xDAI' }),
 
   handler: async (argv: ArgumentsCamelCase<SetupSponsorshipArgs>) => {
@@ -46,10 +47,10 @@ export const setupSponsorshipHandler = {
       const walletClient = createWalletClient({ account, chain: gnosis, transport: http(rpcUrl) });
 
       const orgId = argv.orgId as Hex;
-      const hatId = BigInt(argv.hatId as string);
+      const hatId = BigInt((argv.subject || argv.hatId) as string);
       const subjectKey = pad(toHex(hatId), { size: 32 });
       const budgetWei = BigInt(Math.floor((argv.budgetPerDay as number) * 1e18));
-      const pmAbi = require('../../abi/PaymasterHub.json');
+      const pmAbi = require('@poa-box/cli/abi/PaymasterHub.json');
 
       const results: Record<string, string> = {};
 

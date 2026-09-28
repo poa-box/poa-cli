@@ -57,18 +57,29 @@ export interface CreateProjectArgs {
  * governance-wrapped paths so the two cannot drift.
  */
 export function encodeProjectStruct(a: CreateProjectArgs): unknown[] {
-  const cap = a.cap ? ethers.utils.parseUnits(a.cap.toString(), 18) : 0;
+  if ([a.createHats, a.claimHats, a.reviewHats, a.assignHats].some(rows => rows?.length)) throw new Error('Project permission arrays were removed. Configure MembershipAuthority TM_PERMS using projectId + 1 after creating the project.');
+  const title = stringToBytes(a.name);
+  if (title.length === 0 || title.length > 256) throw new Error('Project title must contain 1–256 UTF-8 bytes.');
+  const cap = ethers.utils.parseUnits(String(a.cap ?? 0), 18);
+  const caps = (a.bountyCaps ?? []).map(c => ethers.BigNumber.from(c));
+  const maxPayout = ethers.BigNumber.from(10).pow(24);
+  const unlimited = ethers.BigNumber.from(2).pow(128).sub(1);
+  if ([cap, ...caps].some(value => value.lt(0) || (value.gt(maxPayout) && !value.eq(unlimited)))) throw new Error('Project and bounty caps must be at most 1e24 base units or the uint128 unlimited sentinel.');
+  if ((a.bountyTokens ?? []).length !== caps.length) throw new Error('Bounty tokens and caps must have equal lengths.');
+  for (const address of [...(a.managers ?? []), ...(a.bountyTokens ?? [])]) {
+    if (!ethers.utils.isAddress(address) || address.toLowerCase() === ethers.constants.AddressZero) throw new Error('Project managers and bounty tokens must be non-zero addresses.');
+  }
   return [
-    stringToBytes(a.name),
+    title,
     a.metadataHash ? ipfsCidToBytes32(a.metadataHash) : ethers.constants.HashZero,
     cap,
     a.managers ?? [],
-    (a.createHats ?? []).map((h) => ethers.BigNumber.from(h)),
-    (a.claimHats ?? []).map((h) => ethers.BigNumber.from(h)),
-    (a.reviewHats ?? []).map((h) => ethers.BigNumber.from(h)),
-    (a.assignHats ?? []).map((h) => ethers.BigNumber.from(h)),
+    [],
+    [],
+    [],
+    [],
     a.bountyTokens ?? [],
-    (a.bountyCaps ?? []).map((c) => ethers.BigNumber.from(c)),
+    caps,
   ];
 }
 
@@ -131,6 +142,7 @@ export interface ProposeProjectArgs {
   metadataHash?: string;
   /** Human PT cap (0/omitted = unlimited). */
   cap?: number | string;
+  managers?: string[];
   createHats?: ethers.BigNumberish[];
   claimHats?: ethers.BigNumberish[];
   reviewHats?: ethers.BigNumberish[];
@@ -145,8 +157,7 @@ export interface ProposeProjectArgs {
 /**
  * Port of `pop project propose` — src/commands/project/propose.ts.
  * HybridVoting.createProposal(`Create project: <name>`, descriptionHash,
- * duration, 2, [[createProject call], []], []). Managers, bountyTokens and
- * bountyCaps are forced empty (hat-based), matching the CLI struct.
+ * duration, 2, [[createProject call], []], []). Explicit address managers remain supported; authority TM_PERMS replaces the retired role-mask arrays.
  */
 export function buildProposeProject(a: ProposeProjectArgs): TxIntent {
   const call = buildCreateProjectCall({
@@ -154,7 +165,7 @@ export function buildProposeProject(a: ProposeProjectArgs): TxIntent {
     name: a.name,
     metadataHash: a.metadataHash,
     cap: a.cap,
-    managers: [],          // hat-based instead
+    managers: a.managers ?? [],
     createHats: a.createHats,
     claimHats: a.claimHats,
     reviewHats: a.reviewHats,
@@ -205,6 +216,7 @@ export interface CreateProjectParams {
  * delegates to buildCreateProject.
  */
 export async function createProjectIntent(ctx: PopContext, p: CreateProjectParams): Promise<TxIntent> {
+  encodeProjectStruct({ ...p, taskManagerAddress: ethers.constants.AddressZero });
   const modules = await resolveOrgModules(ctx.client, p.org, ctx.chainId);
   const taskManagerAddress = requireModule(modules, 'taskManagerAddress');
 
@@ -261,6 +273,7 @@ export interface ProposeProjectParams {
   name: string;
   description?: string;
   cap?: number;
+  managers?: string[];
   /** Vote duration in minutes (CLI default 1440 = 24h). */
   duration?: number;
   createHats?: Array<string | number>;
@@ -276,6 +289,7 @@ export interface ProposeProjectParams {
  * wraps the createProject calldata in a HybridVoting proposal.
  */
 export async function proposeProjectIntent(ctx: PopContext, p: ProposeProjectParams): Promise<TxIntent> {
+  encodeProjectStruct({ ...p, taskManagerAddress: ethers.constants.AddressZero });
   const modules = await resolveOrgModules(ctx.client, p.org, ctx.chainId);
   const taskManagerAddress = requireModule(modules, 'taskManagerAddress');
   const hybridVotingAddress = modules.hybridVotingAddress;
@@ -304,6 +318,7 @@ export async function proposeProjectIntent(ctx: PopContext, p: ProposeProjectPar
     name: p.name,
     metadataHash: metaCid,
     cap: p.cap,
+    managers: p.managers,
     createHats: p.createHats,
     claimHats: p.claimHats,
     reviewHats: p.reviewHats,

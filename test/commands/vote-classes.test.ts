@@ -233,7 +233,7 @@ describe('vote classes', () => {
 
       expect(tableMock).toHaveBeenCalledTimes(1);
       const [headers, rows] = tableMock.mock.calls[0];
-      expect(headers).toEqual(['#', 'Strategy', 'Slice %', 'Quadratic', 'Min balance', 'Asset', 'Hat IDs']);
+      expect(headers).toEqual(['#', 'Strategy', 'Slice %', 'Quadratic', 'Min balance', 'Asset', 'Authority subjects']);
       expect(rows).toHaveLength(2);
       expect(rows[0][1]).toBe('DIRECT');
       expect(rows[1][1]).toBe('ERC20_BAL');
@@ -243,11 +243,11 @@ describe('vote classes', () => {
       expect(rows[1][3]).toBe('yes');
       expect(rows[1][4]).toBe('1'); // formatToken(1e18)
       expect(rows[1][5]).toContain('0x2222'); // formatAddress
-      expect(rows[1][6]).toBe(BIG_HAT_ID);
+      expect(rows[1][6]).toBe(`binding unknown; fallback: ${BIG_HAT_ID}`);
 
       const printed = logSpy.mock.calls.map((c: any[]) => String(c[0] ?? '')).join('\n');
       expect(printed).toMatch(/Support threshold: 51%/);
-      expect(printed).toMatch(/Quorum: 2 voters \(0 = disabled\)/);
+      expect(printed).toMatch(/Global quorum: 2 voters \(0 = disabled\)/);
     });
 
     it('--proposal N reads the frozen snapshot via getProposalClasses', async () => {
@@ -307,6 +307,20 @@ describe('vote classes', () => {
         hatIds: [BIG_HAT_ID, '42'],
       },
     ];
+
+    it('binds and clears stable class subjects in the same executor batch, without pinning in dry-run', async () => {
+      const file = writeClassesFile([
+        { strategy: 'DIRECT', slicePct: 60, subjectId: BIG_HAT_ID },
+        { strategy: 'DIRECT', slicePct: 40, subjectId: '0', subjectIds: ['42'] },
+      ]);
+      await classesProposeHandler.handler({ org: 'test-org', file, duration: 60, dryRun: true } as any);
+      const calls = executeTxMock.mock.calls[0][2][4][0];
+      expect(calls).toHaveLength(3);
+      const iface = new ethers.utils.Interface(['function setClassSubject(uint256,uint256)']);
+      expect(iface.decodeFunctionData('setClassSubject', calls[1][2]).map((x: any) => x.toString())).toEqual(['0', BIG_HAT_ID]);
+      expect(iface.decodeFunctionData('setClassSubject', calls[2][2]).map((x: any) => x.toString())).toEqual(['1', '0']);
+      expect(pinJsonMock).not.toHaveBeenCalled();
+    });
 
     it('wraps setClasses(ClassConfig[]) in a governance proposal — calldata decodes back field-by-field', async () => {
       const file = writeClassesFile(validClasses);

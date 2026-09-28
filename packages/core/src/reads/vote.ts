@@ -411,6 +411,10 @@ export interface ProposalResults {
   totalVoters: number;
   supportThresholdPct?: number;
   quorumVoterCount?: number;
+  /** Compatibility quorumVoterCount is the live global config, not a restricted poll's override. */
+  quorumSource: 'current-global-config';
+  /** Null when the subgraph cannot identify the proposal's per-poll override. */
+  effectiveQuorumVoterCount: number | null;
   ranking: ProposalResultsRankEntry[];
   voters: ProposalResultsVoter[];
   winner?: ProposalResultsRankEntry;
@@ -425,7 +429,7 @@ export interface ProposalResults {
  * derived so a reformat cannot silently turn it into a copy of the modern one.
  */
 export function buildProposalResultsQuery(orgId: string, proposalId: number, modern: boolean): string {
-  const proposalCore = 'proposalId title status';
+  const proposalCore = 'proposalId title status isHatRestricted';
   return `{
     organization(id: "${orgId}") {
       hybridVoting {
@@ -476,8 +480,8 @@ export function computeProposalResults(hybridVoting: {
 
   // Two DISTINCT validity parameters — threshold is a % of weighted power,
   // quorum is a raw voter count. Never conflate them.
-  const supportThresholdPct = hybridVoting.thresholdPct !== undefined ? Number(hybridVoting.thresholdPct) : undefined;
-  const quorumVoterCount = hybridVoting.quorum !== undefined ? Number(hybridVoting.quorum) : undefined;
+  const supportThresholdPct = hybridVoting.thresholdPct != null ? Number(hybridVoting.thresholdPct) : undefined;
+  const quorumVoterCount = hybridVoting.quorum != null ? Number(hybridVoting.quorum) : undefined;
 
   const optionNames = proposal.metadata?.optionNames || [];
   const votes = proposal.votes || [];
@@ -536,6 +540,8 @@ export function computeProposalResults(hybridVoting: {
     totalVoters: votes.length,
     supportThresholdPct,
     quorumVoterCount,
+    quorumSource: 'current-global-config',
+    effectiveQuorumVoterCount: proposal.isHatRestricted === false ? quorumVoterCount ?? null : null,
     ranking: ranked,
     voters: voterBreakdown,
     winner: ranked[0],
@@ -578,6 +584,9 @@ export interface NormalizedClass {
   minBalance: string;
   asset: string;
   hatIds: string[];
+  /** On-chain stable authority binding is not indexed; hatIds are only its fallback list. */
+  subjectId: string | null;
+  subjectBindingKnown: boolean;
 }
 
 export interface ClassConfigSnapshot {
@@ -601,6 +610,8 @@ export function normalizeSubgraphClasses(rows: SubgraphVotingClass[]): Normalize
     minBalance: ethers.BigNumber.from(String(c.minBalance ?? '0')).toString(),
     asset: ethers.utils.getAddress(String(c.asset)),
     hatIds: (c.hatIds ?? []).map(h => String(h)),
+    subjectId: null,
+    subjectBindingKnown: false,
   }));
 }
 
@@ -636,6 +647,10 @@ export async function fetchClassConfig(
     const { data } = await client.queryWithFieldFallback<any>(tiers, { chainId });
     const contract = data?.hybridVotingContract;
     if (!contract) return null;
+    // createProposalV2 may snapshot a synthetic equal-weight class for a restricted poll.
+    // The index has no ProposalConfigV2/synthetic snapshot fields; its ordinary class version
+    // cannot distinguish those proposals. Unknown restriction metadata is equally untrusted.
+    if (proposalId !== undefined && contract.proposals?.[0]?.isHatRestricted !== false) return null;
 
     const version = proposalId === undefined
       ? contract.classVersion

@@ -52,6 +52,12 @@ export interface GovernanceWrapParams {
   batches: ExecutionCall[][];
   /** Restricted-voting hats; [] default. */
   hatIds?: ethers.BigNumberish[];
+  /** Native MembershipAuthority subjects restricting voting; preferred over the legacy hatIds name. */
+  subjectIds?: ethers.BigNumberish[];
+  /** Restricted polls only. Executable polls use max(global quorum, override). */
+  quorumOverride?: number;
+  /** Hybrid restricted polls only: count each eligible voter once. */
+  equalWeight?: boolean;
   orgId?: string;
   /** meta.action override (default 'create'). */
   action?: string;
@@ -74,12 +80,23 @@ export function buildGovernanceProposal(p: GovernanceWrapParams): TxIntent {
   const batchTuples = p.batches.map(batch =>
     batch.map(call => [call.target, ethers.BigNumber.from(call.value || 0), call.calldata])
   );
-  const hatIds = p.hatIds ?? [];
+  if (p.subjectIds !== undefined && p.hatIds !== undefined) throw new Error('Specify subjectIds or hatIds, not both.');
+  const hatIds = (p.subjectIds ?? p.hatIds ?? []).map(id => {
+    const value = ethers.BigNumber.from(id);
+    if (value.lt(0) || value.gt(ethers.constants.MaxUint256)) throw new Error('Subject IDs must fit uint256.');
+    return value;
+  });
+  const quorum = p.quorumOverride ?? 0;
+  if (!Number.isInteger(quorum) || quorum < 0 || quorum > 4294967295) throw new Error('quorumOverride must be a uint32 voter count.');
+  if (p.equalWeight !== undefined && typeof p.equalWeight !== 'boolean') throw new Error('equalWeight must be a boolean.');
+  if (p.equalWeight && p.votingAbiName !== 'HybridVotingNew') throw new Error('Equal-weight voting is supported only by HybridVoting.');
+  if ((quorum !== 0 || p.equalWeight) && hatIds.length === 0) throw new Error('Quorum overrides and equal-weight voting require restricted subject IDs.');
+  const v2 = p.quorumOverride !== undefined || p.equalWeight === true;
 
   return {
     to: p.votingAddress,
     abi: getAbi(p.votingAbiName),
-    method: 'createProposal',
+    method: v2 ? 'createProposalV2' : 'createProposal',
     args: [
       stringToBytes(p.title),
       p.descriptionHash,
@@ -87,6 +104,7 @@ export function buildGovernanceProposal(p: GovernanceWrapParams): TxIntent {
       p.numOptions,
       batchTuples,
       hatIds,
+      ...(v2 ? [quorum, ...(p.votingAbiName === 'HybridVotingNew' ? [p.equalWeight ?? false] : [])] : []),
     ],
     meta: {
       domain: p.domain ?? 'vote',

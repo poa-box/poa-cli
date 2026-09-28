@@ -20,15 +20,16 @@ modules (all upgradeable proxies behind the protocol's beacon system):
 
 | Contract | Role |
 |---|---|
-| **TaskManager** (v7) | Projects and tasks: create, claim, release, submit, review, deadlines, per-project + global permission masks. |
+| **TaskManager** (v9) | Projects and tasks: create, claim, release, submit, review, deadlines, contextual authority permissions. |
 | **HybridVoting** | N-class hybrid governance (democratic + token-weighted classes) with quorum and support threshold; can execute on-chain calls. |
 | **DirectDemocracyVoting** | Pure 1-member-1-vote governance track. |
 | **ParticipationToken** | Non-transferable ERC-20 reward/governance token (PT). |
-| **EligibilityModule** (v4) | Vouching, role applications, and eligibility/standing — gated by a module `superAdmin`. |
+| **MembershipAuthority** | Roles, groups, consent, contextual permissions, vouching and delegated management. |
+| **AuthorityRouter** | Preserves adopted subject IDs across authority migrations. |
 | **EducationHub** | Learning modules with quizzes that mint PT on completion. |
 | **PaymentManager** | Treasury: deposits, merkle distributions, transfers, sDAI yield. |
 | **PaymasterHub** | ERC-4337 gas sponsorship: orgs sponsor member transactions. |
-| **QuickJoin** | One-call onboarding (register username + join + receive starter hats). |
+| **QuickJoin** | One-call onboarding (register username + claim configured authority roles). |
 | **UniversalAccountRegistry** | Global username ↔ address registry (shared across orgs). |
 | **Executor** | Executes governance-approved batched calls (the org's "hands"). |
 | **OrgRegistry** | Records each org's modules, types, versions, and auto-upgrade flags. |
@@ -44,7 +45,8 @@ Organization
 │   └── Projects → Tasks
 ├── ParticipationToken (non-transferable ERC-20)
 ├── PaymentManager (treasury, distributions, sDAI)
-├── EligibilityModule (vouching, roles, standing)
+├── MembershipAuthority (roles, groups, permissions, vouching)
+├── AuthorityRouter (subject identity continuity)
 ├── EducationHub (learning modules → PT)
 ├── QuickJoin (onboarding)
 └── PaymasterHub (ERC-4337 gas sponsorship)
@@ -63,16 +65,19 @@ PT is the unit of earned influence.
 
 See [treasury-and-tokens.md](../guides/treasury-and-tokens.md).
 
-## Hats, roles & task permissions
+## Roles, groups & task permissions
 
-Roles are **hats** (Hats Protocol). Each hat grants capabilities: voting,
-creating proposals, creating/claiming/reviewing tasks, vouching, administering
-metadata, operating the paymaster. Roles are declared at deploy time and wired
-to org-wide capabilities via role-assignment bitmaps (see
-[org-deploy-config.md](../reference/org-deploy-config.md)).
+MembershipAuthority is the source of current membership and permissions. A role
+has a persistent subject ID; migrated roles keep their original numeric Hats ID.
+A group is a union of roles. Group membership follows its constituent roles and
+cannot be claimed independently. Historical Hats records remain readable but do
+not authorize current operations.
 
-Task authority is a **TaskPerm bitmask (uint8)**, settable globally or
-per-project:
+Role offers require recipient consent. Governance configures rules, permission
+rows and delegated managers; a manager's capabilities and delay bound its actions.
+See [membership-roles-vouching.md](../guides/membership-roles-vouching.md).
+
+Task permissions use the authority's `TM_PERMS` word. The low eight bits are:
 
 | Bit | Value | Permission |
 |---|---|---|
@@ -85,10 +90,12 @@ per-project:
 | EDIT_META | 64 | Edit task title/description |
 | EDIT_FULL | 128 | Edit all task fields |
 
-Masks are set per-project with `pop task perms set`, or org-wide (via
-governance) with `pop task perms propose-global`. See
-[membership-roles-vouching.md](../guides/membership-roles-vouching.md) and
-[tasks.md](../guides/tasks.md).
+Use `pop task perms propose-global --subject ID --perms create,claim` for a global grant.
+Use `pop task perms set --subject ID --perms claim --project ID` for a project row; its context is `projectId + 1` (global is
+zero). A project row replaces that subject's global row unless `--inherit-global`
+is set. An explicit zero row denies the global grant; `task perms clear` removes
+the row and restores inheritance. Existing address-based project managers remain
+supported. See [tasks.md](../guides/tasks.md).
 
 ## Tasks: statuses & deadlines (v6/v7)
 
@@ -137,7 +144,7 @@ deadlines, bounty — EDIT_FULL).
 has a `strategy` — `DIRECT` (one member, 100 points) or `ERC20_BAL`
 (token-weighted) — and a `slicePct` share of total weight; slices across all
 classes sum to 100. Classes may optionally be quadratic, require a minimum
-balance, or be hat-gated. **DirectDemocracyVoting** is the pure 1-member-1-vote
+balance, or be subject-gated. **DirectDemocracyVoting** is the pure 1-member-1-vote
 track.
 
 Two independent knobs decide outcomes — do not conflate them:
@@ -162,20 +169,17 @@ pop vote announce-all         # finalize every ended proposal
 See [voting.md](../guides/voting.md) and
 [governance-templates.md](../guides/governance-templates.md).
 
-## Vouching (EligibilityModule v4)
+## Vouching (MembershipAuthority)
 
-Membership can be **vouch-gated**. Per hat, `configureVouching` sets a vouch
-`quorum` and a membership hat whose wearers may vouch. Vouches are:
+Governance configures a role's vouch quorum and voucher subject. A voucher must
+belong to that subject and meet the authority's rate-limit rules. Vouches are
+scoped to an epoch, so changing or resetting the attestor invalidates old vouches.
 
-- **Rate-limited** — a default of 3 per day (`getMaxDailyVouches`), with a
-  roughly 2-day grace period during which brand-new accounts can't vouch yet.
-- **Accumulating** — vouches add up toward the quorum; once the quorum is met
-  the candidate is *eligible* but the hat is **not auto-minted**. The wearer
-  claims it explicitly with `pop vouch claim` (`claimVouchedHat`).
-
-The module `superAdmin` can reset state (`resetVouches` /
-`clearWearerVouches`). See
-[membership-roles-vouching.md](../guides/membership-roles-vouching.md).
+`pop vouch for --subject ROLE_ID --user ADDRESS` submits a vouch. Once eligible,
+the recipient explicitly claims with `pop vouch claim --subject ROLE_ID`.
+`pop vouch status --subject ROLE_ID --user ADDRESS` shows indexed progress.
+Governance can clear a user's vouches or reset the subject's epoch. There is no
+legacy EligibilityModule authorization fallback.
 
 ## Gas sponsorship (PaymasterHub)
 
@@ -186,9 +190,19 @@ also lets a plain EOA receive sponsored UserOps. The bundler is configured via
 `POP_BUNDLER_URL` (self-hosted) or `PIMLICO_API_KEY`. See
 [gas-sponsorship.md](../guides/gas-sponsorship.md).
 
-## What changed in v5 / v6 / v7
+## Current release: Access v2 / Wave G
 
-The CLI targets the current protocol. The notable additions since v4/v5:
+CLI/core 1.0 target [contracts PR #193](https://github.com/poa-box/POP/pull/193),
+merged September 17, 2026 and deployed on Gnosis and Arbitrum. The live module
+versions are DD/HV v14, TaskManager/PT v9, EducationHub v5, QuickJoin v10,
+Executor v6 and OrgDeployer v21. See [the migration guide](../WAVE-G-1.0.md).
+
+Only authority-ready organizations are available. Kansas Blockchain, Decentral
+Park, Poa and Test6 retain their earlier tasks, votes and balances. Test, Test2,
+Test3, tkrjehbcuebc, Test5 and Argus are retired. New native organizations use the
+same readiness check without a name allowlist.
+
+Earlier features retained in this release:
 
 - **Task release (TaskManager v7)** — `unclaimTask` returns a CLAIMED task to
   the pool with no replacement claimer, emitting `TaskUnclaimed` (never
@@ -206,10 +220,7 @@ The CLI targets the current protocol. The notable additions since v4/v5:
 - **Quorum ⟂ threshold separation** — quorum is a minimum voter *count*
   (`0` = disabled), fully independent of the support-% threshold.
 - **N-class hybrid voting** — voting is composed from a `ClassConfig[]` with
-  per-class strategy, slice, quadratic, min-balance, and hat gating.
-- **EligibilityModule v4** — module `superAdmin`, vouching **rate limits** +
-  new-user grace period, and an explicit `claimVouchedHat` step (vouched hats
-  are claimed, not auto-minted).
+  per-class strategy, slice, quadratic, min-balance, and subject gating.
 - **Paymaster org registration** — first-class org registration + budgets on
   the PaymasterHub, plus the EIP-7702 sponsorship path.
 
@@ -219,8 +230,8 @@ The CLI targets the current protocol. The notable additions since v4/v5:
 |---|---|---|
 | Gnosis | 100 | Production |
 | Arbitrum One | 42161 | Production |
-| Sepolia | 11155111 | Testnet |
-| Base Sepolia | 84532 | Testnet |
+| Sepolia | 11155111 | RPC only; no current POP subgraph |
+| Base Sepolia | 84532 | RPC only; no current POP subgraph |
 
 ## Where to go next
 

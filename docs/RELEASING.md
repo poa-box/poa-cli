@@ -1,5 +1,7 @@
 # Releasing @poa-box/cli and @poa-box/agent
 
+The authority-only 1.0 release has intentional access API removals. Read the [Wave G migration and upgrade order](WAVE-G-1.0.md) before publishing.
+
 The CLI is the compatibility layer for the whole ecosystem: the frontend,
 org brains, and agents parse its `--json` output so that protocol and
 subgraph churn stays absorbed HERE. A release is therefore a contract event,

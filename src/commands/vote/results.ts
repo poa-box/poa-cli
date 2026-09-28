@@ -48,7 +48,7 @@ export const resultsHandler = {
       // predates #195 would lose the rankings and voter breakdown this command existed to
       // show — a strict regression. The legacy tier is spelled out rather than derived so a
       // reformat cannot silently turn it into a copy of the modern one.
-      const proposalCore = 'proposalId title status';
+      const proposalCore = 'proposalId title status isHatRestricted winningOption isValid';
       const buildQuery = (modern: boolean) => `{
         organization(id: "${orgId}") {
           hybridVoting {
@@ -146,6 +146,12 @@ export const resultsHandler = {
         totalVoters: votes.length,
         supportThresholdPct,
         quorumVoterCount,
+        quorumSource: 'current-global-config',
+        effectiveQuorumVoterCount: proposal.isHatRestricted === false ? quorumVoterCount : null,
+        rankingBasis: 'sum-of-ballot-allocations',
+        winnerSource: 'allocation-ranking',
+        announcedWinningOption: proposal.winningOption != null ? Number(proposal.winningOption) : null,
+        announcedValid: proposal.isValid ?? null,
         ranking: ranked,
         voters: voterBreakdown,
         winner: ranked[0],
@@ -179,9 +185,11 @@ export const resultsHandler = {
         if (supportThresholdPct !== undefined || quorumVoterCount !== undefined) {
           const parts: string[] = [];
           if (supportThresholdPct !== undefined) parts.push(`Support threshold: ${supportThresholdPct}% of weighted power`);
-          if (quorumVoterCount !== undefined) parts.push(`Quorum: ${quorumVoterCount} voters (0 = disabled)`);
+          if (quorumVoterCount !== undefined) parts.push(`Global quorum: ${quorumVoterCount} voters (0 = disabled)`);
           console.log(`  ${parts.join(' | ')}`);
         }
+        if (report.effectiveQuorumVoterCount === null) console.log('  Effective quorum unavailable: restricted polls can override the global quorum.');
+        console.log('  Ranking sums ballot allocations; use vote analyze for class-weighted voting power.');
         console.log('  ' + '─'.repeat(50));
         for (const r of ranked) {
           const bar = '█'.repeat(Math.round(r.score / 5));

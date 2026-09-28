@@ -268,7 +268,7 @@ describe('executeTx failure propagates decoded custom errors', () => {
 });
 
 describe('resolveSponsoredConfig bundler resolution', () => {
-  const KEYS = ['POP_PRIVATE_KEY', 'POP_ORG_ID', 'POP_HAT_ID', 'PIMLICO_API_KEY', 'POP_BUNDLER_URL'] as const;
+  const KEYS = ['POP_READONLY', 'POP_PRIVATE_KEY', 'POP_ORG_ID', 'POP_HAT_ID', 'PIMLICO_API_KEY', 'POP_BUNDLER_URL'] as const;
   const saved: Record<string, string | undefined> = {};
   beforeEach(() => {
     for (const k of KEYS) { saved[k] = process.env[k]; delete process.env[k]; }

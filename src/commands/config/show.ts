@@ -31,8 +31,9 @@ export const showHandler = {
 
   handler: async (argv: ArgumentsCamelCase<any>) => {
     const hasKey = !!(argv.privateKey || process.env.POP_PRIVATE_KEY);
-    let address: string | undefined;
-    if (hasKey) {
+    const publicAddress = argv.address || process.env.POP_ADDRESS;
+    let address: string | undefined = publicAddress && ethers.utils.isAddress(publicAddress) ? ethers.utils.getAddress(publicAddress) : undefined;
+    if (hasKey && !address) {
       try {
         const key = (argv.privateKey as string) || process.env.POP_PRIVATE_KEY!;
         address = new ethers.Wallet(key).address;
@@ -107,7 +108,7 @@ export const showHandler = {
 
     if (output.isJsonMode()) {
       output.json({
-        wallet: address,
+        wallet: address ?? null,
         hasPrivateKey: hasKey,
         chainId,
         networkName,

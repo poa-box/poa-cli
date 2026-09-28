@@ -23,6 +23,7 @@ import { registerVouchCommands } from '../../src/commands/vouch';
 import { registerTokenCommands } from '../../src/commands/token';
 import { registerTreasuryCommands } from '../../src/commands/treasury';
 import { registerPaymasterCommands } from '../../src/commands/paymaster';
+import { registerGroupCommands } from '../../src/commands/group';
 import { registerRoleCommands } from '../../src/commands/role';
 import { registerZkEmailCommands } from '../../src/commands/zkemail';
 import { registerConfigCommands } from '../../src/commands/config';
@@ -95,7 +96,8 @@ const DOMAINS: Array<{ domain: string; description: string; register: (y: any) =
   { domain: 'token', description: 'Participation token requests', register: registerTokenCommands },
   { domain: 'treasury', description: 'Treasury & distributions', register: registerTreasuryCommands },
   { domain: 'paymaster', description: 'Gas sponsorship (ERC-4337)', register: registerPaymasterCommands },
-  { domain: 'role', description: 'Role applications', register: registerRoleCommands },
+  { domain: 'role', description: 'Authority roles and membership', register: registerRoleCommands },
+  { domain: 'group', description: 'Authority groups', register: registerGroupCommands },
   { domain: 'zkemail', description: 'ZK Email role invites (allowlists)', register: registerZkEmailCommands },
   { domain: 'config', description: 'View and validate configuration', register: registerConfigCommands },
   { domain: 'mcp', description: 'Serve the CLI as an MCP server for AI integrations', register: registerMcpCommands },

@@ -111,7 +111,7 @@ export const analyzeHandler = {
         const hvEntity = data?.hybridVotingContract;
         const proposal = hvEntity?.proposals?.[0];
         const subgraphVotes: any[] = proposal?.votes ?? [];
-        const classRows = proposal?.classesVersion !== null && proposal?.classesVersion !== undefined
+        const classRows = proposal?.isHatRestricted === false && proposal?.classesVersion !== null && proposal?.classesVersion !== undefined
           ? selectClassSnapshot(hvEntity?.votingClasses, proposal.classesVersion)
           : [];
 

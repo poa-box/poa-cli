@@ -45,7 +45,8 @@ democracy, 20% token-weight" in a single vote.
 | `quadratic` | If set, power scales with the square root of the raw amount (dampens whales). |
 | `minBalance` | Minimum token balance required to participate in this class. |
 | `asset` | For `ERC20_BAL`, the token whose balance is weighed. |
-| `hatIds` | Optional hat gating — only wearers of these hats count in this class. |
+| `subjectIds` | Optional role/group subject IDs that gate this class (`hatIds` remains a compatibility alias). |
+| `subjectId` | Optional stable class binding; an authority subject overrides the class array gate. `0` clears it; omission preserves the binding. |
 
 > **DIRECT vs ERC20_BAL.** `DIRECT` is egalitarian: every eligible member casts
 > the same 100 points regardless of holdings — pure headcount. `ERC20_BAL` is
@@ -64,7 +65,7 @@ pop vote classes show --proposal "treasury split"
 
 # Propose replacing the whole class config via a governance vote.
 # --file is a ClassConfig[] JSON file (strategy, slicePct, quadratic,
-# minBalance, asset, hatIds). Slices in the file must sum to 100.
+# minBalance, asset, subjectIds). Slices in the file must sum to 100.
 pop vote classes propose --file classes.json --duration 1440
 ```
 
@@ -107,8 +108,7 @@ pop vote propose-config --key threshold --value 60 --duration 60
 ```
 
 `pop vote propose-config` also drives other governance parameters via `--key`:
-`target-allowed` (whitelist an execution target), `executor`, and `hat-allowed`
-(whitelist a hat for restricted voting).
+`target-allowed` (DD execution targets) and `executor`. Authorize DD voters with `role set-perm --key DD_VOTE --value 1`.
 
 ## Proposal lifecycle
 
@@ -196,27 +196,37 @@ the batch.
 > `pop vote propose-config --key target-allowed --value 0xTARGET` to authorize a
 > new target through governance first.
 
-## Restricted (hat-gated) proposals
+## Restricted proposals and V2 options
 
-Limit who may vote on a proposal to specific hat-wearers with `--hat-ids`
-(comma-separated):
+Limit who may vote on a proposal to authority subjects with `--subject-ids`
+(comma-separated). `--hat-ids` remains an alias; do not pass both.
 
 ```bash
 pop vote create --type hybrid --name "Council-only: ratify the budget" \
   --description "Steering council ratification" --duration 720 \
-  --options "Ratify,Reject" --hat-ids 0xCOUNCIL_HAT
+  --options "Ratify,Reject" --subject-ids 123
 ```
 
-Only wearers of the listed hats can cast. (The hat must be allowed for
-restricted voting — authorize it via `propose-config --key hat-allowed` if
-needed.)
+The restricted IDs are authority subject IDs. Migrated roles retain their original IDs. DD voting eligibility is configured through `role set-perm --key DD_VOTE --value 1`.
+
+Restricted polls also accept `--quorum-override` (a voter count; zero uses the
+global quorum). A non-executable signal poll may lower its quorum, but an
+executable proposal uses the greater of its override and the global quorum.
+`--equal-weight` is hybrid-only and builds a one-member-one-vote class snapshot
+for that restricted poll. Neither feature changes the organization's classes.
+
+```bash
+pop vote create --type hybrid --name "Council signal poll" \
+  --description "Choose a meeting day" --duration 60 --options "Monday,Tuesday" \
+  --subject-ids 123 --quorum-override 2 --equal-weight --dry-run
+```
 
 ## Reading results
 
 | Command | Shows |
 | --- | --- |
 | `pop vote list` | Proposals, filterable by `--status Active/Ended/Executed`, `--type`, and `--unvoted` (only ones you haven't voted on). |
-| `pop vote results` | Final option names, tallies, and rankings for a proposal. |
+| `pop vote results` | Indexed outcome plus raw ballot-allocation tallies/rankings; these are not the weighted HybridVoting winning scores. |
 | `pop vote analyze` | Deep hybrid breakdown: power per class, plus counterfactuals ("what if class X hadn't voted"). |
 
 ```bash
@@ -229,6 +239,14 @@ pop vote results --proposal 0
 # Understand *why* — per-class power and counterfactuals
 pop vote analyze --proposal 0
 ```
+
+The current subgraphs do not index per-proposal V2 quorum overrides/equal-weight
+configuration or stable authority class bindings. Outputs distinguish the current
+global quorum from an unknown effective proposal quorum. Shared SDK reads return
+no class snapshot when a restricted proposal cannot be reconstructed safely;
+CLI class inspection uses its existing RPC fallback for the actual snapshot.
+Indexed class bindings are marked unknown. Do not use raw vote-allocation rankings
+as a prediction of the contract's weighted outcome.
 
 ## Where to go next
 

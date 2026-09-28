@@ -1,0 +1,253 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "hats_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "orgRegistry_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "paymasterHub_",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "hats",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "orgRegistry",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "paymasterHub",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "verify",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "authority",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "router",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "subjects",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "expectedCounts",
+        "type": "uint32[]",
+        "internalType": "uint32[]"
+      },
+      {
+        "name": "expectedSupplies",
+        "type": "uint32[]",
+        "internalType": "uint32[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "view"
+  },
+  {
+    "type": "error",
+    "name": "AdminHatInactive",
+    "inputs": [
+      {
+        "name": "adminSubject",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "AdminNotResolved",
+    "inputs": [
+      {
+        "name": "adminSubject",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "executor",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ArrayLengthMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuthorityNotBound",
+    "inputs": [
+      {
+        "name": "subject",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expected",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "actual",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "AuthorityPaused",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MemberCountDrift",
+    "inputs": [
+      {
+        "name": "subject",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "actual",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "MemberCountExceedsSupply",
+    "inputs": [
+      {
+        "name": "subject",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "memberCount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "hatSupply",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NoSubjects",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OrgNotRegistered",
+    "inputs": [
+      {
+        "name": "orgId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "RouterNotCanonical",
+    "inputs": [
+      {
+        "name": "expected",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "actual",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "SupplyDrift",
+    "inputs": [
+      {
+        "name": "subject",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "expected",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "actual",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ]
+  }
+]

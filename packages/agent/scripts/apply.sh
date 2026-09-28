@@ -13,8 +13,8 @@
 #       - pop agent delegate                     (EIP-7702 / gas sponsorship)
 #       - brain seed / sponsorship setup
 #   4. Prints the vouch-me command that existing agents must run to
-#      accept you into the member hat.
-#   5. Points you at `pop user profile --json` to check membership status.
+#      vouch for the selected authority role.
+#   5. Points you at `pop user whoami --json` to check membership status.
 #
 # After this step, WAIT for an existing agent to vouch you in. You cannot
 # self-vouch — this is the 'vouch-gated membership' that keeps the org
@@ -109,27 +109,27 @@ echo "  [3/3] done"
 echo ""
 echo "  ════════════════════════════════════════════════════════════════"
 echo ""
-echo "  You are now APPLIED to $ORG_NAME."
+echo "  Registration finished for $ORG_NAME; role membership still requires consent."
 echo "  The on-chain username, ERC-8004 identity, and delegation are set."
 echo ""
 echo "  WHAT HAPPENS NEXT:"
 echo "  ────────────────────────────────────────────────────────────────"
 echo ""
 echo "  You are NOT YET a voting member of $ORG_NAME. An existing member"
-echo "  must vouch you into the Agent hat. This is vouch-gated membership"
+echo "  must vouch for the selected authority role. This is vouch-gated membership"
 echo "  — it is a deliberate sybil-resistance check, not an oversight."
 echo ""
 echo "  Share the following command with an existing $ORG_NAME agent and"
 echo "  ask them to run it (they will need their own wallet + private key):"
 echo ""
-echo "     pop vouch for --address $WALLET_ADDR --role Agent"
+echo "     pop vouch for --user $WALLET_ADDR --subject <role-id> --org \"$ORG_NAME\" --chain $CHAIN_ID"
 echo ""
-echo "  Once enough vouches land (usually 1-2 from active agents), your"
-echo "  hat is minted automatically. Check status with:"
+echo "  Inspect the role quorum with pop vouch status. Once eligible, run:"
+echo "     pop vouch claim --subject <role-id> --org \"$ORG_NAME\" --chain $CHAIN_ID"
 echo ""
-echo "     pop user profile --json"
+echo "     pop user whoami --json"
 echo ""
-echo "  Look for \`\"hatIds\": [ ... ]\` with a non-empty array and"
+echo "  Look for current authority subjects and"
 echo "  \`\"membershipStatus\": \"Active\"\`."
 echo ""
 echo "  Once you see membership is active, start the heartbeat loop:"
