@@ -49,7 +49,8 @@ import { resolveOrgModules, requireModule } from '../reads/resolve';
 import { FETCH_ORG_PAYOUT_CONFIG } from '../graph/documents/org';
 import { FETCH_PROJECTS_DATA } from '../graph/documents/task';
 import {
-  findSubgraphTask,
+  fetchTaskData,
+  taskEntityId,
   taskPermsTiers,
   resolveProjectFromList,
   type TaskPermsResult,
@@ -1042,15 +1043,14 @@ export interface SubmitTaskParams extends TaskActionParams {
  */
 export async function submitTaskIntent(ctx: PopContext, p: SubmitTaskParams): Promise<TxIntent> {
   const { orgId, taskManagerAddress } = await resolveTaskManager(ctx, p.org);
-  const parsedTaskId = parseTaskId(p.task);
+  const parsedTaskId = taskEntityId(taskManagerAddress, p.task).split('-')[1];
 
   // Fetch existing metadata so the submission preserves it. Match on the
   // PARSED numeric id, fall back to IPFS before giving up — same ladder as
   // task update / edit-meta.
   let subgraphTask: any = null;
   try {
-    const taskData = await ctx.client.query<ProjectsDataResult>(FETCH_PROJECTS_DATA, { orgId }, ctx.chainId);
-    subgraphTask = findSubgraphTask(taskData.organization?.taskManager?.projects || [], parsedTaskId);
+    subgraphTask = (await fetchTaskData(ctx.client, taskManagerAddress, p.task, ctx.chainId)).task;
   } catch { /* handled below */ }
 
   let existingMeta: any = subgraphTask?.metadata || null;
@@ -1077,7 +1077,7 @@ export async function submitTaskIntent(ctx: PopContext, p: SubmitTaskParams): Pr
     description: existingMeta?.description || '',
     location: existingMeta?.location || '',
     difficulty: existingMeta?.difficulty || '',
-    estHours: existingMeta?.estimatedHours ? parseFloat(existingMeta.estimatedHours) : 0,
+    estHours: Number(existingMeta?.estimatedHours ?? existingMeta?.estHours ?? 0),
     submission: p.submission,
     // The subgraph re-points task.metadata at THIS submission JSON, so a
     // dueDate omitted here is gone for good. Appended last, only when set.
@@ -1232,7 +1232,7 @@ export async function updateTaskIntent(ctx: PopContext, p: UpdateTaskParams): Pr
 
   // 1. Resolve org, gate on the v6 signature.
   const { orgId, taskManagerAddress } = await resolveTaskManager(ctx, p.org);
-  const taskId = parseTaskId(p.task);
+  const taskId = taskEntityId(taskManagerAddress, p.task).split('-')[1];
 
   const features = await requireFeatures(ctx, taskManagerAddress, orgId, p.features, 'updateTask');
   if (!features.deadlines) {
@@ -1268,8 +1268,7 @@ export async function updateTaskIntent(ctx: PopContext, p: UpdateTaskParams): Pr
   const metadataChanging = p.name !== undefined || p.description !== undefined;
   let subgraphTask: any = null;
   try {
-    const result = await ctx.client.query<ProjectsDataResult>(FETCH_PROJECTS_DATA, { orgId }, ctx.chainId);
-    subgraphTask = findSubgraphTask(result.organization?.taskManager?.projects || [], taskId);
+    subgraphTask = (await fetchTaskData(ctx.client, taskManagerAddress, p.task, ctx.chainId)).task;
   } catch { /* handled below based on what the merge needs */ }
 
   let metadata: any = subgraphTask?.metadata || null;
@@ -1404,7 +1403,7 @@ export async function editTaskMetadataIntent(
   }
 
   const { orgId, taskManagerAddress } = await resolveTaskManager(ctx, p.org);
-  const taskId = parseTaskId(p.task);
+  const taskId = taskEntityId(taskManagerAddress, p.task).split('-')[1];
 
   // Feature-gate: updateTaskMetadata shipped with TaskManager v5.
   const features = await requireFeatures(ctx, taskManagerAddress, orgId, p.features, 'updateTaskMetadata');
@@ -1435,8 +1434,7 @@ export async function editTaskMetadataIntent(
   // READ current metadata: subgraph first, IPFS pointer as fallback.
   let subgraphTask: any = null;
   try {
-    const result = await ctx.client.query<ProjectsDataResult>(FETCH_PROJECTS_DATA, { orgId }, ctx.chainId);
-    subgraphTask = findSubgraphTask(result.organization?.taskManager?.projects || [], taskId);
+    subgraphTask = (await fetchTaskData(ctx.client, taskManagerAddress, p.task, ctx.chainId)).task;
   } catch { /* handled below */ }
 
   let metadata: any = subgraphTask?.metadata || null;

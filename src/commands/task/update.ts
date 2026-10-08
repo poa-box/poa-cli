@@ -49,9 +49,8 @@ import { formatToken } from '../../lib/format';
 import { getTokenDecimals } from '../../config/tokens';
 import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
-import { query } from '../../lib/subgraph';
-import { FETCH_PROJECTS_DATA } from '../../queries/task';
-import { findSubgraphTask } from './helpers';
+import { queryWithFieldFallback } from '../../lib/subgraph';
+import { fetchTaskData, taskEntityId } from '@poa-box/core/reads/task';
 import * as output from '../../lib/output';
 
 interface UpdateArgs {
@@ -156,7 +155,7 @@ export const updateHandler = {
       // ── 1. Resolve org + signer, gate on the v6 signature ──────────────
       const ctx = await getWriteContext(argv);
       const taskManagerAddress = requireModule(ctx.modules, 'taskManagerAddress');
-      const taskId = parseTaskId(argv.task);
+      const taskId = taskEntityId(taskManagerAddress, argv.task).split('-')[1];
 
       const features = await detectTaskManagerFeatures(ctx.provider, taskManagerAddress, ctx.chainId);
       if (!features.deadlines) {
@@ -188,8 +187,7 @@ export const updateHandler = {
       const metadataChanging = argv.name !== undefined || argv.description !== undefined;
       let subgraphTask: any = null;
       try {
-        const result = await query<any>(FETCH_PROJECTS_DATA, { orgId: ctx.orgId }, argv.chain);
-        subgraphTask = findSubgraphTask(result.organization?.taskManager?.projects || [], taskId);
+        subgraphTask = (await fetchTaskData({ queryWithFieldFallback }, taskManagerAddress, argv.task, argv.chain)).task;
       } catch {
         // Subgraph unavailable — handled below based on what the merge needs.
       }
@@ -284,8 +282,9 @@ export const updateHandler = {
           ...(metadata?.dueDate ? { dueDate: Math.floor(Number(metadata.dueDate)) } : {}),
         };
         spin.text = 'Pinning updated metadata to IPFS...';
-        newCid = await pinJson(JSON.stringify(metadataJson));
-        finalMetadataHash = ipfsCidToBytes32(newCid);
+        const serialized = JSON.stringify(metadataJson);
+        newCid = argv.dryRun ? undefined : await pinJson(serialized);
+        finalMetadataHash = newCid ? ipfsCidToBytes32(newCid) : ethers.utils.sha256(ethers.utils.toUtf8Bytes(serialized));
       }
 
       // ── 5. Pre-flight (skippable with --no-preflight) ──────────────────

@@ -18,6 +18,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
   executeTx: vi.fn(),
   pinJson: vi.fn(),
+  fetchJson: vi.fn(),
   createSigner: vi.fn(),
   resolveOrgModules: vi.fn(),
   query: vi.fn(),
@@ -30,13 +31,20 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/lib/tx', () => ({ executeTx: mocks.executeTx }));
-vi.mock('../../src/lib/ipfs', () => ({ pinJson: mocks.pinJson }));
+vi.mock('../../src/lib/ipfs', () => ({ pinJson: mocks.pinJson, fetchJson: mocks.fetchJson }));
 vi.mock('../../src/lib/signer', () => ({ createSigner: mocks.createSigner }));
 vi.mock('../../src/lib/resolve', () => ({
   resolveOrgModules: mocks.resolveOrgModules,
   requireModule: (modules: any, key: string) => modules[key],
 }));
-vi.mock('../../src/lib/subgraph', () => ({ query: mocks.query }));
+vi.mock('../../src/lib/subgraph', () => ({
+  query: mocks.query,
+  queryWithFieldFallback: async (tiers: any[], options: any) => {
+    const data = await mocks.query(tiers[0].query, tiers[0].variables, options?.chainId);
+    // Existing metadata fixtures are trees; the direct Task endpoint returns this row.
+    return { data: { task: data?.task ?? data?.organization?.taskManager?.projects?.flatMap((p: any) => p.tasks ?? [])[0] ?? null }, tierIndex: 0 };
+  },
+}));
 vi.mock('../../src/lib/task-lens', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/lib/task-lens')>();
   return { ...actual, getTaskOnChain: mocks.getTaskOnChain };
@@ -260,6 +268,23 @@ describe('pop task submit — preflight-first ordering', () => {
       expect.objectContaining({ taskId: '12', txHash: '0xsub', ipfsCid: CID }),
       900,
     );
+  });
+
+  it('dry-run estimates a nonzero digest without publishing metadata or recording idempotency', async () => {
+    await submitHandler.handler(baseArgv({ dryRun: true }));
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+    expect(mocks.executeTx.mock.calls[0][1]).toBe('submitTask');
+    expect(mocks.executeTx.mock.calls[0][2][1]).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(mocks.executeTx.mock.calls[0][2][1]).not.toBe(ethers.constants.HashZero);
+    expect(mocks.recordIdempotentResult).not.toHaveBeenCalled();
+  });
+
+  it('preserves canonical estHours from IPFS fallback and directly looks up a composite task ID', async () => {
+    mocks.query.mockResolvedValue({ task: { id: `${TM_ADDR}-12`, taskId: '12', metadataHash: ipfsCidToBytes32(CID), metadata: null } });
+    mocks.fetchJson.mockResolvedValue({ name: 'Original', description: 'Keep me', estHours: 2.5, dueDate: 1800000000 });
+    await submitHandler.handler(baseArgv({ task: `${TM_ADDR}-12` }));
+    expect(mocks.query.mock.calls[0][1]).toEqual({ taskId: `${TM_ADDR}-12` });
+    expect(JSON.parse(mocks.pinJson.mock.calls[0][0])).toMatchObject({ name: 'Original', description: 'Keep me', estHours: 2.5, dueDate: 1800000000 });
   });
 
   it('expired claim deadline: warns the task is takeover-able but the submission proceeds', async () => {

@@ -13,10 +13,13 @@
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { execFileSync } from 'child_process';
+import { ethers } from 'ethers';
+import { fetchTaskData, taskEntityId } from '@poa-box/core/reads/task';
+import { buildTaskMetadata, serializeTaskMetadata } from '@poa-box/core/metadata/task';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { pinJson, fetchJson } from '../../lib/ipfs';
-import { parseTaskId, ipfsCidToBytes32 } from '../../lib/encoding';
+import { ipfsCidToBytes32 } from '../../lib/encoding';
 import { formatCountdown } from '../../lib/format';
 import { getTaskOnChain, deriveClaimState, TASK_STATUS, TaskOnChain } from '../../lib/task-lens';
 import { runPreflight, checkGasBalance, checkTaskStatus } from '../../lib/preflight';
@@ -24,9 +27,7 @@ import { getWriteContext, finishWrite, withIdempotency } from '../../lib/command
 import { requireModule } from '../../lib/resolve';
 import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
-import { query } from '../../lib/subgraph';
-import { FETCH_PROJECTS_DATA } from '../../queries/task';
-import { findSubgraphTask } from './helpers';
+import { queryWithFieldFallback } from '../../lib/subgraph';
 import * as output from '../../lib/output';
 
 interface SubmitArgs {
@@ -79,7 +80,7 @@ export const submitHandler = {
     try {
       const ctx = await getWriteContext(argv);
       const taskManagerAddress = requireModule(ctx.modules, 'taskManagerAddress');
-      const parsedTaskId = parseTaskId(argv.task);
+      const parsedTaskId = taskEntityId(taskManagerAddress, argv.task).split('-')[1];
 
       const run = async (): Promise<Record<string, any>> => {
         // ── 1. PRE-FLIGHT FIRST (skippable with --no-preflight) ──────────
@@ -116,8 +117,7 @@ export const submitHandler = {
         spin.text = 'Fetching task metadata...';
         let subgraphTask: any = null;
         try {
-          const taskData = await query<any>(FETCH_PROJECTS_DATA, { orgId: ctx.orgId }, argv.chain);
-          subgraphTask = findSubgraphTask(taskData.organization?.taskManager?.projects || [], parsedTaskId);
+          subgraphTask = (await fetchTaskData({ queryWithFieldFallback }, taskManagerAddress, argv.task, argv.chain)).task;
         } catch { /* handled below */ }
 
         let existingMeta: any = subgraphTask?.metadata || null;
@@ -138,25 +138,21 @@ export const submitHandler = {
         }
 
         // Merge submission into existing metadata (preserves name, description, difficulty, etc.)
-        const submissionMetadata = {
+        const submissionMetadata = buildTaskMetadata({
           name: existingMeta?.name || '',
           description: existingMeta?.description || '',
           location: existingMeta?.location || '',
           difficulty: existingMeta?.difficulty || '',
-          estHours: existingMeta?.estimatedHours ? parseFloat(existingMeta.estimatedHours) : 0,
+          estHours: Number(existingMeta?.estimatedHours ?? existingMeta?.estHours ?? 0),
           submission: argv.submission,
-          // The subgraph re-points task.metadata at THIS submission JSON, so a
-          // dueDate omitted here is gone for good. Mirrors the frontend, which
-          // appends the key last and only when set.
-          ...(existingMeta?.dueDate
-            ? { dueDate: Math.floor(Number(existingMeta.dueDate)) }
-            : {}),
-        };
+          dueDate: existingMeta?.dueDate,
+        });
 
-        // ── 3. Pin, THEN send ─────────────────────────────────────────────
-        spin.text = 'Pinning submission to IPFS...';
-        const cid = await pinJson(JSON.stringify(submissionMetadata));
-        const submissionHash = ipfsCidToBytes32(cid);
+        // Use a local nonzero digest for estimation; a dry run never publishes content.
+        const serialized = serializeTaskMetadata(submissionMetadata);
+        spin.text = argv.dryRun ? 'Preparing submission preview...' : 'Pinning submission to IPFS...';
+        const cid = argv.dryRun ? undefined : await pinJson(serialized);
+        const submissionHash = cid ? ipfsCidToBytes32(cid) : ethers.utils.sha256(ethers.utils.toUtf8Bytes(serialized));
 
         spin.text = 'Sending transaction...';
         const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);

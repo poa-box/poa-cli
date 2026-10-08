@@ -16,7 +16,7 @@ import {
 } from '../graph/documents/user';
 import { HOME_CHAIN_ID } from '../chains';
 import { resolveOrgId } from './resolve';
-import { readAuthorityUsers, readAuthorityRows, FETCH_AUTHORITY_SUBJECTS, FETCH_AUTHORITY_MEMBERSHIPS } from './authority';
+import { readAuthorityUsers, readAuthorityRows, FETCH_AUTHORITY_SUBJECTS, readAuthorityMemberships } from './authority';
 
 // Pure selection helpers live in the documents module — re-exported here so
 // read-layer consumers get the guard next to the reads it guards.
@@ -311,7 +311,7 @@ export async function getWhoamiOrgData(
   if (!result) return null;
   const [subjects, memberships] = await Promise.all([
     readAuthorityRows(client, orgId, FETCH_AUTHORITY_SUBJECTS, 'subjects', chainId),
-    readAuthorityRows(client, orgId, FETCH_AUTHORITY_MEMBERSHIPS, 'subjectMemberships', chainId),
+    readAuthorityMemberships(client, orgId, chainId),
   ]);
   const current = memberships.filter(row => row.user.toLowerCase() === address && row.isMember && row.subject.kind === 'Role');
   if (result.organization) result.organization.roles = subjects.filter(subject => subject.kind === 'Role').map(subject => ({ hatId: subject.subjectId, subjectId: subject.subjectId, name: subject.name }));

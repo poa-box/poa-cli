@@ -94,6 +94,7 @@ export const profileHandler = {
               totalTasksReleased: user?.totalTasksReleased,
               totalTasksLostToExpiry: user?.totalTasksLostToExpiry,
             } : {}),
+            historyIndexed: user?.historyIndexed,
           });
         } else {
           console.log('');
@@ -112,9 +113,9 @@ export const profileHandler = {
             if (user.participationTokenBalance) {
               console.log(`  PT Balance: ${formatToken(user.participationTokenBalance, 18, 'PT')}`);
             }
-            console.log(`  Tasks Completed: ${user.totalTasksCompleted || 0}`);
-            console.log(`  Votes Cast: ${user.totalVotes || 0}`);
-            console.log(`  Modules Completed: ${user.totalModulesCompleted || 0}`);
+            console.log(`  Tasks Completed: ${user.totalTasksCompleted ?? '(unindexed)'}`);
+            console.log(`  Votes Cast: ${user.totalVotes ?? '(unindexed)'}`);
+            console.log(`  Modules Completed: ${user.totalModulesCompleted ?? '(unindexed)'}`);
 
             // Suppressed at 0/0, which is every member on every chain today —
             // a permanent "Claims Released: 0 self, 0 expired" on every profile

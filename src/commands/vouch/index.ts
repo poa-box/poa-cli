@@ -1,6 +1,6 @@
 import type { Argv } from 'yargs';
 import { authorityHandler, subjectOption, userOption } from '../role/authority';
-import { readAuthorityRows, FETCH_AUTHORITY_SUBJECTS, FETCH_AUTHORITY_MEMBERSHIPS, FETCH_AUTHORITY_VOUCHES } from '@poa-box/core/reads/authority';
+import { readAuthorityRows, FETCH_AUTHORITY_SUBJECTS, readAuthorityMemberships, FETCH_AUTHORITY_VOUCHES } from '@poa-box/core/reads/authority';
 import { resolveOrgId } from '../../lib/resolve';
 import { subgraphModuleClient } from '../../lib/subgraph-module-client';
 import * as output from '../../lib/output';
@@ -27,7 +27,7 @@ export function registerVouchCommands(y: Argv) {
       const client = subgraphModuleClient();
       const [subjects, memberships, records] = await Promise.all([
         readAuthorityRows(client, orgId, FETCH_AUTHORITY_SUBJECTS, 'subjects', argv.chain),
-        readAuthorityRows(client, orgId, FETCH_AUTHORITY_MEMBERSHIPS, 'subjectMemberships', argv.chain),
+        readAuthorityMemberships(client, orgId, argv.chain),
         readAuthorityRows(client, orgId, FETCH_AUTHORITY_VOUCHES, 'subjectVouchRecords', argv.chain),
       ]);
       const selected = subjects.filter(s => !argv.subject || s.subjectId === argv.subject || s.id === argv.subject);

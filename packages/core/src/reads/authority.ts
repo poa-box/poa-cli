@@ -30,7 +30,7 @@ export const FETCH_AUTHORITY_MEMBERSHIPS = `query AuthorityMemberships($orgId: B
     id user userUsername accepted eligible isMember claimable acceptedAt seededWhilePaused
     ruleKind eligibilitySource emailVerified vouchCount vouchEpoch vouchMet
     rule { kind author delegable sticky }
-    subject { id subjectId kind name }
+    subject { id subjectId kind name defaultAllow vouchConfig { quorum epoch } }
     pendingAction { id pendingId action activatesAt status }
   }
 }`;
@@ -72,6 +72,43 @@ export async function readAuthorityRows(
     if (next <= lastId) throw new Error('MembershipAuthority pagination did not advance');
     lastId = next;
   }
+}
+
+/** The index deliberately re-folds only ACCEPTED rows after subject-level configuration changes.
+ * Recompute the eligibility projection from current inputs so unaccepted offers/renounced seats do
+ * not retain a stale default or vouch quorum. `claimable` means eligible and unaccepted only: the
+ * pause, capacity and pending-offer checks still apply when the user actually calls claim(). */
+export function projectAuthorityMembership(row: any): any {
+  const subject = row.subject;
+  if (subject?.kind !== 'Role' || typeof subject.defaultAllow !== 'boolean'
+    || typeof row.accepted !== 'boolean' || typeof row.emailVerified !== 'boolean'
+    || !['None', 'Grant', 'Ban'].includes(row.ruleKind)
+    || !Object.prototype.hasOwnProperty.call(subject, 'vouchConfig')) {
+    // Partial caller-supplied rows cannot be re-folded. Preserve them as explicitly cached data;
+    // the complete FETCH_AUTHORITY_MEMBERSHIPS document always supplies these non-null inputs.
+    return { ...row, membershipProjection: 'indexed-cache' };
+  }
+  const config = subject.vouchConfig;
+  const effectiveVouchCount = config && String(row.vouchEpoch) === String(config.epoch)
+    ? Number(row.vouchCount) : 0;
+  const vouchMet = Number(config?.quorum ?? 0) > 0 && effectiveVouchCount >= Number(config.quorum);
+  const eligibilitySource = row.ruleKind === 'Ban' ? 'ExplicitBan'
+    : row.ruleKind === 'Grant' ? 'ExplicitGrant'
+    : row.emailVerified ? 'EmailVerified'
+    : vouchMet ? 'VouchQuorum'
+    : subject.defaultAllow ? 'SubjectDefault' : 'None';
+  const eligible = eligibilitySource !== 'ExplicitBan' && eligibilitySource !== 'None';
+  return { ...row,
+    indexedEligibility: { eligible: row.eligible, isMember: row.isMember, claimable: row.claimable,
+      eligibilitySource: row.eligibilitySource, vouchMet: row.vouchMet },
+    eligible, isMember: row.accepted && eligible, claimable: !row.accepted && eligible,
+    eligibilitySource, vouchMet, effectiveVouchCount, membershipProjection: 'current-authority-inputs',
+  };
+}
+
+export async function readAuthorityMemberships(client: GraphClient, orgId: string, chainId?: number): Promise<any[]> {
+  return (await readAuthorityRows(client, orgId, FETCH_AUTHORITY_MEMBERSHIPS, 'subjectMemberships', chainId))
+    .map(projectAuthorityMembership);
 }
 
 /** Historical users are paginated separately from memberships: either collection can exceed a page.
@@ -143,7 +180,7 @@ export function projectAuthorityUsers(users: any[], memberships: any[], systemAd
 export async function readAuthorityUsers(client: GraphClient, orgId: string, users: any[], chainId?: number): Promise<any[]> {
   const [history, memberships] = await Promise.all([
     readUserHistory(client, orgId, chainId),
-    readAuthorityRows(client, orgId, FETCH_AUTHORITY_MEMBERSHIPS, 'subjectMemberships', chainId),
+    readAuthorityMemberships(client, orgId, chainId),
   ]);
   // Keep richer caller-specific fields (profile tasks, churn counters, etc.), while full history
   // supplies canonical metrics even when the caller fetched only its first 20/100/1000 users.

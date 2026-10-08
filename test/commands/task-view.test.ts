@@ -172,9 +172,12 @@ function releaseHistoryCalls() {
  * rejection the real matcher would classify as schema drift falls through,
  * exactly as the production walker behaves.
  */
-function mockSubgraph(opts: { task?: any; tiers?: any[]; releases?: any[] } = {}) {
+function mockSubgraph(opts: { task?: any; tiers?: any[]; releases?: any[]; history?: any } = {}) {
   const tiers = opts.tiers ?? [subgraphFixture(opts.task ?? sgTask())];
   mocks.queryWithFieldFallback.mockImplementation(async (requested: any[]) => {
+    if (requested[0].query.includes('FetchTaskSubmissionHistory')) {
+      return { data: { task: opts.history ?? { id: `${TM_ADDR}-7` } }, tierIndex: opts.history ? 0 : 1 };
+    }
     if (isReleaseHistoryRead(requested)) {
       return { data: { task: { releases: opts.releases ?? [] } }, tierIndex: 0 };
     }
@@ -452,6 +455,19 @@ describe('pop task view — v6 deadlines section + applicants', () => {
     expect(text).not.toContain('Assignee:');
     expect(text).toContain('Releases:    1');
     expect(text).toContain('worker self-released');
+  });
+
+  it('shows immutable rejected work and exact review linkage when current submissionHash is cleared', async () => {
+    mocks.isJsonMode.mockReturnValue(true);
+    const submitted = { id: '0x01', submissionHash: '0x' + 'ab'.repeat(32), submittedAt: String(NOW - HOUR), submittedAtBlock: '10', transactionHash: '0x' + 'cd'.repeat(32), metadata: { submission: 'Implementation v1' } };
+    const rejected = { id: '0x02', rejector: PM, rejectorUsername: 'reviewer', rejectionHash: '0x' + 'ef'.repeat(32), rejectedAt: String(NOW), rejectedAtBlock: '11', transactionHash: '0x' + 'ab'.repeat(32), metadata: { rejection: 'Add tests' }, submission: submitted };
+    mockSubgraph({ task: sgTask({ rejectionCount: '1', submissionHash: null }), history: { latestSubmission: submitted, latestRejection: { id: rejected.id }, submissions: [submitted], rejections: [rejected] } });
+    await viewHandler.handler(baseArgv({ task: `${TM_ADDR}-7` }));
+    const payload = mocks.json.mock.calls[0][0];
+    expect(payload.taskId).toBe('7');
+    expect(payload.submissionHistoryIndexed).toBe(true);
+    expect(payload.latestSubmission.metadata.submission).toBe('Implementation v1');
+    expect(payload.reviewHistory[0].submission.id).toBe(payload.submissions[0].id);
   });
 
   it('a released task exposes releaseCount in --json even with a null assignee', async () => {

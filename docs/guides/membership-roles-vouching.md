@@ -20,6 +20,8 @@ pop role claim --subject ROLE_ID --dry-run
 
 Roles require acceptance and eligibility. Groups derive membership from their constituent roles and cannot be claimed. `org roles` lists both subject kinds. Historical JSON fields such as `hatId` and `currentHatIds` carry the same adopted IDs; they do not select a Hats implementation.
 
+Membership reads recompute eligibility from the indexed subject's current default, rules, email verification and vouch configuration. This matters for unaccepted seats: the subgraph refreshes their cached eligibility only on a later member event. JSON preserves those cache values in `indexedEligibility`, reports `membershipProjection`, and provides the epoch-adjusted `effectiveVouchCount`. `claimable` means eligible and unaccepted; a successful claim also depends on pause state, available capacity and any delegated-offer review checks.
+
 ## Vouching
 
 ```bash

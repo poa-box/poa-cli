@@ -1,6 +1,6 @@
 import type { Argv } from 'yargs';
 import {
-  FETCH_AUTHORITY_MEMBERSHIPS, FETCH_AUTHORITY_PENDING, FETCH_AUTHORITY_PERMS,
+  readAuthorityMemberships, FETCH_AUTHORITY_PENDING, FETCH_AUTHORITY_PERMS,
   FETCH_AUTHORITY_SUBJECTS, readAuthorityRows,
 } from '@poa-box/core/reads/authority';
 import { resolveOrgId } from '../../lib/resolve';
@@ -32,7 +32,7 @@ export function subjectStatusHandler(kind: 'Role' | 'Group') {
       const client = subgraphModuleClient();
       const [subjects, memberships, perms, pending] = await Promise.all([
         readAuthorityRows(client, orgId, FETCH_AUTHORITY_SUBJECTS, 'subjects', argv.chain),
-        readAuthorityRows(client, orgId, FETCH_AUTHORITY_MEMBERSHIPS, 'subjectMemberships', argv.chain),
+        readAuthorityMemberships(client, orgId, argv.chain),
         readAuthorityRows(client, orgId, FETCH_AUTHORITY_PERMS, 'permRows', argv.chain),
         readAuthorityRows(client, orgId, FETCH_AUTHORITY_PENDING, 'pendingActions', argv.chain),
       ]);

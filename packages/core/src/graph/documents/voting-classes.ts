@@ -94,7 +94,7 @@ export const FETCH_PROPOSAL_VOTING_CLASSES = `
  * the org's username map for display names.
  */
 export const FETCH_PROPOSAL_VOTE_ANALYSIS = `
-  query FetchProposalVoteAnalysis($hybridVoting: ID!, $proposalId: BigInt!) {
+  query FetchProposalVoteAnalysis($hybridVoting: ID!, $proposalId: BigInt!, $after: String = "") {
     hybridVotingContract(id: $hybridVoting) {
       id
       organization {
@@ -106,9 +106,12 @@ export const FETCH_PROPOSAL_VOTE_ANALYSIS = `
       }
       proposals(where: { proposalId: $proposalId }) {
         proposalId
+        numOptions
+        createdAtBlock
         classesVersion
         isHatRestricted
-        votes(first: 1000, orderBy: votedAt, orderDirection: asc) {
+        votes(first: 1000, orderBy: id, orderDirection: asc, where: { id_gt: $after }) {
+          id
           voter
           voterUsername
           optionIndexes
@@ -121,6 +124,60 @@ export const FETCH_PROPOSAL_VOTE_ANALYSIS = `
     }
   }
 `;
+
+/** Exact per-emission joins are populated by current subgraphs on both supported chains. */
+const CLASS_CHANGE_FIELDS = `classesChange {
+  id numClasses
+  votingClasses(first: 8, orderBy: classIndex, orderDirection: asc) {${VOTING_CLASS_FIELDS}
+  }
+}`;
+export const FETCH_VOTING_CLASS_CONFIG_EXACT = `
+  query FetchVotingClassConfigExact($hybridVoting: ID!) {
+    hybridVotingContract(id: $hybridVoting) {
+      id thresholdPct quorum classVersion ${CLASS_CHANGE_FIELDS}
+    }
+  }
+`;
+export const FETCH_PROPOSAL_VOTING_CLASSES_EXACT = `
+  query FetchProposalVotingClassesExact($hybridVoting: ID!, $proposalId: BigInt!) {
+    hybridVotingContract(id: $hybridVoting) {
+      id thresholdPct quorum
+      proposals(where: { proposalId: $proposalId }, first: 1) {
+        proposalId classesVersion isHatRestricted ${CLASS_CHANGE_FIELDS}
+      }
+    }
+  }
+`;
+export const FETCH_PROPOSAL_VOTE_ANALYSIS_EXACT = FETCH_PROPOSAL_VOTE_ANALYSIS
+  .replace('classesVersion', `classesVersion ${CLASS_CHANGE_FIELDS}`)
+  .replace(`votingClasses(first: 1000) {${VOTING_CLASS_FIELDS}
+      }`, '');
+
+/**
+ * Select one complete, unambiguous class emission. Restricted polls can use a
+ * synthetic V2 class which is still absent from the index; refuse that guess.
+ */
+export function selectIndexedClassSnapshot(contract: any, proposalId?: number): SubgraphVotingClass[] {
+  const holder = proposalId === undefined ? contract : contract?.proposals?.[0];
+  if (!holder) return [];
+  if (proposalId !== undefined && holder.isHatRestricted !== false) return [];
+  if (holder.classesChange !== undefined) {
+    const change = holder.classesChange;
+    const rows: SubgraphVotingClass[] = change?.votingClasses ?? [];
+    if (!change || rows.length !== Number(change.numClasses) || rows.length === 0 || rows.length > 8) return [];
+    const sorted = [...rows].sort((a, b) => Number(a.classIndex) - Number(b.classIndex));
+    if (sorted.some((r, i) => Number(r.classIndex) !== i)) return [];
+    return sorted;
+  }
+  const version = proposalId === undefined ? contract.classVersion : holder.classesVersion;
+  if (proposalId !== undefined && version == null) return [];
+  // A full legacy history page could omit any requested emission or some of
+  // its classes. Never infer a complete snapshot from a truncated history.
+  if ((contract.votingClasses?.length ?? 0) >= 1000) return [];
+  const rows = selectClassSnapshot(contract.votingClasses, version);
+  return rows.length > 0 && rows.length <= 8 && rows.every((r, i) => Number(r.classIndex) === i)
+    && rows.reduce((total, r) => total + Number(r.slicePct), 0) === 100 ? rows : [];
+}
 
 /** One VotingClass row as returned by the subgraph (all scalars are strings/numbers). */
 export interface SubgraphVotingClass {
@@ -199,10 +256,11 @@ export function selectClassSnapshot(
     // superseded one is not, without the per-emission pointer newer subgraphs
     // expose. Blending them would report slices summing past 100, so say
     // nothing and leave it to the caller's contract fallback. That fallback is
-    // not always free — `vote analyze` re-derives voters from a ~200k-block
-    // VoteCast window and throws for older proposals — but a wrong tally is
-    // worse than a loud one, and this path is unreachable until two setClasses
-    // land on one version.
+    // not always free, but callers must preserve the full indexed ballot
+    // history or read the complete proposal event range.
+    // With a pinned version the live emission may be newer than the proposal.
+    // Only the exact classesChange pointer can disambiguate it.
+    if (version !== null && version !== undefined) return [];
     const live = matched.filter(r => r.isActive !== false);
     if (live.length === 0 || hasRepeatedClassIndex(live)) return [];
     matched = live;

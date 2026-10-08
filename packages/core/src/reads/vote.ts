@@ -16,6 +16,11 @@ import {
   RECENT_PROPOSALS_FOR_RESOLVE,
 } from '../graph/documents/voting';
 import {
+  FETCH_PROPOSAL_VOTE_ANALYSIS_EXACT,
+  FETCH_PROPOSAL_VOTE_ANALYSIS,
+  FETCH_VOTING_CLASS_CONFIG_EXACT,
+  FETCH_PROPOSAL_VOTING_CLASSES_EXACT,
+  selectIndexedClassSnapshot,
   FETCH_VOTING_CLASS_CONFIG,
   FETCH_VOTING_CLASS_CONFIG_LEGACY,
   FETCH_PROPOSAL_VOTING_CLASSES,
@@ -31,6 +36,7 @@ import { EXIT } from '../exit-codes';
 
 /** One ballot as indexed by the subgraph (FETCH_VOTING_DATA field set). */
 export interface SubgraphProposalVote {
+  id?: string;
   voter: string;
   voterUsername?: string | null;
   optionIndexes: string[];
@@ -417,7 +423,13 @@ export interface ProposalResults {
   effectiveQuorumVoterCount: number | null;
   ranking: ProposalResultsRankEntry[];
   voters: ProposalResultsVoter[];
-  winner?: ProposalResultsRankEntry;
+  /** Raw ballot allocation leader; this is not the class-weighted on-chain winner. */
+  allocationLeader: ProposalResultsRankEntry | null;
+  rankingBasis: 'sum-of-ballot-allocations';
+  winnerSource: 'announced' | 'unannounced' | 'invalid';
+  announcedWinningOption: number | null;
+  announcedValid: boolean | null;
+  winner: ProposalResultsRankEntry | null;
 }
 
 /**
@@ -428,8 +440,8 @@ export interface ProposalResults {
  * this read exists to serve. The legacy tier is spelled out rather than
  * derived so a reformat cannot silently turn it into a copy of the modern one.
  */
-export function buildProposalResultsQuery(orgId: string, proposalId: number, modern: boolean): string {
-  const proposalCore = 'proposalId title status isHatRestricted';
+export function buildProposalResultsQuery(orgId: string, proposalId: number, modern: boolean, after = ''): string {
+  const proposalCore = 'proposalId title status numOptions isHatRestricted winningOption isValid';
   return `{
     organization(id: "${orgId}") {
       hybridVoting {
@@ -441,7 +453,9 @@ export function buildProposalResultsQuery(orgId: string, proposalId: number, mod
           ${modern ? 'proposer proposerUsername creatorUsername' : ''}
           ${modern ? 'classesVersion winnerAnnouncedAt executedAt executedCallsCount' : ''}
           metadata { description optionNames${modern ? ' actionSummaries promotedFrom' : ''} }
-          votes { voterUsername optionIndexes optionWeights }
+          votes(first: 1000, orderBy: id, orderDirection: asc, where: { id_gt: ${JSON.stringify(after)} }) {
+            id voter voterUsername optionIndexes optionWeights
+          }
         }
       }
     }
@@ -483,16 +497,18 @@ export function computeProposalResults(hybridVoting: {
   const supportThresholdPct = hybridVoting.thresholdPct != null ? Number(hybridVoting.thresholdPct) : undefined;
   const quorumVoterCount = hybridVoting.quorum != null ? Number(hybridVoting.quorum) : undefined;
 
-  const optionNames = proposal.metadata?.optionNames || [];
+  const namedOptions = proposal.metadata?.optionNames ?? [];
+  const optionCount = Number(proposal.numOptions ?? namedOptions.length);
+  const optionNames = Array.from({ length: optionCount }, (_, i) => namedOptions[i] || `Option ${i}`);
   const votes = proposal.votes || [];
 
-  // Tally weighted votes per option
+  // Compatibility ranking sums ballot percentages; it does not apply class power.
   const tallies: number[] = new Array(Math.max(optionNames.length, 1)).fill(0);
   for (const v of votes) {
     for (let i = 0; i < (v.optionIndexes || []).length; i++) {
       const idx = parseInt(v.optionIndexes[i]);
       const weight = parseInt(v.optionWeights[i]);
-      if (idx < tallies.length) tallies[idx] += weight;
+      if (idx >= 0 && idx < tallies.length) tallies[idx] += weight;
     }
   }
 
@@ -510,13 +526,11 @@ export function computeProposalResults(hybridVoting: {
       const name = optionNames[idx] || `Option ${idx}`;
       allocations[name] = parseInt(v.optionWeights[i]);
     }
-    return { voter: v.voterUsername || 'unknown', allocations };
+    return { voter: v.voterUsername || v.voter || 'unknown', allocations };
   });
 
   const proposedBy = proposal.proposerUsername || proposal.creatorUsername || null;
-  // A proposal is tallied against the voting-class config in force when it was
-  // CREATED, so a live config change mid-flight makes the org-level
-  // threshold/quorum shown here stale.
+  // Class membership and slices are snapshotted; threshold and global quorum remain live.
   const classVersionAtCreation = proposal.classesVersion != null ? String(proposal.classesVersion) : null;
   const liveClassVersion = hybridVoting.classVersion != null ? String(hybridVoting.classVersion) : null;
   const classConfigDrifted = Boolean(
@@ -544,7 +558,13 @@ export function computeProposalResults(hybridVoting: {
     effectiveQuorumVoterCount: proposal.isHatRestricted === false ? quorumVoterCount ?? null : null,
     ranking: ranked,
     voters: voterBreakdown,
-    winner: ranked[0],
+    rankingBasis: 'sum-of-ballot-allocations',
+    allocationLeader: ranked[0] ?? null,
+    announcedWinningOption: proposal.winningOption != null ? Number(proposal.winningOption) : null,
+    announcedValid: proposal.isValid ?? null,
+    winnerSource: proposal.winningOption == null ? 'unannounced' : proposal.isValid === true ? 'announced' : 'invalid',
+    winner: proposal.winningOption != null && proposal.isValid === true
+      ? ranked.find(r => r.option === Number(proposal.winningOption)) ?? null : null,
   };
 }
 
@@ -560,17 +580,78 @@ export async function fetchProposalResults(
   chainId?: number
 ): Promise<ProposalResults> {
   const orgId = await resolveOrgId(client, orgIdOrName, chainId);
-  const { data } = await client.queryWithFieldFallback<any>(
-    [
-      { query: buildProposalResultsQuery(orgId, proposalId, true) },
-      { query: buildProposalResultsQuery(orgId, proposalId, false) },
-    ],
-    { chainId }
-  );
-  const hybridVoting = data.organization?.hybridVoting;
-  const report = hybridVoting ? computeProposalResults(hybridVoting) : null;
-  if (!report) throw new CliError(`Proposal #${proposalId} not found`, EXIT.USAGE);
-  return report;
+  return fetchProposalResultsByOrgId(client, orgId, proposalId, chainId);
+}
+
+/** Shared CLI/SDK read after organization resolution; cursor-pagination prevents truncated tallies. */
+export async function fetchProposalResultsByOrgId(
+  client: Pick<GraphClient, 'queryWithFieldFallback'>,
+  orgId: string,
+  proposalId: number,
+  chainId?: number
+): Promise<ProposalResults> {
+  let after = '';
+  let hybridVoting: any;
+  const votes: SubgraphProposalVote[] = [];
+  for (;;) {
+    const { data } = await client.queryWithFieldFallback<any>([
+      { query: buildProposalResultsQuery(orgId, proposalId, true, after) },
+      { query: buildProposalResultsQuery(orgId, proposalId, false, after) },
+    ], { chainId });
+    const row = data.organization?.hybridVoting;
+    if (!row?.proposals?.[0]) throw new CliError(`Proposal #${proposalId} not found`, EXIT.USAGE);
+    hybridVoting ??= row;
+    const page: SubgraphProposalVote[] = row.proposals[0].votes ?? [];
+    votes.push(...page);
+    if (page.length < 1000) break;
+    const next = page[page.length - 1].id;
+    if (!next || next <= after) throw new CliError('Cannot paginate proposal votes without an advancing vote ID.', EXIT.PRECONDITION);
+    after = next;
+  }
+  hybridVoting.proposals[0].votes = votes;
+  return computeProposalResults(hybridVoting)!;
+}
+
+/** Full indexed ballot history plus exact class-emission pointers, with legacy schema fallback. */
+export async function fetchProposalVoteAnalysis(
+  client: Pick<GraphClient, 'queryWithFieldFallback'>, hybridVotingAddress: string, proposalId: number, chainId?: number
+): Promise<any> {
+  let after = '';
+  let first: any;
+  const votes: any[] = [];
+  for (;;) {
+    const variables = { hybridVoting: hybridVotingAddress.toLowerCase(), proposalId: String(proposalId), after };
+    const { data } = await client.queryWithFieldFallback<any>([
+      { query: FETCH_PROPOSAL_VOTE_ANALYSIS_EXACT, variables },
+      { query: FETCH_PROPOSAL_VOTE_ANALYSIS, variables },
+    ], { chainId });
+    first ??= data;
+    const page = data.hybridVotingContract?.proposals?.[0]?.votes ?? [];
+    votes.push(...page);
+    if (page.length < 1000) break;
+    const next = page[page.length - 1].id;
+    if (!next || next <= after) throw new CliError('Cannot paginate proposal votes without an advancing vote ID.', EXIT.PRECONDITION);
+    after = next;
+  }
+  if (first.hybridVotingContract?.proposals?.[0]) first.hybridVotingContract.proposals[0].votes = votes;
+  return first;
+}
+
+/** Reproduce HybridVotingCore vote rounding and VotingMath.pickWinnerNSlices scores. */
+export function computeClassWeightedScores(
+  ballots: Array<{ weights: number[]; classRawPowers: bigint[] }>, slices: number[], numOptions: number
+): number[] {
+  const totals = slices.map((_, cls) => ballots.reduce((sum, v) => sum + (v.classRawPowers[cls] ?? 0n), 0n));
+  return Array.from({ length: numOptions }, (_, option) => {
+    let score = 0n;
+    for (let cls = 0; cls < slices.length; cls++) {
+      if (totals[cls] === 0n) continue;
+      const optionRaw = ballots.reduce((sum, v) => sum + (v.classRawPowers[cls] ?? 0n) * BigInt(v.weights[option] ?? 0) / 100n, 0n);
+      score += optionRaw * BigInt(slices[cls]) * 10000n / totals[cls];
+    }
+    // Scores are bounded by 100 * 10000, so this conversion is exact.
+    return Number(score) / 10000;
+  });
 }
 
 // ────────────────────────── classes snapshot ──────────────────────────
@@ -593,6 +674,7 @@ export interface ClassConfigSnapshot {
   classes: NormalizedClass[];
   supportThresholdPct: number;
   quorumVoterCount: number;
+  effectiveQuorumVoterCount: number | null;
 }
 
 /**
@@ -637,10 +719,12 @@ export async function fetchClassConfig(
     // guessing the newest version would silently misreport an old proposal.
     const tiers = proposalId === undefined
       ? [
+          { query: FETCH_VOTING_CLASS_CONFIG_EXACT, variables: { hybridVoting } },
           { query: FETCH_VOTING_CLASS_CONFIG, variables: { hybridVoting } },
           { query: FETCH_VOTING_CLASS_CONFIG_LEGACY, variables: { hybridVoting } },
         ]
       : [
+          { query: FETCH_PROPOSAL_VOTING_CLASSES_EXACT, variables: { hybridVoting, proposalId: String(proposalId) } },
           { query: FETCH_PROPOSAL_VOTING_CLASSES, variables: { hybridVoting, proposalId: String(proposalId) } },
         ];
 
@@ -658,7 +742,7 @@ export async function fetchClassConfig(
     // For a proposal we must know its frozen version — no version, no answer.
     if (proposalId !== undefined && (version === null || version === undefined)) return null;
 
-    const rows = selectClassSnapshot(contract.votingClasses, version);
+    const rows = selectIndexedClassSnapshot(contract, proposalId);
     if (rows.length === 0) return null;
     if (contract.thresholdPct === null || contract.thresholdPct === undefined) return null;
     if (contract.quorum === null || contract.quorum === undefined) return null;
@@ -667,6 +751,7 @@ export async function fetchClassConfig(
       classes: normalizeSubgraphClasses(rows),
       supportThresholdPct: Number(contract.thresholdPct),
       quorumVoterCount: Number(contract.quorum),
+      effectiveQuorumVoterCount: proposalId === undefined || contract.proposals?.[0]?.isHatRestricted === false ? Number(contract.quorum) : null,
     };
   } catch {
     // Any subgraph problem (unknown field on an old deployment, lag, HTTP) —

@@ -1,4 +1,4 @@
-# Wave G: CLI and core 1.0 migration
+# Wave G: core, CLI and agent 1.0 migration
 
 Version 1.0 removes V1 access support. Current membership, vouching, groups and module permissions come from MembershipAuthority. Organizations are available only when their indexed authority has a nonzero address, `isRouterBound: true` and positive `cutoverAt`. Pausing membership does not retire an organization. Future native V2 organizations satisfy the same condition without a name allowlist.
 
@@ -13,7 +13,7 @@ Kansas Blockchain, Decentral Park, Poa and Test6 retain their organization, modu
 - `user whoami --on-chain` and its Hats membership fallback are removed. An unavailable authority index produces unknown membership rather than a V1 answer.
 - Deploy config requires role `open` and supports `maxMembers` and native groups. Legacy `hatConfig`, `defaults`, `hierarchy` and `combineWithHierarchy` are rejected. `taskCreatorRoles` gives project creation and explicitly seeds task CREATE; supplied task masks retain their other bits. Actual deployments require OrgDeployer version 2 before publishing metadata or signing registration. Unsigned `--dry-run --deployer` previews do neither; target compatibility is marked unverified.
 
-Task, batch-task and project dry runs use zero metadata-hash placeholders and do not publish metadata. Existing contracted JSON keys remain unless listed as a removed access surface. Role `hatId` and whoami `hats` keys retain adopted IDs for consumers; `canVote` role metadata is explicitly historical, and current policy is read from the authority.
+Task and project dry runs use local metadata-hash placeholders and do not publish metadata. Existing contracted JSON keys remain unless listed as a removed access surface. Role `hatId` and whoami `hats` keys retain adopted IDs for consumers; `canVote` role metadata is explicitly historical, and current policy is read from the authority.
 
 Member and role wearer lists exclude the org executor and retired eligibility contract by address, matching indexed User identity rules. Historical user metrics are cursor-paginated independently of authority memberships, so larger organizations retain earlier balances, task/vote totals and join timestamps. Genuine authority wallet members without an indexed User remain visible with `historyIndexed: false`; their member/wearer metrics are `null` and their original join date is unknown. Aggregate reports are incomplete while those histories are unavailable. Low-level `projectAuthorityUsers` callers must supply those system addresses and complete history themselves; `readAuthorityUsers` resolves both automatically.
 
@@ -49,6 +49,23 @@ values as unknown, preserves the current-global quorum separately and avoids
 substituting an organization's classes for a potentially synthetic restricted
 proposal snapshot. Indexing these fields requires a companion subgraph update;
 this CLI update does not deploy a subgraph.
+
+The companion subgraph changes were reviewed through
+[subgraph-pop PR #214](https://github.com/poa-box/subgraph-pop/pull/214), commit
+`4956ed91cea4606ce646c60cf5a59527a6471630`, including authority indexing, native
+deployments, immutable task submissions and protection against stale legacy events.
+Current eligibility is projected from the latest indexed rules, defaults and vouch
+epoch rather than trusting an unaccepted membership's cached result. Historical
+membership and task records remain available.
+
+`task view` exposes immutable submissions and their linked rejection history when
+indexed, including submissions that a later rejection removed from the mutable task
+pointer. Shared project/task reads paginate fully; metadata writes fetch the task
+directly so older tasks are not lost behind a page limit. Voting reads paginate
+ballots and select the exact class-change record when available. `vote results`
+reports an announced valid winner separately from the raw ballot-allocation leader;
+`vote analyze` normalizes each class independently before applying its slice, and
+labels quorum/validity as unevaluated.
 
 ## Upgrade order
 

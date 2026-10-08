@@ -10,8 +10,8 @@
  * The contract path is kept as a fallback and is what this command used to do
  * unconditionally — a single un-chunked queryFilter over the last 200k blocks
  * (rejected outright by most public RPCs) followed by one strictly serial
- * balanceOf per voter. The fallback now chunks nothing but does batch the
- * balances through Multicall3.
+ * balanceOf per voter. The fallback reads the complete indexed creation-block-to-head range in
+ * bounded chunks and batches balances through Multicall3.
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
@@ -21,11 +21,11 @@ import { resolveOrgModules } from '../../lib/resolve';
 import { query, queryWithFieldFallback } from '../../lib/subgraph';
 import { tryAggregate } from '../../lib/multicall';
 import {
-  FETCH_PROPOSAL_VOTE_ANALYSIS,
-  selectClassSnapshot,
+  selectIndexedClassSnapshot,
 } from '../../queries/voting-classes';
 import { FETCH_TOKEN_BALANCES } from '../../queries/token';
 import { CliError } from '../../lib/errors';
+import { computeClassWeightedScores, fetchProposalVoteAnalysis } from '@poa-box/core/reads/vote';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 
@@ -50,6 +50,7 @@ interface AnalyzedVoter {
   weights: number[];
   classRawPowers: bigint[];
   ptBalance: number;
+  ptBalanceWei: bigint;
 }
 
 const ERC20_IFACE = new ethers.utils.Interface([
@@ -67,14 +68,43 @@ async function fetchPtBalances(
 ): Promise<Map<string, string>> {
   const balances = new Map<string, string>();
   if (holders.length === 0) return balances;
-  const data = await query<any>(FETCH_TOKEN_BALANCES, {
-    token: tokenAddress.toLowerCase(),
-    accounts: holders.map(h => h.toLowerCase()),
-  }, chainId);
-  for (const row of data?.tokenBalances ?? []) {
-    balances.set(String(row.account).toLowerCase(), String(row.balance));
+  const accounts = [...new Set(holders.map(h => h.toLowerCase()))];
+  for (let offset = 0; offset < accounts.length; offset += 1000) {
+    const data = await query<any>(FETCH_TOKEN_BALANCES, {
+      token: tokenAddress.toLowerCase(),
+      accounts: accounts.slice(offset, offset + 1000),
+    }, chainId);
+    for (const row of data?.tokenBalances ?? []) {
+      balances.set(String(row.account).toLowerCase(), String(row.balance));
+    }
   }
   return balances;
+}
+
+/** Complete proposal log history, with adaptive pages for RPC range limits. */
+export async function readProposalVoteEvents(
+  hv: Pick<ethers.Contract, 'filters' | 'queryFilter'>,
+  proposalId: number,
+  fromBlock: number,
+  toBlock: number,
+): Promise<ethers.Event[]> {
+  if (!Number.isSafeInteger(fromBlock) || fromBlock <= 0 || !Number.isSafeInteger(toBlock) || toBlock < fromBlock) {
+    throw new CliError('Cannot establish the complete proposal vote-event range.', EXIT.PRECONDITION);
+  }
+  const filter = hv.filters.VoteCast(proposalId);
+  const events: ethers.Event[] = [];
+  let pageSize = 10000;
+  for (let from = fromBlock; from <= toBlock;) {
+    const to = Math.min(from + pageSize - 1, toBlock);
+    try {
+      events.push(...await hv.queryFilter(filter, from, to));
+      from = to + 1;
+    } catch (err) {
+      if (pageSize === 1) throw err;
+      pageSize = Math.max(1, Math.floor(pageSize / 2));
+    }
+  }
+  return events;
 }
 
 export const analyzeHandler = {
@@ -92,37 +122,34 @@ export const analyzeHandler = {
       if (!hvAddr) throw new Error('HybridVoting not found for this org');
       const proposalId = argv.proposal as number;
 
-      let classConfig: Array<{ slicePct: number; quadratic: boolean }> | null = null;
+      let classConfig: Array<{ slicePct: number; quadratic: boolean; strategy: string; asset: string; minBalance: string }> | null = null;
       let voters: AnalyzedVoter[] | null = null;
+      let proposalOptionCount = 0;
+      let proposalCreationBlock = 0;
       let source: 'subgraph' | 'rpc' = 'subgraph';
 
       // ── Subgraph path ────────────────────────────────────────────────
       // One query for the frozen class snapshot + every ballot (with the
       // contract-emitted per-class raw powers) + the org username map, then
-      // one query for all PT balances. Two round-trips, independent of the
-      // voter count.
+      // paginated ballot reads and batched PT balances.
       spin.text = 'Reading votes...';
       try {
-        const { data } = await queryWithFieldFallback<any>([{
-          query: FETCH_PROPOSAL_VOTE_ANALYSIS,
-          variables: { hybridVoting: hvAddr.toLowerCase(), proposalId: String(proposalId) },
-        }], { chainId });
+        if (argv.rpc) throw new Error('Explicit RPC requested');
+        const data = await fetchProposalVoteAnalysis({ queryWithFieldFallback }, hvAddr, proposalId, chainId);
 
         const hvEntity = data?.hybridVotingContract;
         const proposal = hvEntity?.proposals?.[0];
         const subgraphVotes: any[] = proposal?.votes ?? [];
-        const classRows = proposal?.isHatRestricted === false && proposal?.classesVersion !== null && proposal?.classesVersion !== undefined
-          ? selectClassSnapshot(hvEntity?.votingClasses, proposal.classesVersion)
-          : [];
+        const classRows = selectIndexedClassSnapshot(hvEntity, proposalId);
+        proposalOptionCount = Number(proposal?.numOptions ?? 0);
+        proposalCreationBlock = Number(proposal?.createdAtBlock ?? 0);
 
         // Empty votes are NOT treated as an answer: subgraph lag on a
         // just-cast ballot would otherwise report a different electorate than
         // the chain. Fall through and let the contract say so.
         //
-        // A full first:1000 page is treated the same way — a proposal with
-        // more ballots than the page would silently analyse a subset and emit
-        // a complete-looking (wrong) verdict, so the RPC path takes over.
-        if (classRows.length > 0 && subgraphVotes.length > 0 && subgraphVotes.length < 1000) {
+        // Ballot pages have already been collected with an ID cursor.
+        if (subgraphVotes.length > 0) {
           const ptAddr = contracts.participationTokenAddress;
           if (!ptAddr) throw new CliError('ParticipationToken not found for this org', EXIT.USAGE);
 
@@ -134,10 +161,11 @@ export const analyzeHandler = {
           spin.text = 'Reading PT balances...';
           const balances = await fetchPtBalances(ptAddr, subgraphVotes.map(v => String(v.voter)), chainId);
 
-          classConfig = classRows.map(c => ({
+          classConfig = classRows.length > 0 ? classRows.map(c => ({
             slicePct: Number(c.slicePct),
             quadratic: Boolean(c.quadratic),
-          }));
+            strategy: String(c.strategy), asset: String(c.asset), minBalance: String(c.minBalance ?? 0),
+          })) : null;
           voters = subgraphVotes.map(v => {
             const addr = ethers.utils.getAddress(String(v.voter));
             const wei = balances.get(addr.toLowerCase()) ?? '0';
@@ -148,7 +176,7 @@ export const analyzeHandler = {
               optionIndexes: (v.optionIndexes ?? []).map((n: any) => Number(n)),
               weights: (v.optionWeights ?? []).map((w: any) => Number(w)),
               classRawPowers: (v.classRawPowers ?? []).map((p: any) => BigInt(String(p))),
-              ptBalance: parseFloat(ethers.utils.formatEther(wei)),
+              ptBalance: parseFloat(ethers.utils.formatEther(wei)), ptBalanceWei: BigInt(wei),
             };
           });
         }
@@ -161,7 +189,7 @@ export const analyzeHandler = {
       if (!classConfig || !voters) {
         source = 'rpc';
         const networkConfig = resolveNetworkConfig(chainId);
-        const provider = new ethers.providers.JsonRpcProvider(networkConfig.resolvedRpc);
+        const provider = new ethers.providers.JsonRpcProvider(argv.rpc || networkConfig.resolvedRpc);
         const abi = require('../../abi/HybridVotingNew.json');
         const hv = new ethers.Contract(hvAddr, abi, provider);
 
@@ -170,54 +198,74 @@ export const analyzeHandler = {
         classConfig = classes.map((c: any) => ({
           slicePct: Number(c.slicePct),
           quadratic: Boolean(c.quadratic),
+          strategy: String(c.strategy), asset: String(c.asset), minBalance: String(c.minBalance ?? 0),
         }));
 
-        spin.text = 'Reading vote events...';
-        const filter = hv.filters.VoteCast(proposalId);
-        const events = await hv.queryFilter(filter, -200000);
-        if (events.length === 0) throw new Error('No votes found for proposal ' + proposalId);
-
-        spin.text = 'Reading PT balances...';
-        const ptAddr = contracts.participationTokenAddress;
-        if (!ptAddr) throw new Error('ParticipationToken not found for this org');
-
-        const { queryAllChains } = require('../../lib/subgraph');
-        const orgId = contracts.orgId || argv.org;
-        const memberQuery = `{ organization(id: "${orgId}") { users(first: 100) { address account { username } } } }`;
-        const memberResults = await queryAllChains(memberQuery, {});
-        const usernames: Record<string, string> = {};
-        for (const r of memberResults) {
-          for (const u of r.data?.organization?.users || []) {
-            if (u.account?.username) usernames[u.address.toLowerCase()] = u.account.username;
+        // A restricted V2 poll needs its on-chain synthetic classes, but the
+        // emitted raw powers already indexed for every ballot remain exact.
+        if (!voters) {
+          if (!Number.isSafeInteger(proposalCreationBlock) || proposalCreationBlock <= 0 || proposalOptionCount <= 0) {
+            let proposal: any;
+            try {
+              const metadata = await query<any>(`query ProposalAnalysisBounds($id: ID!) {
+                proposal(id: $id) { createdAtBlock numOptions }
+              }`, { id: `${hvAddr.toLowerCase()}-${proposalId}` }, chainId);
+              proposal = metadata?.proposal;
+            } catch { /* Fail explicitly below rather than guessing a recent log window. */ }
+            proposalCreationBlock = Number(proposal?.createdAtBlock ?? 0);
+            proposalOptionCount = Number(proposal?.numOptions ?? 0);
           }
+          if (!Number.isSafeInteger(proposalCreationBlock) || proposalCreationBlock <= 0
+            || !Number.isSafeInteger(proposalOptionCount) || proposalOptionCount <= 0) {
+            throw new CliError('Cannot analyze the complete proposal: its creation block or option count is not indexed.',
+              EXIT.PRECONDITION, 'Retry after the subgraph has indexed this proposal.');
+          }
+          spin.text = 'Reading complete vote history...';
+          const events = await readProposalVoteEvents(hv, proposalId, proposalCreationBlock, await provider.getBlockNumber());
+          if (events.length === 0) throw new Error('No votes found for proposal ' + proposalId);
+
+          spin.text = 'Reading PT balances...';
+          const ptAddr = contracts.participationTokenAddress;
+          if (!ptAddr) throw new Error('ParticipationToken not found for this org');
+
+          const { queryAllChains } = require('../../lib/subgraph');
+          const orgId = contracts.orgId || argv.org;
+          const memberQuery = `{ organization(id: "${orgId}") { users(first: 100) { address account { username } } } }`;
+          const memberResults = await queryAllChains(memberQuery, {});
+          const usernames: Record<string, string> = {};
+          for (const r of memberResults) {
+            for (const u of r.data?.organization?.users || []) {
+              if (u.account?.username) usernames[u.address.toLowerCase()] = u.account.username;
+            }
+          }
+
+          // The balances are independent reads — one Multicall3 round-trip
+          // instead of N serial ones.
+          const addrs: string[] = events.map(ev => ev.args!.voter as string);
+          const balanceResults = await tryAggregate(
+            provider,
+            addrs.map(a => ({ to: ptAddr, data: ERC20_IFACE.encodeFunctionData('balanceOf', [a]) }))
+          );
+
+          voters = events.map((ev, i) => {
+            const addr = addrs[i];
+            const { success, returnData } = balanceResults[i];
+            const ptBal = success && returnData && returnData !== '0x'
+              ? (ERC20_IFACE.decodeFunctionResult('balanceOf', returnData)[0] as ethers.BigNumber)
+              : ethers.constants.Zero;
+            return {
+              address: addr,
+              name: usernames[addr.toLowerCase()] || addr.slice(0, 10),
+              // VoteCast(id, voter, idxs, weights, classRawPowers, timestamp) —
+              // `weights` is SPARSE and paired with `idxs`, exactly like the
+              // subgraph's optionWeights/optionIndexes. Densified below.
+              optionIndexes: ev.args!.idxs.map((n: any) => Number(n)),
+              weights: ev.args!.weights.map((w: any) => Number(w)),
+              classRawPowers: ev.args!.classRawPowers.map((p: any) => BigInt(p.toString())),
+              ptBalance: parseFloat(ethers.utils.formatEther(ptBal)), ptBalanceWei: BigInt(ptBal.toString()),
+            };
+          });
         }
-
-        // The balances are independent reads — one Multicall3 round-trip
-        // instead of N serial ones.
-        const addrs: string[] = events.map(ev => ev.args!.voter as string);
-        const balanceResults = await tryAggregate(
-          provider,
-          addrs.map(a => ({ to: ptAddr, data: ERC20_IFACE.encodeFunctionData('balanceOf', [a]) }))
-        );
-
-        voters = events.map((ev, i) => {
-          const addr = addrs[i];
-          const { success, returnData } = balanceResults[i];
-          const ptBal = success && returnData && returnData !== '0x'
-            ? (ERC20_IFACE.decodeFunctionResult('balanceOf', returnData)[0] as ethers.BigNumber)
-            : ethers.constants.Zero;
-          return {
-            address: addr,
-            name: usernames[addr.toLowerCase()] || addr.slice(0, 10),
-            // VoteCast(id, voter, idxs, weights, classRawPowers, timestamp) —
-            // `weights` is SPARSE and paired with `idxs`, exactly like the
-            // subgraph's optionWeights/optionIndexes. Densified below.
-            optionIndexes: ev.args!.idxs.map((n: any) => Number(n)),
-            weights: ev.args!.weights.map((w: any) => Number(w)),
-            classRawPowers: ev.args!.classRawPowers.map((p: any) => BigInt(p.toString())),
-            ptBalance: parseFloat(ethers.utils.formatEther(ptBal)),
-          };
-        });
       }
 
       // ── Densify the ballots ──────────────────────────────────────────
@@ -235,7 +283,7 @@ export const analyzeHandler = {
       // numOptions is the max index seen across ALL ballots (not just the first,
       // and not the first ballot's length), so partial ballots cannot shrink the
       // option space.
-      let numOptions = 0;
+      let numOptions = proposalOptionCount;
       for (const v of voters) {
         for (const idx of (v.optionIndexes ?? [])) {
           if (Number.isFinite(idx) && idx + 1 > numOptions) numOptions = idx + 1;
@@ -260,19 +308,11 @@ export const analyzeHandler = {
         v.weights = dense;
       }
 
-      // Compute effective power per option
-      function computeResult(voteData: any[], slices: number[]) {
-        const totals: bigint[] = new Array(numOptions).fill(0n);
-        for (let opt = 0; opt < numOptions; opt++) {
-          for (const v of voteData) {
-            for (let cls = 0; cls < slices.length; cls++) {
-              totals[opt] += BigInt(v.weights[opt]) * v.classRawPowers[cls] * BigInt(slices[cls]);
-            }
-          }
-        }
-        const total = totals.reduce((a, b) => a + b, 0n);
-        return totals.map(t => total > 0n ? Number(t * 10000n / total) / 100 : 0);
-      }
+      // Normalize EACH class by its own total before applying its slice, with
+      // the same per-ballot rounding as Solidity. Token base units must never
+      // overwhelm DIRECT points merely because they are numerically larger.
+      const computeResult = (voteData: AnalyzedVoter[], slices: number[]) =>
+        computeClassWeightedScores(voteData, slices, numOptions);
 
       spin.text = 'Computing scenarios...';
 
@@ -281,17 +321,25 @@ export const analyzeHandler = {
       const actual = computeResult(voters, actualSlices);
 
       // DD-only
-      const ddOnlySlices = classConfig.map((_: any, i: number) => i === 0 ? 100 : 0);
+      const directIndex = classConfig.findIndex(c => c.strategy === 'DIRECT' || c.strategy === '0');
+      const tokenIndex = classConfig.findIndex(c => c.strategy === 'ERC20_BAL' || c.strategy === '1');
+      const ddOnlySlices = classConfig.map((_, i) => i === directIndex ? 100 : 0);
       const ddOnly = computeResult(voters, ddOnlySlices);
 
       // Token-only
-      const tokenOnlySlices = classConfig.map((_: any, i: number) => i === 1 ? 100 : 0);
+      const tokenOnlySlices = classConfig.map((_, i) => i === tokenIndex ? 100 : 0);
       const tokenOnly = computeResult(voters, tokenOnlySlices);
 
       // No quadratic (use linear PT as token power)
+      const linearSupported = classConfig.every(c => !c.quadratic || c.strategy === 'DIRECT' || c.strategy === '0'
+        || c.asset.toLowerCase() === contracts.participationTokenAddress?.toLowerCase());
       const linearVoters = voters.map(v => ({
         ...v,
-        classRawPowers: [v.classRawPowers[0], BigInt(Math.round(v.ptBalance)) * BigInt('1000000000000000000')],
+        // Counterfactual uses CURRENT PT balances; preserve the historical
+        // eligibility mask and keep every unrelated class unchanged.
+        classRawPowers: classConfig.map((c, i) => c.quadratic && (c.strategy === 'ERC20_BAL' || c.strategy === '1')
+          ? (v.classRawPowers[i] > 0n && v.ptBalanceWei >= BigInt(c.minBalance) ? v.ptBalanceWei * 100n : 0n)
+          : v.classRawPowers[i] ?? 0n),
       }));
       const noQuadratic = computeResult(linearVoters, actualSlices);
 
@@ -310,6 +358,12 @@ export const analyzeHandler = {
       // Build rankings
       const makeRanking = (pcts: number[]) =>
         pcts.map((pct, i) => ({ option: i, pct })).sort((a, b) => b.pct - a.pct);
+      const scenario = (pcts: number[], available = true) => ({
+        ranking: available ? makeRanking(pcts) : [],
+        winner: available ? makeRanking(pcts)[0] : null,
+        changed: available ? makeRanking(pcts)[0].option !== makeRanking(actual)[0].option : null,
+        available,
+      });
 
       const report: any = {
         proposalId,
@@ -320,19 +374,21 @@ export const analyzeHandler = {
           name: v.name,
           weights: v.weights,
           ptBalance: v.ptBalance,
-          ddPower: v.classRawPowers[0].toString(),
-          tokenPower: v.classRawPowers[1].toString(),
+          ddPower: (v.classRawPowers[directIndex] ?? 0n).toString(),
+          tokenPower: (v.classRawPowers[tokenIndex] ?? 0n).toString(),
         })),
         actual: { ranking: makeRanking(actual), winner: makeRanking(actual)[0] },
         counterfactuals: {
-          ddOnly: { ranking: makeRanking(ddOnly), winner: makeRanking(ddOnly)[0], changed: makeRanking(ddOnly)[0].option !== makeRanking(actual)[0].option },
-          tokenOnly: { ranking: makeRanking(tokenOnly), winner: makeRanking(tokenOnly)[0], changed: makeRanking(tokenOnly)[0].option !== makeRanking(actual)[0].option },
-          noQuadratic: { ranking: makeRanking(noQuadratic), winner: makeRanking(noQuadratic)[0], changed: makeRanking(noQuadratic)[0].option !== makeRanking(actual)[0].option },
+          ddOnly: scenario(ddOnly, directIndex >= 0),
+          tokenOnly: scenario(tokenOnly, tokenIndex >= 0),
+          noQuadratic: { ...scenario(noQuadratic, linearSupported), balanceBasis: 'current-PT-balance-with-vote-time-eligibility' },
           singlePick: { ranking: makeRanking(singlePick), winner: makeRanking(singlePick)[0], changed: makeRanking(singlePick)[0].option !== makeRanking(actual)[0].option },
         },
-        robustness: (makeRanking(ddOnly)[0].option === makeRanking(actual)[0].option &&
+        robustness: directIndex < 0 || tokenIndex < 0 ? 'NOT_APPLICABLE' : (makeRanking(ddOnly)[0].option === makeRanking(actual)[0].option &&
           makeRanking(tokenOnly)[0].option === makeRanking(actual)[0].option) ? 'ROBUST' : 'SENSITIVE',
         source,
+        winnerSource: 'class-weighted-ranking',
+        validity: 'not-evaluated',
       };
 
       if (argv.json) {
@@ -341,7 +397,7 @@ export const analyzeHandler = {
         console.log('');
         console.log(`  Vote Analysis: Proposal #${proposalId}`);
         console.log('  ' + '═'.repeat(55));
-        console.log(`  Classes: ${classConfig.map((c: any, i: number) => `${i === 0 ? 'DD' : 'Token'} ${c.slicePct}%${c.quadratic ? ' (quadratic)' : ''}`).join(' | ')}`);
+        console.log(`  Classes: ${classConfig.map((c: any, i: number) => `${c.strategy} ${c.slicePct}%${c.quadratic ? ' (quadratic)' : ''}`).join(' | ')}`);
         console.log(`  Voters: ${voters.length}`);
         console.log('');
 
@@ -352,7 +408,7 @@ export const analyzeHandler = {
         console.log('');
 
         // Actual ranking
-        console.log('  ACTUAL RESULT:');
+        console.log('  CLASS-WEIGHTED RANKING (quorum and validity not evaluated):');
         for (const r of report.actual.ranking) {
           const bar = '█'.repeat(Math.round(r.pct / 3)) + '░'.repeat(Math.max(0, 33 - Math.round(r.pct / 3)));
           console.log(`    Option ${r.option}: ${bar} ${r.pct.toFixed(1)}%`);
@@ -369,6 +425,7 @@ export const analyzeHandler = {
         console.log('  COUNTERFACTUALS:');
         for (const [name, s] of scenarios) {
           const winner = (s as any).winner;
+          if (!winner) { console.log(`    ${name}: unavailable for this class configuration`); continue; }
           const changed = (s as any).changed ? ' ← DIFFERENT!' : '';
           console.log(`    ${(name as string).padEnd(14)} Winner: Option ${winner.option} (${winner.pct.toFixed(1)}%)${changed}`);
         }

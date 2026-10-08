@@ -46,6 +46,9 @@ import { runPreflight, checkGasBalance } from '../../lib/preflight';
 import { resolveOrgModules } from '../../lib/resolve';
 import { queryWithFieldFallback } from '../../lib/subgraph';
 import {
+  FETCH_VOTING_CLASS_CONFIG_EXACT,
+  FETCH_PROPOSAL_VOTING_CLASSES_EXACT,
+  selectIndexedClassSnapshot,
   FETCH_VOTING_CLASS_CONFIG,
   FETCH_VOTING_CLASS_CONFIG_LEGACY,
   FETCH_PROPOSAL_VOTING_CLASSES,
@@ -111,6 +114,7 @@ interface ClassConfigSnapshot {
   classes: NormalizedClass[];
   supportThresholdPct: number;
   quorumVoterCount: number;
+  effectiveQuorumVoterCount: number | null;
 }
 
 /**
@@ -134,10 +138,12 @@ async function fetchClassConfigFromSubgraph(
     // guessing the newest version would silently misreport an old proposal.
     const tiers = proposalId === undefined
       ? [
+          { query: FETCH_VOTING_CLASS_CONFIG_EXACT, variables: { hybridVoting } },
           { query: FETCH_VOTING_CLASS_CONFIG, variables: { hybridVoting } },
           { query: FETCH_VOTING_CLASS_CONFIG_LEGACY, variables: { hybridVoting } },
         ]
       : [
+          { query: FETCH_PROPOSAL_VOTING_CLASSES_EXACT, variables: { hybridVoting, proposalId: String(proposalId) } },
           { query: FETCH_PROPOSAL_VOTING_CLASSES, variables: { hybridVoting, proposalId: String(proposalId) } },
         ];
 
@@ -154,7 +160,7 @@ async function fetchClassConfigFromSubgraph(
     // index's org-level classVersion cannot reconstruct.
     if (proposalId !== undefined && contract.proposals?.[0]?.isHatRestricted !== false) return null;
 
-    const rows = selectClassSnapshot(contract.votingClasses, version);
+    const rows = selectIndexedClassSnapshot(contract, proposalId);
     if (rows.length === 0) return null;
     if (contract.thresholdPct === null || contract.thresholdPct === undefined) return null;
     if (contract.quorum === null || contract.quorum === undefined) return null;
@@ -163,6 +169,7 @@ async function fetchClassConfigFromSubgraph(
       classes: normalizeSubgraphClasses(rows),
       supportThresholdPct: Number(contract.thresholdPct),
       quorumVoterCount: Number(contract.quorum),
+      effectiveQuorumVoterCount: proposalId === undefined || contract.proposals?.[0]?.isHatRestricted === false ? Number(contract.quorum) : null,
     };
   } catch {
     // Any subgraph problem (unknown field on an old deployment, lag, HTTP) —
@@ -220,6 +227,7 @@ const classesShowHandler = {
       let normalized: NormalizedClass[];
       let threshold: number;
       let quorumCount: number;
+      let effectiveQuorum: number | null = null;
       let source: 'subgraph' | 'rpc';
 
       const fromSubgraph = argv.rpc
@@ -229,6 +237,7 @@ const classesShowHandler = {
         normalized = fromSubgraph.classes;
         threshold = fromSubgraph.supportThresholdPct;
         quorumCount = fromSubgraph.quorumVoterCount;
+        effectiveQuorum = fromSubgraph.effectiveQuorumVoterCount;
         source = 'subgraph';
       } else {
         const provider = createProvider({ chainId: argv.chain, rpcUrl: argv.rpc });
@@ -267,6 +276,7 @@ const classesShowHandler = {
         } catch { /* Unknown bindings must never be reported as a fallback electorate. */ }
         threshold = Number(rawThreshold);
         quorumCount = Number(rawQuorum);
+        if (proposalId === undefined) effectiveQuorum = quorumCount;
         source = 'rpc';
       }
       spin.stop();
@@ -279,7 +289,7 @@ const classesShowHandler = {
           supportThresholdPct: threshold,
           quorumVoterCount: quorumCount,
           quorumSource: 'current-global-config',
-          effectiveQuorumVoterCount: proposalId === undefined ? quorumCount : null,
+          effectiveQuorumVoterCount: effectiveQuorum,
           source,
         });
         return;
@@ -309,7 +319,9 @@ const classesShowHandler = {
       // threshold is a % of weighted power, quorum is a raw voter count.
       console.log(`  Support threshold: ${threshold}% (weighted power the winning option needs)`);
       console.log(`  Global quorum: ${quorumCount} voters (0 = disabled)`);
-      if (proposalId !== undefined) console.log('  Effective proposal quorum is unavailable: restricted polls can override the global quorum.');
+      if (proposalId !== undefined) console.log(effectiveQuorum === null
+        ? '  Effective proposal quorum is unavailable: restricted polls can override the global quorum.'
+        : `  Effective proposal quorum: ${effectiveQuorum} voters`);
       console.log('');
     } catch (err: any) {
       spin.stop();

@@ -2,7 +2,7 @@
  * Membership requires the authority index; account and token RPC fallbacks do not restore legacy membership.
  */
 import type { Argv, ArgumentsCamelCase } from 'yargs';
-import { readAuthorityRows, FETCH_AUTHORITY_MEMBERSHIPS } from '@poa-box/core/reads/authority';
+import { readAuthorityMemberships } from '@poa-box/core/reads/authority';
 import { subgraphModuleClient } from '../../lib/subgraph-module-client';
 import { ethers } from 'ethers';
 import { createProvider, resolveIdentityAddress } from '../../lib/signer';
@@ -192,8 +192,7 @@ export const whoamiHandler = {
       let memberSource: string | undefined;
       if (modules) {
         try {
-        const memberships = await readAuthorityRows(subgraphModuleClient(), modules.orgId,
-          FETCH_AUTHORITY_MEMBERSHIPS, 'subjectMemberships', argv.chain);
+        const memberships = await readAuthorityMemberships(subgraphModuleClient(), modules.orgId, argv.chain);
         const mine = memberships.filter(m => m.user.toLowerCase() === address.toLowerCase() && m.subject.kind === 'Role');
         member = mine.some(m => m.isMember);
         memberSource = 'membership-authority subgraph';

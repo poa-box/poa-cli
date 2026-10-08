@@ -20,4 +20,21 @@ describe('native vouch status lookup', () => {
     expect(result.subjects).toEqual([subject]); expect(result.memberships).toHaveLength(1);
     expect(result.vouches[0].active).toBe(false);
   });
+
+  it('does not advertise a claim from an unaccepted membership cache after a vouch epoch reset', async () => {
+    mocks.json.mockClear();
+    const subject = { id: '123', subjectId: '123', kind: 'Role', name: 'Member', defaultAllow: false,
+      vouchConfig: { epoch: '2', quorum: '1' } };
+    mocks.query.mockImplementation(async (document: string) => {
+      if (document.includes('AuthoritySubjects')) return { subjects: [subject] };
+      if (document.includes('AuthorityMemberships')) return { subjectMemberships: [{ id: 'member', user: '0xuser', subject,
+        accepted: false, eligible: true, claimable: true, isMember: false, ruleKind: 'None', emailVerified: false,
+        vouchCount: 1, vouchEpoch: '1', vouchMet: true, eligibilitySource: 'VouchQuorum' }] };
+      return { subjectVouchRecords: [] };
+    });
+    await registerVouchCommands(yargs().exitProcess(false)).parseAsync(['status', '--subject', '123']);
+    expect(mocks.json.mock.calls[0][0].memberships[0]).toMatchObject({
+      eligible: false, claimable: false, effectiveVouchCount: 0, indexedEligibility: { claimable: true },
+    });
+  });
 });

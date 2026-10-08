@@ -15,8 +15,13 @@ import {
   projectsDataTiers,
   FETCH_TASK_RELEASE_HISTORY,
   FETCH_TASK_RELEASE_HISTORY_LEGACY,
+  FETCH_TASK_DATA_WITH_RELEASES,
+  FETCH_TASK_DATA,
+  FETCH_TASK_DATA_LEGACY,
+  PROJECT_TASK_PAGE_TIERS,
+  FETCH_TASK_SUBMISSION_HISTORY,
 } from '../graph/documents/task';
-import { parseProjectId } from '../encoding';
+import { parseProjectId, parseTaskId } from '../encoding';
 import { FETCH_AUTHORITY_PERMS, readAuthorityRows, isAuthorityReady } from './authority';
 import { AUTHORITY_KEYS, projectContext } from '../tx/authority';
 import { CliError } from '../errors';
@@ -97,20 +102,141 @@ export interface ProjectsDataRead {
  * Port of the read at src/commands/task/list.ts:129 (also view.ts:95).
  */
 export async function fetchProjectsData(
-  client: GraphClient,
+  client: Pick<GraphClient, 'queryWithFieldFallback'>,
   orgId: string,
   chainId?: number
 ): Promise<ProjectsDataRead> {
-  const { data, tierIndex } = await client.queryWithFieldFallback<ProjectsDataResult>(
+  const first = await client.queryWithFieldFallback<ProjectsDataResult>(
     projectsDataTiers(orgId),
     { chainId }
   );
+  let tierIndex = first.tierIndex;
+  const data = first.data;
+  const manager = data.organization?.taskManager;
+  if (!manager) return { data, tierIndex, hasDeadlineData: tierIndex <= 1, hasReleaseData: tierIndex === 0 };
+  const projects = [...(manager.projects ?? [])];
+  let page = manager.projects ?? [];
+  while (page.length === 50) {
+    const cursor = page[page.length - 1].id;
+    const next = await client.queryWithFieldFallback<ProjectsDataResult>(
+      projectsDataTiers(orgId).map(tier => ({ ...tier, variables: { orgId, projectCursor: cursor } })), { chainId }
+    );
+    if (!next.data.organization?.taskManager?.projects) throw new CliError('Project pagination returned an incomplete response', EXIT.INFRA);
+    page = next.data.organization.taskManager.projects;
+    if (page.some(p => p.id <= cursor)) throw new CliError('Project pagination did not advance', EXIT.INFRA);
+    projects.push(...page);
+    tierIndex = Math.max(tierIndex, next.tierIndex);
+  }
+  const completeProjects = await Promise.all(projects.map(async project => {
+    const tasks = [...(project.tasks ?? [])];
+    let taskPage = project.tasks ?? [];
+    while (taskPage.length === 1000) {
+      const cursor = taskPage[taskPage.length - 1].taskId;
+      const next = await client.queryWithFieldFallback<{ project: { tasks: SubgraphTask[] } | null }>(
+        PROJECT_TASK_PAGE_TIERS.map(query => ({ query, variables: { projectId: project.id, taskCursor: cursor } })), { chainId }
+      );
+      if (!next.data.project?.tasks) throw new CliError('Task pagination returned an incomplete response', EXIT.INFRA);
+      taskPage = next.data.project.tasks;
+      if (taskPage.some(t => ethers.BigNumber.from(t.taskId).gte(cursor))) throw new CliError('Task pagination did not advance', EXIT.INFRA);
+      tasks.push(...taskPage);
+      tierIndex = Math.max(tierIndex, next.tierIndex);
+    }
+    return { ...project, tasks };
+  }));
   return {
-    data,
+    data: { ...data, organization: { ...data.organization!, taskManager: { ...manager, projects: completeProjects } } },
     tierIndex,
     hasDeadlineData: tierIndex <= 1,
     hasReleaseData: tierIndex === 0,
   };
+}
+
+/** Canonical entity ID used by task-manager.ts; never cross an org boundary via a pasted ID. */
+export function taskEntityId(taskManagerAddress: string, input: string | number): string {
+  const address = ethers.utils.getAddress(taskManagerAddress).toLowerCase();
+  if (typeof input === 'number' && !Number.isSafeInteger(input)) throw new CliError('Task ID must be an exact integer string', EXIT.USAGE);
+  const raw = String(input).trim();
+  if (raw.includes('-') && raw.split('-')[0].toLowerCase() !== address) throw new CliError('Task ID belongs to a different TaskManager', EXIT.USAGE);
+  const parsed = parseTaskId(raw);
+  if (!/^\d+$/.test(parsed) || raw.split('-').length > 2) throw new CliError('Task ID must be a non-negative integer or a TaskManager-taskId entity ID', EXIT.USAGE);
+  const number = ethers.BigNumber.from(parsed);
+  if (number.gt(ethers.constants.MaxUint256)) throw new CliError('Task ID exceeds uint256', EXIT.USAGE);
+  return `${address}-${number.toString()}`;
+}
+
+/** Fetch one task without dropping old tasks or tasks in the 51st project. */
+export async function fetchTaskData(
+  client: Pick<GraphClient, 'queryWithFieldFallback'>,
+  taskManagerAddress: string,
+  input: string | number,
+  chainId?: number
+): Promise<{ task: SubgraphTask | null; tierIndex: number }> {
+  const taskId = taskEntityId(taskManagerAddress, input);
+  const { data, tierIndex } = await client.queryWithFieldFallback<{ task: SubgraphTask | null }>(
+    [FETCH_TASK_DATA_WITH_RELEASES, FETCH_TASK_DATA, FETCH_TASK_DATA_LEGACY].map(query => ({ query, variables: { taskId } })), { chainId }
+  );
+  return { task: data.task ?? null, tierIndex };
+}
+
+export interface TaskSubmissionRecord {
+  id: string;
+  submissionHash: string;
+  submittedAt: string;
+  submittedAtBlock: string;
+  transactionHash: string;
+  metadata: { submission?: string | null } | null;
+}
+export interface TaskReviewRecord {
+  id: string;
+  rejector: string;
+  rejectorUsername?: string | null;
+  rejectionHash: string;
+  rejectedAt: string;
+  rejectedAtBlock: string;
+  transactionHash: string;
+  metadata: { rejection?: string | null } | null;
+  submission: TaskSubmissionRecord | null;
+}
+export interface TaskSubmissionHistory {
+  indexed: boolean;
+  latestSubmission: TaskSubmissionRecord | null;
+  latestRejection: string | null;
+  submissions: TaskSubmissionRecord[];
+  rejections: TaskReviewRecord[];
+}
+
+/** Full immutable submission/review history, with explicit old-deployment fallback. */
+export async function fetchTaskSubmissionHistory(
+  client: Pick<GraphClient, 'queryWithFieldFallback'>,
+  taskManagerAddress: string,
+  input: string | number,
+  chainId?: number
+): Promise<TaskSubmissionHistory> {
+  const taskId = taskEntityId(taskManagerAddress, input);
+  const history: TaskSubmissionHistory = { indexed: false, latestSubmission: null, latestRejection: null, submissions: [], rejections: [] };
+  let submissionCursor = '0x';
+  let rejectionCursor = '0x';
+  while (true) {
+    const { data, tierIndex } = await client.queryWithFieldFallback<any>([
+      { query: FETCH_TASK_SUBMISSION_HISTORY, variables: { taskId, submissionCursor, rejectionCursor } },
+      { query: FETCH_TASK_RELEASE_HISTORY_LEGACY, variables: { taskId } },
+    ], { chainId });
+    if (tierIndex !== 0 || !data.task) return history;
+    history.indexed = true;
+    history.latestSubmission = data.task.latestSubmission ?? null;
+    history.latestRejection = data.task.latestRejection?.id ?? null;
+    const submissions: TaskSubmissionRecord[] = data.task.submissions ?? [];
+    const rejections: TaskReviewRecord[] = data.task.rejections ?? [];
+    if (submissions.some(row => row.id <= submissionCursor) || rejections.some(row => row.id <= rejectionCursor)) throw new CliError('Task history pagination did not advance', EXIT.INFRA);
+    history.submissions.push(...submissions);
+    history.rejections.push(...rejections);
+    if (submissions.length < 1000 && rejections.length < 1000) break;
+    if (submissions.length) submissionCursor = submissions[submissions.length - 1].id;
+    if (rejections.length) rejectionCursor = rejections[rejections.length - 1].id;
+  }
+  history.submissions.sort((a, b) => Number(BigInt(b.submittedAtBlock) - BigInt(a.submittedAtBlock)));
+  history.rejections.sort((a, b) => Number(BigInt(b.rejectedAtBlock) - BigInt(a.rejectedAtBlock)));
+  return history;
 }
 
 /** A task row flattened out of the projects tree, with its project attached. */

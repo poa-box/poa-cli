@@ -1,3 +1,4 @@
+import { ethers } from 'ethers';
 /**
  * pop task edit-meta — metadata-only editing via TaskManager.updateTaskMetadata.
  *
@@ -28,9 +29,8 @@ import { runPreflight, checkGasBalance, checkTaskStatus } from '../../lib/prefli
 import { requireModule } from '../../lib/resolve';
 import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
-import { query } from '../../lib/subgraph';
-import { FETCH_PROJECTS_DATA } from '../../queries/task';
-import { findSubgraphTask } from './helpers';
+import { queryWithFieldFallback } from '../../lib/subgraph';
+import { fetchTaskData, taskEntityId } from '@poa-box/core/reads/task';
 import * as output from '../../lib/output';
 
 interface EditMetaArgs {
@@ -71,7 +71,7 @@ export const editMetaHandler = {
 
       const ctx = await getWriteContext(argv);
       const taskManagerAddress = requireModule(ctx.modules, 'taskManagerAddress');
-      const taskId = parseTaskId(argv.task);
+      const taskId = taskEntityId(taskManagerAddress, argv.task).split('-')[1];
 
       // Feature-gate: updateTaskMetadata shipped with TaskManager v5.
       const features = await detectTaskManagerFeatures(ctx.provider, taskManagerAddress, ctx.chainId);
@@ -101,8 +101,7 @@ export const editMetaHandler = {
       // READ current metadata: subgraph first, IPFS pointer as fallback.
       let subgraphTask: any = null;
       try {
-        const result = await query<any>(FETCH_PROJECTS_DATA, { orgId: ctx.orgId }, argv.chain);
-        subgraphTask = findSubgraphTask(result.organization?.taskManager?.projects || [], taskId);
+        subgraphTask = (await fetchTaskData({ queryWithFieldFallback }, taskManagerAddress, argv.task, argv.chain)).task;
       } catch { /* handled below */ }
 
       let metadata = subgraphTask?.metadata || null;
@@ -175,8 +174,9 @@ export const editMetaHandler = {
 
       const pinSpin = output.spinner('Pinning updated metadata to IPFS...');
       pinSpin.start();
-      const cid = await pinJson(JSON.stringify(metadataJson));
-      const metadataHash = ipfsCidToBytes32(cid);
+      const serialized = JSON.stringify(metadataJson);
+      const cid = argv.dryRun ? undefined : await pinJson(serialized);
+      const metadataHash = cid ? ipfsCidToBytes32(cid) : ethers.utils.sha256(ethers.utils.toUtf8Bytes(serialized));
 
       pinSpin.text = 'Sending updateTaskMetadata...';
       const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);

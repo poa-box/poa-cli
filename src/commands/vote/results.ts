@@ -17,6 +17,7 @@ import { resolveOrgModules } from '../../lib/resolve';
 import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import { resolveProposalId } from './helpers';
+import { fetchProposalResultsByOrgId } from '@poa-box/core/reads/vote';
 
 interface ResultsArgs {
   org: string;
@@ -43,127 +44,17 @@ export const resultsHandler = {
 
       const proposalId = await resolveProposalId(String(argv.proposal), modules.hybridVotingAddress, argv.chain);
 
-      // Two tiers: the #195 attribution/provenance fields, then the pre-#195 field set. A
-      // GraphQL document validates as a whole, so without the fallback an endpoint that
-      // predates #195 would lose the rankings and voter breakdown this command existed to
-      // show — a strict regression. The legacy tier is spelled out rather than derived so a
-      // reformat cannot silently turn it into a copy of the modern one.
-      const proposalCore = 'proposalId title status isHatRestricted winningOption isValid';
-      const buildQuery = (modern: boolean) => `{
-        organization(id: "${orgId}") {
-          hybridVoting {
-            thresholdPct
-            quorum
-            ${modern ? 'classVersion' : ''}
-            proposals(where: {proposalId: ${proposalId}}) {
-              ${proposalCore}
-              ${modern ? 'proposer proposerUsername creatorUsername' : ''}
-              ${modern ? 'classesVersion winnerAnnouncedAt executedAt executedCallsCount' : ''}
-              metadata { description optionNames${modern ? ' actionSummaries promotedFrom' : ''} }
-              votes { voterUsername optionIndexes optionWeights }
-            }
-          }
-        }
-      }`;
-
-      const { data: result } = await queryWithFieldFallback<any>([
-        { query: buildQuery(true) },
-        { query: buildQuery(false) },
-      ], { chainId: argv.chain });
-      const hybridVoting = result.organization?.hybridVoting;
-      const proposal = hybridVoting?.proposals?.[0];
-      if (!proposal) throw new Error(`Proposal #${proposalId} not found`);
-
-      // Two DISTINCT validity parameters — threshold is a % of weighted
-      // power, quorum is a raw voter count. Never conflate them.
-      const supportThresholdPct = hybridVoting.thresholdPct !== undefined ? Number(hybridVoting.thresholdPct) : undefined;
-      const quorumVoterCount = hybridVoting.quorum !== undefined ? Number(hybridVoting.quorum) : undefined;
-
-      const optionNames = proposal.metadata?.optionNames || [];
-      const votes = proposal.votes || [];
-
-      // Tally weighted votes per option
-      const tallies: number[] = new Array(Math.max(optionNames.length, 1)).fill(0);
-      for (const v of votes) {
-        for (let i = 0; i < (v.optionIndexes || []).length; i++) {
-          const idx = parseInt(v.optionIndexes[i]);
-          const weight = parseInt(v.optionWeights[i]);
-          if (idx < tallies.length) tallies[idx] += weight;
-        }
-      }
-
-      // Rank options
-      const ranked = optionNames.map((name: string, i: number) => ({
-        rank: 0,
-        option: i,
-        name,
-        score: tallies[i] || 0,
-      })).sort((a: any, b: any) => b.score - a.score);
-
-      ranked.forEach((r: any, i: number) => { r.rank = i + 1; });
-
-      // Per-voter breakdown
-      const voterBreakdown = votes.map((v: any) => {
-        const allocations: Record<string, number> = {};
-        for (let i = 0; i < (v.optionIndexes || []).length; i++) {
-          const idx = parseInt(v.optionIndexes[i]);
-          const name = optionNames[idx] || `Option ${idx}`;
-          allocations[name] = parseInt(v.optionWeights[i]);
-        }
-        return { voter: v.voterUsername || 'unknown', allocations };
-      });
-
-      // Attribution: subgraph #195. proposer* are the current names; creator* the older aliases
-      // populated identically from transaction.from.
-      //
-      // proposedBy is an IDENTITY or null — never an address. Most proposers are Executor or
-      // smart-account addresses with no username, and returning the address here would make
-      // `proposedBy === 'someone'` silently false for them while looking like a resolved name.
-      // The address is always available separately as proposerAddress.
-      const proposedBy = proposal.proposerUsername || proposal.creatorUsername || null;
-      // A proposal is tallied against the voting-class config in force when it was CREATED, so
-      // a live config change mid-flight makes the org-level threshold/quorum shown here stale.
-      const classVersionAtCreation = proposal.classesVersion != null ? String(proposal.classesVersion) : null;
-      const liveClassVersion = hybridVoting.classVersion != null ? String(hybridVoting.classVersion) : null;
-      const classConfigDrifted = Boolean(
-        classVersionAtCreation && liveClassVersion && classVersionAtCreation !== liveClassVersion
-      );
-
-      const report: any = {
-        proposalId: proposal.proposalId,
-        title: proposal.title,
-        status: proposal.status,
-        proposedBy,
-        proposerAddress: proposal.proposer || null,
-        classVersionAtCreation,
-        liveClassVersion,
-        classConfigDrifted,
-        winnerAnnouncedAt: proposal.winnerAnnouncedAt ? Number(proposal.winnerAnnouncedAt) : null,
-        executedAt: proposal.executedAt ? Number(proposal.executedAt) : null,
-        executedCallsCount: proposal.executedCallsCount != null ? Number(proposal.executedCallsCount) : null,
-        actionSummaries: proposal.metadata?.actionSummaries || [],
-        promotedFrom: proposal.metadata?.promotedFrom || null,
-        totalVoters: votes.length,
-        supportThresholdPct,
-        quorumVoterCount,
-        quorumSource: 'current-global-config',
-        effectiveQuorumVoterCount: proposal.isHatRestricted === false ? quorumVoterCount : null,
-        rankingBasis: 'sum-of-ballot-allocations',
-        winnerSource: 'allocation-ranking',
-        announcedWinningOption: proposal.winningOption != null ? Number(proposal.winningOption) : null,
-        announcedValid: proposal.isValid ?? null,
-        ranking: ranked,
-        voters: voterBreakdown,
-        winner: ranked[0],
-      };
+      const report = await fetchProposalResultsByOrgId({ queryWithFieldFallback }, orgId, proposalId, argv.chain);
+      const { proposedBy, classConfigDrifted, classVersionAtCreation, liveClassVersion,
+        supportThresholdPct, quorumVoterCount, ranking: ranked, voters: voterBreakdown } = report;
 
       spin.stop();
 
       if (argv.json) {
         output.json(report);
       } else {
-        console.log(`\n  Proposal #${proposal.proposalId}: ${proposal.title}`);
-        console.log(`  Status: ${proposal.status} | Voters: ${votes.length}${proposedBy ? ` | Proposed by: ${proposedBy}` : ''}`);
+        console.log(`\n  Proposal #${report.proposalId}: ${report.title}`);
+        console.log(`  Status: ${report.status} | Voters: ${report.totalVoters}${proposedBy ? ` | Proposed by: ${proposedBy}` : ''}`);
         if (report.promotedFrom) console.log(`  Promoted from: ${report.promotedFrom}`);
         if (report.actionSummaries.length) {
           console.log('  Enacts:');
@@ -190,6 +81,9 @@ export const resultsHandler = {
         }
         if (report.effectiveQuorumVoterCount === null) console.log('  Effective quorum unavailable: restricted polls can override the global quorum.');
         console.log('  Ranking sums ballot allocations; use vote analyze for class-weighted voting power.');
+        console.log(report.winnerSource === 'announced' ? `  Announced winner: option ${report.announcedWinningOption}`
+          : report.winnerSource === 'invalid' ? '  Announced result: invalid; no winning option passed.'
+            : '  Winner has not been announced.');
         console.log('  ' + '─'.repeat(50));
         for (const r of ranked) {
           const bar = '█'.repeat(Math.round(r.score / 5));
