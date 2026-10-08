@@ -5,11 +5,12 @@ import { resolveOrgId, resolveOrgModules } from '../../lib/resolve';
 import { resolveNetworkConfig } from '../../config/networks';
 import { fetchJson } from '../../lib/ipfs';
 import {
-  projectsDataTiers,
   FETCH_TASK_RELEASE_HISTORY,
   FETCH_TASK_RELEASE_HISTORY_LEGACY,
 } from '../../queries/task';
-import { formatAddress, formatDeadline } from '../../lib/encoding';
+import { formatAddress, formatDeadline, parseTaskId } from '../../lib/encoding';
+import { fetchProjectsData, fetchTaskSubmissionHistory, taskEntityId } from '@poa-box/core/reads/task';
+import type { TaskSubmissionHistory } from '@poa-box/core/reads/task';
 import { formatCountdown, formatRelativeTime } from '../../lib/format';
 import {
   getTaskOnChain,
@@ -92,20 +93,20 @@ export const viewHandler = {
       // is the same document without them, tier 2 drops the v6 deadline fields
       // too. This read was previously untiered, which meant ANY schema drift
       // between deployments broke `task view` outright rather than degrading.
-      const { data: result, tierIndex } = await queryWithFieldFallback<any>(
-        projectsDataTiers(orgId),
-        { chainId: argv.chain }
-      );
+      const { data: result, tierIndex } = await fetchProjectsData({ queryWithFieldFallback }, orgId, argv.chain);
       const hasReleaseData = tierIndex === 0;
       const projects = result.organization?.taskManager?.projects || [];
+      const parsedTaskId = result.organization?.taskManager?.id
+        ? taskEntityId(result.organization.taskManager.id, argv.task).split('-')[1]
+        : parseTaskId(argv.task);
 
       let found: any = null;
       let projectTitle = '';
       for (const project of projects) {
         for (const task of project.tasks || []) {
-          if (task.taskId === argv.task || task.id.endsWith(`-${argv.task}`)) {
+          if (task.taskId === parsedTaskId || task.id.endsWith(`-${parsedTaskId}`)) {
             found = task;
-            projectTitle = project.title;
+            projectTitle = project.title ?? '';
             break;
           }
         }
@@ -129,7 +130,7 @@ export const viewHandler = {
             );
             const probed = await probeTaskOnChain(
               modules.taskManagerAddress,
-              argv.task,
+              parsedTaskId,
               provider,
             );
             if (probed) {
@@ -288,6 +289,13 @@ export const viewHandler = {
         } catch { /* history is additive — never fail the view over it */ }
       }
 
+      let submissionHistory: TaskSubmissionHistory | null = null;
+      if (taskManagerAddress && (found.submittedAt || found.submissionHash || Number(found.rejectionCount) > 0 || ['Submitted', 'Completed'].includes(found.status))) {
+        try {
+          submissionHistory = await fetchTaskSubmissionHistory({ queryWithFieldFallback }, taskManagerAddress, found.taskId, argv.chain);
+        } catch { /* History remains unknown when its separate query cannot be served. */ }
+      }
+
       if (output.isJsonMode()) {
         output.json({
           taskId: found.taskId,
@@ -313,6 +321,13 @@ export const viewHandler = {
           assignedAt: found.assignedAt,
           submittedAt: found.submittedAt,
           completedAt: found.completedAt,
+          ...(submissionHistory?.indexed ? {
+            submissionHistoryIndexed: true,
+            latestSubmission: submissionHistory.latestSubmission,
+            latestRejection: submissionHistory.latestRejection,
+            submissions: submissionHistory.submissions,
+            reviewHistory: submissionHistory.rejections,
+          } : { submissionHistoryIndexed: false }),
           // Additive v6 fields — only present when the org's TaskManager
           // supports deadlines and the on-chain read succeeded.
           ...(hasDeadlineData && onChain ? {
@@ -378,6 +393,15 @@ export const viewHandler = {
           for (const r of releases) {
             const how = r.selfRelease ? 'self-released' : `force-released by ${r.caller}`;
             console.log(`    - ${r.previousClaimer} ${how} — ${formatRelativeTime(r.releasedAt)}`);
+          }
+        }
+        if (submissionHistory?.indexed && submissionHistory.submissions.length) {
+          console.log(`  Submissions: ${submissionHistory.submissions.length}`);
+          for (const submission of submissionHistory.submissions) {
+            console.log(`    - ${formatRelativeTime(submission.submittedAt)} — ${submission.metadata?.submission || submission.submissionHash}`);
+            for (const review of submissionHistory.rejections.filter(review => review.submission?.id === submission.id)) {
+              console.log(`      rejected by ${review.rejectorUsername || review.rejector}: ${review.metadata?.rejection || review.rejectionHash}`);
+            }
           }
         }
         if (found.applications?.length) {

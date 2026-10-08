@@ -1,3 +1,4 @@
+import { refreshAuthorityUsers } from '../../lib/authority';
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { queryAllChains } from '../../lib/subgraph';
@@ -10,12 +11,12 @@ interface ExploreArgs {
 
 const EXPLORE_QUERY = `
   query ExploreOrgs($first: Int!) {
-    organizations(first: $first, orderBy: deployedAt, orderDirection: desc) {
+    organizations(where: { membershipAuthority_: { isRouterBound: true, cutoverAt_gt: "0" } }, first: $first, orderBy: deployedAt, orderDirection: desc) {
       id
       name
       deployedAt
       users(first: 100) {
-        membershipStatus
+        address membershipStatus
       }
       taskManager {
         projects(where: { deleted: false }, first: 10) {
@@ -53,7 +54,7 @@ export const exploreHandler = {
       try {
         const detailQuery = `
           query DetailOrg($name: String!) {
-            organizations(where: { name: $name }, first: 1) {
+            organizations(where: { name: $name, membershipAuthority_: { isRouterBound: true, cutoverAt_gt: "0" } }, first: 1) {
               id name deployedAt
               participationToken { totalSupply }
               users(orderBy: participationTokenBalance, orderDirection: desc, first: 100) {
@@ -84,6 +85,7 @@ export const exploreHandler = {
           const org = chainResult.data?.organizations?.[0];
           if (!org) continue;
           found = true;
+          await refreshAuthorityUsers(org, org.id, chainResult.chainId);
           const activeMembers = (org.users || []).filter((u: any) => u.membershipStatus === 'Active');
           const allTasks = (org.taskManager?.projects || []).flatMap((p: any) => (p.tasks || []).map((t: any) => ({ ...t, project: p.title })));
           const supply = parseFloat(ethers.utils.formatEther(org.participationToken?.totalSupply || '0'));
@@ -140,8 +142,8 @@ export const exploreHandler = {
       for (const chainResult of results) {
         if (!chainResult.data?.organizations) continue;
         for (const org of chainResult.data.organizations) {
+          await refreshAuthorityUsers(org, org.id, chainResult.chainId);
           const activeMembers = (org.users || []).filter((u: any) => u.membershipStatus === 'Active').length;
-          if (activeMembers === 0) continue; // skip dead orgs
 
           // Count tasks
           let openTasks = 0;

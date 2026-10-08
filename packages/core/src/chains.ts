@@ -84,9 +84,9 @@ export const NETWORKS: Record<string, NetworkConfig> = {
     blockExplorer: 'https://arbiscan.io',
     isTestnet: false,
     subgraphUrl: 'https://api.studio.thegraph.com/query/73367/poa-arb-v-1/version/latest',
-    // No gatewaySubgraphId: the Arbitrum deployment has not been published to
-    // the decentralised network (or its ID is not known here), so Arbitrum has
-    // no paid tier by default. Set POP_ARBITRUM_SUBGRAPH_ID once it is published.
+    // Published production deployment, shared with the frontend's networks.js.
+    // Studio remains the free default; GRAPH_API_KEY enables gateway fallback.
+    gatewaySubgraphId: '2egvcs94ZStD38inRtK9bp3Maw3UZw4BDinH8jLyAF4G',
     bountyTokens: {
       USDC: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
     },

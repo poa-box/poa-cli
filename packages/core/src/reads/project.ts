@@ -14,6 +14,7 @@ import { FETCH_PROJECTS_DATA } from '../graph/documents/task';
 import { parseProjectId } from '../encoding';
 import { CliError } from '../errors';
 import { EXIT } from '../exit-codes';
+import { fetchProjectsData } from './task';
 import type { SubgraphProject, ProjectsDataResult } from './task';
 
 /**
@@ -27,7 +28,7 @@ export async function listProjects(
   orgId: string,
   chainId?: number
 ): Promise<SubgraphProject[]> {
-  const result = await client.query<ProjectsDataResult>(FETCH_PROJECTS_DATA, { orgId }, chainId);
+  const { data: result } = await fetchProjectsData(client, orgId, chainId);
   return result.organization?.taskManager?.projects || [];
 }
 
@@ -57,7 +58,7 @@ export async function resolveProjectInput(
   // Title lookup via the subgraph (case-insensitive).
   let projects: SubgraphProject[] = [];
   try {
-    const result = await client.query<ProjectsDataResult>(FETCH_PROJECTS_DATA, { orgId }, chainId);
+    const { data: result } = await fetchProjectsData(client, orgId, chainId);
     projects = result.organization?.taskManager?.projects || [];
   } catch {
     throw new CliError(

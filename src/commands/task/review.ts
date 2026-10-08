@@ -10,6 +10,7 @@
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
+import { ethers } from 'ethers';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { pinJson } from '../../lib/ipfs';
@@ -115,8 +116,9 @@ export const reviewHandler = {
           // doomed or declined review never wastes a pin.
           const rejectionMetadata = { rejection: argv.reason };
           txSpin.text = 'Pinning rejection reason to IPFS...';
-          cid = await pinJson(JSON.stringify(rejectionMetadata));
-          const rejectionHash = ipfsCidToBytes32(cid);
+          const serialized = JSON.stringify(rejectionMetadata);
+          cid = argv.dryRun ? undefined : await pinJson(serialized);
+          const rejectionHash = cid ? ipfsCidToBytes32(cid) : ethers.utils.sha256(ethers.utils.toUtf8Bytes(serialized));
 
           txSpin.text = 'Sending transaction...';
           result = await executeTx(contract, 'rejectTask', [parsedTaskId, rejectionHash], { dryRun: argv.dryRun });

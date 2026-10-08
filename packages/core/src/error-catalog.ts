@@ -165,6 +165,97 @@ export function decodeContractError(
  * fails if an ABI regeneration introduces a name without an entry here.
  */
 export const ERROR_MESSAGES: Record<string, { human: string; suggestion?: string }> = {
+  AlreadyMember: { human: "This address is already a member of the role." },
+  DeploymentComplete: { human: "The organization deployment has already completed." },
+  DuplicateGroupMemberRole: { human: "A group lists the same role more than once." },
+  ForceRequired: { human: "Closing a role with accepted members requires the explicit force flag." },
+  GlobalRuleUnknown: { human: "The requested global rule does not exist." },
+  GrantBlockedByGovernanceBan: { human: "Governance has banned this member; a delegated manager cannot override the ban." },
+  GroupSizeLimit: { human: "A group may contain at most 16 roles." },
+  GroupsPerRoleLimit: { human: "A role may belong to at most 8 groups." },
+  InvalidConfigKey: { human: "This configuration key is not supported by the authority-only protocol." },
+  InvalidRulesMode: { human: "The rule mode is invalid." },
+  InvalidTypeId: { human: "The contract type ID is invalid." },
+  LegacyConfigRemoved: { human: "Legacy Hats configuration has been removed. Configure MembershipAuthority permissions instead." },
+  MaxMembersOnGroup: { human: "Groups derive membership from roles and cannot have a member cap." },
+  NoPendingAction: { human: "This pending action does not exist or has already been resolved." },
+  NotAGroup: { human: "The subject kind does not support this operation." },
+  NotAuthorizedManager: { human: "Your account lacks the required manager capability for this subject." },
+  NotClaimable: { human: "This role is not currently claimable by your account." },
+  NotInOrg: { human: "The target must already belong to the organization; offer the role to an outsider." },
+  NotRegisteredModule: { human: "Only the registered organization module may perform this operation." },
+  NotRegistryAdmin: { human: "Your account is not the registry administrator." },
+  NotYetActive: { human: "The delegated action review delay has not elapsed." },
+  PendingActionExists: { human: "This subject and user already have a pending action." },
+  PermFanoutLimit: { human: "A permission key and context may refer to at most 16 subjects." },
+  QuickJoinRoleNotOpen: { human: "Every QuickJoin role must allow default membership." },
+  RemovalIneffective: { human: "Soft removal leaves another eligibility source active. Review the sources before proposing a ban." },
+  RemoveBlockedByStickyGovernance: { human: "A delegated manager cannot remove this sticky governance grant." },
+  RoleCapacityBelowGenesisSeed: { human: "The role cap is lower than its initial membership allocation." },
+  RoleLimit: { human: "An account may accept at most 16 roles." },
+  RuleNotDelegable: { human: "Governance marked this rule as non-delegable." },
+  SelfManagedCycle: { human: "The manager configuration creates a management cycle." },
+  SubjectExists: { human: "This subject or group composition already exists." },
+  SubjectFull: { human: "The role has reached its membership cap. Reconcile a lapsed membership or increase the cap." },
+  UnknownSubject: { human: "The subject does not exist in this organization authority." },
+  VouchRateLimited: { human: "The daily vouch limit has been reached." },
+  WiringIncompatible: { human: "The authority subject configuration is structurally incompatible." },
+
+  // --- Authority routing / migration invariant checks ---
+  AlreadyBound: {
+    human: 'This legacy top-hat domain is already bound to an organization authority.',
+    suggestion: 'Inspect the existing router binding before proposing any binding change.',
+  },
+  NotBound: {
+    human: 'This legacy top-hat domain has no authority binding to remove.',
+  },
+  TopHatDomainMismatch: {
+    human: 'The supplied top-hat domain does not match the organization recorded in OrgRegistry.',
+    suggestion: 'Use the domain from the registered top-hat ID: topHatId shifted right by 224 bits.',
+  },
+  ArrayLengthMismatchRouter: {
+    human: 'The router balance query must contain one subject ID for each user address.',
+  },
+  WriteToPassthrough: {
+    human: 'The authority router does not allow writes through its legacy Hats passthrough route.',
+    suggestion: 'Use the organization authority for native membership changes.',
+  },
+  NoSubjects: {
+    human: 'Cutover verification requires at least one adopted subject, with the admin subject first.',
+  },
+  AuthorityNotBound: {
+    human: 'A cutover subject resolves through the router to a different authority than expected.',
+    suggestion: 'Correct the router binding in the governance cutover batch.',
+  },
+  AuthorityPaused: {
+    human: 'The organization authority is still paused at the end of the cutover batch.',
+    suggestion: 'Include the authority unpause before the final cutover verification call.',
+  },
+  MemberCountDrift: {
+    human: 'An authority membership count differs from the count recorded when the cutover batch was prepared.',
+    suggestion: 'Reconcile the membership snapshot and regenerate the cutover batch from the current state.',
+  },
+  SupplyDrift: {
+    human: 'A legacy Hats supply differs from the supply recorded when the cutover batch was prepared.',
+    suggestion: 'Account for legacy joins and removals in the migration snapshot before regenerating the cutover batch.',
+  },
+  MemberCountExceedsSupply: {
+    human: 'An adopted subject has more authority members than its canonical legacy Hats supply.',
+    suggestion: 'Correct the migrated membership set before completing the cutover.',
+  },
+  AdminNotResolved: {
+    human: 'The router does not recognize the registered organization executor as a member of the admin subject.',
+    suggestion: 'Check the first cutover subject, its executor membership, and the router binding.',
+  },
+  AdminHatInactive: {
+    human: 'The admin subject is inactive when read through the authority router.',
+    suggestion: 'Restore the admin subject configuration before completing the cutover.',
+  },
+  RouterNotCanonical: {
+    human: 'The cutover batch names a router different from the paymaster hub’s live HATS pointer.',
+    suggestion: 'Build the cutover batch against the router currently used by PaymasterHub.',
+  },
+
   // --- Accounts / usernames (UniversalAccountRegistry, QuickJoin, PasskeyAccountFactory) ---
   AccountExists: {
     human: 'An account is already registered for this address.',
@@ -267,10 +358,10 @@ export const ERROR_MESSAGES: Record<string, { human: string; suggestion?: string
   // contract-neutral — it previously named only the TaskManager permission bits, which
   // sent people to `pop task perms` for a voting or token failure.
   Unauthorized: {
-    human: 'Your wallet\'s hats do not carry the permission this action requires.',
-    suggestion: 'See which hats you hold with: pop user whoami. For task actions the required bit is '
+    human: 'Your account lacks the membership or permission this action requires.',
+    suggestion: 'Inspect your organization memberships with: pop user whoami. For task actions the required bit is '
       + 'one of CREATE/CLAIM/REVIEW/ASSIGN/SELF_REVIEW/BUDGET/EDIT_META/EDIT_FULL — inspect with '
-      + 'pop task perms show. For proposals, you need a creator hat: pop org roles.',
+      + 'pop task perms show. For proposals, inspect the authority creator permission on your roles or groups.',
   },
   UnauthorizedCaller: {
     human: 'Caller is not authorized for this executor operation.',
@@ -368,7 +459,8 @@ export const ERROR_MESSAGES: Record<string, { human: string; suggestion?: string
     human: 'That hat is not allowed for this voting action.',
   },
   InvalidQuorum: {
-    human: 'Quorum percentage is out of range (must be 1-100).',
+    human: 'A nonzero quorum override or equal-weight tally requires a restricted proposal.',
+    suggestion: 'Specify --subject-ids for the restricted electorate. Quorum is a voter count, not a percentage.',
   },
   InvalidThreshold: {
     human: 'Threshold percentage is out of range.',
@@ -604,7 +696,7 @@ export const ERROR_MESSAGES: Record<string, { human: string; suggestion?: string
 
   // --- Paymaster hub ---
   NotAdmin: {
-    human: 'Caller is not the paymaster admin for this org.',
+    human: 'Caller is not an administrator authorized by this contract.',
   },
   NotOperator: {
     human: 'Caller is not a paymaster operator.',
@@ -653,8 +745,8 @@ export const ERROR_MESSAGES: Record<string, { human: string; suggestion?: string
     human: 'This org is already registered with the paymaster.',
   },
   OrgNotRegistered: {
-    human: 'This org is not registered with the paymaster.',
-    suggestion: 'Register and fund it: pop paymaster deposit',
+    human: 'This organization is not registered in the registry required by this operation.',
+    suggestion: 'Check the organization ID and its registration in OrgRegistry or PaymasterHub, as applicable.',
   },
   OrgIsBanned: {
     human: 'This org is banned from paymaster sponsorship.',
@@ -800,6 +892,34 @@ export const ERROR_MESSAGES: Record<string, { human: string; suggestion?: string
   },
   InvalidSignature: {
     human: 'Signature verification failed.',
+  },
+  AuthDataTooShort: {
+    human: 'WebAuthn authenticator data is shorter than the required 37 bytes.',
+    suggestion: 'Supply the complete authenticator data returned by the passkey authenticator.',
+  },
+  UserNotPresent: {
+    human: 'The passkey assertion does not confirm user presence.',
+    suggestion: 'Complete the authenticator’s user-presence prompt when authorizing the operation.',
+  },
+  ChallengeMismatch: {
+    human: 'The WebAuthn challenge is malformed or does not match the operation being authorized.',
+    suggestion: 'Check the challenge bytes, base64url encoding, and challenge index in the client data.',
+  },
+  MalformedClientData: {
+    human: 'The WebAuthn client data JSON or its field offsets are malformed.',
+    suggestion: 'Preserve the exact client data bytes and use the matching challenge and type offsets.',
+  },
+  InvalidWebAuthnSignature: {
+    human: 'The passkey assertion failed its challenge, authenticator flags, or signature checks.',
+    suggestion: 'Verify the credential, operation challenge, client data, and required authenticator verification flags.',
+  },
+  SignCountTooLow: {
+    human: 'The passkey signature counter did not advance beyond the stored value.',
+    suggestion: 'Check the credential’s counter and authenticator state; a reused assertion cannot authorize another operation.',
+  },
+  InvalidSignatureComponents: {
+    human: 'A P-256 signature component is zero or outside the curve’s valid range.',
+    suggestion: 'Check the r and s values extracted from the authenticator signature.',
   },
   BeaconNotSet: {
     human: 'The passkey account beacon is not configured.',

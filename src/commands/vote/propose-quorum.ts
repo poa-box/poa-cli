@@ -49,7 +49,7 @@ export const proposeQuorumHandler = {
 
     try {
       const newQuorum = argv.quorum as number;
-      if (newQuorum < 1) throw new Error('Quorum must be at least 1');
+      if (!Number.isInteger(newQuorum) || newQuorum < 0 || newQuorum > 4294967295) throw new Error('Quorum must be a uint32 voter count (0 disables)');
 
       const contracts = await resolveVotingContracts(argv.org, argv.chain);
       const { signer } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
@@ -91,8 +91,8 @@ export const proposeQuorumHandler = {
       const run = async (): Promise<Record<string, any>> => {
         const txSpin = output.spinner('Pinning metadata...');
         txSpin.start();
-        const cid = await pinJson(JSON.stringify(metadata));
-        const descriptionHash = ipfsCidToBytes32(cid);
+        const cid = argv.dryRun ? undefined : await pinJson(JSON.stringify(metadata));
+        const descriptionHash = cid ? ipfsCidToBytes32(cid) : ethers.constants.HashZero;
         const titleBytes = stringToBytes(`Set voting quorum to ${newQuorum}`);
 
         txSpin.text = 'Sending transaction...';

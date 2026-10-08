@@ -6,13 +6,13 @@
 import type { FieldFallbackTier } from '../client';
 
 export const FETCH_PROJECTS_DATA = `
-  query FetchProjectsDataNew($orgId: Bytes!) {
+  query FetchProjectsDataNew($orgId: Bytes!, $projectCursor: String = "") {
     organization(id: $orgId) {
       id
       taskManager {
         id
         creatorHatIds
-        projects(where: { deleted: false }, first: 50) {
+        projects(where: { deleted: false, id_gt: $projectCursor }, first: 50, orderBy: id, orderDirection: asc) {
           id
           title
           metadataHash
@@ -240,6 +240,165 @@ export const FETCH_ORG_TASK_RELEASES = `
         title
         status
         releaseCount
+      }
+    }
+  }
+`;
+
+/** A direct task lookup avoids the org tree's project/task page limits. */
+export const FETCH_TASK_DATA = `
+  query FetchTaskData($taskId: ID!) {
+    task(id: $taskId) {
+            id
+            taskId
+            title
+            metadataHash
+            submissionHash
+            rejectionHash
+            rejectionCount
+            metadata {
+              id
+              name
+              description
+              location
+              difficulty
+              estimatedHours
+              dueDate
+              submission
+              rejection
+            }
+            rejections(orderBy: rejectedAt, orderDirection: desc, first: 10) {
+              rejectorUsername
+              rejectedAt
+              metadata {
+                rejection
+              }
+            }
+            payout
+            bountyToken
+            bountyPayout
+            completionWindow
+            absoluteDeadline
+            claimDeadline
+            reclaimCount
+            status
+            assignee
+            assigneeUsername
+            completer
+            completerUsername
+            requiresApplication
+            createdAt
+            assignedAt
+            submittedAt
+            completedAt
+            applications {
+              applicant
+              applicantUsername
+              applicationHash
+              metadata {
+                notes
+                experience
+              }
+              approved
+              approver
+              approverUsername
+              appliedAt
+            }
+      project { id title }
+    }
+  }
+`;
+export const FETCH_TASK_DATA_WITH_RELEASES = FETCH_TASK_DATA.replace(
+  /^(\s*)reclaimCount$/m, '$1reclaimCount\n$1releaseCount\n$1lastReleasedAt',
+);
+export const FETCH_TASK_DATA_LEGACY = FETCH_TASK_DATA.split('\n')
+  .filter(line => !/^\s*(completionWindow|absoluteDeadline|claimDeadline|reclaimCount)\s*$/.test(line)).join('\n');
+
+/** Follow-up page for a single project's tasks. taskId is unique within its TaskManager. */
+export const FETCH_PROJECT_TASK_PAGE = `
+  query FetchProjectTaskPage($projectId: ID!, $taskCursor: BigInt!) {
+    project(id: $projectId) {
+      id
+      tasks(first: 1000, orderBy: taskId, orderDirection: desc, where: { taskId_lt: $taskCursor }) {
+            id
+            taskId
+            title
+            metadataHash
+            submissionHash
+            rejectionHash
+            rejectionCount
+            metadata {
+              id
+              name
+              description
+              location
+              difficulty
+              estimatedHours
+              dueDate
+              submission
+              rejection
+            }
+            rejections(orderBy: rejectedAt, orderDirection: desc, first: 10) {
+              rejectorUsername
+              rejectedAt
+              metadata {
+                rejection
+              }
+            }
+            payout
+            bountyToken
+            bountyPayout
+            completionWindow
+            absoluteDeadline
+            claimDeadline
+            reclaimCount
+            status
+            assignee
+            assigneeUsername
+            completer
+            completerUsername
+            requiresApplication
+            createdAt
+            assignedAt
+            submittedAt
+            completedAt
+            applications {
+              applicant
+              applicantUsername
+              applicationHash
+              metadata {
+                notes
+                experience
+              }
+              approved
+              approver
+              approverUsername
+              appliedAt
+            }
+      }
+    }
+  }
+`;
+export const PROJECT_TASK_PAGE_TIERS = [
+  FETCH_PROJECT_TASK_PAGE.replace(/^(\s*)reclaimCount$/m, '$1reclaimCount\n$1releaseCount\n$1lastReleasedAt'),
+  FETCH_PROJECT_TASK_PAGE,
+  FETCH_PROJECT_TASK_PAGE.split('\n').filter(line => !/^\s*(completionWindow|absoluteDeadline|claimDeadline|reclaimCount)\s*$/.test(line)).join('\n'),
+];
+
+/** PR213 immutable work/review history. ID cursors retain same-timestamp events. */
+export const FETCH_TASK_SUBMISSION_HISTORY = `
+  query FetchTaskSubmissionHistory($taskId: ID!, $submissionCursor: Bytes!, $rejectionCursor: Bytes!) {
+    task(id: $taskId) {
+      id
+      latestSubmission { id submissionHash submittedAt submittedAtBlock transactionHash metadata { submission } }
+      latestRejection { id }
+      submissions(first: 1000, orderBy: id, orderDirection: asc, where: { id_gt: $submissionCursor }) {
+        id submissionHash submittedAt submittedAtBlock transactionHash metadata { submission }
+      }
+      rejections(first: 1000, orderBy: id, orderDirection: asc, where: { id_gt: $rejectionCursor }) {
+        id rejector rejectorUsername rejectionHash rejectedAt rejectedAtBlock transactionHash
+        metadata { rejection }
+        submission { id submissionHash submittedAt submittedAtBlock transactionHash metadata { submission } }
       }
     }
   }

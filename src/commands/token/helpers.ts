@@ -1,41 +1,8 @@
-/**
- * Token helpers — ParticipationToken resolution + hat-gate pre-flight.
- *
- * Gates — VERIFIED against contracts origin/main src/ParticipationToken.sol:
- *   requestTokens  → isMember     (executor OR any allowed member hat)
- *   approveRequest → onlyApprover (executor OR any allowed approver hat),
- *                    and reverts NotRequester when approver == requester
- *   cancelRequest  → requester OR approver
- *
- * The allowed hat sets are enumerable on-chain via memberHatIds() /
- * approverHatIds(), and the Hats contract via hats() — so membership is
- * "resolvable" whenever those reads succeed. Multi-hat gates are ANY-OF,
- * which checkHasHat (single hat, all-must-pass) can't express; hence
- * checkWearsAnyHat below (single-hat sets still route through checkHasHat).
- *
- * WHY THIS FILE STAYS ON RPC (subgraph audit, verified against the live
- * poa-gnosis-v-1 deployment):
- *   - ParticipationTokenContract.executor and .hatsContract EXIST in the
- *     schema but are the zero address on all 9 live rows, so they cannot
- *     replace pt.executor()/pt.hats() — a zero executor would make every
- *     signer look like a non-executor and a zero Hats address would make the
- *     hat check read from nothing.
- *   - memberHatIds()/approverHatIds() are not indexed at ALL on
- *     ParticipationTokenContract (contrast QuickJoinContract.memberHatIds,
- *     which is), so the allowed hat sets have no subgraph representation.
- *   - The hat balance reads and requests(id) are revert PREDICTORS run
- *     immediately before approveRequest/cancelRequest/requestTokens. Subgraph
- *     lag there means knowingly broadcasting a doomed transaction.
- * What did change: every one of these reads now goes through Multicall3, so
- * the gate config is 1 round-trip instead of 4 and the ANY-OF hat check is 1
- * instead of N.
- */
-
 import { ethers } from 'ethers';
 import { resolveOrgModules, requireModule } from '../../lib/resolve';
 import { createReadContract } from '../../lib/contracts';
 import { tryAggregate } from '../../lib/multicall';
-import { checkHasHat, PreflightCheck } from '../../lib/preflight';
+import { PreflightCheck } from '../../lib/preflight';
 
 export async function resolveTokenAddress(orgIdOrName: string | undefined, chainId?: number): Promise<{ orgId: string; tokenAddress: string }> {
   const modules = await resolveOrgModules(orgIdOrName, chainId);
@@ -45,111 +12,28 @@ export async function resolveTokenAddress(orgIdOrName: string | undefined, chain
   };
 }
 
-export interface TokenGateContext {
-  hatsAddress: string;
-  executor: string;
-  memberHatIds: ethers.BigNumber[];
-  approverHatIds: ethers.BigNumber[];
-}
-
+export interface TokenGateContext { authorityAddress: string; executor: string; }
 const GATES_IFACE = new ethers.utils.Interface([
-  'function hats() view returns (address)',
-  'function executor() view returns (address)',
-  'function memberHatIds() view returns (uint256[])',
-  'function approverHatIds() view returns (uint256[])',
+  'function membershipAuthority() view returns (address)', 'function executor() view returns (address)',
 ]);
-
-const GATE_READS = ['hats', 'executor', 'memberHatIds', 'approverHatIds'] as const;
-
-/**
- * Read the token's hat-gate config (member/approver hat sets + executor) in a
- * single Multicall3 round-trip.
- *
- * Throws when ANY of the four reads fails: callers (token request/approve)
- * catch that and skip the gate pre-flight so the transaction itself surfaces
- * the real revert. Silently returning a zero executor or an empty hat set
- * would instead produce a confidently wrong pre-flight verdict.
- */
-export async function readTokenGates(
-  provider: ethers.providers.Provider,
-  tokenAddress: string
-): Promise<TokenGateContext> {
-  const results = await tryAggregate(
-    provider,
-    GATE_READS.map(fn => ({ to: tokenAddress, data: GATES_IFACE.encodeFunctionData(fn, []) }))
-  );
-
-  const decoded = GATE_READS.map((fn, i) => {
-    const { success, returnData } = results[i];
-    if (!success || !returnData || returnData === '0x') {
-      throw new Error(`ParticipationToken.${fn}() read failed`);
-    }
-    return GATES_IFACE.decodeFunctionResult(fn, returnData)[0];
+export async function readTokenGates(provider: ethers.providers.Provider, tokenAddress: string): Promise<TokenGateContext> {
+  const methods = ['membershipAuthority', 'executor'];
+  const results = await tryAggregate(provider, methods.map(fn => ({ to: tokenAddress, data: GATES_IFACE.encodeFunctionData(fn) })));
+  const decoded = results.map((r, i) => {
+    if (!r.success || !r.returnData || r.returnData === '0x') throw new Error(`ParticipationToken.${methods[i]} read failed`);
+    return GATES_IFACE.decodeFunctionResult(methods[i], r.returnData)[0];
   });
-
-  const [hatsAddress, executor, memberHatIds, approverHatIds] = decoded as
-    [string, string, ethers.BigNumberish[], ethers.BigNumberish[]];
-
-  return {
-    hatsAddress,
-    executor,
-    memberHatIds: memberHatIds.map(h => ethers.BigNumber.from(h)),
-    approverHatIds: approverHatIds.map(h => ethers.BigNumber.from(h)),
-  };
+  return { authorityAddress: decoded[0], executor: decoded[1] };
 }
-
-const HATS_IFACE = new ethers.utils.Interface([
-  'function balanceOf(address wearer, uint256 hatId) view returns (uint256 balance)',
-]);
-
-/**
- * ANY-OF hat check mirroring ParticipationToken's _hasHat loop: passes when
- * the wearer holds at least one of `hatIds`. Single-hat sets delegate to the
- * shared checkHasHat (multicall path).
- *
- * The multi-hat path runs as a `local` check because runPreflight's own
- * Multicall3 batch is one-call-per-check and this one needs N. It therefore
- * runs OUTSIDE that batch — so it does its own tryAggregate, making the
- * multi-hat path one round-trip like the single-hat path instead of N.
- *
- * These are revert predictors (NotMember / NotApprover) evaluated immediately
- * before the write, so they stay on the contract: the subgraph does not index
- * Hats wearer balances, and even if it did, lag would mean predicting a
- * revert that will not happen (or missing one that will).
- */
-export function checkWearsAnyHat(
-  provider: ethers.providers.Provider,
-  hatsAddress: string,
-  wearer: string,
-  hatIds: ethers.BigNumber[],
-  opts: { label: string; detail: string; suggestion?: string }
-): PreflightCheck {
-  if (hatIds.length === 1) {
-    return checkHasHat(hatsAddress, wearer, hatIds[0]);
-  }
-  return {
-    label: opts.label,
-    local: async () => {
-      const results = await tryAggregate(
-        provider,
-        hatIds.map(id => ({
-          to: hatsAddress,
-          data: HATS_IFACE.encodeFunctionData('balanceOf', [wearer, id]),
-        }))
-      );
-      const wearsOne = results.some(({ success, returnData }) => {
-        if (!success || !returnData || returnData === '0x') return false;
-        const balance = HATS_IFACE.decodeFunctionResult('balanceOf', returnData)[0] as ethers.BigNumber;
-        return !balance.isZero();
-      });
-      if (wearsOne) return { ok: true };
-      return {
-        ok: false,
-        detail: `${opts.detail} (checked hats: ${hatIds.map(h => h.toString()).join(', ') || 'none'})`,
-        suggestion: opts.suggestion,
-      };
-    },
-  };
+const AUTHORITY_IFACE = new ethers.utils.Interface(['function hasPerm(address,bytes32,bytes32) view returns (uint256)']);
+export function checkTokenPermission(authorityAddress: string, user: string, key: string): PreflightCheck {
+  return { label: 'authority token permission',
+    call: { to: authorityAddress, data: AUTHORITY_IFACE.encodeFunctionData('hasPerm', [user, key, ethers.constants.HashZero]) },
+    interpret: (data, success) => {
+      if (!success || data === '0x') return { ok: false, detail: 'Authority permission could not be read' };
+      const allowed = !AUTHORITY_IFACE.decodeFunctionResult('hasPerm', data)[0].isZero();
+      return { ok: allowed, detail: allowed ? undefined : 'Missing token permission in MembershipAuthority', suggestion: 'Ask governance to grant the required authority permission to your role.' };
+    } };
 }
 
 export interface TokenRequestOnChain {

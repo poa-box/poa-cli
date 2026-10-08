@@ -216,6 +216,17 @@ describe('pop task create-batch — v6 batch vs legacy loop', () => {
     );
   });
 
+  it('dry-run prepares the native batch without publishing task metadata', async () => {
+    mocks.detectTaskManagerFeatures.mockResolvedValue(V6_FEATURES);
+    mocks.executeTx.mockResolvedValue({ success: true, dryRun: true, gasEstimate: '1', logs: [] });
+    const file = writeJsonl(ROWS_NO_DEADLINE);
+    await createBatchHandler.handler(batchArgv({ file, dryRun: true }));
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+    const [, method, args, options] = mocks.executeTx.mock.calls[0];
+    expect(method).toBe('createTasksBatch'); expect(options.dryRun).toBe(true);
+    expect(args[1].every((row: any[]) => row[2] === ethers.constants.HashZero)).toBe(true);
+  });
+
   it('v6 org + --continue-on-error: warns it has no effect (batch is all-or-nothing) and still sends one tx', async () => {
     mocks.detectTaskManagerFeatures.mockResolvedValue(V6_FEATURES);
     mocks.executeTx.mockResolvedValue({ success: true, txHash: '0xb', explorerUrl: 'e', logs: [] });
@@ -228,36 +239,12 @@ describe('pop task create-batch — v6 batch vs legacy loop', () => {
     expect(mocks.executeTx.mock.calls[0][1]).toBe('createTasksBatch');
   });
 
-  it('legacy org: falls back to a per-task loop of 7-arg createTask calls on legacy fragments', async () => {
+  it('rejects old task implementations before pinning or sending', async () => {
     mocks.detectTaskManagerFeatures.mockResolvedValue(LEGACY_FEATURES);
-    let nextId = 100;
-    mocks.executeTx.mockImplementation(async () => ({
-      success: true,
-      txHash: `0xtx${nextId}`,
-      explorerUrl: 'e',
-      logs: [{ name: 'TaskCreated', args: { id: ethers.BigNumber.from(nextId++) } }],
-    }));
     const file = writeJsonl(ROWS_NO_DEADLINE);
-
-    await createBatchHandler.handler(batchArgv({ file }));
-
-    expect(mocks.executeTx).toHaveBeenCalledTimes(3);
-    for (const call of mocks.executeTx.mock.calls) {
-      const [contract, method, args] = call;
-      expect(method).toBe('createTask');
-      expect(args).toHaveLength(7);
-      expect(args[3]).toBe(PID); // pid stays a positional arg on the legacy path
-      const fnSigs = Object.keys(contract.interface.functions);
-      expect(fnSigs).toContain(SIG_LEGACY);
-      expect(fnSigs).not.toContain(SIG_V6);
-      expect(() => contract.interface.getEvent('TaskCreated')).not.toThrow();
-    }
-    // Per-task success lines with the extracted ids
-    expect(output.success).toHaveBeenCalledTimes(3);
-    expect(output.success).toHaveBeenCalledWith(
-      expect.stringContaining('Alpha task'),
-      expect.objectContaining({ taskId: '100' })
-    );
+    await expect(createBatchHandler.handler(batchArgv({ file }))).rejects.toBeInstanceOf(ExitError);
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+    expect(mocks.executeTx).not.toHaveBeenCalled();
   });
 
   it('row with deadline on a legacy org: exits EXIT.PRECONDITION before any pin or tx', async () => {

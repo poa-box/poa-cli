@@ -4,7 +4,7 @@ import { ethers } from 'ethers';
 import { queryWithFieldFallback } from '../../lib/subgraph';
 import { resolveOrgId } from '../../lib/resolve';
 import { resolveNetworkConfig } from '../../config/networks';
-import { projectsDataTiers } from '../../queries/task';
+import { fetchProjectsData } from '@poa-box/core/reads/task';
 import { formatAddress, parseDurationSeconds } from '../../lib/encoding';
 import { formatCountdown, formatRelativeTime, statusColor } from '../../lib/format';
 import { detectTaskManagerFeatures } from '../../lib/version';
@@ -126,10 +126,7 @@ export const listHandler = {
       const orgId = await resolveOrgId(argv.org, argv.chain);
       // Prefer the subgraph: it indexes the v6 deadline fields (subgraph #192), so the
       // per-task on-chain lens below is only needed when this falls through to the legacy tier.
-      const { data: result, tierIndex } = await queryWithFieldFallback<any>(
-        projectsDataTiers(orgId),
-        { chainId: argv.chain }
-      );
+      const { data: result, tierIndex } = await fetchProjectsData({ queryWithFieldFallback }, orgId, argv.chain);
       // Tier 0 adds the v7 release fields (subgraph #201, Gnosis only today);
       // tier 1 is the same document WITHOUT them, so it still carries deadlines.
       // `<= 1` and not `=== 0`: inserting the release tier shifted every index,

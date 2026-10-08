@@ -1,3 +1,4 @@
+import { refreshAuthorityUsers } from '../../lib/authority';
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { queryAllChains } from '../../lib/subgraph';
@@ -10,11 +11,11 @@ interface AuditAllArgs {
 
 const AUDIT_ALL_QUERY = `
   query AuditAll($first: Int!) {
-    organizations(first: $first, orderBy: deployedAt, orderDirection: desc) {
-      name
+    organizations(where: { membershipAuthority_: { isRouterBound: true, cutoverAt_gt: "0" } }, first: $first, orderBy: deployedAt, orderDirection: desc) {
+      id name
       participationToken { totalSupply }
       users(first: 100) {
-        participationTokenBalance membershipStatus
+        address participationTokenBalance membershipStatus
         totalTasksCompleted totalVotes
       }
       hybridVoting {
@@ -46,8 +47,8 @@ export const auditAllHandler = {
       for (const chainResult of results) {
         if (!chainResult.data?.organizations) continue;
         for (const org of chainResult.data.organizations) {
+          await refreshAuthorityUsers(org, org.id, chainResult.chainId);
           const members = (org.users || []).filter((u: any) => u.membershipStatus === 'Active');
-          if (members.length === 0) continue;
 
           const supply = parseFloat(ethers.utils.formatEther(org.participationToken?.totalSupply || '0'));
           const proposals = org.hybridVoting?.proposals || [];

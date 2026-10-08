@@ -6,7 +6,7 @@ Vouching system
 
 ## pop vouch for
 
-Vouch for a user to claim a role
+for a role vouch through MembershipAuthority
 
 ```text
 pop vouch for [flags]
@@ -14,15 +14,12 @@ pop vouch for [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--address` | string | yes | - | Address of the user to vouch for |
-| `--hat` | string | no | - | Hat ID of the role |
-| `--idempotency-key` | string | no | - | Explicit idempotency key. Repeat vouches for the same wearer+hat within the TTL return the prior result without re-submitting. |
-| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
-| `--role` | string | no | - | Role name (e.g. MEMBER, Agent) — resolves to hat ID |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--user` | string | yes | - | Member wallet address |
 
 ## pop vouch revoke
 
-Revoke a vouch
+revoke a role vouch through MembershipAuthority
 
 ```text
 pop vouch revoke [flags]
@@ -30,14 +27,12 @@ pop vouch revoke [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--address` | string | yes | - | Address whose vouch to revoke |
-| `--hat` | string | yes | - | Hat ID of the role |
-| `--idempotency-key` | string | no | - | Explicit idempotency key (repeat calls within the TTL return the prior result). |
-| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--user` | string | yes | - | Member wallet address |
 
 ## pop vouch claim
 
-Claim a role after receiving enough vouches
+Claim a role after meeting its vouch quorum
 
 ```text
 pop vouch claim [flags]
@@ -45,77 +40,26 @@ pop vouch claim [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--hat` | string | yes | - | Hat ID to claim |
-| `--idempotency-key` | string | no | - | Explicit idempotency key (repeat claims within the TTL return the prior result). |
-| `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit. |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
 
-## pop vouch list
+## pop vouch configure
 
-List active vouches for an org
+Propose a subject vouch attestor
 
 ```text
-pop vouch list [flags]
+pop vouch configure [flags]
 ```
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--hat` | string | no | - | Filter by hat ID |
-
-## pop vouch status
-
-Check vouch status for a user and role (plus your own daily quota)
-
-```text
-pop vouch status [flags]
-```
-
-| Flag | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `--address` | string | yes | - | Wearer address to check |
-| `--hat` | string | yes | - | Hat ID to check |
-
-## pop vouch config
-
-Show or set a hat's vouching config (show / set; set is superAdmin-only)
-
-```text
-pop vouch config <sub> [flags]
-```
-
-| Positional | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `<sub>` | - | yes | - | - |
-
-### pop vouch config show
-
-Show a hat's vouching config (quorum, membership hat, rate limit)
-
-```text
-pop vouch config show [flags]
-```
-
-| Flag | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `--hat` | string | yes | - | Hat ID whose vouching config to show |
-
-### pop vouch config set
-
-Configure vouching for a hat (superAdmin-only)
-
-```text
-pop vouch config set [flags]
-```
-
-| Flag | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `--combine-hierarchy` | boolean | no | `false` | Also honor hierarchy eligibility and let hat admins vouch |
-| `--hat` | string | yes | - | Hat ID to configure vouching for |
-| `--membership-hat` | string | yes | - | Hat whose wearers are allowed to vouch |
-| `--quorum` | number | yes | - | Vouches required to become claimable (0 disables vouching) |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--quorum` | number | yes | - | Required vouches (0 disables the attestor) |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--voucher-subject` | string | yes | - | - |
 
 ## pop vouch reset
 
-Reset vouches for a hat or one wearer (superAdmin-only, destructive)
+Propose invalidating every vouch in the subject epoch
 
 ```text
 pop vouch reset [flags]
@@ -123,7 +67,60 @@ pop vouch reset [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--hat` | string | yes | - | Hat ID whose vouch state to reset |
-| `--wearer` | string | no | - | Only clear this wearer's vouches (surgical; hat config kept) |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+
+## pop vouch clear-user
+
+Propose clearing the received vouches of one user
+
+```text
+pop vouch clear-user [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--subject` | string | yes | - | Authority subject ID (adopted role IDs keep their historical value) |
+| `--user` | string | yes | - | Member wallet address |
+
+## pop vouch set-rate-limit
+
+Propose the daily vouch rate limit
+
+```text
+pop vouch set-rate-limit [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--max` | number | yes | - | - |
+
+## pop vouch status
+
+Read authority vouch status
+
+```text
+pop vouch status [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--subject` | string | no | - | - |
+| `--user` | string | no | - | - |
+
+## pop vouch list
+
+Read authority vouch list
+
+```text
+pop vouch list [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--subject` | string | no | - | - |
+| `--user` | string | no | - | - |
 
 _Global flags: --org, --chain, --rpc, --json, --address, --private-key, --dry-run, --yes, --verbose, --quiet, --preflight (see [index.md](index.md))_

@@ -1012,6 +1012,41 @@ export const PasskeyAccountAbi = [
     "type": "error",
     "name": "ZeroAddress",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuthDataTooShort",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ChallengeMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidWebAuthnSignature",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MalformedClientData",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SignCountTooLow",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UserNotPresent",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidSignatureComponents",
+    "inputs": []
   }
 ] as const;
 

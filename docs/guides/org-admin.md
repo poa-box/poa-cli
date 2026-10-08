@@ -61,7 +61,7 @@ pop org status --fast     # skip the on-chain version check (subgraph summary on
 ```
 
 Each row reports the module (TaskManager, HybridVoting, DirectDemocracyVoting,
-ParticipationToken, EducationHub, PaymentManager, QuickJoin, EligibilityModule),
+ParticipationToken, EducationHub, PaymentManager, QuickJoin, MembershipAuthority),
 whether it is on the latest implementation, and — when it's behind — whether
 `autoUpgrade` is on or the beacon is pinned. The panel is best-effort: any
 RPC/subgraph hiccup degrades it to a one-line note, and `--fast` skips it.

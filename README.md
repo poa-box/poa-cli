@@ -1,5 +1,8 @@
 # pop — the CLI for [POP](https://poa.box)
 
+Version 1.0 uses MembershipAuthority exclusively. Migrated organizations retain their earlier history and adopted role IDs; organizations that never completed authority cutover are unavailable. Native authority organizations appear automatically. See the [1.0 breaking changes](docs/WAVE-G-1.0.md) and [authority migration guide](docs/guides/membership-roles-vouching.md) for the replacement commands.
+
+
 **POP (Perpetual Organization Protocol)** is a protocol for worker-owned,
 on-chain organizations. You earn **non-transferable participation tokens (PT)**
 by doing real work — tasks, reviews, education — and that PT is what gives you

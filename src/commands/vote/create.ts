@@ -24,6 +24,7 @@ import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 import { describeExecutionCalls, ExecutionCallInput } from './helpers';
+import { buildGovernanceProposal } from '@poa-box/core/tx/governance';
 
 interface CreateArgs {
   org: string;
@@ -33,6 +34,9 @@ interface CreateArgs {
   duration: number;
   options: string;
   'hat-ids'?: string;
+  'subject-ids'?: string;
+  'quorum-override'?: number;
+  'equal-weight'?: boolean;
   calls?: string;
   chain?: number;
   rpc?: string;
@@ -51,7 +55,11 @@ export const createHandler = {
     .option('description', { type: 'string', demandOption: true, describe: 'Proposal description' })
     .option('duration', { type: 'number', demandOption: true, describe: 'Duration in minutes' })
     .option('options', { type: 'string', demandOption: true, describe: 'Comma-separated option names' })
-    .option('hat-ids', { type: 'string', describe: 'Comma-separated hat IDs for restricted voting' })
+    .option('subject-ids', { type: 'string', describe: 'Comma-separated authority subject IDs for restricted voting' })
+    .option('hat-ids', { type: 'string', describe: 'Legacy alias for --subject-ids' })
+    .conflicts('hat-ids', 'subject-ids')
+    .option('quorum-override', { type: 'number', describe: 'Restricted poll voter-count quorum (executable polls cannot lower the global quorum)' })
+    .option('equal-weight', { type: 'boolean', describe: 'Restricted hybrid poll: count each eligible voter once' })
     .option('calls', { type: 'string', describe: 'JSON array of execution calls for option 0: [{"target":"0x...","value":"0","data":"0x..."}]' })
     .option('idempotency-key', {
       type: 'string',
@@ -89,8 +97,10 @@ export const createHandler = {
 
       // Hats IDs are uint256 with high bits set — parseInt loses precision
       // above 2^53, so parse each entry as a BigNumber from the raw string.
-      const hatIds = argv.hatIds
-        ? (argv.hatIds as string).split(',').map(s => ethers.BigNumber.from(s.trim()))
+      if (argv.subjectIds !== undefined && argv.hatIds !== undefined) throw new CliError('Specify --subject-ids or --hat-ids, not both.', EXIT.USAGE);
+      const subjects = argv.subjectIds ?? argv.hatIds;
+      const hatIds = subjects
+        ? (subjects as string).split(',').map(s => ethers.BigNumber.from(s.trim()))
         : [];
 
       // Hat-restriction cap (audit L-xx): both voting contracts reject more than
@@ -138,6 +148,13 @@ export const createHandler = {
         }
       }
 
+      const abiName = isHybrid ? 'HybridVotingNew' : 'DirectDemocracyVotingNew';
+      const intent = buildGovernanceProposal({
+        votingAddress: contractAddr, votingAbiName: abiName, title: argv.name,
+        descriptionHash: ethers.constants.HashZero, durationMinutes: argv.duration, numOptions,
+        batches: batches.map(batch => batch.map(([target, value, calldata]) => ({ target, value, calldata }))),
+        subjectIds: hatIds, quorumOverride: argv.quorumOverride, equalWeight: argv.equalWeight,
+      });
       await runPreflight(ctx.provider, [checkGasBalance(ctx.address)], { skip: !argv.preflight });
       spin.stop();
 
@@ -150,6 +167,8 @@ export const createHandler = {
         duration: `${argv.duration} minutes`,
         org: argv.org,
         chain: ctx.networkName,
+        quorumOverride: argv.quorumOverride,
+        equalWeight: argv.equalWeight ? 'one eligible voter, one vote' : undefined,
       };
       if (calls && calls.length > 0) {
         describeExecutionCalls(calls, ctx.modules).forEach((line, i) => {
@@ -168,18 +187,16 @@ export const createHandler = {
           optionNames,
           createdAt: Date.now(),
         };
-        const cid = await pinJson(JSON.stringify(proposalMetadata));
-        const descriptionHash = ipfsCidToBytes32(cid);
-        const titleBytes = stringToBytes(argv.name);
+        const cid = argv.dryRun ? undefined : await pinJson(JSON.stringify(proposalMetadata));
+        intent.args[1] = cid ? ipfsCidToBytes32(cid) : ethers.constants.HashZero;
 
         txSpin.text = 'Sending transaction...';
-        const abiName = isHybrid ? 'HybridVotingNew' : 'DirectDemocracyVotingNew';
         const contract = createWriteContract(contractAddr, abiName, ctx.signer);
 
         const result = await executeTx(
           contract,
-          'createProposal',
-          [titleBytes, descriptionHash, argv.duration, numOptions, batches, hatIds],
+          intent.method,
+          intent.args,
           { dryRun: argv.dryRun }
         );
         txSpin.stop();

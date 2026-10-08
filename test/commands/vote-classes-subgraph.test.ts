@@ -124,7 +124,7 @@ describe('vote classes show — subgraph first', () => {
     expect(doc.classes).toHaveLength(2);
     expect(doc.classes[0]).toEqual({
       classIndex: 0, strategy: 'DIRECT', slicePct: 80, quadratic: false,
-      minBalance: '0', asset: ethers.constants.AddressZero, hatIds: [BIG_HAT_ID],
+      minBalance: '0', asset: ethers.constants.AddressZero, hatIds: [BIG_HAT_ID], subjectId: null, subjectBindingKnown: false,
     });
     // The subgraph returns lowercase Bytes; the contract returns a checksummed
     // address. --json must not change casing depending on who answered.
@@ -141,7 +141,7 @@ describe('vote classes show — subgraph first', () => {
           id: HYBRID_ADDR.toLowerCase(),
           thresholdPct: 51,
           quorum: 0,
-          proposals: [{ proposalId: '7', classesVersion: '45435144' }],
+          proposals: [{ proposalId: '7', classesVersion: '45435144', isHatRestricted: false }],
           votingClasses: [
             ...subgraphClasses('45435144').map(c => ({ ...c, slicePct: c.classIndex === 0 ? 10 : 90 })),
             ...subgraphClasses('45607962'),
@@ -231,6 +231,27 @@ describe('vote classes show — subgraph first', () => {
 
     expect(contract.getProposalClasses).toHaveBeenCalledWith(7);
     expect(jsonMock.mock.calls[0][0].source).toBe('rpc');
+  });
+
+  it('uses the actual restricted-poll snapshot instead of an indexed org classVersion', async () => {
+    const contract = {
+      getClasses: vi.fn(),
+      getProposalClasses: vi.fn(async () => [{ strategy: 0, slicePct: 100, quadratic: false,
+        minBalance: ethers.BigNumber.from(0), asset: ethers.constants.AddressZero, hatIds: [ethers.BigNumber.from(BIG_HAT_ID)] }]),
+      thresholdPct: vi.fn(async () => 51), quorum: vi.fn(async () => 10),
+    };
+    createReadContractMock.mockReturnValue(contract);
+    queryWithFieldFallbackMock.mockResolvedValue({ tierIndex: 0, data: { hybridVotingContract: {
+      thresholdPct: 51, quorum: 10, proposals: [{ proposalId: '7', classesVersion: '500', isHatRestricted: true }],
+      votingClasses: subgraphClasses('500'),
+    } } });
+    await classesShowHandler.handler({ org: 'test-org', proposal: '7', chain: 100 } as any);
+    expect(contract.getProposalClasses).toHaveBeenCalledWith(7);
+    const doc = jsonMock.mock.calls[0][0];
+    expect(doc.classes).toHaveLength(1);
+    expect(doc.classes[0]).toMatchObject({ strategy: 'DIRECT', slicePct: 100 });
+    expect(doc.effectiveQuorumVoterCount).toBeNull();
+    expect(doc.quorumSource).toBe('current-global-config');
   });
 });
 

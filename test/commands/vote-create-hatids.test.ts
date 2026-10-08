@@ -158,4 +158,20 @@ describe('vote create — --hat-ids BigNumber precision', () => {
     const hatIds = executeTxMock.mock.calls[0][2][5];
     expect(hatIds).toEqual([]);
   });
+
+  it.each(['hybrid', 'dd'])('supports native subjects and a per-proposal quorum on %s', async type => {
+    await createHandler.handler(baseArgv({ type, subjectIds: BIG_HAT_ID, quorumOverride: 3, equalWeight: type === 'hybrid' }));
+    const [, method, args] = executeTxMock.mock.calls[0];
+    expect(method).toBe('createProposalV2');
+    expect(args[5][0].toString()).toBe(BIG_HAT_ID);
+    expect(args[6]).toBe(3);
+    expect(args).toHaveLength(type === 'hybrid' ? 8 : 7);
+  });
+
+  it('does not publish proposal metadata during a dry run', async () => {
+    await createHandler.handler(baseArgv({ subjectIds: BIG_HAT_ID, quorumOverride: 3, dryRun: true }));
+    expect(pinJsonMock).not.toHaveBeenCalled();
+    expect(executeTxMock.mock.calls[0][2][1]).toBe(ethers.constants.HashZero);
+    expect(executeTxMock.mock.calls[0][3]).toEqual({ dryRun: true });
+  });
 });

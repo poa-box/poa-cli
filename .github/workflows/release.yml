@@ -32,8 +32,8 @@ name: Release
 #     problem cannot leave the chain half-published
 #   * already-published versions are SKIPPED, so re-running after a partial
 #     failure resumes instead of erroring
-#   * tags are pushed BEFORE post-publish verification, so an irreversible
-#     publish is always recorded
+#   * tag pushes are attempted BEFORE post-publish verification; one failed
+#     tag push does not prevent recording other successful uploads
 #   * after publishing: the registry is polled, the ranges this run published
 #     are re-read from it, and the CLI is cold-installed from npm and executed
 #
@@ -46,8 +46,8 @@ name: Release
 #
 #   CAVEAT: npm cannot configure a trusted publisher for a package that does
 #   not exist yet, so a BRAND-NEW package name needs exactly one token-based
-#   publish first. Set the NPM_TOKEN secret (an npm **Automation** token —
-#   they bypass 2FA, which is why no --otp appears below), run this once, then
+#   publish first. Set the NPM_TOKEN secret (a granular token with package publish permission
+#   and bypass 2FA enabled), run this once, then
 #   configure the trusted publisher and remove the secret.
 #
 # This workflow supports both and reports which one it used.
@@ -83,13 +83,13 @@ jobs:
     name: plan
     runs-on: ubuntu-latest
     outputs:
-      has_work: ${{ needs.plan.outputs.has_work }}
-      core_action: ${{ needs.plan.outputs.core_action }}
-      core_version: ${{ needs.plan.outputs.core_version }}
-      cli_action: ${{ needs.plan.outputs.cli_action }}
-      cli_version: ${{ needs.plan.outputs.cli_version }}
-      agent_action: ${{ needs.plan.outputs.agent_action }}
-      agent_version: ${{ needs.plan.outputs.agent_version }}
+      has_work: ${{ steps.preflight.outputs.has_work }}
+      core_action: ${{ steps.preflight.outputs.core_action }}
+      core_version: ${{ steps.preflight.outputs.core_version }}
+      cli_action: ${{ steps.preflight.outputs.cli_action }}
+      cli_version: ${{ steps.preflight.outputs.cli_version }}
+      agent_action: ${{ steps.preflight.outputs.agent_action }}
+      agent_version: ${{ steps.preflight.outputs.agent_version }}
     steps:
       - name: Guard — releases run from main only
         if: ${{ github.ref != 'refs/heads/main' }}
@@ -142,6 +142,8 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   release:
+    env:
+      POP_READONLY: '1'
     name: ${{ inputs.dry_run && 'verify (dry run)' || 'publish' }}
     needs: plan
     if: ${{ needs.plan.outputs.has_work == 'true' }}
@@ -302,14 +304,17 @@ jobs:
       # publish-package.mjs applies the semver range BEFORE invoking npm (so it
       # reaches the registry metadata) and restores the link: form in a finally.
       - name: Publish @poa-box/core
+        id: publish_core
         if: ${{ !inputs.dry_run && needs.plan.outputs.core_action == 'publish' }}
         run: node scripts/publish-package.mjs packages/core --access public --provenance --tag '${{ inputs.dist_tag || 'latest' }}'
 
       - name: Publish @poa-box/cli
+        id: publish_cli
         if: ${{ !inputs.dry_run && needs.plan.outputs.cli_action == 'publish' }}
         run: node scripts/publish-package.mjs . --access public --provenance --tag '${{ inputs.dist_tag || 'latest' }}'
 
       - name: Publish @poa-box/agent
+        id: publish_agent
         if: ${{ !inputs.dry_run && needs.plan.outputs.agent_action == 'publish' }}
         run: node scripts/publish-package.mjs packages/agent --access public --provenance --tag '${{ inputs.dist_tag || 'latest' }}'
 
@@ -319,20 +324,25 @@ jobs:
         if: ${{ !inputs.dry_run && !cancelled() }}
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
           git config user.name  'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          tag_it() {  # <prefix> <version> <action>
-            [ "$3" = 'publish' ] || return 0
+          tag_it() {  # <prefix> <version> <publish step outcome>
+            [ "$3" = 'success' ] || return 0
             local tag="$1-v$2"
             if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
               echo "tag $tag already exists — leaving it alone"; return 0
             fi
             git tag -a "$tag" -m "$1 $2" && git push origin "$tag"
           }
-          tag_it core  '${{ needs.plan.outputs.core_version }}'  '${{ needs.plan.outputs.core_action }}'
-          tag_it cli   '${{ needs.plan.outputs.cli_version }}'   '${{ needs.plan.outputs.cli_action }}'
-          tag_it agent '${{ needs.plan.outputs.agent_version }}' '${{ needs.plan.outputs.agent_action }}'
+          failed=0
+          tag_it core  '${{ needs.plan.outputs.core_version }}'  '${{ steps.publish_core.outcome }}'  || failed=1
+          tag_it cli   '${{ needs.plan.outputs.cli_version }}'   '${{ steps.publish_cli.outcome }}'   || failed=1
+          tag_it agent '${{ needs.plan.outputs.agent_version }}' '${{ steps.publish_agent.outcome }}' || failed=1
+          if [ "$failed" = 1 ]; then
+            echo '::error::Some published versions could not be tagged. Recover missing tags from this release commit; see docs/RELEASING.md.'
+          fi
+          exit "$failed"
 
       # --- Prove the published artifacts, cold -------------------------------
       # Every assertion below is SCOPED to what this run actually published —
@@ -346,9 +356,9 @@ jobs:
           core='${{ needs.plan.outputs.core_version }}'
           cli='${{ needs.plan.outputs.cli_version }}'
           agent='${{ needs.plan.outputs.agent_version }}'
-          core_act='${{ needs.plan.outputs.core_action }}'
-          cli_act='${{ needs.plan.outputs.cli_action }}'
-          agent_act='${{ needs.plan.outputs.agent_action }}'
+          core_act='${{ steps.publish_core.outcome }}'
+          cli_act='${{ steps.publish_cli.outcome }}'
+          agent_act='${{ steps.publish_agent.outcome }}'
           fail=0
           summary='## Published'
 
@@ -361,34 +371,33 @@ jobs:
             echo "::error::$1 did not appear on the registry within 120s"; return 1
           }
           # A published dependency range must be real semver, never a local link.
-          check_range() {  # <pkg@version> <dep>
+          check_range() {  # <pkg@version> <dep> <expected range>
             local range
             range=$(npm view "$1" "dependencies.$2" 2>/dev/null)
             echo "$1 → $2 = ${range:-<none>}"
-            case "$range" in
-              link:*|file:*|portal:*)
-                echo "::error::$1 published an unusable $2 range: '$range'"; return 1 ;;
-            esac
+            if [ "$range" != "$3" ]; then
+              echo "::error::$1 published $2 range '${range:-<missing>}', expected '$3'"; return 1
+            fi
             return 0
           }
 
-          if [ "$core_act" = 'publish' ]; then
+          if [ "$core_act" = 'success' ]; then
             await "@poa-box/core@$core" || fail=1
             summary="$summary"$'\n'"- \`@poa-box/core@$core\`"
           fi
-          if [ "$cli_act" = 'publish' ]; then
+          if [ "$cli_act" = 'success' ]; then
             await "@poa-box/cli@$cli" || fail=1
-            check_range "@poa-box/cli@$cli" '@poa-box/core' || fail=1
+            check_range "@poa-box/cli@$cli" '@poa-box/core' "^$core" || fail=1
             summary="$summary"$'\n'"- \`@poa-box/cli@$cli\`"
           fi
-          if [ "$agent_act" = 'publish' ]; then
+          if [ "$agent_act" = 'success' ]; then
             await "@poa-box/agent@$agent" || fail=1
-            check_range "@poa-box/agent@$agent" '@poa-box/cli' || fail=1
+            check_range "@poa-box/agent@$agent" '@poa-box/cli' "^$cli" || fail=1
             summary="$summary"$'\n'"- \`@poa-box/agent@$agent\`"
           fi
 
           # Cold install from the registry into a scratch project, then RUN it.
-          if [ "$cli_act" = 'publish' ]; then
+          if [ "$cli_act" = 'success' ]; then
             tmp=$(mktemp -d)
             if (cd "$tmp" && npm init -y >/dev/null && npm i "@poa-box/cli@$cli" >/dev/null); then
               POP_READONLY=1 "$tmp/node_modules/.bin/pop" --version \
@@ -399,6 +408,8 @@ jobs:
                   if (!createPopContext({ chainId: 100 }).client) throw new Error('core unusable');
                   console.log('core resolves and constructs from the registry install');
                 " || { echo "::error::@poa-box/core is not usable from a registry install"; fail=1; }
+              else
+                echo "::error::@poa-box/core is missing from the CLI install"; fail=1
               fi
             else
               echo "::error::cold install of @poa-box/cli@$cli failed"; fail=1
@@ -409,4 +420,3 @@ jobs:
           # are irreversible and this summary is the operator's only record.
           printf '%s\n' "$summary" >> "$GITHUB_STEP_SUMMARY"
           exit $fail
-

@@ -4,7 +4,7 @@ import { MULTICALL3, getEthBalanceCall } from '../../src/lib/multicall';
 import {
   runPreflight,
   checkGasBalance,
-  checkHasHat,
+  checkSubjectMembership,
   checkUsernameFree,
   checkTaskStatus,
   checkProposalActive,
@@ -118,7 +118,7 @@ describe('runPreflight', () => {
     const localRan: string[] = [];
     const checks: PreflightCheck[] = [
       checkGasBalance(WALLET),
-      checkHasHat(HATS, WALLET, 5),
+      checkSubjectMembership(HATS, WALLET, 5),
       checkUsernameFree(REGISTRY, 'alice'),
       checkTaskStatus(TM, 1, [TASK_STATUS.UNCLAIMED]),
       checkProposalActive(VOTING, 2),
@@ -135,14 +135,14 @@ describe('runPreflight', () => {
   it('throws PreconditionError (code 4) listing a single failure with its suggestion', async () => {
     const provider = makeProvider(handlerFor({ hatBalance: 0 }));
     const err = await captureError(
-      runPreflight(provider, [checkGasBalance(WALLET), checkHasHat(HATS, WALLET, 5)])
+      runPreflight(provider, [checkGasBalance(WALLET), checkSubjectMembership(HATS, WALLET, 5)])
     );
 
     expect(err).toBeInstanceOf(PreconditionError);
     expect(err.code).toBe(4);
     expect(err.message).toContain('Pre-flight checks failed:');
-    expect(err.message).toContain(`  ✗ role (hat): ${WALLET} does not wear hat 5`);
-    expect(err.message).toContain('(list org roles with pop org roles, then request one via pop role apply)');
+    expect(err.message).toContain(`  ✗ authority membership: ${WALLET} is not a member of subject 5`);
+    expect(err.message).toContain('(List roles with pop org roles and accept eligible roles with pop role claim)');
     // Passing checks are not listed
     expect(err.message).not.toContain('gas balance');
   });
@@ -156,7 +156,7 @@ describe('runPreflight', () => {
     const err = await captureError(
       runPreflight(provider, [
         checkGasBalance(WALLET),
-        checkHasHat(HATS, WALLET, 7),
+        checkSubjectMembership(HATS, WALLET, 7),
         checkUsernameFree(REGISTRY, 'bob'),
       ])
     );
@@ -164,7 +164,7 @@ describe('runPreflight', () => {
     expect(err).toBeInstanceOf(PreconditionError);
     expect(err.message.match(/✗/g)).toHaveLength(3);
     const gasIdx = err.message.indexOf('✗ gas balance');
-    const hatIdx = err.message.indexOf('✗ role (hat)');
+    const hatIdx = err.message.indexOf('✗ authority membership');
     const nameIdx = err.message.indexOf('✗ username "bob"');
     expect(gasIdx).toBeGreaterThan(-1);
     expect(hatIdx).toBeGreaterThan(gasIdx);
@@ -183,11 +183,13 @@ describe('runPreflight', () => {
 
   it('passes a zero-balance wallet when sponsorship is configured (gasless path)', async () => {
     const saved = {
+      POP_READONLY: process.env.POP_READONLY,
       POP_PRIVATE_KEY: process.env.POP_PRIVATE_KEY,
       POP_ORG_ID: process.env.POP_ORG_ID,
       POP_HAT_ID: process.env.POP_HAT_ID,
       PIMLICO_API_KEY: process.env.PIMLICO_API_KEY,
     };
+    delete process.env.POP_READONLY;
     process.env.POP_PRIVATE_KEY = '0x' + '1'.repeat(64);
     process.env.POP_ORG_ID = '0x' + 'ab'.repeat(32);
     process.env.POP_HAT_ID = '1';
@@ -217,7 +219,7 @@ describe('runPreflight', () => {
     };
 
     await expect(
-      runPreflight(provider, [checkGasBalance(WALLET), checkHasHat(HATS, WALLET, 1)], { skip: true })
+      runPreflight(provider, [checkGasBalance(WALLET), checkSubjectMembership(HATS, WALLET, 1)], { skip: true })
     ).resolves.toBeUndefined();
     await expect(runPreflight(provider, [])).resolves.toBeUndefined();
   });
@@ -239,7 +241,7 @@ describe('runPreflight', () => {
     it('falls back to direct calls and eth_getBalance, still passing', async () => {
       const provider = makeProvider(handlerFor(), { multicall: false });
       await expect(
-        runPreflight(provider, [checkGasBalance(WALLET), checkHasHat(HATS, WALLET, 5)])
+        runPreflight(provider, [checkGasBalance(WALLET), checkSubjectMembership(HATS, WALLET, 5)])
       ).resolves.toBeUndefined();
       // Only the hat check goes through eth_call; the balance uses getBalance
       expect(provider.calls).toHaveLength(1);
@@ -258,14 +260,14 @@ describe('runPreflight', () => {
         runPreflight(provider, [
           checkGasBalance(WALLET),
           checkUsernameFree(REGISTRY, 'carol'),
-          checkHasHat(HATS, WALLET, 5),
+          checkSubjectMembership(HATS, WALLET, 5),
         ])
       );
 
       expect(err).toBeInstanceOf(PreconditionError);
       expect(err.message).toContain('✗ gas balance');
       expect(err.message).toContain('✗ username "carol": could not query the account registry');
-      expect(err.message).not.toContain('role (hat)');
+      expect(err.message).not.toContain('authority membership');
     });
   });
 });

@@ -255,29 +255,9 @@ describe('vote propose-config — v6 ConfigKey mapping', () => {
     expect(String(errorMock.mock.calls[0][0])).toMatch(/deprecated no-op on HybridVoting/);
   });
 
-  it('hat-allowed is DD-only → key 3 on DD; Hybrid-only org errors before any tx', async () => {
-    await proposeConfigHandler.handler(baseArgv({ key: 'hat-allowed', value: '123,true' }));
-    const batch = capturedBatch();
-    expect(batch).toHaveLength(1);
-    expect(batch[0][0]).toBe(DD_ADDR);
-    const dd = decodeSetConfig(batch[0][2]);
-    expect(dd.key).toBe(3); // HAT_ALLOWED on DD
-
-    // Now a Hybrid-only org must fail before pin/tx
-    executeTxMock.mockClear();
-    pinJsonMock.mockClear();
-    errorMock.mockClear();
-    resolveVotingContractsMock.mockResolvedValue({
-      orgId: '0x' + '11'.repeat(32),
-      hybridVotingAddress: HYBRID_ADDR,
-      ddVotingAddress: null,
-    });
-
-    await expect(
-      proposeConfigHandler.handler(baseArgv({ key: 'hat-allowed', value: '123,true' }))
-    ).rejects.toThrow('process.exit(1)');
-    expect(executeTxMock).not.toHaveBeenCalled();
-    expect(pinJsonMock).not.toHaveBeenCalled();
-    expect(String(errorMock.mock.calls[0][0])).toMatch(/DirectDemocracyVoting/);
+  it('rejects the removed DD hat-allowed configuration', async () => {
+    await expect(proposeConfigHandler.handler(baseArgv({ key: 'hat-allowed', value: '123,true' }))).rejects.toThrow('process.exit(1)');
+    expect(executeTxMock).not.toHaveBeenCalled(); expect(pinJsonMock).not.toHaveBeenCalled();
   });
+
 });

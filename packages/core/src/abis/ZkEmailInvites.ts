@@ -1053,6 +1053,61 @@ export const ZkEmailInvitesAbi = [
     "type": "error",
     "name": "ZeroClaimer",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "CapBelowCommitted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptyTitle",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidPayout",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidString",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TitleTooLong",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuthDataTooShort",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ChallengeMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidWebAuthnSignature",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MalformedClientData",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SignCountTooLow",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UserNotPresent",
+    "inputs": []
   }
 ] as const;
 

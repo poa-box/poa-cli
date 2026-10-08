@@ -9,7 +9,8 @@
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
-import { query } from '../../lib/subgraph';
+import { queryWithFieldFallback } from '../../lib/subgraph';
+import { fetchProjectsData } from '@poa-box/core/reads/task';
 import { resolveOrgId } from '../../lib/resolve';
 import { parseProjectId } from '../../lib/encoding';
 import { formatToken } from '../../lib/format';
@@ -34,7 +35,7 @@ export const listHandler = {
 
     try {
       const orgId = await resolveOrgId(argv.org, argv.chain);
-      const result = await query<any>(FETCH_PROJECTS_DATA, { orgId }, argv.chain);
+      const { data: result } = await fetchProjectsData({ queryWithFieldFallback }, orgId, argv.chain);
       const projects = result.organization?.taskManager?.projects || [];
 
       spin.stop();

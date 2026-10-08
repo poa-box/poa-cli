@@ -8,6 +8,7 @@ import { resolveOrgModules } from '@poa-box/cli/lib/resolve';
 
 interface PaymasterStatusArgs {
   org: string;
+  subject?: string;
   'hat-id'?: string;
   chain?: number;
   rpc?: string;
@@ -15,7 +16,7 @@ interface PaymasterStatusArgs {
 
 export const paymasterStatusHandler = {
   builder: (yargs: Argv) => yargs
-    .option('hat-id', { type: 'string', describe: 'Hat ID to check budget for (decimal or hex)' }),
+    .option('subject', { type: 'string', alias: 'hat-id', describe: 'Authority role or group subject ID to check budget for (decimal or hex)' }),
 
   handler: async (argv: ArgumentsCamelCase<PaymasterStatusArgs>) => {
     const spin = output.spinner('Checking paymaster status...');
@@ -26,7 +27,7 @@ export const paymasterStatusHandler = {
       const orgId = modules.orgId as `0x${string}`;
       const rpcUrl = (argv.rpc as string) || 'https://rpc.gnosischain.com';
       const client = createPublicClient({ chain: gnosis, transport: http(rpcUrl) });
-      const pmAbi = require('../../abi/PaymasterHub.json');
+      const pmAbi = require('@poa-box/cli/abi/PaymasterHub.json');
 
       // Org config
       const config = await client.readContract({
@@ -55,7 +56,7 @@ export const paymasterStatusHandler = {
       }) as bigint;
 
       // Hat budget (if specified or from env)
-      const hatIdStr = (argv.hatId as string) || process.env.POP_HAT_ID;
+      const hatIdStr = (argv.subject as string) || (argv.hatId as string) || process.env.POP_SUBJECT_ID || process.env.POP_HAT_ID;
       let budgetInfo: any = null;
       if (hatIdStr) {
         const hatId = BigInt(hatIdStr);

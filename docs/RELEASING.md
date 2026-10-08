@@ -1,9 +1,46 @@
-# Releasing @poa-box/cli and @poa-box/agent
+# Releasing @poa-box/core, @poa-box/cli and @poa-box/agent
+
+The authority-only 1.0 release has intentional access API removals. Read the [Wave G migration and upgrade order](WAVE-G-1.0.md) before publishing.
 
 The CLI is the compatibility layer for the whole ecosystem: the frontend,
 org brains, and agents parse its `--json` output so that protocol and
 subgraph churn stays absorbed HERE. A release is therefore a contract event,
 not just a version bump.
+
+## Publishing the prepared 1.0.0 release
+
+All three packages are already bumped to `1.0.0`. Do not run the generic version
+bump examples below again for this release. Publish in dependency order:
+`@poa-box/core` → `@poa-box/cli` → `@poa-box/agent`.
+
+Merging the reviewed PR into `main` starts the Release workflow automatically.
+For a manual release instead, run from the reviewed repository root, after the
+validation checklist passes:
+
+```bash
+npm login
+node scripts/release-preflight.mjs &&
+node scripts/publish-package.mjs packages/core --access public --tag latest &&
+node scripts/publish-package.mjs . --access public --tag latest &&
+node scripts/publish-package.mjs packages/agent --access public --tag latest
+```
+
+Use the wrapper for every publish: it converts local `link:` dependencies into
+registry-compatible semver ranges before npm reads the manifests. npm prompts for
+an OTP if required; an individual invocation can also take `--otp=123456` with a
+fresh code. If a publish fails, stop, rerun preflight, and publish only its remaining
+`PUBLISH` entries. Versions already on npm cannot be republished.
+
+The automated and manual paths are alternatives; do not run them concurrently.
+Verify the published versions and dependency ranges:
+
+```bash
+npm view @poa-box/core@1.0.0 version
+npm view @poa-box/cli@1.0.0 version dependencies.@poa-box/core
+npm view @poa-box/agent@1.0.0 version dependencies.@poa-box/cli
+npx -y @poa-box/cli@1.0.0 --version
+npx -y @poa-box/agent@1.0.0 --version
+```
 
 ## The compatibility contract (what consumers may rely on)
 
@@ -26,10 +63,11 @@ not just a version bump.
 ## Release checklist
 
 ```bash
-# 1. Everything green (yarn build builds packages/core first)
-yarn build && yarn test
+# 1. Everything green (root tests also require the built agent)
+yarn build && yarn --cwd packages/agent build
+yarn test
 yarn --cwd packages/core test      # purity gate + calldata parity
-yarn --cwd packages/agent build && yarn --cwd packages/agent test
+yarn --cwd packages/agent test
 yarn docs:check                    # generated reference + manifest + links
 
 # 2. The contracts, verified
@@ -75,8 +113,12 @@ POP_READONLY=1 POP_DEFAULT_CHAIN=100 npx -y @poa-box/cli@latest org list --json
 npm view @poa-box/cli dependencies.@poa-box/core
 npm view @poa-box/agent dependencies.@poa-box/cli
 
-# 6. Push the tags
-git push && git push --tags
+# 6. Record successful manual publishes (run from the exact published commit)
+#    Substitute the actual versions; tag ONLY packages that published successfully.
+git tag -a core-vX.Y.Z -m '@poa-box/core X.Y.Z'
+git tag -a cli-vX.Y.Z -m '@poa-box/cli X.Y.Z'
+git tag -a agent-vX.Y.Z -m '@poa-box/agent X.Y.Z'
+git push origin core-vX.Y.Z cli-vX.Y.Z agent-vX.Y.Z
 ```
 
 ## How a release happens
@@ -84,7 +126,7 @@ git push && git push --tags
 **Merging to `main` is the release.** Bump the version of each package you are
 releasing in a PR (`npm version patch --no-git-tag-version`), merge, and the
 Release workflow publishes them — in dependency order, with provenance, then
-verifies the registry and pushes per-package tags. A merge that changes no
+pushes per-package tags and verifies the registry. A merge that changes no
 version publishes nothing: a ~15s `plan` job sees every version already on the
 registry and stops, so ordinary merges cost almost nothing.
 
@@ -96,9 +138,33 @@ production.
 
 Manual dispatch (Actions → Release → Run workflow) remains for three cases:
 a **dry run** (`dry_run: true` — verifies everything, publishes nothing),
-**re-running after a partial failure** (already-published versions are
-skipped, so it resumes), and **prereleases** (`dist_tag: next`, since an rc on
+**re-running after a partial publish failure** (already-published versions are
+skipped, so it resumes the remaining uploads), and **prereleases** (`dist_tag: next`, since an rc on
 `latest` would become every consumer's default install).
+
+### Recovering after a tag or verification failure
+
+A successful npm publish remains published even if a later tag push or registry
+check fails. The workflow attempts tags for every successful upload, then reports
+any tag failures. Rerunning does **not** repair missing tags or repeat checks for
+already-published versions; if all versions exist, there is no remaining publish
+work. Verify those exact versions manually with the commands above.
+
+Recover each missing tag from the **exact commit used by the successful publish**,
+as shown in the failed workflow run, rather than the current tip of `main`. For
+example, if only the core `1.0.0` tag is missing, replace `RELEASE_COMMIT` below:
+
+```bash
+npm view @poa-box/core@1.0.0 version
+git fetch origin --tags
+git tag -a core-v1.0.0 RELEASE_COMMIT -m '@poa-box/core 1.0.0'
+git push origin core-v1.0.0
+```
+
+If the tag already exists locally, check that `git rev-parse core-v1.0.0^{commit}`
+matches the release commit and push that tag instead of creating it again. Do not
+replace an existing remote tag. Apply the same process only to other missing tags
+whose package versions were successfully published.
 
 ## Publishing auth: trusted publishing (preferred) vs a token
 
@@ -124,20 +190,14 @@ Then **delete the `NPM_TOKEN` secret**. The Release workflow detects which
 mode is in play and prints it; it already sets `id-token: write` and runs
 Node 22 + npm ≥ 11.5.1, which trusted publishing requires.
 
-**The one catch — new packages.** npm cannot configure a trusted publisher for
-a package that does not exist yet, so a brand-new name needs exactly one
-token-based publish first. For the current release that means:
+All three package names already exist on npm. Configure trusted publishing on
+`@poa-box/core`, `@poa-box/cli` and `@poa-box/agent`; none needs a placeholder
+first release. A token-based fallback requires a valid granular publish token
+with the appropriate package permissions and bypass-2FA setting.
 
-1. `@poa-box/cli` and `@poa-box/agent` already exist → configure trusted
-   publishing for them now.
-2. `@poa-box/core` is new → either (a) run this release once with an
-   `NPM_TOKEN` secret set, then configure core's trusted publisher and delete
-   the secret; or (b) publish a throwaway `0.0.0` of core by hand with a
-   token, configure its trusted publisher, then run the release with no
-   secret at all.
-
-Either way the end state is the same: no long-lived npm credential anywhere in
-the repo.
+The workflow forwards the preflight step's outputs to the release job and records
+only successful package uploads as tags/published entries, including after a
+partial failure. Registry verification checks the exact expected dependency ranges.
 
 ## Version meaning while on 0.x
 

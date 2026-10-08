@@ -1,3 +1,4 @@
+import { AUTHORITY_KEYS } from '@poa-box/core/tx/authority';
 /**
  * pop token request — request participation tokens (PT) from the org.
  *
@@ -23,7 +24,7 @@ import { pinJson } from '../../lib/ipfs';
 import { getWriteContext, confirmWrite, finishWrite } from '../../lib/command';
 import { runPreflight, checkGasBalance, PreflightCheck } from '../../lib/preflight';
 import { requireModule } from '../../lib/resolve';
-import { readTokenGates, checkWearsAnyHat } from './helpers';
+import { readTokenGates, checkTokenPermission } from './helpers';
 import { CliError, PreconditionError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
@@ -86,17 +87,7 @@ export const requestHandler = {
         try {
           const gates = await readTokenGates(ctx.provider, tokenAddress);
           if (ctx.address.toLowerCase() !== gates.executor.toLowerCase()) {
-            if (gates.memberHatIds.length === 0) {
-              throw new PreconditionError(
-                'No member hats are configured on the participation token — only the executor can request tokens, and your signer is not it.',
-                'Ask governance to allow a member hat (setMemberHatAllowed).'
-              );
-            }
-            checks.push(checkWearsAnyHat(ctx.provider, gates.hatsAddress, ctx.address, gates.memberHatIds, {
-              label: 'org membership (member hat)',
-              detail: `${ctx.address} wears none of the token's member hats — requestTokens would revert NotMember`,
-              suggestion: 'join the org first: pop user join',
-            }));
+            checks.push(checkTokenPermission(gates.authorityAddress, ctx.address, AUTHORITY_KEYS.PT_MEMBER));
           }
         } catch (err) {
           if (err instanceof PreconditionError) throw err;

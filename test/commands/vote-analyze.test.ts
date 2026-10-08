@@ -49,7 +49,7 @@ vi.mock('../../src/lib/output', () => ({
   table: vi.fn(), json: jsonMock, isJsonMode: vi.fn(() => true), keyValueBlock: vi.fn(),
 }));
 
-import { analyzeHandler } from '../../src/commands/vote/analyze';
+import { analyzeHandler, readProposalVoteEvents } from '../../src/commands/vote/analyze';
 
 const HV = ethers.utils.getAddress('0x' + '1a'.repeat(20));
 const PT = ethers.utils.getAddress('0x' + '2b'.repeat(20));
@@ -64,7 +64,7 @@ function classRow(classIndex: number, slicePct: number, version = '500') {
     version, classIndex,
     strategy: classIndex === 0 ? 'DIRECT' : 'ERC20_BAL',
     slicePct, quadratic: classIndex === 1,
-    minBalance: '0', asset: ethers.constants.AddressZero, hatIds: [], isActive: true,
+    minBalance: '0', asset: classIndex === 0 ? ethers.constants.AddressZero : PT, hatIds: [], isActive: true,
   };
 }
 
@@ -81,6 +81,7 @@ function analysisPayload(overrides: any = {}) {
         proposals: [{
           proposalId: '3',
           classesVersion: '500',
+          isHatRestricted: false,
           votes: [
             {
               voter: ALICE.toLowerCase(), voterUsername: 'alice',
@@ -115,7 +116,7 @@ describe('vote analyze', () => {
     }) as any);
   });
 
-  afterEach(() => exitSpy.mockRestore());
+  afterEach(() => vi.restoreAllMocks());
 
   // ── Sparse ballots ────────────────────────────────────────────────
   //
@@ -150,7 +151,7 @@ describe('vote analyze', () => {
     const report = jsonMock.mock.calls[0][0];
     expect(report.options).toBe(2);              // was 1
     expect(report.actual.winner.option).toBe(1); // was 0
-    expect(report.actual.winner.pct).toBe(100);
+    expect(report.actual.winner.pct).toBe(50); // The empty token class keeps its unused 50% slice.
   });
 
   it('scatters a partial multi-option ballot into the right slots', async () => {
@@ -177,8 +178,8 @@ describe('vote analyze', () => {
     // cannot shrink the option space.
     expect(report.options).toBe(4);
     expect(report.actual.winner.option).toBe(3);
-    // 150 of 200 total weight-power on option 3.
-    expect(report.actual.winner.pct).toBe(75);
+    // 75% of the DIRECT class, whose configured slice is 50%.
+    expect(report.actual.winner.pct).toBe(37.5);
   });
 
   it('builds the whole report from the subgraph — no provider, no queryFilter, one balance query', async () => {
@@ -207,7 +208,7 @@ describe('vote analyze', () => {
     expect(report.options).toBe(2);
     expect(report.source).toBe('subgraph');
     // The FROZEN 50/50 config, not the 1/99 rows from version 400.
-    expect(report.classConfig).toEqual([
+    expect(report.classConfig).toMatchObject([
       { slicePct: 50, quadratic: false },
       { slicePct: 50, quadratic: true },
     ]);
@@ -225,6 +226,32 @@ describe('vote analyze', () => {
     expect(Object.keys(report.counterfactuals)).toEqual(['ddOnly', 'tokenOnly', 'noQuadratic', 'singlePick']);
   });
 
+  it('normalizes token and DIRECT power separately before applying class slices', async () => {
+    const payload = analysisPayload();
+    payload.data.hybridVotingContract.votingClasses = [classRow(0, 80), classRow(1, 20)];
+    payload.data.hybridVotingContract.proposals[0].votes[1].classRawPowers[0] = '0';
+    queryWithFieldFallbackMock.mockResolvedValue(payload);
+    queryMock.mockResolvedValue({ tokenBalances: [] });
+    await analyzeHandler.handler({ org: 'test-org', chain: 100, proposal: 3, json: true } as any);
+    const report = jsonMock.mock.calls[0][0];
+    expect(report.actual.ranking).toEqual([{ option: 0, pct: 80 }, { option: 1, pct: 20 }]);
+  });
+
+  it('supports one DIRECT class and keeps unvoted options from numOptions', async () => {
+    const payload: any = analysisPayload();
+    payload.data.hybridVotingContract.votingClasses = [classRow(0, 100)];
+    payload.data.hybridVotingContract.proposals[0].numOptions = 4;
+    for (const vote of payload.data.hybridVotingContract.proposals[0].votes) vote.classRawPowers = ['100'];
+    queryWithFieldFallbackMock.mockResolvedValue(payload);
+    queryMock.mockResolvedValue({ tokenBalances: [] });
+    await analyzeHandler.handler({ org: 'test-org', chain: 100, proposal: 3, json: true } as any);
+    const report = jsonMock.mock.calls[0][0];
+    expect(report.options).toBe(4);
+    expect(report.actual.ranking).toHaveLength(4);
+    expect(report.votes[0].tokenPower).toBe('0');
+    expect(report.counterfactuals.tokenOnly).toMatchObject({ winner: null, available: false });
+  });
+
   it('prefers the org username map, then Vote.voterUsername, then the truncated address', async () => {
     const payload = analysisPayload();
     payload.data.hybridVotingContract.proposals[0].votes[1].voterUsername = 'bob_from_vote';
@@ -235,6 +262,48 @@ describe('vote analyze', () => {
 
     const report = jsonMock.mock.calls[0][0];
     expect(report.votes.map((v: any) => v.name)).toEqual(['alice', 'bob_from_vote']);
+  });
+
+  it('uses complete indexed ballots when restricted V2 classes require an on-chain snapshot', async () => {
+    const payload: any = analysisPayload();
+    payload.data.hybridVotingContract.proposals[0].isHatRestricted = true;
+    payload.data.hybridVotingContract.proposals[0].numOptions = 4;
+    for (const vote of payload.data.hybridVotingContract.proposals[0].votes) vote.classRawPowers = ['100'];
+    queryWithFieldFallbackMock.mockResolvedValue(payload);
+    queryMock.mockResolvedValue({ tokenBalances: [] });
+    resolveNetworkConfigMock.mockReturnValue({ resolvedRpc: 'http://127.0.0.1:1' });
+    const contract = { getProposalClasses: vi.fn().mockResolvedValue([classRow(0, 100)]), queryFilter: vi.fn() };
+    vi.spyOn(ethers, 'Contract').mockImplementation((() => contract) as any);
+    await analyzeHandler.handler({ org: 'test-org', chain: 100, proposal: 3, json: true } as any);
+    expect(contract.getProposalClasses).toHaveBeenCalledWith(3);
+    expect(contract.queryFilter).not.toHaveBeenCalled();
+    expect(jsonMock.mock.calls[0][0]).toMatchObject({ voters: 2, options: 4, source: 'rpc' });
+  });
+
+  it('refuses a partial RPC history when the proposal creation block is unknown', async () => {
+    queryWithFieldFallbackMock.mockRejectedValue(new Error('not indexed'));
+    queryMock.mockResolvedValue({ proposal: null });
+    resolveNetworkConfigMock.mockReturnValue({ resolvedRpc: 'http://127.0.0.1:1' });
+    const contract = { getProposalClasses: vi.fn().mockResolvedValue([classRow(0, 100)]), queryFilter: vi.fn() };
+    vi.spyOn(ethers, 'Contract').mockImplementation((() => contract) as any);
+    await expect(analyzeHandler.handler({ org: 'test-org', chain: 100, proposal: 3, json: true } as any)).rejects.toThrow(/process.exit/);
+    expect(errorMock).toHaveBeenCalledWith(expect.stringContaining('creation block or option count is not indexed'), expect.anything());
+    expect(contract.queryFilter).not.toHaveBeenCalled();
+    expect(jsonMock).not.toHaveBeenCalled();
+  });
+
+  it('reads PT balances beyond the first thousand voters', async () => {
+    const ballot = (i: number) => ({ id: `vote-${String(i).padStart(4, '0')}`,
+      voter: `0x${i.toString(16).padStart(40, '0')}`, optionIndexes: [0], optionWeights: [100], classRawPowers: ['100', '1'] });
+    const first: any = analysisPayload();
+    first.data.hybridVotingContract.proposals[0].votes = Array.from({ length: 1000 }, (_, i) => ballot(i));
+    const second: any = analysisPayload();
+    second.data.hybridVotingContract.proposals[0].votes = [ballot(1000)];
+    queryWithFieldFallbackMock.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    queryMock.mockImplementation(async (_query, vars) => ({ tokenBalances: vars.accounts.map((account: string) => ({ account, balance: ONE })) }));
+    await analyzeHandler.handler({ org: 'test-org', chain: 100, proposal: 3, json: true } as any);
+    expect(queryMock.mock.calls.map(call => call[1].accounts.length)).toEqual([1000, 1]);
+    expect(jsonMock.mock.calls[0][0].votes[1000].ptBalance).toBe(1);
   });
 
   it('falls back to the contract when the subgraph errors', async () => {
@@ -278,5 +347,34 @@ describe('vote analyze', () => {
       expect.anything()
     );
     expect(resolveNetworkConfigMock).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('complete vote event history', () => {
+  it('includes ballots older than 200,000 blocks and has no overlap at page boundaries', async () => {
+    const blocks = [10, 10009, 10010, 220015];
+    const hv = { filters: { VoteCast: vi.fn(() => ({})) }, queryFilter: vi.fn(async (_filter, from, to) =>
+      blocks.filter(block => block >= from && block <= to).map(blockNumber => ({ blockNumber }))) };
+    const events = await readProposalVoteEvents(hv as any, 3, 10, 230020);
+    expect(events.map(event => event.blockNumber)).toEqual(blocks);
+    expect(hv.queryFilter.mock.calls[0].slice(1)).toEqual([10, 10009]);
+    expect(hv.queryFilter.mock.calls.at(-1)?.[2]).toBe(230020);
+    expect(hv.queryFilter.mock.calls.every(call => call[2] - call[1] < 10000)).toBe(true);
+  });
+
+  it('retries smaller ranges without dropping or duplicating ballots', async () => {
+    const hv = { filters: { VoteCast: vi.fn(() => ({})) }, queryFilter: vi.fn(async (_filter, from, to) => {
+      if (to - from >= 2) throw new Error('RPC block range exceeded');
+      return Array.from({ length: to - from + 1 }, (_, i) => ({ blockNumber: from + i }));
+    }) };
+    const events = await readProposalVoteEvents(hv as any, 3, 100, 104);
+    expect(events.map(event => event.blockNumber)).toEqual([100, 101, 102, 103, 104]);
+  });
+
+  it('fails instead of returning earlier pages when an RPC block remains unreadable', async () => {
+    const hv = { filters: { VoteCast: vi.fn(() => ({})) }, queryFilter: vi.fn().mockRejectedValue(new Error('unavailable block')) };
+    await expect(readProposalVoteEvents(hv as any, 3, 100, 104)).rejects.toThrow('unavailable block');
+    await expect(readProposalVoteEvents(hv as any, 3, 0, 104)).rejects.toThrow('complete proposal vote-event range');
   });
 });

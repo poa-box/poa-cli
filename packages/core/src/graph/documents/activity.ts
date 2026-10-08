@@ -11,7 +11,7 @@ export const FETCH_ORG_ACTIVITY = `
   query FetchOrgActivity(
     $orgId: Bytes!
     $hybridVotingId: String
-    $eligibilityModuleId: Bytes
+    $authorityId: Bytes
     $tokenAddress: String
   ) {
     # Org overview + tasks + members via nested pattern (known working)
@@ -124,24 +124,20 @@ export const FETCH_ORG_ACTIVITY = `
       votes { voter optionIndexes optionWeights }
     }
 
-    # Active vouches — top-level query (validated in vouch.ts). isActive carries the
-    # epoch filter: deployments that index the vouch epoch flip it false for every vouch
-    # a configureVouching/resetVouches/clearWearerVouches voided, so this listing needs no
-    # extra field. Older deployments still list superseded vouches — stale rather than
-    # wrong, which is fine for an activity feed but NOT for quorum maths (see vouch.ts).
-    activeVouches: vouches(
-      where: { eligibilityModule: $eligibilityModuleId, isActive: true }
-      orderBy: createdAt
+    activeVouches: subjectVouchRecords(
+      where: { authority: $authorityId, active: true }
+      orderBy: vouchedAt
       orderDirection: desc
       first: 100
     ) {
-      hatId
-      wearer
-      wearerUsername
+      subject { subjectId }
+      wearer: user
+      membership { userUsername vouchCount }
       voucher
       voucherUsername
-      vouchCount
-      createdAt
+      epoch
+      config { epoch }
+      createdAt: vouchedAt
     }
 
     # Pending token requests — top-level query (validated in token.ts)
@@ -160,3 +156,12 @@ export const FETCH_ORG_ACTIVITY = `
     }
   }
 `;
+
+/** Preserve activity JSON keys while taking the live epoch and count from authority rows. */
+export function normalizeAuthorityVouches(rows: any[]): any[] {
+  return rows.filter(v => v.active !== false && v.config && String(v.epoch) === String(v.config.epoch))
+    .map(v => ({ hatId: v.subject.subjectId, wearer: v.wearer,
+      wearerUsername: v.membership?.userUsername ?? null, voucher: v.voucher,
+      voucherUsername: v.voucherUsername, vouchCount: v.membership?.vouchCount ?? 0,
+      createdAt: v.createdAt }));
+}

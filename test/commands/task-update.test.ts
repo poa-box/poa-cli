@@ -42,7 +42,13 @@ vi.mock('../../src/lib/resolve', () => ({
     return modules[key];
   },
 }));
-vi.mock('../../src/lib/subgraph', () => ({ query: mocks.query }));
+vi.mock('../../src/lib/subgraph', () => ({
+  query: mocks.query,
+  queryWithFieldFallback: async (tiers: any[], options: any) => {
+    const data = await mocks.query(tiers[0].query, tiers[0].variables, options?.chainId);
+    return { data: { task: data?.task ?? data?.organization?.taskManager?.projects?.flatMap((p: any) => p.tasks ?? [])[0] ?? null }, tierIndex: 0 };
+  },
+}));
 // Deterministic non-TTY: confirmWrite must auto-pass (non-destructive path)
 // regardless of the terminal vitest happens to run in.
 vi.mock('../../src/lib/prompt', () => ({
@@ -329,6 +335,13 @@ describe('pop task update — read-then-merge', () => {
       expect.anything()
     );
     expect(mocks.executeTx).not.toHaveBeenCalled();
+  });
+
+  it('dry-run metadata changes never publish IPFS content', async () => {
+    await updateHandler.handler(baseArgv({ name: 'Preview title', dryRun: true }));
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+    expect(mocks.executeTx.mock.calls[0][3]).toEqual({ dryRun: true });
+    expect(mocks.executeTx.mock.calls[0][2][3]).not.toBe(ethers.constants.HashZero);
   });
 
   it('--dry-run prints the merged final field block and passes dryRun through', async () => {

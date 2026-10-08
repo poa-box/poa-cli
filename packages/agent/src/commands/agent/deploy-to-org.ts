@@ -2,7 +2,8 @@ import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { createSigner } from '@poa-box/cli/lib/signer';
 import { resolveNetworkConfig } from '@poa-box/cli/config/networks';
-import { pinJson } from '@poa-box/cli/lib/ipfs';
+import { resolveOrgId } from '@poa-box/cli/lib/resolve';
+import { refreshAuthorityUsers } from '@poa-box/cli/lib/authority';
 import * as output from '@poa-box/cli/lib/output';
 
 interface DeployToOrgArgs {
@@ -15,7 +16,6 @@ interface DeployToOrgArgs {
 }
 
 const IDENTITY_REGISTRY = '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432';
-const EOA_DELEGATION = '0x776ec88A88E86e38d54a985983377f1A2A25ef8b';
 
 export const deployToOrgHandler = {
   builder: (yargs: Argv) => yargs
@@ -75,19 +75,15 @@ export const deployToOrgHandler = {
 
       // Step 4: Check if org exists on target chain
       spin.text = 'Checking target org...';
-      const orgQuery = `query($name: String!) { organizations(where: { name: $name }, first: 1) { id name users(first: 100) { address membershipStatus account { username } } } }`;
-      const { queryAllChains } = require('@poa-box/cli/lib/subgraph');
-      let orgFound = false;
-      let isMember = false;
-      let orgMembers = 0;
-      for (const r of await queryAllChains(orgQuery, { name: argv.targetOrg })) {
-        const org = r.data?.organizations?.[0];
-        if (org && r.chainId === argv.chain) {
-          orgFound = true;
-          orgMembers = org.users?.length || 0;
-          isMember = (org.users || []).some((u: any) => u.address?.toLowerCase() === signer.address.toLowerCase());
-        }
-      }
+      // Resolve only authority-ready organizations on the requested chain. Historical
+      // User rows include former members and are not proof of current membership.
+      const orgId = await resolveOrgId(argv.targetOrg, argv.chain);
+      const org: { users: any[] } = { users: [] };
+      await refreshAuthorityUsers(org, orgId, argv.chain);
+      const members = org.users.filter(user => user.membershipStatus === 'Active');
+      const orgFound = true;
+      const orgMembers = members.length;
+      const isMember = members.some(user => user.address.toLowerCase() === signer.address.toLowerCase());
       steps.push({
         step: 'Target org',
         status: orgFound ? (isMember ? 'MEMBER' : 'FOUND') : 'NOT_FOUND',
@@ -116,7 +112,7 @@ export const deployToOrgHandler = {
         } else if (ready) {
           console.log('  Ready to deploy. Next steps:');
           console.log(`    1. Ask a ${argv.targetOrg} member to vouch for you`);
-          console.log(`    2. pop vouch claim --hat <hat-id> --chain ${argv.chain}`);
+          console.log(`    2. pop vouch claim --subject <role-id> --org ${JSON.stringify(argv.targetOrg)} --chain ${argv.chain}`);
           if (!hasIdentity) console.log(`    3. pop agent register --name <name> --chain ${argv.chain}`);
           if (!isDelegated) console.log(`    ${hasIdentity ? '3' : '4'}. pop agent delegate --chain ${argv.chain}`);
         } else {

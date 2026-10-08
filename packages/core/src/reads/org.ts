@@ -19,20 +19,18 @@ import type { GraphClient, ChainQueryResult } from '../graph/client';
 import {
   FETCH_ORG_FULL_DATA,
   GET_ORG_BY_NAME,
-  FETCH_USER_ORGANIZATIONS,
 } from '../graph/documents/org';
 import {
-  FETCH_ROLES_MEMBERS_AND_VOUCH,
-  FETCH_ROLES_AND_MEMBERS,
   FETCH_ORG_METADATA_ADMIN_HAT,
 } from '../graph/documents/roles';
 import type { OrgMetadataAdminHatResult } from '../graph/documents/roles';
-import { FETCH_ORG_ACTIVITY } from '../graph/documents/activity';
+import { FETCH_ORG_ACTIVITY, normalizeAuthorityVouches } from '../graph/documents/activity';
 import { FETCH_INFRASTRUCTURE_ADDRESSES } from '../graph/documents/infrastructure';
 import type { InfrastructureAddresses } from '../graph/documents/infrastructure';
 import { createReadContract } from '../contracts';
 import { fetchJson } from '../ipfs';
 import type { IpfsOptions } from '../ipfs';
+import { FETCH_ORG_AUTHORITY, FETCH_AUTHORITY_SUBJECTS, readAuthorityRows, isAuthorityReady, readAuthorityUsers } from './authority';
 
 // ---------------------------------------------------------------------------
 // Row shapes (raw subgraph entities — minimal, not exhaustive)
@@ -44,6 +42,7 @@ export interface OrgModuleRef {
 
 /** Raw Organization row as returned by FETCH_ORG_FULL_DATA. */
 export interface OrganizationFullRow {
+  membershipAuthority: { id: string; isRouterBound: boolean; cutoverAt: string | null } | null;
   id: string;
   name: string | null;
   metadataHash: string | null;
@@ -64,13 +63,13 @@ export interface OrganizationFullRow {
   } | null;
   educationHub: { id: string; modules: any[] } | null;
   executorContract: OrgModuleRef | null;
-  eligibilityModule: OrgModuleRef | null;
   paymentManager: OrgModuleRef | null;
   users: Array<{
     id: string;
     address: string;
     account: { username: string | null; metadata: { avatar: string | null } | null } | null;
-    participationTokenBalance: string;
+    participationTokenBalance: string | null;
+    historyIndexed?: boolean;
     membershipStatus: string;
     currentHatIds: string[] | null;
     totalTasksCompleted: string | null;
@@ -95,7 +94,7 @@ export interface OrganizationFullRow {
 /** Verbatim from src/commands/org/list.ts. */
 export const LIST_ORGS_QUERY = `
   query ListOrgs($first: Int!) {
-    organizations(first: $first, orderBy: deployedAt, orderDirection: desc) {
+    organizations(where: { membershipAuthority_: { isRouterBound: true, cutoverAt_gt: "0" } }, first: $first, orderBy: deployedAt, orderDirection: desc) {
       id
       name
       deployedAt
@@ -140,13 +139,16 @@ export async function findOrgId(
   orgIdOrName: string,
   chainId?: number
 ): Promise<string | null> {
-  if (orgIdOrName.startsWith('0x')) return orgIdOrName;
-  const result = await client.query<{ organizations: Array<{ id: string }> }>(
+  if (orgIdOrName.startsWith('0x')) {
+    const result = await client.query<any>(FETCH_ORG_AUTHORITY, { id: orgIdOrName }, chainId);
+    return isAuthorityReady(result.organization) ? result.organization.id : null;
+  }
+  const result = await client.query<{ organizations: Array<{ id: string; membershipAuthority?: any }> }>(
     GET_ORG_BY_NAME,
     { name: orgIdOrName },
     chainId
   );
-  return result.organizations?.[0]?.id ?? null;
+  return result.organizations?.find(isAuthorityReady)?.id ?? null;
 }
 
 /**
@@ -166,7 +168,20 @@ export async function getOrganization(
     { orgId },
     chainId
   );
-  return result.organization ?? null;
+  const org = result.organization;
+  if (!org || !isAuthorityReady(org)) return null;
+  const [subjects, users] = await Promise.all([
+    readAuthorityRows(client, orgId, FETCH_AUTHORITY_SUBJECTS, 'subjects', chainId),
+    readAuthorityUsers(client, orgId, org.users ?? [], chainId),
+  ]);
+  org.users = users;
+  org.roles = subjects.filter(subject => subject.kind === 'Role').map(subject => {
+    const historical = org.roles?.find(role => role.hatId === subject.subjectId);
+    return { ...subject, id: historical?.id ?? `${orgId}-${subject.subjectId}`, hatId: subject.subjectId,
+      image: subject.imageURI, canVote: historical?.canVote ?? false,
+      canVoteSource: 'historical role metadata', isUserRole: historical?.isUserRole ?? false, hat: null };
+  });
+  return org;
 }
 
 /**
@@ -266,7 +281,8 @@ export async function listOrgsAllChains(
 export interface UserOrganizationRow {
   id: string;
   membershipStatus: string;
-  participationTokenBalance: string;
+  participationTokenBalance: string | null;
+  historyIndexed?: boolean;
   totalTasksCompleted: string | null;
   totalVotes: string | null;
   organization: {
@@ -281,24 +297,46 @@ export interface UserOrganizationRow {
  * Port of the `pop org list --member` read — src/commands/org/list.ts
  * (FETCH_USER_ORGANIZATIONS): active memberships for an address.
  */
+export const USER_AUTHORITY_ORGS_QUERY = `query UserAuthorityOrganizations($userAddress: Bytes!, $lastId: String!) {
+  subjectMemberships(first: 1000, orderBy: id, where: {
+    user: $userAddress, isMember: true, id_gt: $lastId, subject_: { kind: Role }
+  }) {
+    id organization { id name metadataHash membershipAuthority { id isRouterBound cutoverAt } participationToken { symbol } }
+    userEntity { id participationTokenBalance totalTasksCompleted totalVotes }
+  }
+}`;
+
 export async function listUserOrganizations(
-  client: GraphClient,
-  userAddress: string,
-  chainId?: number
+  client: GraphClient, userAddress: string, chainId?: number
 ): Promise<UserOrganizationRow[]> {
-  const result = await client.query<{ users: UserOrganizationRow[] }>(
-    FETCH_USER_ORGANIZATIONS,
-    { userAddress },
-    chainId
-  );
-  return result.users || [];
+  const rows = new Map<string, UserOrganizationRow>();
+  let lastId = '';
+  for (;;) {
+    const page = await client.query<any>(USER_AUTHORITY_ORGS_QUERY, { userAddress: userAddress.toLowerCase(), lastId }, chainId);
+    if (!Array.isArray(page.subjectMemberships)) throw new Error('MembershipAuthority index unavailable: missing subjectMemberships');
+    for (const membership of page.subjectMemberships) {
+      const org = membership.organization;
+      if (!isAuthorityReady(org)) continue;
+      const historical = membership.userEntity;
+      rows.set(org.id, { id: historical?.id ?? `${org.id}-${userAddress.toLowerCase()}`,
+        membershipStatus: 'Active', historyIndexed: historical != null,
+        participationTokenBalance: historical?.participationTokenBalance ?? null,
+        totalTasksCompleted: historical?.totalTasksCompleted ?? null, totalVotes: historical?.totalVotes ?? null, organization: org });
+    }
+    if (page.subjectMemberships.length < 1000) return [...rows.values()];
+    const next = page.subjectMemberships[page.subjectMemberships.length - 1].id;
+    if (next <= lastId) throw new Error('MembershipAuthority pagination did not advance');
+    lastId = next;
+  }
 }
 
 export interface OrgMembersResult {
   participationToken: { totalSupply: string } | null;
   users: Array<{
     address: string;
-    participationTokenBalance: string;
+    participationTokenBalance: string | null;
+    /** False for a real authority wallet whose historical User entity is not indexed. */
+    historyIndexed?: boolean;
     membershipStatus: string;
     totalTasksCompleted: string | null;
     totalVotes: string | null;
@@ -309,20 +347,20 @@ export interface OrgMembersResult {
 
 /**
  * Port of the `pop org members` read — src/commands/org/members.ts.
- * Raw member rows ordered by PT balance desc (top 100), plus totalSupply for
+ * Complete current member rows, plus totalSupply for
  * share math. Null when the org is not indexed.
  */
 export async function listMembers(
-  client: GraphClient,
-  orgId: string,
-  chainId?: number
+  client: GraphClient, orgId: string, chainId?: number
 ): Promise<OrgMembersResult | null> {
-  const result = await client.query<{ organization: OrgMembersResult | null }>(
-    FETCH_MEMBERS,
-    { orgId },
-    chainId
-  );
-  return result.organization ?? null;
+  const ready = await client.query<any>(FETCH_ORG_AUTHORITY, { id: orgId }, chainId);
+  if (!isAuthorityReady(ready.organization)) return null;
+  const [result, users] = await Promise.all([
+    client.query<{ organization: OrgMembersResult | null }>(FETCH_MEMBERS, { orgId }, chainId),
+    readAuthorityUsers(client, orgId, [], chainId),
+  ]);
+  if (!result.organization) return null;
+  return { ...result.organization, users: users.filter(user => user.membershipStatus === 'Active') };
 }
 
 export interface OrgRolesResult {
@@ -347,38 +385,41 @@ export interface OrgRolesResult {
     }>;
     users: Array<{
       address: string;
-      participationTokenBalance: string;
+      participationTokenBalance: string | null;
+      historyIndexed?: boolean;
       membershipStatus: string;
       currentHatIds: string[] | null;
       account: { username: string | null } | null;
     }>;
-    eligibilityModule: { id: string } | null;
+    membershipAuthority: { id: string } | null;
   } | null;
 }
 
-/**
- * Port of the `pop org roles` read — src/commands/org/roles.ts.
- *
- * Tier 0 carries Role.hat.vouchConfig (present + populated on Gnosis and
- * Arbitrum; a null vouchConfig means "never configured", verified equal to
- * isVouchingEnabled()==false / quorum==0 on-chain). Tier 1 is the
- * pre-vouchConfig schema; GraphQL validates the whole document, so the
- * unknown-field fallback is what keeps older deployments working. When
- * tierIndex === 1 serves, the CLI falls back to batched EligibilityModule
- * reads through Multicall3 — that RPC path stays host-side.
- */
+/** Current roles and membership are authority-owned; continuity fields retain their public names. */
 export async function listRoles(
-  client: GraphClient,
-  orgId: string,
-  chainId?: number
+  client: GraphClient, orgId: string, chainId?: number
 ): Promise<{ data: OrgRolesResult; tierIndex: number }> {
-  return client.queryWithFieldFallback<OrgRolesResult>(
-    [
-      { query: FETCH_ROLES_MEMBERS_AND_VOUCH, variables: { id: orgId } },
-      { query: FETCH_ROLES_AND_MEMBERS, variables: { id: orgId } },
-    ],
-    { chainId }
-  );
+  const result = await client.query<any>(`query AuthorityRoleContext($orgId: Bytes!) {
+    organization(id: $orgId) {
+      membershipAuthority { id isRouterBound cutoverAt }
+      roles { hatId canVote isUserRole }
+      users(first: 1000) { address participationTokenBalance account { username } }
+    }
+  }`, { orgId }, chainId);
+  const org = result.organization;
+  if (!isAuthorityReady(org)) return { data: { organization: null }, tierIndex: 0 };
+  const [subjects, users] = await Promise.all([
+    readAuthorityRows(client, orgId, FETCH_AUTHORITY_SUBJECTS, 'subjects', chainId),
+    readAuthorityUsers(client, orgId, org.users, chainId),
+  ]);
+  const roles = subjects.filter(s => s.kind === 'Role').map(subject => {
+    const continuity = org.roles.find((r: any) => r.hatId === subject.subjectId);
+    return { ...subject, id: orgId + '-' + subject.subjectId, hatId: subject.subjectId,
+      image: subject.imageURI, canVote: continuity?.canVote ?? false, isUserRole: continuity?.isUserRole ?? false,
+      hat: null,
+    };
+  });
+  return { data: { organization: { roles, users, membershipAuthority: org.membershipAuthority } }, tierIndex: 0 };
 }
 
 /**
@@ -393,17 +434,20 @@ export async function getOrgActivity(
   modules: {
     orgId: string;
     hybridVotingAddress?: string | null;
-    eligibilityModuleAddress?: string | null;
+    membershipAuthorityAddress?: string | null;
     participationTokenAddress?: string | null;
   },
   chainId?: number
 ): Promise<any> {
-  return client.query<any>(FETCH_ORG_ACTIVITY, {
+  const result = await client.query<any>(FETCH_ORG_ACTIVITY, {
     orgId: modules.orgId,
     hybridVotingId: modules.hybridVotingAddress || '',
-    eligibilityModuleId: modules.eligibilityModuleAddress || '',
+    authorityId: modules.membershipAuthorityAddress || '',
     tokenAddress: modules.participationTokenAddress || '',
   }, chainId);
+  result.activeVouches = normalizeAuthorityVouches(result.activeVouches ?? []);
+  if (result.organization) result.organization.users = await readAuthorityUsers(client, modules.orgId, result.organization.users ?? [], chainId);
+  return result;
 }
 
 /**

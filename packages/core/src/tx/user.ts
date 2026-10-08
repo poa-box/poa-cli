@@ -1,7 +1,7 @@
 /**
  * User write builders — UniversalAccountRegistry (registerAccount /
  * changeUsername / setProfileMetadata) and QuickJoinNew (quickJoinWithUser /
- * claimHatsWithUser).
+ * authority autojoin).
  *
  * Level 1: pure, sync builders taking resolved addresses + prepared values.
  * Level 2: async `<action>Intent(ctx, params)` builders that resolve the
@@ -17,8 +17,7 @@
  * NOT ported (CLI-side revert prediction / flow UX): checkUsernameFree,
  * AccountUnknown prediction, the live re-read of quickJoin.accountRegistry()
  * before a 2-tx join (a write-target pointer that updateAddresses can
- * re-point — see src/commands/user/join.ts), and the claim-hats Multicall3
- * probes (NoUsername / MAX_HATS_PER_MINT / HatOpenlyClaimable sentinel).
+ * re-point — see src/commands/user/join.ts).
  */
 
 import { ethers } from 'ethers';
@@ -44,31 +43,6 @@ import {
 } from '../metadata/user';
 import { resolveOrgModules, requireModule } from '../reads/resolve';
 import { getRegistryAndAccount } from '../reads/user';
-
-/**
- * Parse a comma-separated hat-ID list into BigNumbers. Accepts decimal and
- * 0x-hex forms. Hats Protocol IDs are uint256 — far beyond 2^53 — so
- * parseInt/Number would silently corrupt them.
- * Port of parseHatIds in `pop user claim-hats` —
- * src/commands/user/claim-hats.ts (same messages and exit codes).
- */
-export function parseHatIds(input: string): ethers.BigNumber[] {
-  const parts = String(input).split(',').map(part => part.trim()).filter(part => part.length > 0);
-  if (parts.length === 0) {
-    throw new CliError('No hat IDs given.', EXIT.USAGE, 'Pass --hats <id>[,<id>...] (see pop org roles for hat IDs).');
-  }
-  return parts.map(part => {
-    try {
-      return ethers.BigNumber.from(part);
-    } catch {
-      throw new CliError(
-        `Invalid hat ID "${part}".`,
-        EXIT.USAGE,
-        'Hat IDs are uint256 integers — pass them as decimal or 0x-hex strings (see pop org roles).'
-      );
-    }
-  });
-}
 
 // ───────────────────────────── Level 1 — pure ─────────────────────────────
 
@@ -183,44 +157,9 @@ export function buildQuickJoinWithUser(a: QuickJoinWithUserArgs): TxIntent {
   };
 }
 
-export interface ClaimHatsWithUserArgs {
-  quickJoinAddress: string;
-  /** uint256 hat IDs — parse strings with parseHatIds, never parseInt. */
-  hatIds: ethers.BigNumber[];
-  orgId?: string;
-}
-
-/**
- * Port of `pop user claim-hats` — src/commands/user/claim-hats.ts.
- * QuickJoinNew.claimHatsWithUser(uint256[] claimHatIds). The caller must
- * already have a username (reverts NoUsername); since audit H-03 QuickJoin
- * refuses openly-claimable hats (reverts HatOpenlyClaimable), and the
- * executor bounds the batch at MAX_HATS_PER_MINT.
- */
-export function buildClaimHatsWithUser(a: ClaimHatsWithUserArgs): TxIntent {
-  return {
-    to: a.quickJoinAddress,
-    abi: getAbi('QuickJoinNew'),
-    method: 'claimHatsWithUser',
-    args: [a.hatIds],
-    meta: {
-      domain: 'user',
-      action: 'claim-hats',
-      orgId: a.orgId,
-      summary: { hatIds: a.hatIds.map(id => id.toString()).join(',') },
-    },
-  };
-}
-
-// ──────────────────────────── Level 2 — resolved ───────────────────────────
-
-/** Validate a username with the CLI's wrapping (usage error, not a bare throw). */
 function requireUsernameArg(username: string): string {
-  try {
-    return requireValidUsername(username);
-  } catch (err: any) {
-    throw new CliError(err.message, EXIT.USAGE);
-  }
+  try { return requireValidUsername(username); }
+  catch (err: any) { throw new CliError(err.message, EXIT.USAGE); }
 }
 
 export interface RegisterAccountParams {
@@ -375,44 +314,4 @@ export async function quickJoinWithUserIntent(
   const modules = await resolveOrgModules(ctx.client, params.org, ctx.chainId);
   const quickJoinAddress = requireModule(modules, 'quickJoinAddress');
   return buildQuickJoinWithUser({ quickJoinAddress, orgId: modules.orgId });
-}
-
-export interface ClaimHatsParams {
-  /** Org name or hex ID. */
-  org: string;
-  /** Comma-separated hat-ID string (as the CLI's --hats), or pre-parsed IDs. */
-  hats: string | Array<string | ethers.BigNumberish>;
-}
-
-/**
- * Resolved builder for `pop user claim-hats` —
- * src/commands/user/claim-hats.ts. Parses hat IDs with BigNumber (uint256 —
- * never parseInt), resolves the org's QuickJoin via the subgraph, and builds
- * the claimHatsWithUser intent. The CLI's Multicall3 preflight (NoUsername /
- * batch cap / open-hat sentinel probes) stays in the CLI.
- */
-export async function claimHatsWithUserIntent(
-  ctx: PopContext,
-  params: ClaimHatsParams
-): Promise<TxIntent> {
-  const hatIds = typeof params.hats === 'string'
-    ? parseHatIds(params.hats)
-    : params.hats.map(part => {
-        try {
-          return ethers.BigNumber.from(part);
-        } catch {
-          throw new CliError(
-            `Invalid hat ID "${part}".`,
-            EXIT.USAGE,
-            'Hat IDs are uint256 integers — pass them as decimal or 0x-hex strings (see pop org roles).'
-          );
-        }
-      });
-  if (hatIds.length === 0) {
-    throw new CliError('No hat IDs given.', EXIT.USAGE, 'Pass --hats <id>[,<id>...] (see pop org roles for hat IDs).');
-  }
-
-  const modules = await resolveOrgModules(ctx.client, params.org, ctx.chainId);
-  const quickJoinAddress = requireModule(modules, 'quickJoinAddress');
-  return buildClaimHatsWithUser({ quickJoinAddress, hatIds, orgId: modules.orgId });
 }

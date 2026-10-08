@@ -5,7 +5,6 @@
 
 export * from './resolve';
 export * as education from './education';
-export * as eligibility from './eligibility';
 export * as org from './org';
 export * as paymaster from './paymaster';
 export * as project from './project';
@@ -15,3 +14,5 @@ export * as treasury from './treasury';
 export * as user from './user';
 export * as vote from './vote';
 export * as zkemail from './zkemail';
+
+export * as authority from './authority';

@@ -11,6 +11,7 @@
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
+import { ethers } from 'ethers';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { pinJson } from '../../lib/ipfs';
@@ -117,8 +118,9 @@ export const applyHandler = {
           notes: argv.notes || '',
           experience: argv.experience || '',
         };
-        const cid = await pinJson(JSON.stringify(applicationData));
-        const applicationHash = ipfsCidToBytes32(cid);
+        const serialized = JSON.stringify(applicationData);
+        const cid = argv.dryRun ? undefined : await pinJson(serialized);
+        const applicationHash = cid ? ipfsCidToBytes32(cid) : ethers.utils.sha256(ethers.utils.toUtf8Bytes(serialized));
 
         txSpin.text = 'Sending transaction...';
         const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);

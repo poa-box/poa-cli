@@ -47,10 +47,10 @@ const CONFIG_PARAMS: Record<string, ConfigParam> = {
     ddKey: 0,
     valueType: 'uint8',
     description: 'Support threshold percentage (1-100)',
-    encode: (v) => ethers.utils.defaultAbiCoder.encode(['uint8'], [parseInt(v, 10)]),
+    encode: (v) => ethers.utils.defaultAbiCoder.encode(['uint8'], [Number(v)]),
     validate: (v) => {
-      const n = parseInt(v, 10);
-      if (isNaN(n) || n < 1 || n > 100) throw new Error('Threshold must be 1-100');
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 1 || n > 100) throw new Error('Threshold must be 1-100');
     },
   },
   quorum: {
@@ -59,7 +59,7 @@ const CONFIG_PARAMS: Record<string, ConfigParam> = {
     ddKey: 4,
     valueType: 'uint32',
     description: 'Minimum voter count for validity (0 disables)',
-    encode: (v) => ethers.utils.defaultAbiCoder.encode(['uint32'], [parseInt(v, 10)]),
+    encode: (v) => ethers.utils.defaultAbiCoder.encode(['uint32'], [Number(v)]),
     validate: (v) => {
       const n = Number(v);
       if (!Number.isInteger(n) || n < 0 || n > 4294967295) {
@@ -98,24 +98,7 @@ const CONFIG_PARAMS: Record<string, ConfigParam> = {
       if (v.trim() === ethers.constants.AddressZero) throw new Error('Cannot set executor to zero address');
     },
   },
-  'hat-allowed': {
-    name: 'hat-allowed',
-    hybridKey: -1, // not available on Hybrid
-    ddKey: 3,
-    hybridUnavailableReason:
-      'HAT_ALLOWED is not a HybridVoting config key; this key only applies to DirectDemocracyVoting',
-    valueType: 'uint256,bool',
-    description: 'Allow/disallow a hat ID for DD voting (format: hatId,true/false)',
-    encode: (v) => {
-      const [hatId, allowed] = v.split(',');
-      return ethers.utils.defaultAbiCoder.encode(['uint256', 'bool'], [hatId.trim(), allowed.trim() === 'true']);
-    },
-    validate: (v) => {
-      const parts = v.split(',');
-      if (parts.length !== 2) throw new Error('Format: hatId,true/false');
-      if (!['true', 'false'].includes(parts[1].trim())) throw new Error('Second value must be true or false');
-    },
-  },
+
 };
 
 interface ProposeConfigArgs {
@@ -210,8 +193,8 @@ export const proposeConfigHandler = {
       const run = async (): Promise<Record<string, any>> => {
         const txSpin = output.spinner('Pinning metadata...');
         txSpin.start();
-        const cid = await pinJson(JSON.stringify(metadata));
-        const descriptionHash = ipfsCidToBytes32(cid);
+        const cid = argv.dryRun ? undefined : await pinJson(JSON.stringify(metadata));
+        const descriptionHash = cid ? ipfsCidToBytes32(cid) : ethers.constants.HashZero;
         const titleBytes = stringToBytes(`Set ${paramName} to ${argv.value}`);
 
         txSpin.text = 'Sending transaction...';

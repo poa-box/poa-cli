@@ -58,7 +58,9 @@ describe('voting-class query documents', () => {
     expect(FETCH_PROPOSAL_VOTE_ANALYSIS).toContain('classRawPowers');
     expect(FETCH_PROPOSAL_VOTE_ANALYSIS).toContain('optionWeights');
     expect(FETCH_PROPOSAL_VOTE_ANALYSIS).toContain('classesVersion');
-    expect(FETCH_PROPOSAL_VOTE_ANALYSIS).toContain('orderBy: votedAt');
+    expect(FETCH_PROPOSAL_VOTE_ANALYSIS).toContain('orderBy: id, orderDirection: asc');
+    expect(FETCH_PROPOSAL_VOTE_ANALYSIS).toContain('id_gt: $after');
+    expect(FETCH_PROPOSAL_VOTE_ANALYSIS).toContain('createdAtBlock');
   });
 });
 
@@ -131,11 +133,8 @@ describe('selectClassSnapshot', () => {
     ];
 
     it('picks the live config rather than blending both', () => {
-      const picked = selectClassSnapshot(collided(true), '100');
-      expect(picked.map(c => c.classIndex)).toEqual([0, 1]);
-      expect(picked.map(c => c.slicePct)).toEqual([30, 70]);
-      // Blending would sum to 200 and double every slice.
-      expect(picked.reduce((n, c) => n + c.slicePct, 0)).toBe(100);
+      expect(selectClassSnapshot(collided(true), '100')).toEqual([]);
+      expect(selectClassSnapshot(collided(true), undefined).map(c => c.slicePct)).toEqual([30, 70]);
     });
 
     it('returns [] when the shared version is itself superseded, so the contract answers', () => {

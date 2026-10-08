@@ -46,8 +46,10 @@ export const FETCH_ORG_BY_ID = `
       executorContract {
         id
       }
-      eligibilityModule {
+      membershipAuthority {
         id
+        isRouterBound
+        cutoverAt
       }
       paymentManager {
         id
@@ -162,8 +164,10 @@ export const FETCH_ORG_FULL_DATA = `
       executorContract {
         id
       }
-      eligibilityModule {
+      membershipAuthority {
         id
+        isRouterBound
+        cutoverAt
       }
       paymentManager {
         id
@@ -201,16 +205,17 @@ export const FETCH_ORG_FULL_DATA = `
 
 export const GET_ORG_BY_NAME = `
   query GetOrgByName($name: String!) {
-    organizations(where: { name: $name }, first: 1) {
+    organizations(where: { name: $name }, first: 100) {
       id
       name
+      membershipAuthority { id isRouterBound cutoverAt }
     }
   }
 `;
 
 export const FETCH_USER_ORGANIZATIONS = `
   query FetchUserOrganizations($userAddress: Bytes!) {
-    users(where: { address: $userAddress, membershipStatus: Active }) {
+    users(first: 1000, where: { address: $userAddress }) {
       id
       membershipStatus
       participationTokenBalance
@@ -219,6 +224,7 @@ export const FETCH_USER_ORGANIZATIONS = `
       organization {
         id
         name
+        membershipAuthority { id isRouterBound cutoverAt }
         metadataHash
         participationToken {
           symbol

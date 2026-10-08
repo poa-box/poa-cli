@@ -743,6 +743,36 @@ export const UniversalAccountRegistryAbi = [
     "type": "error",
     "name": "UsernameTooLong",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuthDataTooShort",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ChallengeMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidWebAuthnSignature",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MalformedClientData",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SignCountTooLow",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UserNotPresent",
+    "inputs": []
   }
 ] as const;
 

@@ -17,6 +17,7 @@ export default defineConfig({
     // own dependency tree (libp2p et al.) — running its tests from here would
     // resolve against the wrong node_modules. `yarn --cwd packages/agent test`
     // runs them.
-    exclude: ['**/node_modules/**', '**/dist/**', 'packages/**'],
+    // Local contract checkouts and verification artifacts are not CLI tests.
+    exclude: ['**/node_modules/**', '**/dist/**', 'packages/**', '.context/**'],
   },
 });

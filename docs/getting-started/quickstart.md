@@ -138,9 +138,9 @@ pop user whoami
 
 > Some orgs gate membership behind **vouching**: an existing member vouches for
 > you, and once enough vouches accumulate you claim the role. If `join` tells you
-> a role hat is required, see [Membership & vouching](../guides/governance-templates.md)
-> and use `pop vouch status --hat <id> --address <you>` to track progress, then
-> `pop vouch claim --hat <id>`.
+> membership is required, see [Membership & vouching](../guides/membership-roles-vouching.md)
+> and use `pop vouch status --subject <id> --user <you>` to track progress, then
+> `pop vouch claim --subject <id>`.
 
 ---
 

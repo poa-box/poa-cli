@@ -71,6 +71,7 @@ const GNOSIS = 100;
 const ARBITRUM = 42161;
 const STUDIO_GNOSIS = 'https://api.studio.thegraph.com/query/73367/poa-gnosis-v-1/version/latest';
 const GATEWAY_GNOSIS = 'https://gateway.thegraph.com/api/subgraphs/id/576YA6oF16nA2uG5Q9KFfBSvJm4ZNKzWZkwh8eWXaxJs';
+const GATEWAY_ARBITRUM = 'https://gateway.thegraph.com/api/subgraphs/id/2egvcs94ZStD38inRtK9bp3Maw3UZw4BDinH8jLyAF4G';
 
 const Q = '{ _meta { block { number } } }';
 
@@ -92,6 +93,7 @@ const OWNED_ENV = [
   'POP_ARBITRUM_SUBGRAPH_GATEWAY',
   'POP_ARBITRUM_SUBGRAPH_ID',
   'POP_GRAPH_GATEWAY_URL',
+  'POP_SEPOLIA_SUBGRAPH',
   'POP_AGENT_HOME',
 ];
 
@@ -291,11 +293,13 @@ describe('availability: FREE only', () => {
   });
 
   it('on exhaustion names BOTH the key and the gateway var when no gateway is known', async () => {
+    process.env.POP_SEPOLIA_SUBGRAPH = 'https://api.studio.thegraph.com/query/custom-testnet';
+    newProcess();
     requestMock.mockRejectedValueOnce(httpError(429, 'Too Many Requests'));
 
-    await expect(query(Q, {}, ARBITRUM)).rejects.toMatchObject({
+    await expect(query(Q, {}, 11155111)).rejects.toMatchObject({
       message: expect.stringMatching(/rate-limited/),
-      suggestion: expect.stringMatching(/GRAPH_API_KEY.*POP_ARBITRUM_SUBGRAPH_GATEWAY/s),
+      suggestion: expect.stringMatching(/GRAPH_API_KEY.*POP_SEPOLIA_SUBGRAPH_GATEWAY/s),
     });
     expect(requestMock).toHaveBeenCalledTimes(1);
   });
@@ -323,19 +327,18 @@ describe('availability: NEITHER', () => {
 
   it('POP_SUBGRAPH_TIER=paid is prefer-paid: a chain with no gateway falls back to free', async () => {
     // The override is one global env var but paid transports are per-chain.
-    // Arbitrum has no gateway deployment; honouring the override literally
-    // would make the whole chain unreadable while its Studio endpoint is
-    // alive, so the plan softens to the free endpoint and says so.
+    // A custom free-only testnet deployment has no gateway counterpart.
     process.env.POP_SUBGRAPH_TIER = 'paid';
     process.env.GRAPH_API_KEY = 'test-key';
+    process.env.POP_SEPOLIA_SUBGRAPH = 'https://api.studio.thegraph.com/query/custom-testnet';
     newProcess();
 
     requestMock.mockResolvedValueOnce({ ok: true });
-    await expect(query(Q, {}, ARBITRUM)).resolves.toEqual({ ok: true });
+    await expect(query(Q, {}, 11155111)).resolves.toEqual({ ok: true });
     expect(requestMock).toHaveBeenCalledTimes(1);
     expect(String(requestMock.mock.calls[0][0])).toMatch(/studio\.thegraph\.com/);
 
-    const plan = resolveTransportPlan(ARBITRUM);
+    const plan = resolveTransportPlan(11155111);
     expect(plan.attempts).toEqual([{ tier: 'free', url: expect.stringMatching(/studio/) }]);
     expect(plan.modeOverrideIgnored).toMatch(/no gateway configured/);
   });
@@ -612,10 +615,23 @@ describe('gateway URL resolution', () => {
     expect(resolveTransportPlan(GNOSIS).paidUrl).toBe('https://gateway-eu.thegraph.com/api/subgraphs/id/576YA6oF16nA2uG5Q9KFfBSvJm4ZNKzWZkwh8eWXaxJs');
   });
 
-  it('Arbitrum has NO paid tier by default (subgraph-gap: not published to the gateway)', () => {
+  it('Arbitrum has a published gateway but needs an API key to use it', () => {
+    delete process.env.GRAPH_API_KEY;
+    newProcess();
     const plan = resolveTransportPlan(ARBITRUM);
-    expect(plan.paidUrl).toBeUndefined();
+    expect(plan.paidUrl).toBe(GATEWAY_ARBITRUM);
+    expect(plan.paidKeyMissing).toBe(true);
     expect(plan.availability).toBe('free-only');
+  });
+
+  it('falls back to the published Arbitrum gateway on Studio quota exhaustion', async () => {
+    process.env.GRAPH_API_KEY = 'test-key';
+    newProcess();
+    requestMock.mockRejectedValueOnce(httpError(429, 'Too Many Requests')).mockResolvedValueOnce({ ok: true });
+    await expect(query(Q, {}, ARBITRUM)).resolves.toEqual({ ok: true });
+    expect(requestMock.mock.calls.map(call => call[0])).toEqual([
+      'https://api.studio.thegraph.com/query/73367/poa-arb-v-1/version/latest', GATEWAY_ARBITRUM,
+    ]);
   });
 });
 
@@ -698,7 +714,7 @@ describe('queryAllChains', () => {
     newProcess();
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
-    // Both chains 429 on free; only Gnosis has a gateway to fall back to.
+    // Both chains 429 on free; their independent gateway budgets differ.
     requestMock.mockImplementation((url: string) => {
       if (url === GATEWAY_GNOSIS) return Promise.resolve({ ok: 'paid' });
       return Promise.reject(httpError(429, 'Too Many Requests'));
@@ -708,7 +724,8 @@ describe('queryAllChains', () => {
     expect(results.find(r => r.chainId === GNOSIS)!.data).toEqual({ ok: 'paid' });
     const arb = results.find(r => r.chainId === ARBITRUM)!;
     expect(arb.data).toBeNull();
-    expect(arb.error).toMatch(/rate-limited/);
+    expect(arb.error).toMatch(/gateway is out of query budget/);
+    expect(requestMock.mock.calls.some(call => call[0] === GATEWAY_ARBITRUM)).toBe(true);
     stderr.mockRestore();
   });
 });

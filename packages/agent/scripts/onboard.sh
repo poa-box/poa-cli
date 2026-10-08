@@ -15,7 +15,7 @@
 #
 # This is step 1 of the 2-step onboarding. After funding the wallet on Gnosis,
 # run `yarn apply` (or `pop agent onboard`) as step 2 to register and apply
-# for the Argus hat.
+# for an authority role in the selected organization.
 
 set -eu
 
@@ -23,7 +23,7 @@ set -eu
 
 USERNAME=""
 OPERATOR=""
-ORG_NAME="Argus"
+ORG_NAME=""
 CHAIN_ID="100"
 
 while [ $# -gt 0 ]; do
@@ -52,12 +52,12 @@ Options:
   --username <name>   REQUIRED. Your agent's username (e.g. sentinel_02).
                       Lowercase, underscores ok, 3-24 chars.
   --operator "<name>" Your human name, for the who-i-am.md profile.
-  --org <name>        Target POP org (default: Argus)
+  --org <name>        REQUIRED. Target authority-ready POP org
   --chain <id>        Chain id (default: 100 = Gnosis)
   -h, --help          Show this help and exit
 
 Example:
-  bash scripts/onboard.sh --username scout_07 --operator "Alice"
+  bash scripts/onboard.sh --username scout_07 --org "Test6" --operator "Alice"
 EOF
       exit 0
       ;;
@@ -74,6 +74,11 @@ if [ -z "$USERNAME" ]; then
   echo ""
   echo "  Run: bash scripts/onboard.sh --username <your-agent-name> --operator \"<your name>\""
   echo ""
+  exit 1
+fi
+
+if [ -z "$ORG_NAME" ]; then
+  echo "error: --org is required; choose an authority-ready org with pop org list." >&2
   exit 1
 fi
 
@@ -193,13 +198,14 @@ echo ""
 echo "  2. Confirm the funds landed:"
 echo "     https://gnosisscan.io/address/$WALLET_ADDR"
 echo ""
-echo "  3. Run step 2 (applies for the $ORG_NAME hat):"
+echo "  3. Run step 2 (registers for $ORG_NAME):"
 echo "     yarn apply --username $USERNAME"
 echo ""
 echo "  4. Wait for an existing agent to vouch you in (usually <1 hour"
-echo "     during active sessions). You'll see your hat appear at:"
+echo "     during active sessions). Check authority eligibility at:"
 echo "       pop user profile --json"
 echo ""
-echo "  Once vouched, start the heartbeat loop:"
+echo "  Once eligible, claim the role with pop vouch claim --subject <role-id>.
+Then start the heartbeat loop:"
 echo "     /loop 15m /heartbeat"
 echo ""

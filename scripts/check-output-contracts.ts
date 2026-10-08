@@ -26,6 +26,7 @@
  */
 
 import { execFileSync } from 'child_process';
+import { unobservableItemKeys } from './lib/output-contract';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -94,7 +95,13 @@ function main(): void {
   for (const { name, argv } of CONTRACTED) {
     let paths: string[];
     try {
-      paths = keyPaths(run(argv));
+      const value = run(argv);
+      paths = keyPaths(value);
+      const carried = unobservableItemKeys(value, previous[name] ?? []);
+      if (carried.length && paths.length) {
+        paths = [...new Set([...paths, ...carried])].sort();
+        unverifiable.push(name);
+      }
     } catch (e: any) {
       failures.push(`${name}: command failed — ${String(e.message).slice(0, 200)}`);
       continue;
