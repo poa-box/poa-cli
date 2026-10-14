@@ -104,7 +104,7 @@ export const NETWORKS: Record<string, NetworkConfig> = {
     gatewaySubgraphId: '576YA6oF16nA2uG5Q9KFfBSvJm4ZNKzWZkwh8eWXaxJs',
     bountyTokens: {
       BREAD: '0xa555d5344f6FB6c65da19e403Cb4c1eC4a1a5Ee3',
-      USDC: '0xDDAfbb505ad214D7b80b1f830fcCc89B60fB7A83',
+      USDC: '0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83',
       WXDAI: '0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d',
       sDAI: '0xaf204776c7245bF4147c2612BF6e5972Ee483701',
     },
@@ -336,8 +336,9 @@ const KNOWN_TOKENS: Record<string, TokenInfo> = {
   '0xaf88d065e77c8cc2239327c5edb3a432268e5831': { symbol: 'USDC', decimals: 6, address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' },
   // Gnosis
   '0xa555d5344f6fb6c65da19e403cb4c1ec4a1a5ee3': { symbol: 'BREAD', decimals: 18, address: '0xa555d5344f6FB6c65da19e403Cb4c1eC4a1a5Ee3' },
-  '0xddafbb505ad214d7b80b1f830fccc89b60fb7a83': { symbol: 'USDC', decimals: 6, address: '0xDDAfbb505ad214D7b80b1f830fcCc89B60fB7A83' },
+  '0xddafbb505ad214d7b80b1f830fccc89b60fb7a83': { symbol: 'USDC', decimals: 6, address: '0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83' },
   '0xe91d153e0b41518a2ce8dd3d7944fa863463a97d': { symbol: 'WXDAI', decimals: 18, address: '0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d' },
+  '0xaf204776c7245bf4147c2612bf6e5972ee483701': { symbol: 'sDAI', decimals: 18, address: '0xaf204776c7245bF4147c2612BF6e5972Ee483701' },
   // Sepolia
   '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238': { symbol: 'USDC', decimals: 6, address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238' },
   // Base Sepolia

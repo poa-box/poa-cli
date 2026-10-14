@@ -209,13 +209,44 @@ export async function enrichTasksWithDeadlines(
   return { tasks, errors };
 }
 
+/** Contract cutoff only; optimistic assignedAt + window and UI grace stay host policy. */
+export function effectiveTaskDeadlineSeconds(
+  task: Pick<TaskOnChain, 'claimDeadline' | 'absoluteDeadline'>
+): number | undefined {
+  const values = [task.claimDeadline, task.absoluteDeadline];
+  for (const d of values) if (d !== undefined && (!Number.isSafeInteger(d) || d < 0)) throw new Error('Deadline must be exact Unix seconds');
+  const deadlines = values.filter((d): d is number => d !== undefined && d > 0);
+  return deadlines.length ? Math.min(...deadlines) : undefined;
+}
+
+export interface ProjectBudgetOnChain { cap: ethers.BigNumber; spent: ethers.BigNumber; exists: boolean }
+export function decodeProjectBudget(data: string): ProjectBudgetOnChain {
+  const [cap, spent, exists] = ethers.utils.defaultAbiCoder.decode(['uint128', 'uint128', 'bool'], data);
+  return { cap, spent, exists };
+}
+export function decodeBountyBudget(data: string): Omit<ProjectBudgetOnChain, 'exists'> {
+  const [cap, spent] = ethers.utils.defaultAbiCoder.decode(['uint128', 'uint128'], data);
+  return { cap, spent };
+}
+export function decodeOrganizerSubjects(data: string): string[] {
+  return (ethers.utils.defaultAbiCoder.decode(['uint256[]'], data)[0] as ethers.BigNumber[]).map(id => id.toString());
+}
+export async function getProjectBudget(provider: ethers.providers.Provider, taskManagerAddr: string, projectId: string): Promise<ProjectBudgetOnChain> {
+  return decodeProjectBudget(await callLens(provider, taskManagerAddr, STORAGE_KEYS.PROJECT_INFO,
+    ethers.utils.defaultAbiCoder.encode(['bytes32'], [projectId])));
+}
+export async function getBountyBudget(provider: ethers.providers.Provider, taskManagerAddr: string, projectId: string, token: string): Promise<Omit<ProjectBudgetOnChain, 'exists'>> {
+  return decodeBountyBudget(await callLens(provider, taskManagerAddr, STORAGE_KEYS.BOUNTY_BUDGET,
+    ethers.utils.defaultAbiCoder.encode(['bytes32', 'address'], [projectId, token])));
+}
+
 export type ClaimState = 'expired-claimable' | 'expiring-soon' | 'on-track' | 'none';
 
 const EXPIRING_SOON_WINDOW_SECONDS = 24 * 60 * 60;
 
 /**
- * Classify a CLAIMED task's deadline state. `claimDeadline` takes precedence
- * over `absoluteDeadline`; zero/undefined deadlines mean "no deadline".
+ * Classify a CLAIMED task's deadline state using the earliest positive cutoff.
+ * Zero/undefined deadlines mean "no deadline".
  * A deadline strictly in the past means the claim is forfeitable.
  */
 export function deriveClaimState(
@@ -223,7 +254,7 @@ export function deriveClaimState(
   now?: number
 ): ClaimState {
   if (task.status !== TASK_STATUS.CLAIMED) return 'none';
-  const deadline = task.claimDeadline || task.absoluteDeadline;
+  const deadline = effectiveTaskDeadlineSeconds(task);
   if (!deadline) return 'none';
   const ts = now ?? Math.floor(Date.now() / 1000);
   if (deadline < ts) return 'expired-claimable';

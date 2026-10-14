@@ -1,0 +1,573 @@
+type Query {
+  projects(first: Int = 100, orderBy: Project_orderBy, orderDirection: OrderDirection, where: Project_filter, block: Block_height): [Project!]!
+  projectManagers(first: Int = 100, orderBy: ProjectManager_orderBy, orderDirection: OrderDirection, where: ProjectManager_filter, block: Block_height): [ProjectManager!]!
+  tasks(first: Int = 100, orderBy: Task_orderBy, orderDirection: OrderDirection, where: Task_filter, block: Block_height): [Task!]!
+  taskClaimExpiries(first: Int = 100, orderBy: TaskClaimExpiry_orderBy, orderDirection: OrderDirection, where: TaskClaimExpiry_filter, block: Block_height): [TaskClaimExpiry!]!
+  educationModules(first: Int = 100, orderBy: EducationModule_orderBy, orderDirection: OrderDirection, where: EducationModule_filter, block: Block_height): [EducationModule!]!
+  moduleCompletions(first: Int = 100, orderBy: ModuleCompletion_orderBy, orderDirection: OrderDirection, where: ModuleCompletion_filter, block: Block_height): [ModuleCompletion!]!
+  _meta(block: Block_height): _Meta_
+}
+
+enum Project_orderBy {
+  id
+  projectId
+  taskManager
+  taskManager__id
+  taskManager__createdAt
+  taskManager__createdAtBlock
+  taskManager__transactionHash
+  title
+  metadataHash
+  metadata
+  metadata__id
+  metadata__description
+  metadata__indexedAt
+  cap
+  createdAt
+  createdAtBlock
+  deleted
+  deletedAt
+  tasks
+  managers
+  rolePermissions
+  bountyCaps
+  capChanges
+}
+
+enum OrderDirection {
+  asc
+  desc
+}
+
+input Project_filter {
+  id_gt: String
+  taskManager: String
+  taskManager_: TaskManager_filter
+  deleted: Boolean
+}
+
+input TaskManager_filter {
+  organization: String
+}
+
+input Block_height {
+  hash: Bytes
+  number: Int
+  number_gte: Int
+}
+
+scalar Bytes
+
+type Project {
+  id: String!
+  projectId: Bytes!
+  taskManager: TaskManager!
+  title: String!
+  metadataHash: Bytes!
+  metadata: ProjectMetadata
+  cap: BigInt!
+  createdAt: BigInt!
+  deleted: Boolean!
+}
+
+type TaskManager {
+  id: Bytes!
+  organization: Organization!
+}
+
+type Organization {
+  id: Bytes!
+}
+
+type ProjectMetadata {
+  description: String
+}
+
+scalar BigInt
+
+enum ProjectManager_orderBy {
+  id
+  project
+  project__id
+  project__projectId
+  project__title
+  project__metadataHash
+  project__cap
+  project__createdAt
+  project__createdAtBlock
+  project__deleted
+  project__deletedAt
+  manager
+  managerUser
+  managerUser__id
+  managerUser__address
+  managerUser__joinMethod
+  managerUser__membershipStatus
+  managerUser__participationTokenBalance
+  managerUser__totalVotes
+  managerUser__totalTasksCompleted
+  managerUser__totalTasksCancelled
+  managerUser__totalTasksLostToExpiry
+  managerUser__totalTasksReleased
+  managerUser__totalModulesCompleted
+  managerUser__totalClaimsAmount
+  managerUser__totalPaymentsAmount
+  managerUser__totalTokenRequestsAmount
+  managerUser__firstSeenAt
+  managerUser__firstSeenAtBlock
+  managerUser__lastActiveAt
+  managerUser__lastActiveAtBlock
+  isActive
+  addedAt
+  addedAtBlock
+  removedAt
+  removedAtBlock
+  lastUpdatedAt
+  transactionHash
+}
+
+input ProjectManager_filter {
+  id_gt: String
+  project_: Project_filter
+}
+
+type ProjectManager {
+  id: String!
+  project: Project!
+  manager: Bytes!
+  isActive: Boolean!
+  addedAt: BigInt!
+  removedAt: BigInt
+  lastUpdatedAt: BigInt!
+}
+
+enum Task_orderBy {
+  id
+  taskId
+  taskManager
+  project
+  project__id
+  project__projectId
+  project__title
+  project__metadataHash
+  project__cap
+  project__createdAt
+  project__createdAtBlock
+  project__deleted
+  project__deletedAt
+  payout
+  bountyToken
+  bountyPayout
+  requiresApplication
+  title
+  metadataHash
+  submissionHash
+  metadata
+  metadata__id
+  metadata__name
+  metadata__description
+  metadata__location
+  metadata__difficulty
+  metadata__estimatedHours
+  metadata__submission
+  metadata__rejection
+  metadata__dueDate
+  metadata__indexedAt
+  assignee
+  assigneeUsername
+  assigneeUser
+  assigneeUser__id
+  assigneeUser__address
+  assigneeUser__joinMethod
+  assigneeUser__membershipStatus
+  assigneeUser__participationTokenBalance
+  assigneeUser__totalVotes
+  assigneeUser__totalTasksCompleted
+  assigneeUser__totalTasksCancelled
+  assigneeUser__totalTasksLostToExpiry
+  assigneeUser__totalTasksReleased
+  assigneeUser__totalModulesCompleted
+  assigneeUser__totalClaimsAmount
+  assigneeUser__totalPaymentsAmount
+  assigneeUser__totalTokenRequestsAmount
+  assigneeUser__firstSeenAt
+  assigneeUser__firstSeenAtBlock
+  assigneeUser__lastActiveAt
+  assigneeUser__lastActiveAtBlock
+  completer
+  completerUsername
+  completerUser
+  completerUser__id
+  completerUser__address
+  completerUser__joinMethod
+  completerUser__membershipStatus
+  completerUser__participationTokenBalance
+  completerUser__totalVotes
+  completerUser__totalTasksCompleted
+  completerUser__totalTasksCancelled
+  completerUser__totalTasksLostToExpiry
+  completerUser__totalTasksReleased
+  completerUser__totalModulesCompleted
+  completerUser__totalClaimsAmount
+  completerUser__totalPaymentsAmount
+  completerUser__totalTokenRequestsAmount
+  completerUser__firstSeenAt
+  completerUser__firstSeenAtBlock
+  completerUser__lastActiveAt
+  completerUser__lastActiveAtBlock
+  canceller
+  cancellerUsername
+  cancellerUser
+  cancellerUser__id
+  cancellerUser__address
+  cancellerUser__joinMethod
+  cancellerUser__membershipStatus
+  cancellerUser__participationTokenBalance
+  cancellerUser__totalVotes
+  cancellerUser__totalTasksCompleted
+  cancellerUser__totalTasksCancelled
+  cancellerUser__totalTasksLostToExpiry
+  cancellerUser__totalTasksReleased
+  cancellerUser__totalModulesCompleted
+  cancellerUser__totalClaimsAmount
+  cancellerUser__totalPaymentsAmount
+  cancellerUser__totalTokenRequestsAmount
+  cancellerUser__firstSeenAt
+  cancellerUser__firstSeenAtBlock
+  cancellerUser__lastActiveAt
+  cancellerUser__lastActiveAtBlock
+  status
+  createdAt
+  createdAtBlock
+  assignedAt
+  submittedAt
+  completedAt
+  cancelledAt
+  updatedAt
+  rejectionHash
+  rejectionCount
+  completionWindow
+  absoluteDeadline
+  claimDeadline
+  reclaimCount
+  releaseCount
+  lastReleasedAt
+  latestSubmission
+  latestSubmission__id
+  latestSubmission__submissionHash
+  latestSubmission__submittedAt
+  latestSubmission__submittedAtBlock
+  latestSubmission__transactionHash
+  latestRejection
+  latestRejection__id
+  latestRejection__rejector
+  latestRejection__rejectorUsername
+  latestRejection__rejectionHash
+  latestRejection__rejectedAt
+  latestRejection__rejectedAtBlock
+  latestRejection__transactionHash
+  applications
+  submissions
+  rejections
+  claimExpiries
+  releases
+}
+
+input Task_filter {
+  id_gt: String
+  taskManager: Bytes
+  project_: Project_filter
+}
+
+type Task {
+  id: String!
+  taskId: BigInt!
+  taskManager: Bytes!
+  project: Project!
+  payout: BigInt!
+  bountyToken: Bytes!
+  bountyPayout: BigInt!
+  requiresApplication: Boolean!
+  title: String!
+  metadataHash: Bytes!
+  metadata: TaskMetadata
+  assignee: Bytes
+  status: TaskStatus!
+  createdAt: BigInt!
+  completionWindow: BigInt
+  absoluteDeadline: BigInt
+  claimDeadline: BigInt
+}
+
+type TaskMetadata {
+  name: String
+  description: String
+  location: String
+  difficulty: String
+  estimatedHours: BigDecimal
+  submission: String
+  dueDate: BigInt
+}
+
+scalar BigDecimal
+
+enum TaskStatus {
+  Open
+  Assigned
+  Submitted
+  Completed
+  Cancelled
+}
+
+enum TaskClaimExpiry_orderBy {
+  id
+  task
+  task__id
+  task__taskId
+  task__taskManager
+  task__payout
+  task__bountyToken
+  task__bountyPayout
+  task__requiresApplication
+  task__title
+  task__metadataHash
+  task__submissionHash
+  task__assignee
+  task__assigneeUsername
+  task__completer
+  task__completerUsername
+  task__canceller
+  task__cancellerUsername
+  task__status
+  task__createdAt
+  task__createdAtBlock
+  task__assignedAt
+  task__submittedAt
+  task__completedAt
+  task__cancelledAt
+  task__updatedAt
+  task__rejectionHash
+  task__rejectionCount
+  task__completionWindow
+  task__absoluteDeadline
+  task__claimDeadline
+  task__reclaimCount
+  task__releaseCount
+  task__lastReleasedAt
+  previousClaimer
+  previousClaimerUsername
+  previousClaimerUser
+  previousClaimerUser__id
+  previousClaimerUser__address
+  previousClaimerUser__joinMethod
+  previousClaimerUser__membershipStatus
+  previousClaimerUser__participationTokenBalance
+  previousClaimerUser__totalVotes
+  previousClaimerUser__totalTasksCompleted
+  previousClaimerUser__totalTasksCancelled
+  previousClaimerUser__totalTasksLostToExpiry
+  previousClaimerUser__totalTasksReleased
+  previousClaimerUser__totalModulesCompleted
+  previousClaimerUser__totalClaimsAmount
+  previousClaimerUser__totalPaymentsAmount
+  previousClaimerUser__totalTokenRequestsAmount
+  previousClaimerUser__firstSeenAt
+  previousClaimerUser__firstSeenAtBlock
+  previousClaimerUser__lastActiveAt
+  previousClaimerUser__lastActiveAtBlock
+  newClaimer
+  newClaimerUsername
+  newClaimerUser
+  newClaimerUser__id
+  newClaimerUser__address
+  newClaimerUser__joinMethod
+  newClaimerUser__membershipStatus
+  newClaimerUser__participationTokenBalance
+  newClaimerUser__totalVotes
+  newClaimerUser__totalTasksCompleted
+  newClaimerUser__totalTasksCancelled
+  newClaimerUser__totalTasksLostToExpiry
+  newClaimerUser__totalTasksReleased
+  newClaimerUser__totalModulesCompleted
+  newClaimerUser__totalClaimsAmount
+  newClaimerUser__totalPaymentsAmount
+  newClaimerUser__totalTokenRequestsAmount
+  newClaimerUser__firstSeenAt
+  newClaimerUser__firstSeenAtBlock
+  newClaimerUser__lastActiveAt
+  newClaimerUser__lastActiveAtBlock
+  expiredAt
+  expiredAtBlock
+  transactionHash
+}
+
+input TaskClaimExpiry_filter {
+  id_gt: Bytes
+  task: String
+  task_: Task_filter
+}
+
+type TaskClaimExpiry {
+  id: Bytes!
+  task: Task!
+  previousClaimer: Bytes!
+  newClaimer: Bytes!
+  expiredAt: BigInt!
+  expiredAtBlock: BigInt!
+  transactionHash: Bytes!
+}
+
+enum EducationModule_orderBy {
+  id
+  educationHub
+  educationHub__id
+  educationHub__token
+  educationHub__hatsContract
+  educationHub__executor
+  educationHub__isPaused
+  educationHub__nextModuleId
+  educationHub__createdAt
+  educationHub__createdAtBlock
+  moduleId
+  title
+  contentHash
+  metadata
+  metadata__id
+  metadata__description
+  metadata__link
+  metadata__answersJson
+  metadata__indexedAt
+  payout
+  status
+  createdAt
+  createdAtBlock
+  updatedAt
+  updatedAtBlock
+  removedAt
+  removedAtBlock
+  completions
+  updates
+}
+
+input EducationModule_filter {
+  id_gt: String
+  educationHub: String
+  educationHub_: EducationHubContract_filter
+}
+
+input EducationHubContract_filter {
+  organization: String
+}
+
+type EducationModule {
+  id: String!
+  educationHub: EducationHubContract!
+  moduleId: BigInt!
+  title: String!
+  contentHash: Bytes!
+  metadata: EducationModuleMetadata
+  payout: BigInt!
+  status: ModuleStatus!
+  createdAt: BigInt!
+}
+
+type EducationHubContract {
+  id: Bytes!
+  organization: Organization!
+}
+
+type EducationModuleMetadata {
+  description: String
+  link: String
+  quiz: [String!]
+  answersJson: String
+}
+
+enum ModuleStatus {
+  Active
+  Removed
+}
+
+enum ModuleCompletion_orderBy {
+  id
+  educationHub
+  educationHub__id
+  educationHub__token
+  educationHub__hatsContract
+  educationHub__executor
+  educationHub__isPaused
+  educationHub__nextModuleId
+  educationHub__createdAt
+  educationHub__createdAtBlock
+  module
+  module__id
+  module__moduleId
+  module__title
+  module__contentHash
+  module__payout
+  module__status
+  module__createdAt
+  module__createdAtBlock
+  module__updatedAt
+  module__updatedAtBlock
+  module__removedAt
+  module__removedAtBlock
+  moduleId
+  learner
+  learnerUser
+  learnerUser__id
+  learnerUser__address
+  learnerUser__joinMethod
+  learnerUser__membershipStatus
+  learnerUser__participationTokenBalance
+  learnerUser__totalVotes
+  learnerUser__totalTasksCompleted
+  learnerUser__totalTasksCancelled
+  learnerUser__totalTasksLostToExpiry
+  learnerUser__totalTasksReleased
+  learnerUser__totalModulesCompleted
+  learnerUser__totalClaimsAmount
+  learnerUser__totalPaymentsAmount
+  learnerUser__totalTokenRequestsAmount
+  learnerUser__firstSeenAt
+  learnerUser__firstSeenAtBlock
+  learnerUser__lastActiveAt
+  learnerUser__lastActiveAtBlock
+  learnerUsername
+  completedAt
+  completedAtBlock
+  transactionHash
+}
+
+input ModuleCompletion_filter {
+  id_gt: String
+  educationHub: String
+  educationHub_: EducationHubContract_filter
+  learner: Bytes
+}
+
+type ModuleCompletion {
+  id: String!
+  educationHub: EducationHubContract!
+  module: EducationModule!
+  moduleId: BigInt!
+  learner: Bytes!
+  completedAt: BigInt!
+  completedAtBlock: BigInt!
+  transactionHash: Bytes!
+}
+
+type _Meta_ {
+  block: _Block_!
+}
+
+type _Block_ {
+  hash: Bytes
+  number: Int!
+  timestamp: Int
+}
+
+# Repair projection additions, verified against both serving introspections.
+extend type Query { organization(id: ID!, block: Block_height): Organization }
+extend type Organization { taskManager: TaskManager }
+extend input ProjectManager_filter { isActive: Boolean }

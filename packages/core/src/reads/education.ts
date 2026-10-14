@@ -13,6 +13,11 @@
  * (which reverts ModuleUnknown).
  */
 
+import { requireRawUint } from '../amounts';
+import { assertSourceRef, SourceSnapshot } from '../data/facts';
+import { readIndexedPageFacts, type IndexedRow } from './protocol';
+import type { WorkPageOptions } from './project';
+import { FETCH_MODULES_PAGE, FETCH_COMPLETIONS_PAGE } from '../graph/documents/education';
 import type { GraphClient } from '../graph/client';
 
 /** Indexed education-module metadata (from the pinned IPFS doc). */
@@ -45,7 +50,7 @@ export interface EducationModuleRow {
 
 /** Verbatim from src/commands/education/list.ts. */
 export const FETCH_EDUCATION_DATA = `
-  query FetchEducationData($orgId: Bytes!) {
+  query FetchEducationData($orgId: ID!) {
     organization(id: $orgId) {
       id
       educationHub {
@@ -79,7 +84,7 @@ export const FETCH_EDUCATION_DATA = `
  * Verbatim from src/commands/education/update.ts.
  */
 export const FETCH_MODULES_FOR_UPDATE = `
-  query FetchModulesForUpdate($orgId: Bytes!) {
+  query FetchModulesForUpdate($orgId: ID!) {
     organization(id: $orgId) {
       id
       educationHub {
@@ -107,7 +112,7 @@ export const FETCH_MODULES_FOR_UPDATE = `
  * Verbatim from src/commands/education/remove.ts.
  */
 export const FETCH_MODULE_TITLE = `
-  query FetchModuleTitle($orgId: Bytes!) {
+  query FetchModuleTitle($orgId: ID!) {
     organization(id: $orgId) {
       educationHub {
         modules(first: 100) {
@@ -179,4 +184,32 @@ export async function getModuleTitle(
   }>(FETCH_MODULE_TITLE, { orgId }, chainId);
   const modules = result.organization?.educationHub?.modules || [];
   return modules.find((m) => String(m.moduleId) === String(moduleId))?.title ?? undefined;
+}
+
+function educationScope(options: WorkPageOptions): { orgId: string; hub: string } {
+  const source = options.source;
+  assertSourceRef(source);
+  if (!source.indexed || !source.orgId || !source.contract) throw new Error('Explicit indexed education org/hub required');
+  return { orgId: source.orgId.toLowerCase(), hub: source.contract.toLowerCase() };
+}
+function validateEducationRow(row: IndexedRow, options: WorkPageOptions): void {
+  const hub = row.educationHub as { id?: string; organization?: { id?: string } } | undefined;
+  if (hub?.id?.toLowerCase() !== options.source.contract!.toLowerCase() || hub.organization?.id?.toLowerCase() !== options.source.orgId!.toLowerCase()) throw new Error('Education source mismatch');
+  requireRawUint(row.moduleId as string);
+}
+/** Full library metadata; completions have their own completeness and cannot cap this list. */
+export function listEducationModulesComplete(options: WorkPageOptions): Promise<SourceSnapshot<readonly IndexedRow[]>> {
+  const variables = educationScope(options);
+  return readIndexedPageFacts({ ...options, variables, document: FETCH_MODULES_PAGE, collection: 'educationModules', initialCursor: '',
+    validateRow: row => { validateEducationRow(row, options); requireRawUint(row.payout as string); } });
+}
+export function listCompletionsComplete(options: WorkPageOptions): Promise<SourceSnapshot<readonly IndexedRow[]>> {
+  const variables = educationScope(options);
+  if (!options.source.account) throw new Error('Explicit learner account required');
+  return readIndexedPageFacts({ ...options, variables: { ...variables, learner: options.source.account.toLowerCase() }, document: FETCH_COMPLETIONS_PAGE, collection: 'moduleCompletions', initialCursor: '',
+    validateRow: row => {
+      validateEducationRow(row, options);
+      if (String(row.learner).toLowerCase() !== options.source.account!.toLowerCase()) throw new Error('Learner mismatch');
+      requireRawUint(row.completedAt as string); requireRawUint(row.completedAtBlock as string);
+    } });
 }

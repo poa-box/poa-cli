@@ -1,0 +1,86 @@
+{
+  "enums": {
+    "ActionReason": {
+      "Ok": 0,
+      "UnknownSubject": 1,
+      "NotInOrg": 2,
+      "AlreadyMember": 3,
+      "NotMember": 4,
+      "SubjectFull": 5,
+      "BlockedByGovernanceBan": 6,
+      "RemovalIneffective": 7,
+      "NotYetActive": 8,
+      "NoRuleToClaim": 9,
+      "RenouncedClaimable": 10,
+      "Paused": 11
+    },
+    "EligSource": {
+      "DefaultAllow": 0,
+      "VouchQuorum": 1,
+      "EmailVerified": 2,
+      "StickyGovernanceGrant": 3
+    },
+    "LintCode": {
+      "None": 0,
+      "QuorumNoOp": 1,
+      "VouchWithMaxMembers": 2,
+      "DefaultAllowStrongPerms": 3,
+      "GroupFanout": 4,
+      "SelfVoucher": 5
+    },
+    "RuleKind": {
+      "None": 0,
+      "Grant": 1,
+      "Ban": 2
+    },
+    "RuleAuthor": {
+      "Governance": 0,
+      "Delegated": 1
+    },
+    "PendingKind": {
+      "Grant": 0,
+      "Offer": 1,
+      "Remove": 2
+    }
+  },
+  "oracleSources": [
+    {
+      "path": ".context/contracts/src/libs/AccessV2Types.sol",
+      "sha256": "a74366a715584a6774be5ca16d2c2f577c8ba41b1df48b3f713e94b1ac715b95"
+    },
+    {
+      "path": ".context/contracts/src/libs/AccessV2Ids.sol",
+      "sha256": "42b8d52840d5b502c90f10672c91489d4eeb5cc3efd4bdd98bc9a95d214c1344"
+    },
+    {
+      "path": ".context/contracts/src/libs/AccessV2PermKeys.sol",
+      "sha256": "b2c0e4d30e7252b9c659317f59c1d8dbe734452ee475c2df2f5211bfb88c9bfb"
+    },
+    {
+      "path": ".context/contracts/src/libs/MembershipAuthorityLogic.sol",
+      "sha256": "3988becb99b4e15284b488cdfd5991a658a14391aec9f28ff9adf33e63bf00be"
+    },
+    {
+      "path": ".context/contracts/src/MembershipAuthority.sol",
+      "sha256": "47ce0152db9016c04e105e37d0e52a5d1f98cc4e0b7a267fe0c3bb7f6b2bc9cc"
+    },
+    {
+      "path": ".context/contracts/src/libs/VotingMath.sol",
+      "sha256": "0d5b60d2775240190103f0f80fe79d29cda7694feac67ec8e771206f5273b9cd"
+    },
+    {
+      "path": ".context/subgraph-schema.graphql",
+      "sha256": "5f9d3a3fcfceabcb81ffa8bb847e954ef50bf32df2c5fc68d0184a32f9c76a3c"
+    }
+  ],
+  "limits": [
+    "Local contract and schema snapshot only; no deployed bytecode/schema checks."
+  ],
+  "trackedFixtures": [
+    {
+      "path": "packages/core/test/fixtures/core-update/authority/schema.graphql",
+      "sha256": "22a90c0e7c41e386c0e6da6547a41f7605c13c8c907794e0e89f1f4143cd3b9a",
+      "derivation": "Verbatim authority-related type/enum definitions from the full offline schema snapshot; full source hash above."
+    }
+  ]
+}

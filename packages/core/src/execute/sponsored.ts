@@ -18,17 +18,18 @@ import {
   createWalletClient,
   http,
   encodeFunctionData,
-  encodeAbiParameters,
-  parseAbiParameters,
-  keccak256,
+  pad,
   type Hex,
   type Address,
   type Abi,
-  concat,
-  pad,
-  toHex,
 } from 'viem';
 import { gnosis } from 'viem/chains';
+import { encodeSponsorshipPayload, SUBJECT_TYPE } from '../sponsorship/codec';
+import { hashUserOperationV07 } from '../accounts/userop-v07';
+import { decodeUserOperationOutcome, OperationReceipt, UserOperationOutcome } from './outcome';
+import { SponsoredSubmissionError, SponsoredSubmission } from '../sponsorship-config';
+export { SponsoredSubmissionError } from '../sponsorship-config';
+export type { SponsoredSubmission } from '../sponsorship-config';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createPimlicoClient } from 'permissionless/clients/pimlico';
 import {
@@ -62,14 +63,9 @@ import type { SponsoredSendOptions } from '../sponsorship-config';
  * Total: 78 bytes (must match frontend encoding exactly)
  */
 export function encodePaymasterData(orgId: Hex, hatId: bigint): Hex {
-  const version = toHex(0x01, { size: 1 });
-  const paddedOrgId = pad(orgId as Hex, { size: 32 });
-  const subjectType = toHex(0x01, { size: 1 }); // HAT
-  const paddedHatId = toHex(hatId, { size: 32 });
-  const ruleId = toHex(0, { size: 4 });
-  const mailboxCommit = toHex(0n, { size: 8 });
-
-  return concat([version, paddedOrgId, subjectType, paddedHatId, ruleId, mailboxCommit]) as Hex;
+  // The historical wrapper accepts short Hex org IDs. The generic codec remains bytes32-strict.
+  if (!/^0x[\da-fA-F]{0,64}$/.test(orgId)) throw new Error('orgId must be Hex of at most 32 bytes');
+  return encodeSponsorshipPayload({ orgId: pad(orgId, { size: 32 }), subjectType: SUBJECT_TYPE.HAT, subjectId: hatId }) as Hex;
 }
 
 /**
@@ -111,14 +107,6 @@ export async function delegateEOA(privateKey: Hex, rpcUrl?: string): Promise<Hex
   return hash;
 }
 
-/**
- * Pack two uint128 values into a single bytes32.
- * high128 || low128
- */
-function packUint128Pair(high: bigint, low: bigint): Hex {
-  return pad(toHex((BigInt(high) << 128n) | BigInt(low)), { size: 32 });
-}
-
 function applyBuffer(value: bigint): bigint {
   return (BigInt(value) * (100n + GAS_BUFFER_PERCENT)) / 100n;
 }
@@ -128,49 +116,7 @@ function applyBuffer(value: bigint): bigint {
  * Ported from poa-frontend userOpBuilder.js getUserOpHash().
  */
 export function getUserOpHash(userOp: any, entryPoint: Address, chainId: number): Hex {
-  // Reconstruct paymasterAndData
-  let paymasterAndData: Hex = '0x';
-  if (userOp.paymaster) {
-    const pmVerGas = pad(toHex(userOp.paymasterVerificationGasLimit || 0n), { size: 16 });
-    const pmPostGas = pad(toHex(userOp.paymasterPostOpGasLimit || 0n), { size: 16 });
-    if (userOp.paymasterData && userOp.paymasterData !== '0x') {
-      paymasterAndData = concat([userOp.paymaster, pmVerGas, pmPostGas, userOp.paymasterData]) as Hex;
-    } else {
-      paymasterAndData = concat([userOp.paymaster, pmVerGas, pmPostGas]) as Hex;
-    }
-  }
-
-  const accountGasLimits = packUint128Pair(
-    userOp.verificationGasLimit,
-    userOp.callGasLimit,
-  );
-  const gasFees = packUint128Pair(
-    userOp.maxPriorityFeePerGas,
-    userOp.maxFeePerGas,
-  );
-
-  const packed = encodeAbiParameters(
-    parseAbiParameters('address, uint256, bytes32, bytes32, bytes32, uint256, bytes32, bytes32'),
-    [
-      userOp.sender,
-      userOp.nonce,
-      keccak256('0x' as Hex) as Hex, // no initCode for already-deployed EOA
-      keccak256(userOp.callData as Hex) as Hex,
-      accountGasLimits,
-      userOp.preVerificationGas,
-      gasFees,
-      keccak256(paymasterAndData) as Hex,
-    ]
-  );
-
-  const userOpPacked = keccak256(packed as Hex) as Hex;
-
-  return keccak256(
-    encodeAbiParameters(
-      parseAbiParameters('bytes32, address, uint256'),
-      [userOpPacked, entryPoint, BigInt(chainId)]
-    ) as Hex
-  ) as Hex;
+  return hashUserOperationV07(userOp, entryPoint, chainId);
 }
 
 /**
@@ -193,6 +139,8 @@ export async function sendSponsored(
   hatId: bigint,
   options?: SponsoredSendOptions
 ): Promise<{ txHash: Hex; userOpHash: Hex }> {
+  let submission: SponsoredSubmission = { phase: 'pre-submit', entryPoint: ENTRY_POINT, chainId: gnosis.id };
+  try {
   // Task #425: bundlerUrl (CLI: POP_BUNDLER_URL) for self-hosted bundler support.
   // When set, uses the local bundler (e.g. Skandha at localhost:14337).
   // When unset, falls back to Pimlico. Zero-downtime migration path.
@@ -332,22 +280,53 @@ export async function sendSponsored(
   });
   userOp.signature = signature;
 
-  // Submit to bundler
-  const submittedHash = await pimlicoClient.sendUserOperation({
-    ...userOp,
-    entryPointAddress: ENTRY_POINT,
-  } as any);
+  // Mark ambiguity BEFORE dispatch, including an RPC error with no returned hash.
+  submission = { ...submission, phase: 'submitting', computedHash };
+  const submittedHash = await pimlicoClient.sendUserOperation({ ...userOp, entryPointAddress: ENTRY_POINT } as any);
+  if (typeof submittedHash !== 'string' || !/^0x[\da-fA-F]{64}$/.test(submittedHash)) throw new Error('Bundler returned no valid operation hash');
+  submission = { ...submission, phase: 'submitted', userOpHash: submittedHash };
+  await options?.onSubmitted?.({ ...submission });
+  if (submittedHash.toLowerCase() !== computedHash.toLowerCase()) throw new Error('Bundler operation hash does not match computed hash');
+  submission = { ...submission, phase: 'receipt' };
+  const receipt = await pimlicoClient.waitForUserOperationReceipt({ hash: submittedHash, timeout: 120_000 });
+  const txHash = receipt?.receipt?.transactionHash;
+  if (typeof txHash !== 'string' || !/^0x[\da-fA-F]{64}$/.test(txHash)) throw new Error('Bundler returned no valid transaction hash');
+  return { txHash: txHash as Hex, userOpHash: submittedHash as Hex };
+  } catch (error) {
+    throw new SponsoredSubmissionError(error instanceof Error ? error.message : 'Sponsored execution failed', submission, error);
+  }
+}
 
-  // Wait for receipt
-  const receipt = await pimlicoClient.waitForUserOperationReceipt({
-    hash: submittedHash,
-    timeout: 120_000,
-  });
-
-  return {
-    txHash: receipt.receipt.transactionHash as Hex,
-    userOpHash: submittedHash as Hex,
-  };
+export interface SponsoredReconciliation {
+  submission: SponsoredSubmission;
+  outcome: UserOperationOutcome;
+  receipt?: OperationReceipt;
+}
+/** Injected readers only. Recovery never signs, sends, or retries. */
+export async function reconcileSponsoredSubmission(
+  submission: SponsoredSubmission,
+  readers: {
+    getUserOperationReceipt(hash: Hex): Promise<{ transactionHash: Hex } | null>;
+    getTransactionReceipt(hash: Hex): Promise<OperationReceipt | null>;
+  }
+): Promise<SponsoredReconciliation> {
+  // A bundler response identifies what it returned, not necessarily what we submitted.
+  // Keep both in the journal, but only the computed intended hash can settle that operation.
+  const hash = submission.computedHash ?? submission.userOpHash;
+  if (!hash) throw new Error('Reconciliation requires an operation hash');
+  const expected = { userOpHash: hash, entryPoint: submission.entryPoint };
+  let observed = { ...submission };
+  try {
+    if (!observed.txHash) {
+      const opReceipt = await readers.getUserOperationReceipt(hash);
+      if (opReceipt) observed = { ...observed, txHash: opReceipt.transactionHash };
+    }
+    if (!observed.txHash) return { submission: observed, outcome: decodeUserOperationOutcome(null, expected) };
+    const receipt = await readers.getTransactionReceipt(observed.txHash);
+    return { submission: observed, outcome: decodeUserOperationOutcome(receipt, expected), ...(receipt ? { receipt } : {}) };
+  } catch {
+    return { submission: observed, outcome: { status: 'unknown', code: 'RECEIPT_READ_FAILED', ...expected } };
+  }
 }
 
 /**

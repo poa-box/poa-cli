@@ -1,0 +1,48 @@
+{
+  "contractSnapshot": {
+    "repository": "poa-box/POP",
+    "commit": "fa37b3e7341c9225bdc1ab6a9ba94ee41a876c8d",
+    "files": [
+      {
+        "fixture": "TaskManager.sol.txt",
+        "source": ".context/contracts/src/TaskManager.sol",
+        "sha256": "c31f6434a85caf875e866e9cefd2cace1ab7aef9ff7617633be6ccce9e2f517a"
+      },
+      {
+        "fixture": "ValidationLib.sol.txt",
+        "source": ".context/contracts/src/libs/ValidationLib.sol",
+        "sha256": "9c285255ce4d9e7f498f7c10a3e68a7d08033247186242f045588391d63e99d5"
+      },
+      {
+        "fixture": "folders-spec.md",
+        "source": ".context/contracts/docs/TASK_MANAGER_FOLDERS.md",
+        "sha256": "20222802c81d51ddbfb43b32aaf2057e47006f6235b40891c90eb1c34f6d01fa"
+      }
+    ],
+    "limit": "Offline inspected source; not verified deployed bytecode."
+  },
+  "servingSchema": {
+    "fixture": "schema.graphql",
+    "sha256": "55839c0f497bd492be9b9f34365cdddb503c5ef9ebdeae5c038020378570dfc3",
+    "fullIntrospectionSha256": "2fefb5c645d84d3a8c65f1f8522fe016ef6a64cca2441b21bcfabb43c14b3047",
+    "sources": [
+      {
+        "chainId": 100,
+        "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/576YA6oF16nA2uG5Q9KFfBSvJm4ZNKzWZkwh8eWXaxJs",
+        "origin": "https://poa.box",
+        "configPath": "poa-frontend/poa-app/src/config/networks.js",
+        "configSha256": "8cef9709edc7c9657b15d3ba231d942bc6aa23cc4b55799b92e695fedc4bb8d1",
+        "observedAt": "2026-10-09T20:02:05.852Z"
+      },
+      {
+        "chainId": 42161,
+        "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/2egvcs94ZStD38inRtK9bp3Maw3UZw4BDinH8jLyAF4G",
+        "origin": "https://poa.box",
+        "configPath": "poa-frontend/poa-app/src/config/networks.js",
+        "configSha256": "8cef9709edc7c9657b15d3ba231d942bc6aa23cc4b55799b92e695fedc4bb8d1",
+        "observedAt": "2026-10-09T20:02:05.864Z"
+      }
+    ],
+    "derivation": "Projection from saved independent generated serving introspection: exact selected output fields, literal input fields, selected arguments/defaults and whole enums; Block_height preserved. No network call in work lane."
+  }
+}

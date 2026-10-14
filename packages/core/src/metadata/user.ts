@@ -99,3 +99,17 @@ export function serializeUserProfileMetadata(metadata: UserProfileMetadata): str
   if (metadata.website !== undefined) ordered.website = metadata.website;
   return JSON.stringify(ordered);
 }
+
+/** Full-form replacement: omission/undefined clears, rather than restoring a previous value.
+ * All five fields are emitted in canonical order. Extensions are deliberately excluded, as in
+ * the existing patch builder. No trimming, source ranking, or implicit merge is performed. */
+export function replaceUserProfileMetadata(fullForm: UserProfileUpdates): Required<UserProfileMetadata> {
+  const metadata: Required<UserProfileMetadata> = { bio: '', avatar: '', github: '', twitter: '', website: '' };
+  for (const field of USER_PROFILE_FIELDS) {
+    const value = fullForm[field];
+    if (value !== undefined && typeof value !== 'string') throw new CliError(`Invalid profile field: ${field}`, EXIT.USAGE);
+    metadata[field] = value ?? '';
+  }
+  if (metadata.bio.length > 280) throw new CliError(`Bio too long: ${metadata.bio.length}/280 chars`, EXIT.USAGE);
+  return metadata;
+}

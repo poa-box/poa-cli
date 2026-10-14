@@ -31,6 +31,10 @@ import { resolveOrgId } from './resolve';
 import { bestMatches } from '../similarity';
 import { CliError } from '../errors';
 import { EXIT } from '../exit-codes';
+import { requireRawUint } from '../amounts';
+import { Fact, knownFact, PlanScope, requireCompleteSnapshot, SourceRef, SourceSnapshot, unknownFact } from '../data/facts';
+import { readIndexedPageFacts, readIndexedSingletonFacts, IndexedRow, ProtocolQuery } from './protocol';
+import { FETCH_HYBRID_PROPOSALS_PAGE, FETCH_DD_PROPOSALS_PAGE, FETCH_PROPOSAL_DETAIL } from '../graph/documents/voting';
 
 // ────────────────────────── raw entity shapes ──────────────────────────
 
@@ -59,6 +63,9 @@ export interface SubgraphProposal {
     id?: string;
     description?: string | null;
     optionNames?: string[] | null;
+    createdAt?: string | null;
+    actionSummaries?: string[] | null;
+    promotedFrom?: string | null;
   } | null;
   numOptions?: string | number;
   startTimestamp?: string;
@@ -75,6 +82,8 @@ export interface SubgraphProposal {
   proposerUsername?: string | null;
   creatorUsername?: string | null;
   classesVersion?: string | null;
+  createdAtBlock?: string;
+  classesChange?: { id: string; numClasses: number; votingClasses: SubgraphVotingClass[] } | null;
   votes?: SubgraphProposalVote[];
 }
 
@@ -758,4 +767,107 @@ export async function fetchClassConfig(
     // the contract is authoritative anyway, so just fall back.
     return null;
   }
+}
+
+export interface ProposalArchiveOptions { source: SourceRef; query: ProtocolQuery; lane: 'hybrid' | 'dd'; pageSize?: number; maxPages?: number }
+function proposalSource(source: SourceRef): void {
+  if (!source.orgId || !source.contract || !source.indexed || !ethers.utils.isAddress(source.contract)) throw new Error('Explicit indexed org/voting source required');
+}
+/** A populated row cannot prove a terminal empty stream's installed binding.
+ * Every response selects the org and lane at the same block as rows/_meta. */
+function validateProposalModuleBinding(response: Record<string, unknown>, source: SourceRef, lane: 'hybrid' | 'dd'): void {
+  const org = response.organization as { id?: unknown; hybridVoting?: { id?: unknown } | null; directDemocracyVoting?: { id?: unknown } | null } | null | undefined;
+  const module = org?.[lane === 'hybrid' ? 'hybridVoting' : 'directDemocracyVoting'];
+  if (typeof org?.id !== 'string' || org.id.toLowerCase() !== source.orgId!.toLowerCase()
+    || typeof module?.id !== 'string' || module.id.toLowerCase() !== source.contract!.toLowerCase()
+    || module.id.toLowerCase() === ethers.constants.AddressZero) throw new Error('PROPOSAL_MODULE_BINDING_MISMATCH');
+}
+function validateProposalRow(row: IndexedRow, source: SourceRef, lane: 'hybrid' | 'dd'): void {
+  const module = row[lane === 'hybrid' ? 'hybridVoting' : 'directDemocracyVoting'] as { id?: string; organization?: { id?: string } } | undefined;
+  if (module?.id?.toLowerCase() !== source.contract!.toLowerCase() || module?.organization?.id?.toLowerCase() !== source.orgId!.toLowerCase()) throw new Error('Proposal source mismatch');
+  const id = requireRawUint(row.proposalId as string);
+  if (row.id !== `${source.contract!.toLowerCase()}-${id}`) throw new Error('Proposal identity mismatch');
+  requireRawUint(row.createdAtBlock as string);
+}
+/** Additive archive reader; existing CLI feed's first=50 defaults remain intact. */
+export async function readProposalArchive(options: ProposalArchiveOptions): Promise<SourceSnapshot<readonly IndexedRow[]>> {
+  proposalSource(options.source);
+  if (!['hybrid', 'dd'].includes(options.lane)) throw new Error('Invalid proposal lane');
+  let bindingFailed = false;
+  const result = await readIndexedPageFacts({ ...options, query: async (document, variables, source) => {
+      const response = await options.query(document, variables, source);
+      try { validateProposalModuleBinding(response, source, options.lane); }
+      catch (error) { bindingFailed = true; throw error; }
+      return response;
+    }, document: options.lane === 'hybrid' ? FETCH_HYBRID_PROPOSALS_PAGE : FETCH_DD_PROPOSALS_PAGE,
+    collection: options.lane === 'hybrid' ? 'proposals' : 'ddvproposals', initialCursor: '', variables: { orgId: options.source.orgId, voting: options.source.contract!.toLowerCase() },
+    validateRow: row => validateProposalRow(row, options.source, options.lane) });
+  return bindingFailed ? { ...result, coverage: { ...result.coverage, issues: [...result.coverage.issues, { code: 'PROPOSAL_MODULE_BINDING_MISMATCH' }] } } : result;
+}
+export interface ProposalClassFallback { chainId: number; orgId: string; votingAddress: string; proposalId: string; method: 'getProposalClasses'; code: string }
+/** Even an exact indexed emission lacks the immutable proposalClassSubject values.
+ * Those must be supplied by an org-chain reader, rather than current classSubject. */
+export interface ProposalClassFacts { classes: Fact<readonly SubgraphVotingClass[]>; fallback?: ProposalClassFallback }
+/** Require an exact populated emission; never blend same-version emissions or infer
+ * restricted V2 synthetic classes/current immutable subject bindings. */
+export function selectProposalClassSnapshotFacts(snapshot: SourceSnapshot<IndexedRow | null>, scope: PlanScope): ProposalClassFacts {
+  const missing = (code: string): ProposalClassFacts => ({ classes: unknownFact(code, snapshot.source),
+    ...(scope.orgId && scope.contract && snapshot.data?.proposalId !== undefined ? { fallback: { chainId: scope.chainId, orgId: scope.orgId,
+      votingAddress: scope.contract, proposalId: String(snapshot.data.proposalId), method: 'getProposalClasses' as const, code } } : {}) });
+  try {
+    if (!scope.orgId || !scope.contract) throw new Error('CLASS_SCOPE_REQUIRED');
+    const row = requireCompleteSnapshot(snapshot, { scope });
+    if (!row) return missing('PROPOSAL_UNAVAILABLE');
+    validateProposalRow(row, snapshot.source, 'hybrid');
+    if (row.isHatRestricted !== false) return missing('RESTRICTED_SNAPSHOT_REQUIRES_ORG_CHAIN_RPC');
+    const change = row.classesChange as IndexedRow | null | undefined;
+    if (!change || typeof change.id !== 'string' || !change.id || change.version !== row.classesVersion) return missing('EXACT_CLASS_EMISSION_UNAVAILABLE');
+    const module = change.hybridVoting as { id?: string; organization?: { id?: string } } | undefined;
+    if (module?.id?.toLowerCase() !== scope.contract.toLowerCase() || module.organization?.id?.toLowerCase() !== scope.orgId.toLowerCase()) return missing('CLASS_EMISSION_SCOPE_MISMATCH');
+    const rows = change.votingClasses as SubgraphVotingClass[] | undefined;
+    if (!Array.isArray(rows) || !Number.isInteger(change.numClasses) || rows.length !== change.numClasses || rows.length < 1 || rows.length > 8) return missing('INCOMPLETE_CLASS_EMISSION');
+    const sorted = [...rows].sort((a, b) => a.classIndex - b.classIndex);
+    if (sorted.some((r, i) => r.classIndex !== i || r.change?.id !== change.id || r.version !== change.version || !r.id
+      || !['DIRECT', 'ERC20_BAL'].includes(r.strategy) || typeof r.quadratic !== 'boolean' || typeof r.isActive !== 'boolean'
+      || !Number.isInteger(r.slicePct) || r.slicePct < 1 || r.slicePct > 100 || !Array.isArray(r.hatIds)
+      || !ethers.utils.isAddress(r.asset)) || new Set(sorted.map(r => r.id)).size !== sorted.length
+      || sorted.reduce((sum, r) => sum + r.slicePct, 0) !== 100) return missing('INVALID_CLASS_EMISSION');
+    for (const cls of sorted) { requireRawUint(cls.minBalance); for (const id of cls.hatIds) requireRawUint(id); }
+    return { classes: knownFact(sorted, snapshot.source) };
+  } catch { return missing('CLASS_EVIDENCE_UNAVAILABLE'); }
+}
+export interface ProposalDetailFacts {
+  proposal: Fact<IndexedRow | null>; classSnapshot: ProposalClassFacts;
+  /** Optional IPFS/indexed markers remain unknown when absent, never fabricated empty lists. */
+  actionSummaries: Fact<readonly string[]>; promotedFrom: Fact<string | null>; createdAtBlock: Fact<string>;
+}
+export async function readProposalDetailFacts(options: { source: SourceRef; query: ProtocolQuery; lane: 'hybrid' | 'dd'; compositeId: string }): Promise<SourceSnapshot<ProposalDetailFacts>> {
+  proposalSource(options.source);
+  if (!['hybrid', 'dd'].includes(options.lane)) throw new Error('Invalid proposal lane');
+  const match = /^(0x[\da-f]{40})-(0|[1-9]\d*)$/i.exec(options.compositeId);
+  if (!match || match[1].toLowerCase() !== options.source.contract!.toLowerCase()) throw new Error('Composite proposal source mismatch');
+  requireRawUint(match[2]);
+  const raw = await readIndexedSingletonFacts(options.source, options.query, FETCH_PROPOSAL_DETAIL,
+    { orgId: options.source.orgId, compositeId: options.compositeId.toLowerCase() }, ['proposals', 'ddvproposals'], { proposals: options.compositeId.toLowerCase(), ddvproposals: options.compositeId.toLowerCase() });
+  let proposal: Fact<IndexedRow | null> = unknownFact('PROPOSAL_EVIDENCE_UNAVAILABLE', raw.source);
+  let semanticFailure = false;
+  try {
+    const data = requireCompleteSnapshot(raw, { scope: options.source });
+    validateProposalModuleBinding(data, raw.source, options.lane);
+    const rows = data[options.lane === 'hybrid' ? 'proposals' : 'ddvproposals'] as IndexedRow[];
+    if ((data[options.lane === 'hybrid' ? 'ddvproposals' : 'proposals'] as unknown[]).length) throw new Error('Wrong lane');
+    if (rows[0]) validateProposalRow(rows[0], raw.source, options.lane);
+    proposal = knownFact(rows[0] ?? null, raw.source);
+  } catch { semanticFailure = raw.coverage.status === 'complete'; }
+  const row = proposal.state === 'known' ? proposal.value : null;
+  const metadata = row?.metadata as IndexedRow | null | undefined;
+  const classInput = { ...raw, data: row };
+  const classSnapshot = options.lane === 'hybrid' ? selectProposalClassSnapshotFacts(classInput, options.source) : { classes: unknownFact<readonly SubgraphVotingClass[]>('DD_HAS_NO_HYBRID_CLASSES', raw.source) };
+  if (options.lane === 'hybrid' && classSnapshot.classes.state === 'unknown' && !classSnapshot.fallback) classSnapshot.fallback = {
+    chainId: options.source.chainId, orgId: options.source.orgId!, votingAddress: options.source.contract!, proposalId: match[2], method: 'getProposalClasses', code: classSnapshot.classes.code };
+  const summaries = metadata?.actionSummaries;
+  return { ...raw, ...(semanticFailure ? { coverage: { ...raw.coverage, status: 'incomplete' as const, issues: [...raw.coverage.issues, { code: 'PROPOSAL_SCOPE_OR_LANE_MISMATCH' }] } } : {}), data: { proposal, classSnapshot,
+    actionSummaries: Array.isArray(summaries) && summaries.every(v => typeof v === 'string') ? knownFact(summaries, raw.source) : unknownFact('ACTION_SUMMARIES_UNAVAILABLE', raw.source),
+    promotedFrom: metadata && (metadata.promotedFrom === null || typeof metadata.promotedFrom === 'string') ? knownFact(metadata.promotedFrom as string | null, raw.source) : unknownFact('PROMOTION_PROVENANCE_UNAVAILABLE', raw.source),
+    createdAtBlock: row ? knownFact(String(row.createdAtBlock), raw.source) : unknownFact('CREATION_BLOCK_UNAVAILABLE', raw.source) } };
 }

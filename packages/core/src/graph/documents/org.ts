@@ -255,3 +255,57 @@ export const FETCH_ORG_PAYOUT_CONFIG = `
     }
   }
 `;
+
+/** Unfiltered ID page: consumers advance this cursor before rejecting retired organizations.
+ * No legacy/name/date allowlist and no capped nested user/project/task selections. */
+export const FETCH_ORG_DIRECTORY_PAGE = `query OrgDirectoryPage($cursor: Bytes!, $first: Int!, $block: Block_height) {
+  _meta(block: $block) { block { number hash timestamp } }
+  organizations(first: $first, orderBy: id, orderDirection: asc, block: $block, where: { id_gt: $cursor }) {
+    id name deployedAt metadataHash
+    metadata { id description logo backgroundColor useTokenSymbol }
+    membershipAuthority { id isRouterBound cutoverAt }
+    participationToken { id name symbol totalSupply }
+    taskManager { id organization { id } }
+  }
+}`;
+
+/** Stream task status over the explicitly supported organization set, including >100 projects.
+ * Deleted projects are excluded; every status is retained for deliberate consumer aggregation. */
+export const FETCH_ORG_TASK_COUNT_PAGE = `query OrgTaskCountPage($taskManagers: [Bytes!]!, $cursor: String!, $first: Int!, $block: Block_height) {
+  _meta(block: $block) { block { number hash timestamp } }
+  tasks(first: $first, orderBy: id, orderDirection: asc, block: $block,
+    where: { id_gt: $cursor, taskManager_in: $taskManagers, project_: { deleted: false } }) {
+    id status taskManager project { id deleted taskManager { id organization { id } } }
+  }
+}`;
+
+const MEMBERSHIP_CARD_ORG = `id name metadataHash
+  metadata { id logo description useTokenSymbol }
+  participationToken { symbol }
+  membershipAuthority { id isRouterBound cutoverAt }`;
+const MEMBERSHIP_CARD_HISTORY = `id address firstSeenAt lastActiveAt participationTokenBalance
+  totalTasksCompleted totalVotes totalModulesCompleted`;
+
+/** All role rows, including inactive memberships: current authority and old contributions differ.
+ * Full eligibility inputs permit canonical authority projection rather than trusting a stale cache. */
+export const FETCH_AUTHORITY_MEMBERSHIP_CARDS_PAGE = `query AuthorityMembershipCardsPage($userAddress: Bytes!, $cursor: String!, $first: Int!, $block: Block_height) {
+  _meta(block: $block) { block { number hash timestamp } }
+  subjectMemberships(first: $first, orderBy: id, orderDirection: asc, block: $block,
+    where: { user: $userAddress, id_gt: $cursor, subject_: { kind: Role } }) {
+    id user accepted eligible isMember claimable acceptedAt seededWhilePaused
+    ruleKind emailVerified vouchCount vouchEpoch vouchMet eligibilitySource
+    subject { subjectId kind defaultAllow vouchConfig { quorum epoch } }
+    organization { ${MEMBERSHIP_CARD_ORG} }
+    userEntity { ${MEMBERSHIP_CARD_HISTORY} }
+  }
+}`;
+
+/** Historical contributors with no current authority row remain visible in supported migrated orgs. */
+export const FETCH_USER_MEMBERSHIP_HISTORY_PAGE = `query UserMembershipHistoryPage($userAddress: Bytes!, $cursor: String!, $first: Int!, $block: Block_height) {
+  _meta(block: $block) { block { number hash timestamp } }
+  users(first: $first, orderBy: id, orderDirection: asc, block: $block,
+    where: { address: $userAddress, id_gt: $cursor }) {
+    ${MEMBERSHIP_CARD_HISTORY}
+    organization { ${MEMBERSHIP_CARD_ORG} }
+  }
+}`;

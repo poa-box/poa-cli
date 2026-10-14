@@ -1,86 +1,93 @@
-# Adopting @poa-box/core in a frontend
+# Adopting @poa-box/core 2.0 in a frontend
 
-This is the migration map for `poa-app` (and the template for every future
-market-targeted frontend). The goal state: a frontend owns **wallet UX,
-rendering, and caching** — everything protocol-shaped comes from core.
+Core owns protocol encodings, canonical metadata, typed documents, exact
+amounts and evidence-bearing planning. The host retains wallet UI, rendering,
+identity hydration, caching and lifecycle state. Adoption is a separate product
+change; a package test never closes a host or backend finding.
 
-## Why this is a small migration, not a rewrite
+## Preserve the service boundary
 
-`poa-app` already has the right architecture: framework-free domain services
-(`src/services/web3/domain/*`) that funnel every write through
-`txManager.execute(contract, method, args, options)`, with three
-interchangeable transaction managers (direct EOA, ERC-4337 passkey, EIP-7702
-sponsored) selected in `useWeb3Services`. Core's `TxIntent` is that same
-`(contract, method, args)` triple as data, so the managers keep their jobs.
+Keep domain service APIs and route built intents through the existing manager.
+Use `intentToExecutionRequest` / `executeIntentWithHost` from `tx/intent` for
+exact value, arbitrary host options and raw receipt preservation. Supply the
+scope guard and callback; account/org/chain/generation changes must suppress
+stale results. A manager unable to send native value must reject positive value
+before any send. Never flatten intent metadata into execution options.
 
-## Step 1 — one adapter for the tx managers
+Passkey and sponsored hosts can use `encodeIntent` for calldata. The codecs in
+`accounts/codecs`, `accounts/userop-v07` and `sponsorship/codec` are pure. Browser
+WebAuthn authentication, durable credential restoration, curve/key checks,
+bundler transport, signing and gas policy remain host responsibilities. Load
+`execute/sponsored` only on the optional action route. Journal possible
+submission identities before waiting and reconcile uncertain responses; do not
+resend an ambiguous operation. Match hash and EntryPoint for receipt outcomes.
 
-```js
-// executeIntent(intent, options) over an existing manager:
-async function executeIntentWith(txManager, contractFactory, intent, options) {
-  const contract = contractFactory.at(intent.to, intent.abi); // or new ethers.Contract(...)
-  return txManager.execute(contract, intent.method, intent.args, {
-    value: intent.value, ...options,
-  });
-}
-```
+## Migrate by domain
 
-The passkey/7702 managers that want raw calldata use
-`encodeIntent(intent)` → `{ to, data, value }` instead of a Contract.
-
-## Step 2 — replace service internals, keep service APIs
-
-Per domain, replace the body of each service method with the core builder and
-delete the local encoding/metadata code. The service keeps its public shape so
-hooks/components don't churn:
-
-| poa-app source | replaced by |
+| Existing service responsibility | Package leaf |
 |---|---|
-| `TaskService` task-metadata objects (built inline 5×) | `@poa-box/core/metadata/task` |
-| `TaskService` createTask/claim/submit/… encodings | `@poa-box/core/tx/task` |
-| `VotingService._uploadProposalMetadata` + createProposal | `@poa-box/core/metadata/proposal` + `@poa-box/core/tx/vote` |
-| `useProposalForm` buildProposalData / setterDefinitions execution batches | `@poa-box/core/tx/governance` (`encodeExecutorCall`, `buildGovernanceProposal`) |
-| `EligibilityService` vouch/role calls + permission bitmasks (`util/permissions.js`) | `@poa-box/core/tx/eligibility` + `@poa-box/core/perms` |
-| `TokenRequestService` / `TreasuryService` / `EducationService` / `ZkEmailInvitesService` | `@poa-box/core/tx/{token,treasury,education,zkemail}` |
-| `src/lib/zkemail/allowlist.js` | `@poa-box/core/zkemail` |
-| `util/taskUtils.js` + `tokenLabel.js` payout math | `@poa-box/core/payout` |
-| `services/web3/utils/encoding.js` (CID↔bytes32 etc.) | `@poa-box/core/encoding` |
-| `config/networks.js` | `@poa-box/core/chains` (env via injection) |
-| `abi/` directory (byte-drifted copies) | `@poa-box/core/abis` |
-| `util/tokens.js` TOKEN_META decimals | `@poa-box/core/chains` token registry |
-| `lib/errors/` revert decoding | `@poa-box/core/error-catalog` + `classifyError` (map decoded errors to toasts) |
-| `ipfsContext` pin/fetch plumbing | `@poa-box/core/ipfs` (inject your endpoints; keep your read-back verification UX on top) |
-| `userOpBuilder.js` hash/paymaster encoding | `@poa-box/core/execute/sponsored` (`getUserOpHash`, `encodePaymasterData`) |
+| Task/project builders, metadata and task mutation/receipts | `tx/task`, `tx/project`, `metadata/task`, `metadata/folders`, `tasks/policy`, `tasks/receipts` |
+| Authority permission/context/group and membership planning | `authority/permissions`, `authority/lifecycle`, `authority/activation`, `tx/authority` |
+| Education reads and intent builders | `reads/education`, `tx/education` |
+| Organization metadata, version policy and bootstrap | `metadata/org`, `deployment/policy`, `deployment/bootstrap`, `tx/org` |
+| Votes and governance batches/classes/roles/elections | `tx/vote`, `tx/governance`, `governance/*`, `reads/vote` |
+| Treasury sends, distributions and histories | `treasury/planning`, `treasury/distributions`, `metadata/distribution`, `reads/treasury` |
+| Email allowlists and prepared claim proofs | `email/allowlist`, `email/proof`, `tx/zkemail` |
+| Identity/user/profile metadata | `reads/identity`, `reads/user`, `metadata/user`, `tx/user` |
+| Account/factory/protocol/paymaster histories | `reads/protocol`, `graph/documents/accounts`, `graph/documents/protocol`, `graph/documents/paymaster` |
+| CID pointers and exact raw amount inputs | `encoding/cid`, `amounts` |
+| Diagnostic error trees | `errors/envelope`, `errors/compat`, `error-catalog` |
+| External cashout request schema | `integrations/cashout` (isolated external configuration) |
 
-Frontend-tuned gas policy (`config/gas.js` multipliers, announceWinner's 3×
-callGasLimit, MAX_USEROP_GAS) stays in the frontend — pass it through your
-manager's options; core deliberately doesn't hardcode it.
+The authority-only protocol does not restore retired eligibility/Hats control
+surfaces. Diagnostic compatibility errors are not permission or method support.
 
-## Step 3 — reads (optional, incremental)
+## Keep evidence honest
 
-Apollo can stay. Point your documents at `@poa-box/core/graph/documents/*` so the
-queries themselves can't drift, or adopt `GraphClient` where you don't need
-Apollo's cache. `subgraphCapabilities.js` (introspection) and core's
-field-fallback tiers solve the same problem — when a service moves to core
-reads, it gets tiers for free and you can drop its capability checks.
+Pass chain, endpoint, organization, installed modules and actual observed block
+to read/planning seams. Apollo can retain its cache: use canonical documents or
+`createDocumentQueryAdapter` with injected clients. Execute exact selector and
+variable shapes; field output scalar types do not determine relation-filter
+input scalars. On serving deployments, modern credential key fields may be
+absent and must remain unknown after the exact fallback.
 
-## Environment wiring for Next.js
+Pinned readers require same-response metadata and matching proof on every page.
+Hash-qualified sources use the hash filter; number-only sources never acquire a
+requested hash by echo. Include terminal pages, coverage and failures. Complete
+no-match differs from transport outage, partial enumeration, absent field
+population and unknown amounts. Cross-source totals require explicit sources,
+complete unique rows and the selected alignment policy. Do not truncate to a
+page and present it as a global count. Source proof alone does not establish
+fresh authority, deployed bytecode or concurrent execution stability.
 
-```ts
-const ctx = createPopContext({
-  chainId,
-  env: { GRAPH_API_KEY: process.env.NEXT_PUBLIC_GRAPH_API_KEY },
-  graph: { stateStore: localStorageTierStore },  // ~20 lines; TierStateStore interface
-  ipfs: { apiUrl: IPFS_API },
-});
-```
+Parse decimal strings to raw uints once, qualify assets by chain/address and
+retain exact decimal-string amounts until display. Compare distribution
+CID/root/claims and creation evidence immutably; preserve false, zero and known
+empty results. Projected history is not current native causal accounting.
 
-## Order of adoption (lowest risk first)
+## Type migration
 
-1. ABIs + `chains` + `encoding` + `payout` + `perms` (pure, drop-in, kills the drift)
-2. `metadata/*` builders (removes the 5× inline task-metadata duplication)
-3. One domain service end-to-end (suggest tasks) via the Step-1 adapter
-4. Remaining domains; then governance batches (`tx/governance`)
-5. Reads, as each screen is touched
+`OrgUser` historical arrays may be absent/null for authority-only users. Use
+`isIndexedOrgUser` before code requiring every array; otherwise render unknown
+explicitly. Never fabricate arrays to satisfy old types. Default organization
+metadata overloads retain their legacy nulls; the widened `ReturnType` includes
+supplied extensions/request-time units. Raw merge extension keys survive.
 
-Each step is shippable on its own; nothing requires a flag day.
+Strict root/EOA consumers of ethers5.7.2 need `@types/node` as a dev dependency
+with `skipLibCheck:false`. Runtime remains browser-pure. Optional
+viem/permissionless are required only on sponsored aggregates. Amounts, facts,
+CID, pagination, source and budget leaves compile without ethers or Node types.
+New namespace shorthands are explicit exports; direct nested leaves remain
+supported under Node/classic, Node16 and bundler resolution.
+
+## Adoption acceptance
+
+Keep product minimum-duration policy, storage concurrency, credentials, browser
+prompts, optimistic IDs, route/form refresh and permission checks in the host.
+Revalidate scope/freshness and simulate immediately before an authorized send;
+validate the precise inner receipt and post-state afterwards. Proof circuits,
+DKIM keys, deployed verifier/factory/module wiring and index population require
+separate deployment evidence. Backend backfills and native-event causality
+remain backend work. Package regression checks and the local release artifact
+are available for review; final packed independent, browser and live approval
+are separate stages.

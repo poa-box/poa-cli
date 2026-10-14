@@ -1,0 +1,17 @@
+import { planRoleConfiguration } from '/Users/hudsonheadley/conductor/workspaces/poa-cli/halifax-v1/packages/core/src/governance/role-planning.ts';
+import { deriveClassEligibility } from '/Users/hudsonheadley/conductor/workspaces/poa-cli/halifax-v1/packages/core/src/governance/power.ts';
+import { knownFact } from '/Users/hudsonheadley/conductor/workspaces/poa-cli/halifax-v1/packages/core/src/data/facts.ts';
+const addr=(n:number)=>'0x'+n.toString(16).padStart(40,'0'), AUTH=addr(17),TM=addr(34),OTHER=addr(51),HV=addr(68),ACTOR=addr(85),ORG='0x'+'ab'.repeat(32);
+const src={chainId:100,orgId:ORG,contract:AUTH,contracts:{taskManager:TM},endpoint:'fixture://root',method:'review',indexed:false,snapshot:'pinned',block:{number:'100'},observedAt:1000};
+const snap=(data:any,source:any=src)=>({source,data,coverage:{status:'complete',receivedKeys:[],missingIds:[],failedIds:[],issues:[]}});
+const results:any[]=[];
+for(const which of ['module-control','module-target-mismatch','module-attached-own-contract']){
+ const data={readiness:{membershipAuthority:{id:AUTH,isRouterBound:true,cutoverAt:'1'}},executorAuthorized:knownFact(true),subjects:[],groupEdges:[],accounts:[],taskManager:{address:which==='module-target-mismatch'?OTHER:TM,executorAuthorized:which==='module-attached-own-contract'?knownFact(true,{...src,contract:TM}):knownFact(true)}};
+ const result=planRoleConfiguration({scope:{chainId:100,orgId:ORG,contract:AUTH,contracts:{taskManager:TM}},freshness:{now:1000,maxAgeSeconds:30},context:snap(data),allocations:snap([]),proposals:snap([],{...src,contract:HV,indexed:true}),request:{kind:'Role',name:'Root review dummy',taskGrants:{creator:true,organizer:false}}});
+ results.push({which,result});
+}
+for(const which of ['authority-control','authority-binding-mismatch']){
+ const actual=which==='authority-control'?AUTH:OTHER,source={...src,contract:HV,contracts:{membershipAuthority:AUTH}},authoritySource={...src,contract:actual,contracts:{membershipAuthority:AUTH}};
+ const result=deriveClassEligibility({scope:{chainId:100,orgId:ORG,contract:HV,account:ACTOR,contracts:{membershipAuthority:AUTH}},proposal:snap({createdAt:knownFact('1000'),restrictedSubjectIds:knownFact(['7']),classes:[{strategy:'DIRECT',slicePct:100,quadratic:false,minBalance:'0',asset:addr(0),hatIds:[],subjectId:knownFact('0')}]},source),classIndex:0,viewerIsExecutor:knownFact(false),authority:snap({subjects:[{subjectId:'7',kind:'Role',name:knownFact('R')}],groupEdges:[],permissions:[]},authoritySource),memberships:snap([{subjectId:'7',isMember:knownFact(true),acceptedAt:knownFact('900'),seededWhilePaused:knownFact(false)}],{...authoritySource,account:ACTOR})});results.push({which,result});
+}
+console.log(JSON.stringify(results));

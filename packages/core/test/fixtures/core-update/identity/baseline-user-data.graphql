@@ -1,0 +1,45 @@
+
+  query FetchUserDataNew($orgUserID: String!, $userAddress: Bytes!) {
+    user(id: $orgUserID) {
+      id
+      address
+      participationTokenBalance
+      membershipStatus
+      currentHatIds
+      joinMethod
+      totalTasksCompleted
+      totalVotes
+      totalModulesCompleted
+      firstSeenAt
+      lastActiveAt
+      assignedTasks(first: 20) {
+        id
+        taskId
+        title
+        payout
+        status
+      }
+      completedTasks(first: 20) {
+        id
+        taskId
+        title
+        payout
+      }
+      hybridProposalsCreated(first: 20) {
+        id
+        proposalId
+        title
+        status
+        startTimestamp
+        endTimestamp
+      }
+      modulesCompleted(first: 20) {
+        moduleId
+        completedAt
+      }
+    }
+    account(id: $userAddress) {
+      id
+      username
+    }
+  }

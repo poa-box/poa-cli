@@ -1,0 +1,359 @@
+# Current authority schema excerpt for independent offline selection checks.
+# Copied verbatim definitions from .context/subgraph-schema.graphql.
+# Full source SHA-256: 5f9d3a3fcfceabcb81ffa8bb847e954ef50bf32df2c5fc68d0184a32f9c76a3c
+# This is a tracked test oracle, not a deployed-schema/population assertion.
+
+type Organization @entity(immutable: false) {
+  id: Bytes! # orgId
+  # Contract relationships - nullable because OrgRegistered creates org before OrgDeployed adds contracts
+  executorContract: ExecutorContract
+  hybridVoting: HybridVotingContract
+  directDemocracyVoting: DirectDemocracyVotingContract
+  quickJoin: QuickJoinContract
+  participationToken: ParticipationTokenContract
+  taskManager: TaskManager
+  educationHub: EducationHubContract
+  paymentManager: PaymentManagerContract
+  eligibilityModule: EligibilityModuleContract
+  toggleModuleContract: ToggleModuleContract
+  zkEmailInvites: ZkEmailInvites
+  # Access v2: the per-org MembershipAuthority (optional — null until the org migrates / a new org
+  # deploys with one). It supersedes eligibilityModule + toggleModuleContract for migrated orgs.
+  membershipAuthority: MembershipAuthorityContract
+  # Access-v2 subjects (roles + groups). Empty when the org has no MembershipAuthority.
+  subjects: [Subject!]! @derivedFrom(field: "organization")
+  # Deployment data - nullable until OrgDeployed event
+  topHatId: BigInt
+  roleHatIds: [BigInt!]
+  deployedAt: BigInt
+  deployedAtBlock: BigInt
+  transactionHash: Bytes
+  users: [User!]! @derivedFrom(field: "organization")
+  # Consolidated entity references
+  hatPermissions: [HatPermission!]! @derivedFrom(field: "organization")
+  executorChanges: [ExecutorChange!]! @derivedFrom(field: "organization")
+  pauseEvents: [PauseEvent!]! @derivedFrom(field: "organization")
+  # From OrgRegistry - org name and metadata
+  name: String
+  metadataHash: Bytes
+  metadata: OrgMetadata # IPFS-indexed metadata content (may be null if IPFS unavailable)
+  lastUpdatedAt: BigInt
+  metaUpdates: [OrgMetaUpdate!]! @derivedFrom(field: "organization")
+  metadataAdminHatId: BigInt
+  registeredContracts: [RegisteredContract!]! @derivedFrom(field: "organization")
+  roles: [Role!]! @derivedFrom(field: "organization")
+  # Project folders (TaskManager v4) — IPFS root for the org's folder tree.
+  # bytes32 sha256 digest; frontend prepends 0x1220 and base58-encodes to a CIDv0.
+  # Null until the first setFolders() call.
+  foldersRoot: Bytes
+  foldersUpdatedAt: BigInt
+  foldersUpdatedBy: Bytes # _msgSender() from FoldersUpdated (smart-wallet-aware)
+  folderRootChanges: [FolderRootChange!]! @derivedFrom(field: "organization")
+}
+
+type MembershipAuthorityContract @entity(immutable: false) {
+  id: Bytes! # authority proxy address
+  organization: Organization!
+  # ---- Deploy-time config ----
+  # Migrated authorities are predeployed and initialized before their later registration, so those
+  # init logs predate the template and registration derives the config without an eth_call.
+  # Native-v2 authorities initialize and register in one deployment transaction; graph-node replays
+  # their same-block init logs and replaces the derived defaults with observed truth.
+  # `initConfigDerived` records which provenance currently backs these fields.
+  executor: Bytes
+  paymasterHub: Bytes
+  orgIdHash: Bytes
+  paused: Boolean!
+  initConfigDerived: Boolean!
+  # 0 = the contract default (20/day). Mirrors MaxDailyVouchesSet.
+  maxDailyVouches: Int!
+  subjectCount: Int!
+  roleSubjectCount: Int!
+  groupSubjectCount: Int!
+  # Accepted memberships across all ROLE subjects (mirrors the sum of Subject.memberCount).
+  acceptedMembershipCount: Int!
+  # Router bind — set by AuthorityRouter.AuthorityBound during a legacy cutover. Native-v2 orgs
+  # self-route from genesis, so OrgDeployedV2 sets isRouterBound=true and cutoverAt=deploy time while
+  # leaving routerBinding null (there is no synthetic router event to point at).
+  routerBinding: RouterBinding
+  isRouterBound: Boolean!
+  registeredAt: BigInt!
+  registeredAtBlock: BigInt!
+  cutoverAt: BigInt # timestamp of the router bind (the cutover moment)
+  lastUpdatedAt: BigInt!
+  transactionHash: Bytes!
+  subjects: [Subject!]! @derivedFrom(field: "authority")
+  pendingActions: [PendingAction!]! @derivedFrom(field: "authority")
+  lints: [ConfigLintEvent!]! @derivedFrom(field: "authority")
+  membershipEvents: [SubjectMembershipEvent!]! @derivedFrom(field: "authority")
+}
+
+type Subject @entity(immutable: false) {
+  id: String! # subjectId.toString() — VERBATIM (adopted legacy hatIds keep their value)
+  authority: MembershipAuthorityContract!
+  organization: Organization!
+  subjectId: BigInt!
+  kind: SubjectKind!
+  name: String
+  metadataCID: Bytes # bytes32 sha256 digest (may be zero)
+  imageURI: String
+  # ROLE only. 0 = unlimited. Setting it on a Group reverts on-chain.
+  maxMembers: Int!
+  # Accepted-flip count, mirroring the contract's memberCount (accepted, NOT accepted && eligible).
+  memberCount: Int!
+  # accepted && eligible, recomputed by the fold mirror — the number the UI should render.
+  activeMemberCount: Int!
+  # The accepted members' addresses. Kept explicitly (bounded by memberCount) so a SUBJECT-LEVEL
+  # config change — default flip, vouch (re)configure, vouch epoch reset — can RE-FOLD every
+  # accepted row in-mapping. This is the §5 "event-lag window": the contract does not re-evaluate
+  # members on those writes (a later reconcile() repairs them), but the subgraph must, or the app
+  # would render stale members until someone pays for the repair.
+  acceptedUsers: [Bytes!]!
+  defaultAllow: Boolean!
+  # subjectId >= 2^224 => adopted legacy Hats id (continuity); otherwise a v2-native id whose
+  # bits 64..223 embed the owning authority address.
+  isLegacyAdopted: Boolean!
+  # Continuity link: the SAME Role entity id (orgId-hatId) the static Hats/EligibilityModule
+  # sources write, so existing role queries keep resolving after the cutover.
+  role: Role
+  vouchConfig: SubjectVouchConfig
+  managerConfig: ManagerConfig
+  createdAt: BigInt!
+  createdAtBlock: BigInt!
+  lastUpdatedAt: BigInt!
+  transactionHash: Bytes!
+  memberships: [SubjectMembership!]! @derivedFrom(field: "subject")
+  rules: [AccessRule!]! @derivedFrom(field: "subject")
+  perms: [PermRow!]! @derivedFrom(field: "subject")
+  # Group -> member roles (this subject is the GROUP).
+  memberRoles: [GroupComposition!]! @derivedFrom(field: "group")
+  # Role -> containing groups (this subject is the ROLE).
+  groups: [GroupComposition!]! @derivedFrom(field: "role")
+  pendingActions: [PendingAction!]! @derivedFrom(field: "subject")
+  lints: [ConfigLintEvent!]! @derivedFrom(field: "subject")
+}
+
+type SubjectMembership @entity(immutable: false) {
+  id: String! # subjectId-userAddress
+  subject: Subject!
+  authority: MembershipAuthorityContract!
+  organization: Organization!
+  user: Bytes!
+  userUsername: String
+  userEntity: User
+  # ---- accepted mirror ----
+  # Driven by the authority's ERC-1155 TransferSingle (mint = accepted-flip ON, burn = OFF): that
+  # event is emitted by _flipOn/_flipOff on EVERY accepted transition and by nothing else, so it
+  # cannot double-count against the lifecycle events (which supply provenance only).
+  accepted: Boolean!
+  # The INDEXED block timestamp of the accepted-flip. NOTE: seeds applied while the authority is
+  # paused are backdated ON-CHAIN to acceptedAt = 1 (so in-flight proposals stay votable); the
+  # event carries no timestamp, so `seededWhilePaused` flags those rows instead of guessing.
+  acceptedAt: BigInt
+  seededWhilePaused: Boolean!
+  # ---- FOLD MIRROR (recomputed on every relevant event) ----
+  eligible: Boolean!
+  eligibilitySource: EligibilitySource!
+  isMember: Boolean! # accepted && eligible — the authority's isMember()
+  claimable: Boolean! # !accepted && eligible — a seat the user may claim() (when unpaused)
+  # ---- fold inputs, mirrored so the fold is auditable from one row ----
+  rule: AccessRule
+  ruleKind: RuleKind!
+  emailVerified: Boolean!
+  vouchCount: Int!
+  vouchEpoch: BigInt! # the wearer's vouch epoch; stale vs the subject epoch => count reads as 0
+  vouchMet: Boolean!
+  # The OPEN delegated action targeting this (subject, user), if any — the mirror of the contract's
+  # `pendingOf[subject][user]`. Cleared by the PendingAction* event that closes the row
+  # (Cancelled / Voided / Finalized), never by a lifecycle verb.
+  pendingAction: PendingAction
+  vouches: [SubjectVouchRecord!]! @derivedFrom(field: "membership")
+  firstSeenAt: BigInt!
+  lastUpdatedAt: BigInt!
+  transactionHash: Bytes!
+}
+
+type AccessRule @entity(immutable: false) {
+  id: String! # subjectId-userAddress
+  subject: Subject!
+  authority: MembershipAuthorityContract!
+  organization: Organization!
+  # Null for a GROUP subject: setRule accepts one, but the contract never consults a group's own
+  # rule (group membership is derived from the member ROLES), so no membership row is folded for it.
+  membership: SubjectMembership
+  user: Bytes!
+  kind: RuleKind!
+  author: RuleAuthor!
+  delegable: Boolean!
+  # A STICKY rule is governance-authored with delegable = false: no delegate may clear or overwrite
+  # it, and it SURVIVES renounce (the seat is held in reserve, re-claimable).
+  sticky: Boolean!
+  # Best-effort provenance for delegated rules: the subject's configured manager subject. RuleSet
+  # carries no managerSubject, and a manager resolved through a CONTAINING GROUP is not
+  # event-visible, so this is null unless the subject itself has a ManagerConfig.
+  managerSubject: Subject
+  setAt: BigInt!
+  setAtBlock: BigInt!
+  clearedAt: BigInt
+  lastUpdatedAt: BigInt!
+  transactionHash: Bytes!
+}
+
+type SubjectVouchConfig @entity(immutable: false) {
+  id: String! # subjectId
+  subject: Subject!
+  authority: MembershipAuthorityContract!
+  organization: Organization!
+  quorum: Int! # 0 = vouching disabled for this subject
+  # The subject whose members may cast vouches (may be the subject itself — KUBI Execs-vouch-Execs).
+  voucherSubject: Subject
+  voucherSubjectId: BigInt!
+  # Bumped by resetVouchEpoch — every wearer whose epoch is stale counts as 0 vouches.
+  epoch: BigInt!
+  configuredAt: BigInt!
+  lastUpdatedAt: BigInt!
+  transactionHash: Bytes!
+  records: [SubjectVouchRecord!]! @derivedFrom(field: "config")
+}
+
+type SubjectVouchRecord @entity(immutable: false) {
+  id: String! # subjectId-userAddress-voucherAddress
+  membership: SubjectMembership!
+  config: SubjectVouchConfig
+  subject: Subject!
+  authority: MembershipAuthorityContract!
+  organization: Organization!
+  user: Bytes!
+  voucher: Bytes!
+  voucherUsername: String
+  active: Boolean!
+  seeded: Boolean! # written by seedVouchers (VoucherSeeded), not a live vouch()
+  epoch: BigInt! # the config epoch the record was written at
+  vouchedAt: BigInt!
+  vouchedAtBlock: BigInt!
+  # When the record stopped counting: the voucher's own revokeVouch, or governance's clearUserVouches.
+  revokedAt: BigInt
+  transactionHash: Bytes!
+}
+
+type PermRow @entity(immutable: false) {
+  id: String! # subjectId-permKey-ctx
+  subject: Subject!
+  authority: MembershipAuthorityContract!
+  organization: Organization!
+  permKey: Bytes!
+  ctx: Bytes!
+  isGlobalCtx: Boolean!
+  foldTag: Int!
+  word: BigInt! # the raw stored word, verbatim
+  # Decoded word bits: EXISTS_BIT (1<<255), INHERIT_GLOBAL_BIT (1<<254), VALUE_MASK (low 254 bits).
+  exists: Boolean!
+  inheritGlobal: Boolean!
+  value: BigInt!
+  setAt: BigInt!
+  clearedAt: BigInt
+  lastUpdatedAt: BigInt!
+  transactionHash: Bytes!
+}
+
+type GroupComposition @entity(immutable: false) {
+  id: String! # groupSubjectId-roleSubjectId
+  group: Subject!
+  role: Subject!
+  authority: MembershipAuthorityContract!
+  organization: Organization!
+  groupSubjectId: BigInt!
+  roleSubjectId: BigInt!
+  isActive: Boolean!
+  addedAt: BigInt!
+  addedAtBlock: BigInt!
+  updatedAt: BigInt!
+  transactionHash: Bytes!
+}
+
+type ManagerConfig @entity(immutable: false) {
+  id: String! # subjectId
+  subject: Subject!
+  authority: MembershipAuthorityContract!
+  organization: Organization!
+  managerSubject: Subject
+  managerSubjectId: BigInt!
+  caps: Int!
+  canGrant: Boolean!
+  canRemove: Boolean!
+  delaySecs: BigInt!
+  enabled: Boolean!
+  setAt: BigInt!
+  lastUpdatedAt: BigInt!
+  transactionHash: Bytes!
+}
+
+type PendingAction @entity(immutable: false) {
+  id: String! # authorityAddress-pendingId
+  authority: MembershipAuthorityContract!
+  organization: Organization!
+  subject: Subject!
+  membership: SubjectMembership!
+  pendingId: BigInt!
+  action: PendingActionKind!
+  user: Bytes!
+  actor: Bytes!
+  actorUsername: String
+  activatesAt: BigInt!
+  status: PendingActionStatus!
+  createdAt: BigInt!
+  createdAtBlock: BigInt!
+  resolvedAt: BigInt
+  cancelledBy: Bytes
+  transactionHash: Bytes!
+}
+
+enum SubjectKind {
+  Role
+  Group
+}
+
+enum RuleKind {
+  None
+  Grant
+  Ban
+}
+
+enum RuleAuthor {
+  Governance
+  Delegated
+}
+
+enum PendingActionKind {
+  Grant
+  Offer
+  Remove
+}
+
+enum PendingActionStatus {
+  Pending
+  Cancelled # PendingActionCancelled — an authorised manager/executor cancelled it
+  Voided # PendingActionVoided — a governance rule write superseded it
+  Finalized # PendingActionFinalized — finalize()/claim() CONSUMED it (read from the log, not derived)
+}
+
+enum EligibilitySource {
+  None # no source allows — ineligible
+  ExplicitBan # explicit DENY (supremacy)
+  ExplicitGrant
+  EmailVerified
+  VouchQuorum
+  SubjectDefault
+}
+
+enum ProposalStatus {
+  Active
+  Ended
+  Executed
+}
+
+enum DDVProposalStatus {
+  Active
+  Ended
+  Cleaned
+}

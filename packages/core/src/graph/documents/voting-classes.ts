@@ -127,8 +127,10 @@ export const FETCH_PROPOSAL_VOTE_ANALYSIS = `
 
 /** Exact per-emission joins are populated by current subgraphs on both supported chains. */
 const CLASS_CHANGE_FIELDS = `classesChange {
-  id numClasses
+  id numClasses version classesHash changedAt changedAtBlock transactionHash
+  hybridVoting { id organization { id } }
   votingClasses(first: 8, orderBy: classIndex, orderDirection: asc) {${VOTING_CLASS_FIELDS}
+    id change { id }
   }
 }`;
 export const FETCH_VOTING_CLASS_CONFIG_EXACT = `
@@ -181,6 +183,8 @@ export function selectIndexedClassSnapshot(contract: any, proposalId?: number): 
 
 /** One VotingClass row as returned by the subgraph (all scalars are strings/numbers). */
 export interface SubgraphVotingClass {
+  id?: string;
+  change?: { id: string };
   version: string;
   classIndex: number;
   strategy: string;

@@ -204,7 +204,7 @@ export function isAccountAuthoritative(
 }
 
 export const FETCH_USER_DATA = `
-  query FetchUserDataNew($orgUserID: String!, $userAddress: Bytes!) {
+  query FetchUserDataNew($orgUserID: ID!, $userAddress: ID!) {
     user(id: $orgUserID) {
       id
       address
@@ -217,7 +217,7 @@ export const FETCH_USER_DATA = `
       totalModulesCompleted
       firstSeenAt
       lastActiveAt
-      assignedTasks(first: 20) {
+      assignedTasks(first: 20, where: { project_: { deleted: false } }) {
         id
         taskId
         title

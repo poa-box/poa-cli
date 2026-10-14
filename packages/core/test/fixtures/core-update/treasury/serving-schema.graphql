@@ -1,0 +1,598 @@
+scalar BigInt
+
+input Block_height {
+  hash: Bytes
+  number: Int
+  number_gte: Int
+}
+
+scalar Bytes
+
+type Claim {
+  id: String!
+  paymentManager: PaymentManagerContract!
+  distribution: Distribution!
+  claimer: Bytes!
+  amount: BigInt!
+  claimedAt: BigInt!
+  claimedAtBlock: BigInt!
+  transactionHash: Bytes!
+}
+
+input Claim_filter {
+  id_gt: String
+  paymentManager: String
+  distribution: String
+}
+
+enum Claim_orderBy {
+  id
+  paymentManager
+  paymentManager__id
+  paymentManager__owner
+  paymentManager__revenueShareToken
+  paymentManager__distributionCounter
+  paymentManager__createdAt
+  paymentManager__createdAtBlock
+  distribution
+  distribution__id
+  distribution__distributionId
+  distribution__payoutToken
+  distribution__totalAmount
+  distribution__checkpointBlock
+  distribution__merkleRoot
+  distribution__totalClaimed
+  distribution__status
+  distribution__createdAt
+  distribution__createdAtBlock
+  distribution__finalizedAt
+  distribution__finalizedAtBlock
+  distribution__unclaimedAmount
+  distributionId
+  claimer
+  claimerUser
+  claimerUser__id
+  claimerUser__address
+  claimerUser__joinMethod
+  claimerUser__membershipStatus
+  claimerUser__participationTokenBalance
+  claimerUser__totalVotes
+  claimerUser__totalTasksCompleted
+  claimerUser__totalTasksCancelled
+  claimerUser__totalTasksLostToExpiry
+  claimerUser__totalTasksReleased
+  claimerUser__totalModulesCompleted
+  claimerUser__totalClaimsAmount
+  claimerUser__totalPaymentsAmount
+  claimerUser__totalTokenRequestsAmount
+  claimerUser__firstSeenAt
+  claimerUser__firstSeenAtBlock
+  claimerUser__lastActiveAt
+  claimerUser__lastActiveAtBlock
+  claimerUsername
+  amount
+  claimedAt
+  claimedAtBlock
+  transactionHash
+}
+
+type Distribution {
+  id: String!
+  paymentManager: PaymentManagerContract!
+  distributionId: BigInt!
+  payoutToken: Bytes!
+  totalAmount: BigInt!
+  checkpointBlock: BigInt!
+  merkleRoot: Bytes!
+  totalClaimed: BigInt!
+  status: DistributionStatus!
+  createdAtBlock: BigInt!
+}
+
+enum DistributionStatus {
+  Active
+  Finalized
+}
+
+input Distribution_filter {
+  id_gt: String
+  paymentManager: String
+}
+
+enum Distribution_orderBy {
+  id
+  paymentManager
+  paymentManager__id
+  paymentManager__owner
+  paymentManager__revenueShareToken
+  paymentManager__distributionCounter
+  paymentManager__createdAt
+  paymentManager__createdAtBlock
+  distributionId
+  payoutToken
+  totalAmount
+  checkpointBlock
+  merkleRoot
+  totalClaimed
+  status
+  createdAt
+  createdAtBlock
+  finalizedAt
+  finalizedAtBlock
+  unclaimedAmount
+  claims
+}
+
+type ExecutorContract {
+  id: Bytes!
+  organization: Organization!
+  createdAtBlock: BigInt!
+}
+
+input ExecutorContract_filter {
+  id_gt: Bytes
+}
+
+enum ExecutorContract_orderBy {
+  id
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  owner
+  allowedCaller
+  pendingCaller
+  callerChangeEffectiveAt
+  hatsContract
+  isPaused
+  createdAt
+  createdAtBlock
+  callerChanges
+  batchExecutions
+  sweeps
+  minterAuthorizations
+  hatsMintedEvents
+  ownershipTransfers
+}
+
+type HybridVotingContract {
+  id: Bytes!
+  organization: Organization!
+}
+
+enum OrderDirection {
+  asc
+  desc
+}
+
+type Organization {
+  id: Bytes!
+  hybridVoting: HybridVotingContract
+  taskManager: TaskManager
+  paymentManager: PaymentManagerContract
+}
+
+type Payment {
+  id: Bytes!
+  paymentManager: PaymentManagerContract!
+  payer: Bytes!
+  amount: BigInt!
+  token: Bytes!
+  receivedAt: BigInt!
+  receivedAtBlock: BigInt!
+  transactionHash: Bytes!
+}
+
+type PaymentManagerContract {
+  id: Bytes!
+  organization: Organization!
+  createdAtBlock: BigInt!
+}
+
+input PaymentManagerContract_filter {
+  id_gt: Bytes
+}
+
+enum PaymentManagerContract_orderBy {
+  id
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  owner
+  revenueShareToken
+  distributionCounter
+  createdAt
+  createdAtBlock
+  distributions
+  payments
+  claims
+  optOuts
+  ownershipTransfers
+  revenueShareTokenChanges
+}
+
+input Payment_filter {
+  id_gt: Bytes
+  paymentManager: String
+  token: Bytes
+}
+
+enum Payment_orderBy {
+  id
+  paymentManager
+  paymentManager__id
+  paymentManager__owner
+  paymentManager__revenueShareToken
+  paymentManager__distributionCounter
+  paymentManager__createdAt
+  paymentManager__createdAtBlock
+  payer
+  payerUser
+  payerUser__id
+  payerUser__address
+  payerUser__joinMethod
+  payerUser__membershipStatus
+  payerUser__participationTokenBalance
+  payerUser__totalVotes
+  payerUser__totalTasksCompleted
+  payerUser__totalTasksCancelled
+  payerUser__totalTasksLostToExpiry
+  payerUser__totalTasksReleased
+  payerUser__totalModulesCompleted
+  payerUser__totalClaimsAmount
+  payerUser__totalPaymentsAmount
+  payerUser__totalTokenRequestsAmount
+  payerUser__firstSeenAt
+  payerUser__firstSeenAtBlock
+  payerUser__lastActiveAt
+  payerUser__lastActiveAtBlock
+  payerUsername
+  amount
+  token
+  receivedAt
+  receivedAtBlock
+  transactionHash
+}
+
+type Project {
+  id: String!
+  projectId: Bytes!
+  taskManager: TaskManager!
+  deleted: Boolean!
+}
+
+type Proposal {
+  id: String!
+  proposalId: BigInt!
+  hybridVoting: HybridVotingContract!
+  descriptionHash: Bytes!
+  metadata: ProposalMetadata
+  status: ProposalStatus!
+}
+
+type ProposalMetadata {
+  description: String!
+}
+
+enum ProposalStatus {
+  Active
+  Ended
+  Executed
+}
+
+input Proposal_filter {
+  id_gt: String
+  hybridVoting: String
+  status: ProposalStatus
+}
+
+enum Proposal_orderBy {
+  id
+  proposalId
+  hybridVoting
+  hybridVoting__id
+  hybridVoting__executor
+  hybridVoting__thresholdPct
+  hybridVoting__quorum
+  hybridVoting__hats
+  hybridVoting__createdAt
+  hybridVoting__createdAtBlock
+  hybridVoting__classVersion
+  creator
+  creatorUsername
+  creatorUser
+  creatorUser__id
+  creatorUser__address
+  creatorUser__joinMethod
+  creatorUser__membershipStatus
+  creatorUser__participationTokenBalance
+  creatorUser__totalVotes
+  creatorUser__totalTasksCompleted
+  creatorUser__totalTasksCancelled
+  creatorUser__totalTasksLostToExpiry
+  creatorUser__totalTasksReleased
+  creatorUser__totalModulesCompleted
+  creatorUser__totalClaimsAmount
+  creatorUser__totalPaymentsAmount
+  creatorUser__totalTokenRequestsAmount
+  creatorUser__firstSeenAt
+  creatorUser__firstSeenAtBlock
+  creatorUser__lastActiveAt
+  creatorUser__lastActiveAtBlock
+  proposer
+  proposerUsername
+  classesVersion
+  classesChange
+  classesChange__id
+  classesChange__version
+  classesChange__logIndex
+  classesChange__classesHash
+  classesChange__numClasses
+  classesChange__changedAt
+  classesChange__changedAtBlock
+  classesChange__transactionHash
+  title
+  descriptionHash
+  metadata
+  metadata__id
+  metadata__description
+  metadata__createdAt
+  metadata__promotedFrom
+  numOptions
+  startTimestamp
+  endTimestamp
+  isHatRestricted
+  restrictedHatIds
+  status
+  votes
+  batchExecutions
+  winningOption
+  isValid
+  wasExecuted
+  executionFailed
+  executionError
+  winnerAnnouncedAt
+  executedAt
+  executedCallsCount
+  createdAtBlock
+  transactionHash
+}
+
+type Query {
+  organization(id: ID!, block: Block_height, subgraphError: _SubgraphErrorPolicy_! = deny): Organization
+  taskManagers(skip: Int = 0, first: Int = 100, orderBy: TaskManager_orderBy, orderDirection: OrderDirection, where: TaskManager_filter, block: Block_height, subgraphError: _SubgraphErrorPolicy_! = deny): [TaskManager!]!
+  tasks(skip: Int = 0, first: Int = 100, orderBy: Task_orderBy, orderDirection: OrderDirection, where: Task_filter, block: Block_height, subgraphError: _SubgraphErrorPolicy_! = deny): [Task!]!
+  proposals(skip: Int = 0, first: Int = 100, orderBy: Proposal_orderBy, orderDirection: OrderDirection, where: Proposal_filter, block: Block_height, subgraphError: _SubgraphErrorPolicy_! = deny): [Proposal!]!
+  paymentManagerContracts(skip: Int = 0, first: Int = 100, orderBy: PaymentManagerContract_orderBy, orderDirection: OrderDirection, where: PaymentManagerContract_filter, block: Block_height, subgraphError: _SubgraphErrorPolicy_! = deny): [PaymentManagerContract!]!
+  distributions(skip: Int = 0, first: Int = 100, orderBy: Distribution_orderBy, orderDirection: OrderDirection, where: Distribution_filter, block: Block_height, subgraphError: _SubgraphErrorPolicy_! = deny): [Distribution!]!
+  claims(skip: Int = 0, first: Int = 100, orderBy: Claim_orderBy, orderDirection: OrderDirection, where: Claim_filter, block: Block_height, subgraphError: _SubgraphErrorPolicy_! = deny): [Claim!]!
+  payments(skip: Int = 0, first: Int = 100, orderBy: Payment_orderBy, orderDirection: OrderDirection, where: Payment_filter, block: Block_height, subgraphError: _SubgraphErrorPolicy_! = deny): [Payment!]!
+  executorContracts(skip: Int = 0, first: Int = 100, orderBy: ExecutorContract_orderBy, orderDirection: OrderDirection, where: ExecutorContract_filter, block: Block_height, subgraphError: _SubgraphErrorPolicy_! = deny): [ExecutorContract!]!
+  _meta(block: Block_height): _Meta_
+}
+
+type Task {
+  id: String!
+  taskId: BigInt!
+  taskManager: Bytes!
+  project: Project!
+  payout: BigInt!
+  bountyToken: Bytes!
+  bountyPayout: BigInt!
+  status: TaskStatus!
+}
+
+type TaskManager {
+  id: Bytes!
+  organization: Organization!
+  createdAtBlock: BigInt!
+}
+
+input TaskManager_filter {
+  id_gt: Bytes
+}
+
+enum TaskManager_orderBy {
+  id
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  projects
+  creatorHatIds
+  organizerHatIds
+  globalRolePermissions
+  createdAt
+  createdAtBlock
+  transactionHash
+}
+
+enum TaskStatus {
+  Open
+  Assigned
+  Submitted
+  Completed
+  Cancelled
+}
+
+input Task_filter {
+  id_gt: String
+  taskManager: Bytes
+  status: TaskStatus
+  status_in: [TaskStatus!]
+}
+
+enum Task_orderBy {
+  id
+  taskId
+  taskManager
+  project
+  project__id
+  project__projectId
+  project__title
+  project__metadataHash
+  project__cap
+  project__createdAt
+  project__createdAtBlock
+  project__deleted
+  project__deletedAt
+  payout
+  bountyToken
+  bountyPayout
+  requiresApplication
+  title
+  metadataHash
+  submissionHash
+  metadata
+  metadata__id
+  metadata__name
+  metadata__description
+  metadata__location
+  metadata__difficulty
+  metadata__estimatedHours
+  metadata__submission
+  metadata__rejection
+  metadata__dueDate
+  metadata__indexedAt
+  assignee
+  assigneeUsername
+  assigneeUser
+  assigneeUser__id
+  assigneeUser__address
+  assigneeUser__joinMethod
+  assigneeUser__membershipStatus
+  assigneeUser__participationTokenBalance
+  assigneeUser__totalVotes
+  assigneeUser__totalTasksCompleted
+  assigneeUser__totalTasksCancelled
+  assigneeUser__totalTasksLostToExpiry
+  assigneeUser__totalTasksReleased
+  assigneeUser__totalModulesCompleted
+  assigneeUser__totalClaimsAmount
+  assigneeUser__totalPaymentsAmount
+  assigneeUser__totalTokenRequestsAmount
+  assigneeUser__firstSeenAt
+  assigneeUser__firstSeenAtBlock
+  assigneeUser__lastActiveAt
+  assigneeUser__lastActiveAtBlock
+  completer
+  completerUsername
+  completerUser
+  completerUser__id
+  completerUser__address
+  completerUser__joinMethod
+  completerUser__membershipStatus
+  completerUser__participationTokenBalance
+  completerUser__totalVotes
+  completerUser__totalTasksCompleted
+  completerUser__totalTasksCancelled
+  completerUser__totalTasksLostToExpiry
+  completerUser__totalTasksReleased
+  completerUser__totalModulesCompleted
+  completerUser__totalClaimsAmount
+  completerUser__totalPaymentsAmount
+  completerUser__totalTokenRequestsAmount
+  completerUser__firstSeenAt
+  completerUser__firstSeenAtBlock
+  completerUser__lastActiveAt
+  completerUser__lastActiveAtBlock
+  canceller
+  cancellerUsername
+  cancellerUser
+  cancellerUser__id
+  cancellerUser__address
+  cancellerUser__joinMethod
+  cancellerUser__membershipStatus
+  cancellerUser__participationTokenBalance
+  cancellerUser__totalVotes
+  cancellerUser__totalTasksCompleted
+  cancellerUser__totalTasksCancelled
+  cancellerUser__totalTasksLostToExpiry
+  cancellerUser__totalTasksReleased
+  cancellerUser__totalModulesCompleted
+  cancellerUser__totalClaimsAmount
+  cancellerUser__totalPaymentsAmount
+  cancellerUser__totalTokenRequestsAmount
+  cancellerUser__firstSeenAt
+  cancellerUser__firstSeenAtBlock
+  cancellerUser__lastActiveAt
+  cancellerUser__lastActiveAtBlock
+  status
+  createdAt
+  createdAtBlock
+  assignedAt
+  submittedAt
+  completedAt
+  cancelledAt
+  updatedAt
+  rejectionHash
+  rejectionCount
+  completionWindow
+  absoluteDeadline
+  claimDeadline
+  reclaimCount
+  releaseCount
+  lastReleasedAt
+  latestSubmission
+  latestSubmission__id
+  latestSubmission__submissionHash
+  latestSubmission__submittedAt
+  latestSubmission__submittedAtBlock
+  latestSubmission__transactionHash
+  latestRejection
+  latestRejection__id
+  latestRejection__rejector
+  latestRejection__rejectorUsername
+  latestRejection__rejectionHash
+  latestRejection__rejectedAt
+  latestRejection__rejectedAtBlock
+  latestRejection__transactionHash
+  applications
+  submissions
+  rejections
+  claimExpiries
+  releases
+}
+
+type _Block_ {
+  hash: Bytes
+  number: Int!
+  timestamp: Int
+}
+
+type _Meta_ {
+  block: _Block_!
+}
+
+enum _SubgraphErrorPolicy_ {
+  allow
+  deny
+}

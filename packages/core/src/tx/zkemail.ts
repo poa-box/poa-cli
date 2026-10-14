@@ -24,9 +24,37 @@ import { fetchIndexedActiveRoot } from '../reads/zkemail';
 import { buildProposalMetadata, serializeProposalMetadata } from '../metadata/proposal';
 import { pinJson, fetchJson } from '../ipfs';
 import { ipfsCidToBytes32, bytes32ToIpfsCid } from '../encoding';
-import { assertRootMatches, summarize } from '../zkemail';
+import { assertRootMatches, summarize, requireAllowlistUint } from '../zkemail';
 import { CliError } from '../errors';
 import { EXIT } from '../exit-codes';
+import { EmailProofProjection, requireEmailClaimer, requireEmailProofProjection } from '../email/proof';
+
+export interface EmailClaimArgs<V extends 'v1' | 'v2'> {
+  zkEmailInvitesAddress: string;
+  proof: EmailProofProjection<V>;
+  /** Rechecked against projected public signal[2]. */
+  claimer: string;
+  /** Exact leaf order. Sorting/deduplication here would invalidate the commitment. */
+  hatIds: readonly (string | bigint | number)[];
+  merkleProof: readonly string[];
+  orgId?: string;
+}
+
+function buildEmailClaim<V extends 'v1' | 'v2'>(a: EmailClaimArgs<V>, version: V): TxIntent {
+  const address = requireEmailClaimer(a.zkEmailInvitesAddress);
+  const claimer = requireEmailClaimer(a.claimer);
+  requireEmailProofProjection(a.proof, version, claimer);
+  if (!Array.isArray(a.hatIds) || !a.hatIds.length) throw new Error('Email claim requires role IDs');
+  const hatIds = a.hatIds.map(requireAllowlistUint);
+  if (!Array.isArray(a.merkleProof) || a.merkleProof.some(p => !/^0x[\da-f]{64}$/i.test(p))) throw new Error('Invalid email merkle proof');
+  return { to: address, abi: getAbi('ZkEmailInvites'), method: version === 'v1' ? 'claimRoleByDomain' : 'claimRoleByEmail',
+    args: [a.proof.proof, claimer, hatIds, [...a.merkleProof]], meta: { domain: 'zkemail',
+      action: version === 'v1' ? 'claim-domain' : 'claim-email', ...(a.orgId ? { orgId: a.orgId } : {}), summary: { claimer, hatIds } } };
+}
+
+/** Pure current-ABI codecs; no enrollment, proving, signing, gas or refresh policy. */
+export function buildClaimRoleByDomain(a: EmailClaimArgs<'v1'>): TxIntent { return buildEmailClaim(a, 'v1'); }
+export function buildClaimRoleByEmail(a: EmailClaimArgs<'v2'>): TxIntent { return buildEmailClaim(a, 'v2'); }
 
 // ---------------------------------------------------------------------------
 // Pure input normalization (the CLI's guards, verbatim messages)

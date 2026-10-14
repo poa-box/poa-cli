@@ -43,6 +43,8 @@ import {
 } from '../metadata/user';
 import { resolveOrgModules, requireModule } from '../reads/resolve';
 import { getRegistryAndAccount } from '../reads/user';
+import { assertPlanScope, assertSourceRef, SourceRef } from '../data/facts';
+import { cidV0ToBytes32 } from '../encoding/cid';
 
 // ───────────────────────────── Level 1 — pure ─────────────────────────────
 
@@ -288,6 +290,36 @@ export async function setProfileMetadataIntent(
 
   const intent = buildSetProfileMetadata({ registryAddress, metadataHash });
   intent.meta.ipfs = { cid, metadata };
+  return intent;
+}
+
+export interface PreparedProfileMetadataParams {
+  /** Host-selected account/registry chain and merge base. Core never ranks other profiles. */
+  source: SourceRef;
+  /** Final patch or replacement document, already chosen by the host. */
+  metadata: UserProfileMetadata;
+  /** Injected content writer. Tests and read-only hosts can use an offline mock. */
+  upload(serialized: string): Promise<string>;
+}
+
+/** Prepared document path: no graph resolution, HOME default, implicit old-profile merge or signing.
+ * Validate before upload; upload failure produces no intent and never mutates the supplied document.
+ * Execution chain/identity checks remain host-owned; summary chainId is descriptive only. */
+export async function preparedProfileMetadataIntent(params: PreparedProfileMetadataParams): Promise<TxIntent> {
+  assertSourceRef(params.source);
+  if (!params.source.account || !params.source.contract || /^0x0{40}$/i.test(params.source.contract)
+    || /^0x0{40}$/i.test(params.source.account)) throw new Error('Explicit nonzero account and registry source required');
+  if (params.source.contracts?.registry) assertPlanScope(params.source, { chainId: params.source.chainId, contract: params.source.contracts.registry });
+  for (const field of USER_PROFILE_FIELDS) {
+    if (params.metadata[field] !== undefined && typeof params.metadata[field] !== 'string') throw new CliError(`Invalid profile field: ${field}`, EXIT.USAGE);
+  }
+  const metadata = buildUserProfileMetadata(params.metadata);
+  const serialized = serializeUserProfileMetadata(metadata);
+  const cid = await params.upload(serialized);
+  const metadataHash = cidV0ToBytes32(cid);
+  const intent = buildSetProfileMetadata({ registryAddress: params.source.contract, metadataHash });
+  intent.meta.ipfs = { cid, metadata };
+  intent.meta.summary = { ...intent.meta.summary, chainId: params.source.chainId, account: params.source.account };
   return intent;
 }
 

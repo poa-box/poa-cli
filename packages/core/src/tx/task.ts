@@ -16,8 +16,12 @@
  */
 
 import { ethers } from 'ethers';
+import type { Fact } from '../data/facts';
+import { parseDecimalAmountToRaw, requireRawUint, type RawUintInput } from '../amounts';
+import { metadataPointerToBytes32 } from '../encoding/cid';
+import { requireProjectCapRaw } from './project';
 import { AUTHORITY_KEYS, permissionWord, projectContext } from './authority';
-import type { TxIntent } from './intent';
+import { encodeIntent, type TxIntent } from './intent';
 import { buildGovernanceProposal, encodeExecutorCall, type ExecutionCall } from './governance';
 import { getAbi } from '../contracts';
 import {
@@ -65,6 +69,10 @@ import {
   buildTaskApplicationMetadata,
   serializeTaskApplicationMetadata,
   type TaskMetadata,
+  type PreparedTaskMetadata,
+  type TaskMetadataUpdates,
+  requireTaskMetadataFinal,
+  mergeTaskMetadataFinal,
 } from '../metadata/task';
 import { buildProposalMetadata, serializeProposalMetadata } from '../metadata/proposal';
 import { getTaskOnChain, getFoldersRoot, TASK_STATUS, taskStatusName } from '../task-lens';
@@ -722,19 +730,47 @@ async function resolveCreateProjectPid(ctx: PopContext, orgId: string, projectIn
   throw new Error(`Project "${projectInput}" not found. Available: ${available || 'none'}`);
 }
 
-export interface CreateTaskParams {
+export interface TaskEditorMetadataParams {
+  location?: string; difficulty?: string; estHours?: number | string; submission?: string; dueDate?: number;
+  /** Complete document; pointer skips pinning and scaling entirely. */
+  preparedMetadata?: PreparedTaskMetadata;
+}
+function validatePreparedTaskMetadata(p: TaskEditorMetadataParams & { name?: string; description?: string }): TaskMetadata | undefined {
+  if (!p.preparedMetadata) return undefined;
+  const doc = requireTaskMetadataFinal(p.preparedMetadata.document);
+  for (const key of ['location', 'difficulty', 'estHours', 'submission', 'dueDate'] as const) {
+    if (p[key] !== undefined && p[key] !== doc[key]) throw new Error('Prepared metadata conflicts with ' + key);
+  }
+  if ((p.name !== undefined && p.name !== doc.name) || (p.description !== undefined && p.description !== doc.description)) throw new Error('Prepared metadata conflicts with task fields');
+  if (p.preparedMetadata.pointer !== undefined) metadataPointerToBytes32(p.preparedMetadata.pointer);
+  return doc;
+}
+async function pinTaskDocument(ctx: PopContext, doc: TaskMetadata, prepared?: PreparedTaskMetadata): Promise<string> {
+  return prepared?.pointer ?? await pinJson(serializeTaskMetadata(doc), ctx.ipfs);
+}
+function editorChanges(p: TaskEditorMetadataParams): boolean {
+  return p.preparedMetadata !== undefined || ['location', 'difficulty', 'estHours', 'submission', 'dueDate'].some(k => (p as Record<string, unknown>)[k] !== undefined);
+}
+function editorFinal(base: any, p: TaskEditorMetadataParams & { name?: string; description?: string }): TaskMetadata {
+  const prepared = validatePreparedTaskMetadata(p);
+  if (prepared) return prepared;
+  const current = base ? { ...base, estHours: base.estimatedHours ?? base.estHours } : null;
+  return mergeTaskMetadataFinal(current, p as TaskMetadataUpdates);
+}
+
+export interface CreateTaskParams extends TaskEditorMetadataParams {
   org: string;
   /** Project name, bytes32 pid, or numeric index (resolved like the CLI). */
   project: string;
   name: string;
   description: string;
   /** Omit to price the task from the org's payout convention (refuses to guess when the subgraph is down). */
-  payout?: number;
+  payout?: number | string;
   difficulty?: string;
-  estHours?: number;
+  estHours?: number | string;
   location?: string;
   bountyToken?: string;
-  bountyAmount?: number;
+  bountyAmount?: number | string;
   requiresApplication?: boolean;
   /** '7d' / ISO / unix (string forms parsed like the CLI); v6 orgs only. */
   deadline?: string | number;
@@ -752,6 +788,7 @@ export interface CreateTaskParams {
  * and are not ported.
  */
 export async function createTaskIntent(ctx: PopContext, p: CreateTaskParams): Promise<TxIntent> {
+  const preparedDoc = validatePreparedTaskMetadata(p);
   // Parse deadline flags up-front so bad input fails before any network work.
   const deadlineFlagsSet = p.deadline !== undefined || p.completionWindow !== undefined;
   const absoluteDeadline = p.deadline !== undefined ? parseDeadlineInput(p.deadline) : 0;
@@ -791,7 +828,7 @@ export async function createTaskIntent(ctx: PopContext, p: CreateTaskParams): Pr
         'Pass --payout explicitly, or retry when the subgraph is reachable.'
       );
     }
-    derivedPayout = calculatePayout(p.difficulty || 'medium', p.estHours || 0, payoutConfig);
+    derivedPayout = calculatePayout(p.difficulty || 'medium', Number(p.estHours || 0), payoutConfig);
     if (derivedPayout <= 0) {
       throw new CliError(
         'Could not derive a payout: the org pays by hours only and --est-hours is 0.',
@@ -803,15 +840,18 @@ export async function createTaskIntent(ctx: PopContext, p: CreateTaskParams): Pr
   const payoutAmount = p.payout ?? derivedPayout!;
 
   // Metadata JSON (key order must match the frontend exactly — see metadata/task).
-  const metadata: TaskMetadata = buildTaskMetadata({
+  const metadata: TaskMetadata = preparedDoc ?? buildTaskMetadata({
     name: p.name,
     description: p.description,
     location: p.location || '',
     difficulty: p.difficulty || 'medium',
     estHours: p.estHours || 0,
-    submission: '',
+    submission: p.submission ?? '',
+    dueDate: p.dueDate,
   });
-  const cid = await pinJson(serializeTaskMetadata(metadata), ctx.ipfs);
+  if (editorChanges(p)) requireTaskMetadataFinal(metadata);
+  validateCreateIntent(buildCreateTask({ taskManagerAddress, payout: payoutAmount, title: p.name, metadataHash: ethers.constants.HashZero, projectId: pid, bountyToken: p.bountyToken, bountyAmount: p.bountyAmount, requiresApplication: p.requiresApplication, absoluteDeadline, completionWindow, features, orgId }));
+  const cid = await pinTaskDocument(ctx, metadata, p.preparedMetadata);
 
   const intent = buildCreateTask({
     taskManagerAddress,
@@ -833,15 +873,15 @@ export async function createTaskIntent(ctx: PopContext, p: CreateTaskParams): Pr
 }
 
 /** One JSONL row of `pop task create-batch` (the file parsing stays host-side). */
-export interface CreateTaskBatchRowParams {
+export interface CreateTaskBatchRowParams extends TaskEditorMetadataParams {
   name: string;
   description: string;
-  payout?: number;
+  payout?: number | string;
   difficulty?: string;
-  estHours?: number;
+  estHours?: number | string;
   location?: string;
   bountyToken?: string;
-  bountyAmount?: number;
+  bountyAmount?: number | string;
   requiresApplication?: boolean;
   /** Per-row absolute claim deadline (overrides the batch default; v6 only). */
   deadline?: string | number;
@@ -877,7 +917,7 @@ export async function createTasksBatchIntents(
   const batchDeadlineSet = p.deadline !== undefined || p.completionWindow !== undefined;
 
   interface ParsedRow extends CreateTaskBatchRowParams {
-    payout: number;
+    payout: number | string;
     payoutProvided: boolean;
     absoluteDeadline: number;
     completionWindowSecs: number;
@@ -887,6 +927,7 @@ export async function createTasksBatchIntents(
   const tasks: ParsedRow[] = [];
   for (let i = 0; i < p.tasks.length; i++) {
     const task = p.tasks[i];
+    validatePreparedTaskMetadata(task);
     if (!task.name || !task.description) {
       throw new CliError(`Row ${i + 1}: Missing required fields: name, description`, EXIT.USAGE);
     }
@@ -927,10 +968,10 @@ export async function createTasksBatchIntents(
   }
   for (const t of tasks) {
     if (!t.payoutProvided) {
-      t.payout = calculatePayout(t.difficulty || 'medium', t.estHours || 0, payoutConfig);
+      t.payout = calculatePayout(t.difficulty || 'medium', Number(t.estHours || 0), payoutConfig);
     }
   }
-  const unpriced = tasks.filter((t) => !t.payoutProvided && t.payout <= 0);
+  const unpriced = tasks.filter((t) => !t.payoutProvided && Number(t.payout) <= 0);
   if (unpriced.length > 0) {
     throw new CliError(
       `${unpriced.length} row(s) could not be priced (no "payout", and difficulty/estHours `
@@ -953,19 +994,22 @@ export async function createTasksBatchIntents(
     );
   }
 
+  const documents = tasks.map(row => validatePreparedTaskMetadata(row) ?? buildTaskMetadata({
+    name: row.name, description: row.description, location: row.location || '', difficulty: row.difficulty || 'medium',
+    estHours: row.estHours || 0, submission: row.submission ?? '', dueDate: row.dueDate,
+  }));
+  documents.forEach((doc, i) => { if (editorChanges(tasks[i])) requireTaskMetadataFinal(doc); });
+  validateCreateIntent(buildCreateTasksBatch({ taskManagerAddress, projectId: pid, tasks: tasks.map(row => ({
+    payout: row.payout, title: row.name, metadataHash: ethers.constants.HashZero, bountyToken: row.bountyToken,
+    bountyAmount: row.bountyAmount, requiresApplication: row.requiresApplication, absoluteDeadline: row.absoluteDeadline,
+    completionWindow: row.completionWindowSecs,
+  })), orgId }));
   // Per-row metadata: exactly buildMetadata() from create-batch.ts, pinned in
   // input order.
   const pinned: Array<{ row: ParsedRow; cid: string; metadata: TaskMetadata }> = [];
-  for (const row of tasks) {
-    const metadata = buildTaskMetadata({
-      name: row.name,
-      description: row.description,
-      location: row.location || '',
-      difficulty: row.difficulty || 'medium',
-      estHours: row.estHours || 0,
-      submission: '',
-    });
-    const cid = await pinJson(serializeTaskMetadata(metadata), ctx.ipfs);
+  for (const [index, row] of tasks.entries()) {
+    const metadata = documents[index];
+    const cid = await pinTaskDocument(ctx, metadata, row.preparedMetadata);
     pinned.push({ row, cid, metadata });
   }
 
@@ -1154,6 +1198,7 @@ export async function assignTaskIntent(ctx: PopContext, p: AssignTaskParams): Pr
 export interface ApplyForTaskParams extends TaskActionParams {
   notes?: string;
   experience?: string;
+  appliedAt?: string;
 }
 
 /**
@@ -1164,7 +1209,7 @@ export interface ApplyForTaskParams extends TaskActionParams {
  */
 export async function applyForTaskIntent(ctx: PopContext, p: ApplyForTaskParams): Promise<TxIntent> {
   const { orgId, taskManagerAddress } = await resolveTaskManager(ctx, p.org);
-  const applicationData = buildTaskApplicationMetadata({ notes: p.notes, experience: p.experience });
+  const applicationData = buildTaskApplicationMetadata({ notes: p.notes, experience: p.experience, appliedAt: p.appliedAt });
   const cid = await pinJson(serializeTaskApplicationMetadata(applicationData), ctx.ipfs);
   const intent = buildApplyForTask({ taskManagerAddress, taskId: p.task, applicationHash: cid, orgId });
   intent.meta.ipfs = { cid, metadata: applicationData };
@@ -1185,13 +1230,13 @@ export async function approveApplicationIntent(
   return buildApproveApplication({ taskManagerAddress, taskId: p.task, applicant, orgId });
 }
 
-export interface UpdateTaskParams extends TaskActionParams {
-  payout?: number;
+export interface UpdateTaskParams extends TaskActionParams, TaskEditorMetadataParams {
+  payout?: number | string;
   name?: string;
   description?: string;
   /** ERC20 address, or 'none' to clear the bounty. */
   bountyToken?: string;
-  bountyAmount?: number;
+  bountyAmount?: number | string;
   /** A PAST value is deliberately accepted (admin takeover lever). */
   deadline?: string;
   completionWindow?: string;
@@ -1208,8 +1253,9 @@ export interface UpdateTaskParams extends TaskActionParams {
  * flagged in meta.summary.deadlineIsPast.
  */
 export async function updateTaskIntent(ctx: PopContext, p: UpdateTaskParams): Promise<TxIntent> {
+  const preparedDoc = validatePreparedTaskMetadata(p);
   // 0. Fail fast on input problems before any network work.
-  const changed = (['payout', 'name', 'description', 'bountyToken', 'bountyAmount', 'deadline', 'completionWindow'] as const)
+  const changed = (['payout', 'name', 'description', 'bountyToken', 'bountyAmount', 'deadline', 'completionWindow', 'location', 'difficulty', 'estHours', 'submission', 'dueDate', 'preparedMetadata'] as const)
     .filter((key) => p[key] !== undefined);
   if (changed.length === 0) {
     throw new CliError(
@@ -1265,7 +1311,7 @@ export async function updateTaskIntent(ctx: PopContext, p: UpdateTaskParams): Pr
   }
 
   // 3. READ: current title/description/metadata (subgraph → IPFS fallback).
-  const metadataChanging = p.name !== undefined || p.description !== undefined;
+  const metadataChanging = p.name !== undefined || p.description !== undefined || editorChanges(p);
   let subgraphTask: any = null;
   try {
     subgraphTask = (await fetchTaskData(ctx.client, taskManagerAddress, p.task, ctx.chainId)).task;
@@ -1291,7 +1337,7 @@ export async function updateTaskIntent(ctx: PopContext, p: UpdateTaskParams): Pr
       'Retry in a few seconds, or pass --name and --description explicitly.'
     );
   }
-  if (metadataChanging
+  if (metadataChanging && !preparedDoc
     && (p.name === undefined || p.description === undefined)
     && (currentName === undefined || currentDescription === undefined)) {
     throw new CliError(
@@ -1321,7 +1367,7 @@ export async function updateTaskIntent(ctx: PopContext, p: UpdateTaskParams): Pr
   if (finalBountyToken === ethers.constants.AddressZero) {
     finalBountyPayout = ethers.BigNumber.from(0); // zero token ⇒ zero payout (contract validation)
   } else if (p.bountyAmount !== undefined) {
-    finalBountyPayout = p.bountyAmount > 0
+    finalBountyPayout = Number(p.bountyAmount) > 0
       ? ethers.utils.parseUnits(p.bountyAmount.toString(), getTokenDecimals(finalBountyToken))
       : ethers.BigNumber.from(0);
   }
@@ -1330,8 +1376,8 @@ export async function updateTaskIntent(ctx: PopContext, p: UpdateTaskParams): Pr
 
   const finalDeadline = newAbsoluteDeadline !== undefined ? newAbsoluteDeadline : (current.absoluteDeadline ?? 0);
   const finalWindow = newCompletionWindow !== undefined ? newCompletionWindow : (current.completionWindow ?? 0);
-  const finalName = p.name ?? currentName ?? '';
-  const finalDescription = p.description ?? currentDescription ?? '';
+  const finalName = preparedDoc?.name ?? p.name ?? currentName ?? '';
+  const finalDescription = preparedDoc?.description ?? p.description ?? currentDescription ?? '';
 
   // Re-pin only when the metadata content actually changes.
   let finalMetadataHash = currentMetadataHash
@@ -1340,12 +1386,12 @@ export async function updateTaskIntent(ctx: PopContext, p: UpdateTaskParams): Pr
   let newCid: string | undefined;
   let pinnedMetadata: TaskMetadata | undefined;
   const metadataActuallyChanged = metadataChanging
-    && (finalName !== currentName || finalDescription !== currentDescription);
+    && (finalName !== currentName || finalDescription !== currentDescription || editorChanges(p));
   if (metadataActuallyChanged) {
     // Key order MUST match task create (frontend parity) — see metadata/task.
     // When the current doc could not be fetched, location/difficulty/estHours
     // reset to defaults exactly as the CLI warns they will.
-    pinnedMetadata = buildTaskMetadata({
+    pinnedMetadata = editorChanges(p) ? editorFinal(metadata, p) : buildTaskMetadata({
       name: finalName,
       description: finalDescription,
       location: metadata?.location || '',
@@ -1355,7 +1401,9 @@ export async function updateTaskIntent(ctx: PopContext, p: UpdateTaskParams): Pr
       // Soft due date is metadata-borne; a re-pin that drops it deletes it.
       dueDate: metadata?.dueDate ? Math.floor(Number(metadata.dueDate)) : undefined,
     });
-    newCid = await pinJson(serializeTaskMetadata(pinnedMetadata), ctx.ipfs);
+    validateUpdateIntent(buildUpdateTask({ taskManagerAddress, taskId, payoutWei: finalPayout, title: finalName, metadataHash: ethers.constants.HashZero,
+      bountyToken: finalBountyToken, bountyPayoutWei: finalBountyPayout, absoluteDeadline: finalDeadline, completionWindow: finalWindow, orgId }));
+    newCid = await pinTaskDocument(ctx, pinnedMetadata, p.preparedMetadata);
     finalMetadataHash = ipfsCidToBytes32(newCid);
   }
 
@@ -1380,7 +1428,7 @@ export async function updateTaskIntent(ctx: PopContext, p: UpdateTaskParams): Pr
   return intent;
 }
 
-export interface EditTaskMetadataParams extends TaskActionParams {
+export interface EditTaskMetadataParams extends TaskActionParams, TaskEditorMetadataParams {
   name?: string;
   description?: string;
   features?: TaskManagerFeatures;
@@ -1398,7 +1446,8 @@ export async function editTaskMetadataIntent(
   ctx: PopContext,
   p: EditTaskMetadataParams
 ): Promise<TxIntent | null> {
-  if (p.name === undefined && p.description === undefined) {
+  const preparedDoc = validatePreparedTaskMetadata(p);
+  if (p.name === undefined && p.description === undefined && !editorChanges(p)) {
     throw new CliError('Nothing to edit — pass --name and/or --description.', EXIT.USAGE);
   }
 
@@ -1447,8 +1496,8 @@ export async function editTaskMetadataIntent(
   const currentName: string | undefined = metadata?.name ?? subgraphTask?.title ?? undefined;
   const currentDescription: string | undefined = metadata?.description ?? undefined;
 
-  if ((p.name === undefined && currentName === undefined)
-    || (p.description === undefined && currentDescription === undefined)) {
+  if (!preparedDoc && ((p.name === undefined && currentName === undefined)
+    || (p.description === undefined && currentDescription === undefined))) {
     throw new CliError(
       `Task ${taskId} metadata is not indexed yet (subgraph lag) — cannot merge a partial metadata edit.`,
       EXIT.INFRA,
@@ -1457,15 +1506,15 @@ export async function editTaskMetadataIntent(
   }
 
   // MERGE
-  const finalName = p.name ?? currentName ?? '';
-  const finalDescription = p.description ?? currentDescription ?? '';
-  if (finalName === currentName && finalDescription === currentDescription) {
+  const finalName = preparedDoc?.name ?? p.name ?? currentName ?? '';
+  const finalDescription = preparedDoc?.description ?? p.description ?? currentDescription ?? '';
+  if (finalName === currentName && finalDescription === currentDescription && !editorChanges(p)) {
     // No-op: the CLI reports success without sending anything.
     return null;
   }
 
   // Key order MUST match task create (frontend parity) — see metadata/task.
-  const metadataJson = buildTaskMetadata({
+  const metadataJson = editorChanges(p) ? editorFinal(metadata, p) : buildTaskMetadata({
     name: finalName,
     description: finalDescription,
     location: metadata?.location || '',
@@ -1476,7 +1525,9 @@ export async function editTaskMetadataIntent(
     dueDate: metadata?.dueDate ? Math.floor(Number(metadata.dueDate)) : undefined,
   });
 
-  const cid = await pinJson(serializeTaskMetadata(metadataJson), ctx.ipfs);
+  validateTaskTitle(finalName);
+  encodeIntent(buildUpdateTaskMetadata({ taskManagerAddress, taskId, title: finalName, metadataHash: ethers.constants.HashZero, orgId }));
+  const cid = await pinTaskDocument(ctx, metadataJson, p.preparedMetadata);
   const intent = buildUpdateTaskMetadata({ taskManagerAddress, taskId, title: finalName, metadataHash: cid, orgId });
   intent.meta.ipfs = { cid, metadata: metadataJson };
   return intent;
@@ -1609,4 +1660,106 @@ export async function setFoldersIntent(ctx: PopContext, p: SetFoldersParams): Pr
   }
 
   return buildSetFolders({ taskManagerAddress, expectedCurrentRoot: expectedRoot, newRoot, orgId });
+}
+
+/** Current ConfigKey indices; retired role writes are never exposed as usable variants. */
+export const TASK_CONFIG_KEYS = { EXECUTOR: 0, CREATOR_HAT_ALLOWED: 1, ROLE_PERM: 2, PROJECT_ROLE_PERM: 3,
+  BOUNTY_CAP: 4, PROJECT_MANAGER: 5, PROJECT_CAP: 6, ORGANIZER_HAT_ALLOWED: 7 } as const;
+export type TaskConfigInput =
+  | { key: 'PROJECT_CAP'; projectId: string; capRaw: RawUintInput }
+  | { key: 'BOUNTY_CAP'; projectId: string; token: string; capRaw: RawUintInput }
+  | { key: 'PROJECT_MANAGER'; projectId: string; manager: string; enabled: boolean }
+  | { key: 'EXECUTOR'; executor: string }
+  | { key: 'CREATOR_HAT_ALLOWED' | 'ORGANIZER_HAT_ALLOWED'; subjectId: RawUintInput; enabled: boolean };
+function nonzeroAddress(address: string): string {
+  const result = ethers.utils.getAddress(address);
+  if (result === ethers.constants.AddressZero) throw new Error('Nonzero address required');
+  return result;
+}
+function bytes32(value: string): string {
+  if (!ethers.utils.isHexString(value, 32)) throw new Error('bytes32 required');
+  return value;
+}
+export function taskConfigCall(taskManagerAddress: string, config: TaskConfigInput, orgId?: string): TxIntent {
+  let types: string[], values: unknown[];
+  switch (config.key) {
+    case 'PROJECT_CAP': types = ['bytes32', 'uint256']; values = [bytes32(config.projectId), requireProjectCapRaw(config.capRaw)]; break;
+    case 'BOUNTY_CAP': types = ['bytes32', 'address', 'uint256']; values = [bytes32(config.projectId), nonzeroAddress(config.token), requireProjectCapRaw(config.capRaw)]; break;
+    case 'PROJECT_MANAGER': types = ['bytes32', 'address', 'bool']; values = [bytes32(config.projectId), nonzeroAddress(config.manager), config.enabled]; break;
+    case 'EXECUTOR': types = ['address']; values = [nonzeroAddress(config.executor)]; break;
+    case 'CREATOR_HAT_ALLOWED': case 'ORGANIZER_HAT_ALLOWED':
+      types = ['uint256', 'bool']; values = [requireRawUint(config.subjectId), config.enabled]; break;
+    default: throw new Error('Unsupported or retired TaskManager config key');
+  }
+  if ('enabled' in config && typeof config.enabled !== 'boolean') throw new Error('Boolean enabled required');
+  return { to: nonzeroAddress(taskManagerAddress), abi: getAbi('TaskManagerNew'), method: 'setConfig',
+    args: [TASK_CONFIG_KEYS[config.key], ethers.utils.defaultAbiCoder.encode(types, values)],
+    meta: { domain: 'task', action: 'config', orgId, summary: { key: config.key } } };
+}
+export interface CreateTaskRawArgs extends Omit<CreateTaskArgs, 'payout' | 'bountyAmount'> {
+  payoutRaw: RawUintInput;
+  bountyPayoutRaw?: RawUintInput;
+}
+function taskRawArgs(a: CreateTaskRawArgs): unknown[] {
+  if (!a.features.deadlines) throw new Error('Current TaskManager signature required');
+  nonzeroAddress(a.taskManagerAddress);
+  const payout = requireRawUint(a.payoutRaw, 96);
+  const bounty = requireRawUint(a.bountyPayoutRaw ?? '0', 96);
+  if (BigInt(payout) === 0n || BigInt(payout) > 10n ** 24n || BigInt(bounty) > 10n ** 24n) throw new Error('Invalid task payout');
+  const token = ethers.utils.getAddress(a.bountyToken ?? ethers.constants.AddressZero);
+  if ((token === ethers.constants.AddressZero) !== (bounty === '0')) throw new Error('Bounty token and positive payout must be set together');
+  const title = validateTaskTitle(a.title);
+  if (a.requiresApplication !== undefined && typeof a.requiresApplication !== 'boolean') throw new Error('requiresApplication must be boolean');
+  return [payout, title, metadataPointerToBytes32(a.metadataHash), bytes32(a.projectId), token, bounty,
+    a.requiresApplication ?? false, requireRawUint(a.absoluteDeadline ?? 0, 48), requireRawUint(a.completionWindow ?? 0, 32)];
+}
+/** Raw amounts are never scaled. Deadline freshness is checked by the contract at execution. */
+export function buildCreateTaskRaw(a: CreateTaskRawArgs): TxIntent {
+  return { to: a.taskManagerAddress, abi: getAbi('TaskManagerNew'), method: 'createTask', args: taskRawArgs(a),
+    meta: { domain: 'task', action: 'create', orgId: a.orgId, summary: { name: a.title, projectId: a.projectId, payoutRaw: requireRawUint(a.payoutRaw) } } };
+}
+export interface CreateAndAssignTaskRawArgs extends CreateTaskRawArgs { assignee: string }
+export function buildCreateAndAssignTaskRaw(a: CreateAndAssignTaskRawArgs): TxIntent {
+  const args = taskRawArgs(a);
+  args.splice(4, 0, nonzeroAddress(a.assignee));
+  return { to: a.taskManagerAddress, abi: getAbi('TaskManagerNew'), method: 'createAndAssignTask', args,
+    meta: { domain: 'task', action: 'create-and-assign', orgId: a.orgId, summary: { name: a.title, projectId: a.projectId, assignee: a.assignee } } };
+}
+export interface CreateAndAssignTaskArgs extends Omit<CreateTaskArgs, 'payout' | 'bountyAmount'> {
+  payout: string; bountyAmount?: string; bountyDecimals?: number; assignee: string;
+}
+/** New human boundary is strict text + explicit bounty decimals. Old CLI builders retain defaults. */
+export function buildCreateAndAssignTask(a: CreateAndAssignTaskArgs): TxIntent {
+  if (a.bountyAmount !== undefined && a.bountyDecimals === undefined) throw new Error('Explicit bountyDecimals required');
+  return buildCreateAndAssignTaskRaw({ ...a, payoutRaw: parseDecimalAmountToRaw(a.payout, 18),
+    bountyPayoutRaw: a.bountyAmount === undefined ? '0' : parseDecimalAmountToRaw(a.bountyAmount, a.bountyDecimals!) });
+}
+/** Reports each separately executed write; a saved task never implies a saved cap. */
+export function projectTaskWriteOutcomes<T, C>(task: Fact<T>, cap: Fact<C>): { task: Fact<T>; cap: Fact<C>; complete: boolean } {
+  return { task, cap, complete: task.state === 'known' && cap.state === 'known' };
+}
+
+/** Validate every create row before any document is pinned. Existing pure CLI bytes stay unchanged. */
+function validateCreateIntent(intent: TxIntent): void {
+  encodeIntent(intent);
+  const rows = intent.method === 'createTasksBatch' ? (intent.args[1] as unknown[][]).map(row => [...row.slice(0, 3), intent.args[0], ...row.slice(3)]) : [intent.args];
+  for (const args of rows) taskRawArgs({
+    taskManagerAddress: intent.to, payoutRaw: ethers.BigNumber.from(args[0]).toString(), title: ethers.utils.toUtf8String(args[1] as ethers.BytesLike),
+    metadataHash: '0x' + '01'.repeat(32), projectId: args[3] as string, bountyToken: args[4] as string,
+    bountyPayoutRaw: ethers.BigNumber.from(args[5]).toString(), requiresApplication: args[6] as boolean,
+    absoluteDeadline: Number(args[7]), completionWindow: Number(args[8]), features: { deadlines: true },
+  });
+}
+
+function validateTaskTitle(title: string): Uint8Array {
+  const bytes = stringToBytes(title);
+  if (bytes.length === 0 || bytes.length > 256) throw new Error('Title must contain 1–256 UTF-8 bytes');
+  return bytes;
+}
+function validateUpdateIntent(intent: TxIntent): void {
+  encodeIntent(intent);
+  const args = intent.args;
+  taskRawArgs({ taskManagerAddress: intent.to, payoutRaw: ethers.BigNumber.from(args[1]).toString(), title: ethers.utils.toUtf8String(args[2] as ethers.BytesLike),
+    metadataHash: '0x' + '01'.repeat(32), projectId: ethers.constants.HashZero, bountyToken: args[4] as string,
+    bountyPayoutRaw: ethers.BigNumber.from(args[5]).toString(), absoluteDeadline: Number(args[6]), completionWindow: Number(args[7]), features: { deadlines: true } });
 }

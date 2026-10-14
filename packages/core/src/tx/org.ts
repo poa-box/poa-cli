@@ -18,6 +18,11 @@ import { getAbi, createReadContract } from '../contracts';
 import { stringToBytes, ipfsCidToBytes32 } from '../encoding';
 import { pinJson, pinFile, fetchJson } from '../ipfs';
 import { CliError } from '../errors';
+import { IpfsError } from '../errors';
+import { requireRawUint, type RawUintInput } from '../amounts';
+import { metadataPointerToBytes32, bytes32ToCidV0 } from '../encoding/cid';
+import { buildBootstrapConfig, validateBootstrapConfig, type BootstrapConfigInput } from '../deployment/bootstrap';
+import { requireSupportedDeployerVersion } from '../deployment/policy';
 import { EXIT } from '../exit-codes';
 import { resolveOrgId, resolveOrgModules } from '../reads/resolve';
 import { FETCH_INFRASTRUCTURE_ADDRESSES } from '../graph/documents/infrastructure';
@@ -27,8 +32,10 @@ import {
   buildOrgDeployMetadata,
   mergeOrgMetadata,
   serializeOrgMetadata,
+  requireRawOrgMetadata,
+  validateOrgMetadataUpdates,
 } from '../metadata/org';
-import type { OrgLink, OrgMetadataUpdates } from '../metadata/org';
+import type { OrgLink, OrgMetadataUpdates, OrgDeployMetadataInput, PreparedOrgMetadata } from '../metadata/org';
 import { buildProposalMetadata, serializeProposalMetadata } from '../metadata/proposal';
 import { buildGovernanceProposal } from './governance';
 
@@ -67,6 +74,8 @@ export interface OrgDeployConfig {
   deployerUsername?: string;
   description?: string;
   links?: OrgLink[];
+  metadata?: OrgDeployMetadataInput;
+  bootstrap?: BootstrapConfigInput;
   autoUpgrade?: boolean;
   hybridVoting: {
     thresholdPct: number;
@@ -83,6 +92,7 @@ export interface OrgDeployConfig {
   directDemocracy?: {
     thresholdPct: number;
     quorum?: number;
+    initialTargets?: string[];
   };
   roles: Array<{
     name: string;
@@ -110,7 +120,12 @@ export interface OrgDeployConfig {
   metadataAdminRoleIndex?: number;
   educationHub?: { enabled: boolean };
   paymaster?: {
-    operatorRoleIndex: number;
+    /** Exact MaxUint256 means no operator; omission preserves that deliberate sentinel. */
+    operatorRoleIndex?: RawUintInput | ethers.BigNumber;
+    autoWhitelistContracts?: boolean;
+    maxCallGas?: number;
+    maxVerificationGas?: number;
+    maxPreVerificationGas?: number;
     maxFeePerGas: string;
     maxPriorityFeePerGas: string;
     defaultBudgetCapPerEpoch: string;
@@ -170,6 +185,7 @@ export function validateOrgDeployConfig(config: OrgDeployConfig): void {
     if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > max) invalid(label + ' must be an integer between 0 and ' + max);
   };
   if (!config?.orgName?.trim()) invalid('orgName is required');
+  buildOrgDeployMetadata({ description: config.description, links: config.links, ...config.metadata });
   if (!Array.isArray(config.roles) || config.roles.length < 1 || config.roles.length > 16) invalid('roles must contain 1–16 authority roles');
   if (!config.hybridVoting || !Array.isArray(config.hybridVoting.classes) || !config.hybridVoting.classes.length) invalid('hybridVoting.classes is required');
   if (config.hybridVoting.classes.length > 8) invalid('hybridVoting.classes supports at most 8 classes');
@@ -234,9 +250,18 @@ export function validateOrgDeployConfig(config: OrgDeployConfig): void {
     if (new Set(group.memberRoleIndices).size !== group.memberRoleIndices.length) invalid('duplicate group member role');
   }
   if (config.metadataAdminRoleIndex !== undefined) assertRoleIndices('metadataAdminRoleIndex', [config.metadataAdminRoleIndex], config.roles.length);
+  const targets = config.directDemocracy?.initialTargets;
+  if (targets !== undefined && (!Array.isArray(targets) || targets.some(a => !ethers.utils.isAddress(a)))) invalid('directDemocracy.initialTargets must be addresses');
+  if (config.bootstrap !== undefined) validateBootstrapConfig(config.bootstrap, config.roles.length);
   if (config.paymaster) {
     const pm = config.paymaster;
-    assertRoleIndices('paymaster.operatorRoleIndex', [pm.operatorRoleIndex], config.roles.length);
+    let operator: string;
+    try { operator = requireRawUint(ethers.BigNumber.isBigNumber(pm.operatorRoleIndex)
+      ? pm.operatorRoleIndex.toString() : pm.operatorRoleIndex ?? ethers.constants.MaxUint256.toString()); }
+    catch { invalid('paymaster.operatorRoleIndex must be an exact uint256'); }
+    if (operator! !== ethers.constants.MaxUint256.toString() && BigInt(operator!) >= BigInt(config.roles.length)) invalid('paymaster.operatorRoleIndex must name a role or MaxUint256');
+    if (pm.autoWhitelistContracts !== undefined && typeof pm.autoWhitelistContracts !== 'boolean') invalid('paymaster.autoWhitelistContracts must be boolean');
+    for (const field of ['maxCallGas', 'maxVerificationGas', 'maxPreVerificationGas'] as const) if (pm[field] !== undefined) uint(pm[field], 'paymaster.' + field);
     uint(pm.defaultBudgetEpochLen, 'paymaster.defaultBudgetEpochLen');
     for (const [field, decimals, bits] of [['maxFeePerGas', 9, 256], ['maxPriorityFeePerGas', 9, 256], ['defaultBudgetCapPerEpoch', 18, 128], ['funding', 18, 256]] as const) {
       const raw = pm[field];
@@ -431,13 +456,13 @@ export function buildDeploymentParams(
   //      defaultBudgetCapPerEpoch(uint128), defaultBudgetEpochLen(uint32)
   const pm = config.paymaster;
   const paymasterConfig = pm ? [
-    pm.operatorRoleIndex,                                    // uint256
-    true,                                                    // bool
+    pm.operatorRoleIndex ?? ethers.constants.MaxUint256,      // uint256
+    pm.autoWhitelistContracts ?? true,                       // bool
     ethers.utils.parseUnits(pm.maxFeePerGas, 'gwei'),       // uint256
     ethers.utils.parseUnits(pm.maxPriorityFeePerGas, 'gwei'), // uint256
-    500000,                                                  // uint32 maxCallGas
-    500000,                                                  // uint32 maxVerificationGas
-    100000,                                                  // uint32 maxPreVerificationGas
+    pm.maxCallGas ?? 500000,                                 // uint32 maxCallGas
+    pm.maxVerificationGas ?? 500000,                         // uint32 maxVerificationGas
+    pm.maxPreVerificationGas ?? 100000,                      // uint32 maxPreVerificationGas
     ethers.utils.parseEther(pm.defaultBudgetCapPerEpoch),   // uint128
     pm.defaultBudgetEpochLen,                                // uint32
   ] : [
@@ -475,14 +500,14 @@ export function buildDeploymentParams(
     config.hybridVoting.thresholdPct,                        // uint8
     config.directDemocracy?.thresholdPct ?? 51,              // uint8
     hybridClasses,                                           // ClassConfig[]
-    [],                                                      // address[] ddInitialTargets
+    config.directDemocracy?.initialTargets ?? [],            // address[] ddInitialTargets
     roles,                                                   // RoleConfig[]
     groups,                                                  // GroupConfig[]
     roleAssignments,                                         // RoleAssignments struct
     config.metadataAdminRoleIndex ?? ethers.constants.MaxUint256, // uint256
     true,                                                    // bool passkeyEnabled
     [config.educationHub?.enabled ?? true],                  // EducationHubConfig struct
-    [[], []],                                                // BootstrapConfig struct (projects, tasks)
+    config.bootstrap ? buildBootstrapConfig(config.bootstrap, roleCount) : [[], []],
     paymasterConfig,                                         // PaymasterConfig struct
     taskManagerPerms,                                        // TaskManagerPermConfig struct (roleIndices, masks)
     config.hybridVoting.quorum ?? 0,
@@ -533,9 +558,34 @@ export function buildDeployFullOrg(a: DeployFullOrgArgs): TxIntent {
         orgId: a.orgId,
         orgName: a.orgName,
         gasLimit: DEPLOY_FULL_ORG_GAS_LIMIT,
+        deployerVersionVerified: false,
       },
     },
   };
+}
+
+/** Current ModulesFactory tuple; active allowlist preparation remains the host's responsibility. */
+export interface PreparedZkEmailDeployConfig {
+  enabled: boolean;
+  initialRoot: string;
+  initialCid: string;
+}
+
+export interface DeployFullOrgWithZkEmailArgs extends DeployFullOrgArgs {
+  zkConfig: PreparedZkEmailDeployConfig;
+}
+
+/** Pure email entrypoint, including deliberate enabled-but-dormant zero root/CID. */
+export function buildDeployFullOrgWithZkEmail(a: DeployFullOrgWithZkEmailArgs): TxIntent {
+  const zk = a.zkConfig;
+  if (!zk || typeof zk.enabled !== 'boolean' || !ethers.utils.isHexString(zk.initialRoot, 32)
+    || !ethers.utils.isHexString(zk.initialCid, 32)) throw new CliError('Invalid prepared ZkEmail deployment config', EXIT.USAGE);
+  const intent = buildDeployFullOrg(a);
+  intent.method = 'deployFullOrgWithZkEmail';
+  intent.args = [a.deployParams, [zk.enabled, zk.initialRoot, zk.initialCid]];
+  // Catch malformed prepared tuples without I/O, instead of delaying until an executor.
+  new ethers.utils.Interface(intent.abi).encodeFunctionData(intent.method, intent.args);
+  return intent;
 }
 
 // ---------------------------------------------------------------------------
@@ -554,6 +604,12 @@ export interface DeployFullOrgParams {
    * a longer window is not replayable).
    */
   regDeadline?: number;
+  /** Existing document, optionally already pinned. Its extensions and serialization order survive. */
+  preparedMetadata?: PreparedOrgMetadata;
+  /** Opt into the frontend's strict SemVer v2 policy; legacy CLI prefix is unchanged by default. */
+  strictDeployerVersion?: boolean;
+  /** Selects the email entrypoint with an already-prepared current ABI tuple. */
+  zkConfig?: PreparedZkEmailDeployConfig;
 }
 
 /**
@@ -573,13 +629,22 @@ export async function deployFullOrgIntent(
 
   // ── Fail fast on config problems before any network work ───────────
   validateOrgDeployConfig(config);
+  const metadata = params.preparedMetadata
+    ? requireRawOrgMetadata(params.preparedMetadata.document)
+    : buildOrgDeployMetadata({ description: config.description, links: config.links, ...config.metadata });
+  const serializedMetadata = serializeOrgMetadata(metadata);
+  const preparedHash = params.preparedMetadata?.pointer === undefined ? undefined
+    : metadataPointerToBytes32(params.preparedMetadata.pointer);
+  if (params.regDeadline !== undefined) requireRawUint(params.regDeadline);
+  if (params.strictDeployerVersion !== undefined && typeof params.strictDeployerVersion !== 'boolean') throw new CliError('strictDeployerVersion must be boolean', EXIT.USAGE);
   // Validate full ABI encoding before infrastructure reads, IPFS publication or signing.
   const preview = buildDeploymentParams(config, {
     orgId: ethers.constants.HashZero, metadataHash: ethers.constants.HashZero,
     registryAddr: ethers.constants.AddressZero, deployerAddress: params.deployerAddress,
     deployerUsername: '', regDeadline: 0, regNonce: 0, regSignature: '0x',
   });
-  new ethers.utils.Interface(getAbi('OrgDeployerNew')).encodeFunctionData('deployFullOrg', [preview]);
+  if (params.zkConfig) buildDeployFullOrgWithZkEmail({ orgDeployerAddress: ethers.constants.AddressZero, deployParams: preview, zkConfig: params.zkConfig });
+  else new ethers.utils.Interface(getAbi('OrgDeployerNew')).encodeFunctionData('deployFullOrg', [preview]);
   if (config.paymaster?.funding && ethers.utils.parseEther(config.paymaster.funding).lt(0)) {
     throw new CliError('Paymaster funding must not be negative', EXIT.USAGE);
   }
@@ -589,6 +654,7 @@ export async function deployFullOrgIntent(
   if (ctx.chainId === undefined) {
     throw new CliError('deployFullOrgIntent requires ctx.chainId (EIP-712 domain)', EXIT.USAGE);
   }
+  if (ctx.ipfs?.readonly || ctx.env?.POP_READONLY === '1') throw new IpfsError('POP_READONLY=1 — refusing organization deployment preparation/signing.');
 
   // Resolve infrastructure addresses
   const infra = await ctx.client.query<InfrastructureAddresses>(
@@ -598,21 +664,19 @@ export async function deployFullOrgIntent(
   );
   const orgDeployerAddr = infra.poaManagerContracts?.[0]?.orgDeployerProxy;
   const registryAddr = infra.poaManagerContracts?.[0]?.globalAccountRegistryProxy;
-  if (!orgDeployerAddr) throw new CliError('Could not resolve OrgDeployer address', EXIT.INFRA);
-  if (!registryAddr) throw new CliError('Could not resolve UniversalAccountRegistry address', EXIT.INFRA);
-  requireAuthorityDeployerVersion(await createReadContract(orgDeployerAddr, 'OrgDeployerNew', ctx.provider).VERSION());
+  if (!orgDeployerAddr || !ethers.utils.isAddress(orgDeployerAddr) || orgDeployerAddr.toLowerCase() === ethers.constants.AddressZero) throw new CliError('Could not resolve OrgDeployer address', EXIT.INFRA);
+  if (!registryAddr || !ethers.utils.isAddress(registryAddr) || registryAddr.toLowerCase() === ethers.constants.AddressZero) throw new CliError('Could not resolve UniversalAccountRegistry address', EXIT.INFRA);
+  const deployerVersion = await createReadContract(orgDeployerAddr, 'OrgDeployerNew', ctx.provider).VERSION();
+  if (params.strictDeployerVersion) requireSupportedDeployerVersion(deployerVersion, { strict: true });
+  else requireAuthorityDeployerVersion(deployerVersion);
 
   // Generate orgId: keccak256(orgName.toLowerCase().replace(/\s+/g, '-'))
   const { orgId, normalizedName } = deriveOrgId(config.orgName);
   const deployerUsername = config.deployerUsername || normalizedName;
 
   // Upload org metadata to IPFS
-  const metadata = buildOrgDeployMetadata({
-    description: config.description,
-    links: config.links,
-  });
-  const metaCid = await pinJson(serializeOrgMetadata(metadata), ctx.ipfs);
-  const metadataHash = ipfsCidToBytes32(metaCid);
+  const metaCid = preparedHash ? bytes32ToCidV0(preparedHash) : await pinJson(serializedMetadata, ctx.ipfs);
+  const metadataHash = preparedHash ?? metadataPointerToBytes32(metaCid);
 
   // Get registration nonce for deployer
   const registryContract = createReadContract(registryAddr, 'UniversalAccountRegistry', ctx.provider);
@@ -645,14 +709,16 @@ export async function deployFullOrgIntent(
     ? ethers.utils.parseEther(config.paymaster.funding)
     : undefined;
 
-  const intent = buildDeployFullOrg({
+  const buildArgs: DeployFullOrgArgs = {
     orgDeployerAddress: orgDeployerAddr,
     deployParams,
     value: txValue,
     orgId,
     orgName: config.orgName,
-  });
+  };
+  const intent = params.zkConfig ? buildDeployFullOrgWithZkEmail({ ...buildArgs, zkConfig: params.zkConfig }) : buildDeployFullOrg(buildArgs);
   intent.meta.ipfs = { cid: metaCid, metadata };
+  intent.meta.summary = { ...intent.meta.summary, deployerVersion, deployerVersionVerified: true };
   return intent;
 }
 
@@ -698,7 +764,7 @@ export function buildUpdateOrgMetaAsAdmin(a: UpdateOrgMetaArgs): TxIntent {
 export interface UpdateOrgMetaParams extends OrgMetadataUpdates {
   /** Org name or 0x id. */
   org: string;
-  /** New org name; omitted keeps the current name (full-overwrite write). */
+  /** New org name; omitted/empty keeps the established current name (full-overwrite write). */
   name?: string;
   /** Raw logo bytes to pin (replaces the CLI's fs.readFileSync path). */
   logo?: Uint8Array;
@@ -709,15 +775,19 @@ export interface UpdateOrgMetaParams extends OrgMetadataUpdates {
  *
  * Merge base is the RAW IPFS doc (fetchJson of the current metadataHash),
  * spread FIRST so unknown keys (e.g. zkEmailAllowlist) and frontend key order
- * survive; refuses (INFRA) when IPFS is unreachable but the subgraph shows
- * metadata exists — proceeding would drop any key the CLI does not model.
+ * survive; a positive pointer requires a valid raw object, regardless of
+ * indexed display richness. An explicit null/empty/zero pointer initializes
+ * a fresh base; missing/undefined pointer evidence refuses the overwrite.
+ * Preserving the name also requires an established current string value.
  */
 export async function updateOrgMetaIntent(
   ctx: PopContext,
   params: UpdateOrgMetaParams
 ): Promise<TxIntent> {
-  if (!params.name && !params.description && !params.logo && !params.logoCid && !params.links
-    && params.backgroundColor === undefined && params.hideTreasury === undefined) {
+  validateOrgMetadataUpdates(params);
+  if (params.name === undefined && params.description === undefined && params.logo === undefined && params.logoCid === undefined && params.links === undefined
+    && params.backgroundColor === undefined && params.hideTreasury === undefined && params.useTokenSymbol === undefined
+    && params.taskPayoutHoursOnly === undefined && params.taskPayoutHourlyRate === undefined && params.zkEmailAllowlist === undefined && params.extensions === undefined) {
     throw new CliError(
       'At least one metadata field must be provided.',
       EXIT.USAGE,
@@ -744,30 +814,53 @@ export async function updateOrgMetaIntent(
         + 'an unknown org would otherwise blank both. Check --chain, or retry once indexed.'
     );
   }
-  const subgraphMeta = existing.organization.metadata || {};
-  const currentName = existing.organization.name || '';
+  const currentName = existing.organization.name;
+  // Empty replacement names retain the historical keep-current policy. Do
+  // not invent an empty current name from an incomplete adapter response.
+  if (!params.name && (!Object.prototype.hasOwnProperty.call(existing.organization, 'name') || typeof currentName !== 'string')) {
+    throw new CliError(
+      'Could not establish the org\'s current name from the indexed source.',
+      EXIT.INFRA,
+      'This write overwrites the org name and metadata wholesale. Supply a new name deliberately, '
+        + 'or retry once the indexed response includes the current name.'
+    );
+  }
+  const nameToSend = params.name || currentName;
   const currentMetadataHash = existing.organization.metadataHash;
+  if (!Object.prototype.hasOwnProperty.call(existing.organization, 'metadataHash')
+    || (currentMetadataHash !== null && typeof currentMetadataHash !== 'string')) {
+    throw new CliError(
+      'Could not establish the org\'s current metadata pointer from the indexed source.',
+      EXIT.INFRA,
+      'This write is a full overwrite — missing or undefined metadataHash is unknown, not an empty '
+        + 'metadata base. Retry once the indexed response establishes the current pointer.'
+    );
+  }
 
   // The RAW IPFS doc — not the subgraph's typed projection — is the merge base
   // (see mergeOrgMetadata for why).
-  let rawMeta: any = null;
-  if (currentMetadataHash && currentMetadataHash !== ethers.constants.HashZero) {
+  let rawMeta: any = {};
+  const hasPointer = currentMetadataHash !== null && currentMetadataHash !== ''
+    && !(typeof currentMetadataHash === 'string' && /^0x0+$/i.test(currentMetadataHash));
+  if (hasPointer) {
     try {
-      rawMeta = await fetchJson<any>(currentMetadataHash, ctx.ipfs);
-    } catch { /* handled below */ }
+      rawMeta = requireRawOrgMetadata(await fetchJson<unknown>(currentMetadataHash, ctx.ipfs));
+    } catch {
+      throw new CliError(
+        'Could not fetch the org\'s current metadata from IPFS, so unknown fields cannot be preserved.',
+        EXIT.INFRA,
+        'This write is a full overwrite — proceeding would drop any metadata key the CLI does not '
+          + 'model. Retry once IPFS responds.'
+      );
+    }
   }
-  if (!rawMeta && Object.keys(subgraphMeta).length > 0) {
-    throw new CliError(
-      'Could not fetch the org\'s current metadata from IPFS, so unknown fields cannot be preserved.',
-      EXIT.INFRA,
-      'This write is a full overwrite — proceeding would drop any metadata key the CLI does not '
-        + 'model. Retry once IPFS responds.'
-    );
-  }
-  const currentMeta: any = rawMeta ?? subgraphMeta;
+  const currentMeta: any = rawMeta;
+
+  // Validate the full document before uploading even a logo (cycles/non-JSON extensions fail here).
+  serializeOrgMetadata(mergeOrgMetadata(currentMeta, params));
 
   // Upload logo to IPFS if provided
-  let logoCid: string | null = params.logoCid ?? null;
+  let logoCid = params.logoCid;
   if (params.logo) {
     logoCid = await pinFile(params.logo, ctx.ipfs);
   }
@@ -778,13 +871,15 @@ export async function updateOrgMetaIntent(
     logoCid,
     backgroundColor: params.backgroundColor,
     hideTreasury: params.hideTreasury,
+    useTokenSymbol: params.useTokenSymbol,
+    taskPayoutHoursOnly: params.taskPayoutHoursOnly,
+    taskPayoutHourlyRate: params.taskPayoutHourlyRate,
+    zkEmailAllowlist: params.zkEmailAllowlist,
+    extensions: params.extensions,
   });
 
-  // If name not provided, keep the current name (full-overwrite write).
-  const nameToSend = params.name || currentName;
-
   const metaCid = await pinJson(serializeOrgMetadata(metadata), ctx.ipfs);
-  const metadataHash = ipfsCidToBytes32(metaCid);
+  const metadataHash = metadataPointerToBytes32(metaCid);
 
   const intent = buildUpdateOrgMetaAsAdmin({
     orgRegistryAddress: orgRegistryAddr,

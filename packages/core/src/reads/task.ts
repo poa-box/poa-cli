@@ -10,6 +10,11 @@
  * verbatim, comments included — the live-verification notes are load-bearing.
  */
 
+import { requireRawUint } from '../amounts';
+import type { SourceSnapshot } from '../data/facts';
+import { readIndexedPageFacts, type ProtocolQuery, type IndexedRow } from './protocol';
+import { requireWorkSource, validateWorkProject, readWorkPageFacts, type WorkPageOptions } from './project';
+import { FETCH_TASKS_PAGE, FETCH_TASKS_PAGE_LEGACY, FETCH_TASK_CLAIM_EXPIRIES_PAGE } from '../graph/documents/task';
 import type { GraphClient, FieldFallbackTier } from '../graph/client';
 import {
   projectsDataTiers,
@@ -604,4 +609,38 @@ export async function fetchTaskReleaseHistory(
     { chainId }
   );
   return { data, tierIndex, hasReleaseHistory: tierIndex === 0 };
+}
+
+/** Companion read: capped/failed pages retain data and explicit coverage. No optional history in this query. */
+export function listTasksComplete(options: WorkPageOptions): Promise<SourceSnapshot<readonly IndexedRow[]>> {
+  const variables = requireWorkSource(options.source);
+  const query: ProtocolQuery = async (doc, vars, source) => {
+    try {
+      const response = await options.query(doc, vars, source);
+      if (Array.isArray(response.errors) && response.errors.length) throw { response };
+      return response;
+    } catch (error) {
+      const errors = (error as any)?.response?.errors ?? (error as any)?.errors;
+      const messages: unknown[] = Array.isArray(errors) && errors.length ? errors.map(e => e?.message) : [(error as any)?.message];
+      if (!messages.every(m => typeof m === 'string' && /^(?:Type `Task` has no field `(?:absoluteDeadline|completionWindow|claimDeadline)`|Cannot query field "(?:absoluteDeadline|completionWindow|claimDeadline)" on type "Task"\.?)$/.test(m))) throw error;
+      return options.query(FETCH_TASKS_PAGE_LEGACY, vars, source);
+    }
+  };
+  return readWorkPageFacts({ ...options, query, variables, document: FETCH_TASKS_PAGE, collection: 'tasks', initialCursor: '',
+    validateRow: row => {
+      if (String(row.taskManager).toLowerCase() !== options.source.contract!.toLowerCase()) throw new Error('Task source mismatch');
+      validateWorkProject(row.project as IndexedRow, options.source);
+      requireRawUint(row.taskId as string); requireRawUint(row.payout as string); requireRawUint(row.bountyPayout as string);
+    } });
+}
+export function listTaskClaimExpiriesComplete(options: WorkPageOptions & { task: string | number }): Promise<SourceSnapshot<readonly IndexedRow[]>> {
+  requireWorkSource(options.source);
+  const taskId = taskEntityId(options.source.contract!, options.task);
+  return readIndexedPageFacts({ ...options, document: FETCH_TASK_CLAIM_EXPIRIES_PAGE, collection: 'taskClaimExpiries', initialCursor: '0x',
+    variables: { taskId, taskManager: options.source.contract!.toLowerCase() },
+    validateRow: row => {
+      const task = row.task as { id?: string; taskManager?: string } | undefined;
+      if (task?.id !== taskId || task?.taskManager?.toLowerCase() !== options.source.contract!.toLowerCase()) throw new Error('Expiry task mismatch');
+      requireRawUint(row.expiredAt as string); requireRawUint(row.expiredAtBlock as string);
+    } });
 }

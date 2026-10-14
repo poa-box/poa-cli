@@ -1,0 +1,7 @@
+query OrgTaskCountPage($orgIds: [String!]!, $cursor: String!, $first: Int!, $block: Block_height) {
+  _meta(block: $block) { block { number hash timestamp } }
+  tasks(first: $first, orderBy: id, orderDirection: asc, block: $block,
+    where: { id_gt: $cursor, project_: { deleted: false, taskManager_: { organization_in: $orgIds } } }) {
+    id status project { id deleted taskManager { id organization { id } } }
+  }
+}

@@ -52,3 +52,14 @@ export * as zkemail from './zkemail';
 export * as intents from './tx';
 export * as reads from './reads';
 export * as metadata from './metadata';
+
+export * from './amounts';
+export * from './data/facts';
+export * as authority from './authority/index';
+export * as email from './email/index';
+export * as accounts from './accounts/index';
+export * as sponsorship from './sponsorship/index';
+export * as deployment from './deployment/index';
+export * as tasks from './tasks/index';
+export * as treasury from './treasury/index';
+export * as governance from './governance/index';

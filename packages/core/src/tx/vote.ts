@@ -21,9 +21,11 @@ import {
   buildGovernanceProposal,
   encodeExecutorCall,
   ExecutionCall,
+  validateGovernanceDuration,
+  GovernanceWrapParams,
 } from './governance';
 import { getAbi } from '../contracts';
-import { ipfsCidToBytes32, formatAddress } from '../encoding';
+import { formatAddress } from '../encoding';
 import { formatToken } from '../format';
 import { pinJson } from '../ipfs';
 import type { PopContext } from '../context';
@@ -36,6 +38,12 @@ import {
 } from '../metadata/proposal';
 import { CliError } from '../errors';
 import { EXIT } from '../exit-codes';
+import { cidV0ToBytes32 } from '../encoding/cid';
+import { Fact, knownFact, unknownFact } from '../data/facts';
+import { decodeRevertTree, RevertTree } from '../errors/envelope';
+import { requireLiveGovernanceConfigKey } from '../governance/capabilities';
+import { prepareProposalMetadata, validateProposalMetadata } from '../metadata/proposal';
+import { requireRawUint } from '../amounts';
 
 export type VotingType = 'hybrid' | 'dd';
 export type VotingAbiName = 'HybridVotingNew' | 'DirectDemocracyVotingNew';
@@ -128,6 +136,8 @@ export function parseAnnounceReceiptLogs(
   executed: boolean;
   innerFailure: boolean;
   failedCalls: Array<{ index?: string; data?: string }>;
+  executionFailureReason?: string;
+  executionFailure?: RevertTree;
 } {
   const parsed = logs ?? [];
   const winnerEvent = parsed.find(l => l.name === 'Winner');
@@ -143,7 +153,61 @@ export function parseAnnounceReceiptLogs(
       index: e.args?.index?.toString(),
       data: e.args?.lowLevelData || e.args?.data,
     })),
+    ...(execFailedEvent?.args?.reason !== undefined ? {
+      executionFailureReason: execFailedEvent.args.reason,
+      executionFailure: decodeRevertTree(execFailedEvent.args.reason),
+    } : {}),
   };
+}
+
+export interface ProposalRawLog { address: string; topics: readonly string[]; data: string; logIndex?: number; transactionHash?: string }
+export interface ProposalReceiptOutcome {
+  winningOption: Fact<string>; valid: Fact<boolean>;
+  execution: Fact<'succeeded' | 'failed' | 'not-executed'>;
+  failures: readonly { reason: string; tree: RevertTree; callIndex?: string; target?: string; emitter: string; logIndex?: number; transactionHash?: string }[];
+}
+/** Filter raw logs by emitter AND exact uint256 proposal identity. CallFailed is an
+ * Executor custom error nested in ProposalExecutionFailed.reason, not an event.
+ * Missing execution evidence is unknown, even when the outer receipt succeeded. */
+export function parseProposalReceiptOutcome(logs: readonly ProposalRawLog[], input: {
+  votingAddress: string; executorAddress: string; proposalId: ethers.BigNumberish;
+  /** Optional requested batch supplies target provenance for nested call indices. */
+  calls?: readonly ExecutionCall[];
+}): ProposalReceiptOutcome {
+  const id = requireRawUint(ethers.BigNumber.from(input.proposalId).toString());
+  const voting = [new ethers.utils.Interface(getAbi('HybridVotingNew')), new ethers.utils.Interface(getAbi('DirectDemocracyVotingNew'))];
+  const executor = new ethers.utils.Interface(getAbi('Executor'));
+  const result: ProposalReceiptOutcome = { winningOption: unknownFact('WINNER_EVIDENCE_MISSING'), valid: unknownFact('WINNER_EVIDENCE_MISSING'), execution: unknownFact('EXECUTION_EVIDENCE_MISSING'), failures: [] };
+  const failures: Array<ProposalReceiptOutcome['failures'][number]> = [];
+  for (const log of logs) {
+    const isVoting = log.address.toLowerCase() === input.votingAddress.toLowerCase();
+    const isExecutor = log.address.toLowerCase() === input.executorAddress.toLowerCase();
+    if (!isVoting && !isExecutor) continue;
+    for (const iface of isVoting ? voting : [executor]) {
+      let event: ethers.utils.LogDescription;
+      try { event = iface.parseLog({ topics: [...log.topics], data: log.data }); } catch { continue; }
+      const eventId = event.args.id ?? event.args.proposalId;
+      if (eventId === undefined || eventId.toString() !== id) break;
+      if (isVoting && event.name === 'Winner') {
+        result.winningOption = knownFact(event.args.winningIdx.toString());
+        result.valid = knownFact(event.args.valid);
+        if (event.args.executed !== undefined) result.execution = knownFact(event.args.executed ? 'succeeded' : 'not-executed');
+      } else if ((isVoting && event.name === 'ProposalExecuted') || (isExecutor && event.name === 'BatchExecuted')) {
+        result.execution = knownFact('succeeded');
+      } else if (isVoting && event.name === 'ProposalExecutionFailed') {
+        const reason: string = event.args.reason;
+        const tree = decodeRevertTree(reason, { iface: executor });
+        const callIndex = tree.callIndex;
+        const call = callIndex !== undefined && BigInt(callIndex) < BigInt(input.calls?.length ?? 0) ? input.calls![Number(callIndex)] : undefined;
+        failures.push({ reason, tree, ...(callIndex !== undefined ? { callIndex } : {}), ...(call ? { target: call.target } : {}),
+          emitter: log.address, ...(log.logIndex !== undefined ? { logIndex: log.logIndex } : {}), ...(log.transactionHash ? { transactionHash: log.transactionHash } : {}) });
+      }
+      break;
+    }
+  }
+  if (failures.length) result.execution = knownFact('failed');
+  result.failures = failures;
+  return result;
 }
 
 /**
@@ -291,8 +355,18 @@ async function pinProposalMetadata(
   ctx: PopContext,
   metadata: ProposalMetadata
 ): Promise<{ cid: string; descriptionHash: string }> {
+  validateProposalMetadata(metadata);
   const cid = await pinJson(serializeProposalMetadata(metadata), ctx.ipfs);
-  return { cid, descriptionHash: ipfsCidToBytes32(cid) };
+  return { cid, descriptionHash: cidV0ToBytes32(cid) };
+}
+
+async function pinValidatedGovernanceProposal(ctx: PopContext, params: Omit<GovernanceWrapParams, 'descriptionHash' | 'ipfs'>, metadata: ProposalMetadata): Promise<TxIntent> {
+  validateProposalMetadata(metadata);
+  const intent = buildGovernanceProposal({ ...params, descriptionHash: ethers.constants.HashZero });
+  const { cid, descriptionHash } = await pinProposalMetadata(ctx, metadata);
+  intent.args[1] = descriptionHash;
+  intent.meta.ipfs = { cid, metadata };
+  return intent;
 }
 
 // ────────────────────────── Level 2 — vote create ──────────────────────────
@@ -318,6 +392,11 @@ export interface CreateProposalParams {
   calls?: ExecutionCallInput[];
   /** Metadata createdAt override (default Date.now()). */
   createdAt?: number;
+  actionSummaries?: string[];
+  promotedFrom?: string;
+  createsSubject?: boolean;
+  /** Already-finalized document. Validate it and its exact option names before pinning. */
+  metadata?: ProposalMetadata;
 }
 
 /**
@@ -392,11 +471,16 @@ export async function createProposalIntent(
   }
 
   // Proposal metadata (key order matches the frontend).
-  const metadata = buildProposalMetadata({
+  const metadata = params.metadata ? prepareProposalMetadata(params.metadata) : buildProposalMetadata({
     description: params.description,
     optionNames,
     createdAt: params.createdAt,
+    actionSummaries: params.actionSummaries,
+    promotedFrom: params.promotedFrom,
+    createsSubject: params.createsSubject,
   });
+  validateProposalMetadata(metadata);
+  if (JSON.stringify(metadata.optionNames) !== JSON.stringify(optionNames)) throw new Error('PROPOSAL_METADATA_OPTIONS_MISMATCH');
   const summary: Record<string, unknown> = {
     type: params.type,
     title: params.name,
@@ -570,6 +654,8 @@ export interface ProposeQuorumParams {
   durationMinutes?: number;
   /** Metadata createdAt override (default Date.now()). */
   createdAt?: number;
+  /** Omit for legacy both-module behavior. The proposal itself always uses Hybrid. */
+  target?: 'hybrid' | 'dd' | 'both';
 }
 
 /**
@@ -586,19 +672,22 @@ export async function proposeQuorumIntent(
 ): Promise<TxIntent> {
   const newQuorum = params.quorum;
   const durationMinutes = params.durationMinutes ?? 60;
+  validateGovernanceDuration(durationMinutes);
   if (!Number.isInteger(newQuorum) || newQuorum < 0 || newQuorum > 4294967295) throw new CliError('Quorum must be a uint32 voter count (0 disables)', EXIT.USAGE);
 
   const modules = await resolveOrgModules(ctx.client, params.org, ctx.chainId);
   if (!modules.hybridVotingAddress) throw new CliError('HybridVoting not deployed', EXIT.USAGE);
+  if (params.target !== undefined && !['hybrid', 'dd', 'both'].includes(params.target)) throw new Error('INVALID_CONFIG_TARGET');
+  if (params.target === 'dd' && !modules.ddVotingAddress) throw new Error('DD_TARGET_UNAVAILABLE');
 
   // Encode setConfig calls for both voting contracts. Both ABIs carry exactly
   // one setConfig(uint8,bytes) fragment, so this matches the CLI's inline
   // `['function setConfig(uint8 key, bytes value)']` encoding byte-for-byte.
   const encodedValue = ethers.utils.defaultAbiCoder.encode(['uint32'], [newQuorum]);
-  const option0Batch: ExecutionCall[] = [
+  const option0Batch: ExecutionCall[] = params.target === 'dd' ? [] : [
     encodeExecutorCall('HybridVotingNew', modules.hybridVotingAddress, 'setConfig', [HYBRID_QUORUM_KEY, encodedValue]),
   ];
-  if (modules.ddVotingAddress) {
+  if (modules.ddVotingAddress && params.target !== 'hybrid') {
     option0Batch.push(
       encodeExecutorCall('DirectDemocracyVotingNew', modules.ddVotingAddress, 'setConfig', [DD_QUORUM_KEY, encodedValue])
     );
@@ -606,18 +695,18 @@ export async function proposeQuorumIntent(
   const batches: ExecutionCall[][] = [option0Batch, []]; // option 1 (keep current) has no calls
 
   const metadata = buildProposalMetadata({
-    description: `Change voting quorum to ${newQuorum}. Updates both Hybrid (setConfig key ${HYBRID_QUORUM_KEY}) and DD (setConfig key ${DD_QUORUM_KEY}) voting contracts via execution calls.`,
+    description: params.target === 'hybrid' || params.target === 'dd'
+      ? `Change voting quorum to ${newQuorum}. Updates ${params.target === 'hybrid' ? 'Hybrid' : 'DD'} voting via execution calls.`
+      : `Change voting quorum to ${newQuorum}. Updates both Hybrid (setConfig key ${HYBRID_QUORUM_KEY}) and DD (setConfig key ${DD_QUORUM_KEY}) voting contracts via execution calls.`,
     optionNames: [`Set quorum to ${newQuorum}`, 'Keep current quorum'],
     createdAt: params.createdAt,
   });
-  const { cid, descriptionHash } = await pinProposalMetadata(ctx, metadata);
-  const contractList = modules.ddVotingAddress ? 'Hybrid + DD' : 'Hybrid only';
+  const contractList = params.target === 'dd' ? 'DD only' : params.target === 'hybrid' || !modules.ddVotingAddress ? 'Hybrid only' : 'Hybrid + DD';
 
-  return buildGovernanceProposal({
+  return pinValidatedGovernanceProposal(ctx, {
     votingAddress: modules.hybridVotingAddress,
     votingAbiName: 'HybridVotingNew',
     title: `Set voting quorum to ${newQuorum}`,
-    descriptionHash,
     durationMinutes,
     numOptions: 2,
     batches,
@@ -625,8 +714,7 @@ export async function proposeQuorumIntent(
     orgId: modules.orgId,
     action: 'propose-quorum',
     summary: { newQuorum, duration: `${durationMinutes} minutes`, contracts: contractList },
-    ipfs: { cid, metadata },
-  });
+  }, metadata);
 }
 
 // ───────────────────── Level 2 — vote propose-config ─────────────────────
@@ -730,6 +818,8 @@ export interface ProposeConfigParams {
   durationMinutes?: number;
   /** Metadata createdAt override (default Date.now()). */
   createdAt?: number;
+  /** Omit to keep CLI's existing all-applicable-module default. */
+  target?: 'hybrid' | 'dd' | 'both';
 }
 
 /**
@@ -746,6 +836,7 @@ export async function proposeConfigIntent(
 ): Promise<TxIntent> {
   const paramName = params.key;
   const durationMinutes = params.durationMinutes ?? 60;
+  validateGovernanceDuration(durationMinutes);
   const param = CONFIG_PARAMS[paramName];
   if (!param) throw new Error(`Unknown config key: ${paramName}. Available: ${Object.keys(CONFIG_PARAMS).join(', ')}`);
 
@@ -753,20 +844,25 @@ export async function proposeConfigIntent(
 
   const modules = await resolveOrgModules(ctx.client, params.org, ctx.chainId);
   if (!modules.hybridVotingAddress) throw new Error('HybridVoting not deployed');
+  if (params.target !== undefined && !['hybrid', 'dd', 'both'].includes(params.target)) throw new Error('INVALID_CONFIG_TARGET');
+  if (params.target === 'dd' && !modules.ddVotingAddress) throw new Error('DD_TARGET_UNAVAILABLE');
+  if (params.target === 'hybrid' && param.hybridKey < 0) throw new Error('DEPRECATED_CONFIG_NOOP');
 
   const encodedValue = param.encode(params.value);
 
   const option0Batch: ExecutionCall[] = [];
 
   // Add Hybrid call if applicable
-  if (param.hybridKey >= 0) {
+  if (param.hybridKey >= 0 && params.target !== 'dd') {
+    requireLiveGovernanceConfigKey('hybrid', param.hybridKey);
     option0Batch.push(
       encodeExecutorCall('HybridVotingNew', modules.hybridVotingAddress, 'setConfig', [param.hybridKey, encodedValue])
     );
   }
 
   // Add DD call if applicable and contract exists
-  if (param.ddKey !== null && modules.ddVotingAddress) {
+  if (param.ddKey !== null && modules.ddVotingAddress && params.target !== 'hybrid') {
+    requireLiveGovernanceConfigKey('dd', param.ddKey);
     option0Batch.push(
       encodeExecutorCall('DirectDemocracyVotingNew', modules.ddVotingAddress, 'setConfig', [param.ddKey, encodedValue])
     );
@@ -786,19 +882,17 @@ export async function proposeConfigIntent(
 
   const batches: ExecutionCall[][] = [option0Batch, []]; // option 0 = change, option 1 = keep current
 
-  const contractList = option0Batch.length > 1 ? 'Hybrid + DD' : (param.hybridKey >= 0 ? 'Hybrid' : 'DD');
+  const contractList = option0Batch.length > 1 ? 'Hybrid + DD' : (option0Batch[0].target === modules.hybridVotingAddress ? 'Hybrid' : 'DD');
   const metadata = buildProposalMetadata({
     description: `Change ${paramName} to ${params.value}. Updates ${contractList} voting contract(s) via setConfig execution calls.`,
     optionNames: [`Set ${paramName} to ${params.value}`, 'Keep current value'],
     createdAt: params.createdAt,
   });
-  const { cid, descriptionHash } = await pinProposalMetadata(ctx, metadata);
 
-  return buildGovernanceProposal({
+  return pinValidatedGovernanceProposal(ctx, {
     votingAddress: modules.hybridVotingAddress,
     votingAbiName: 'HybridVotingNew',
     title: `Set ${paramName} to ${params.value}`,
-    descriptionHash,
     durationMinutes,
     numOptions: 2,
     batches,
@@ -806,8 +900,7 @@ export async function proposeConfigIntent(
     orgId: modules.orgId,
     action: 'propose-config',
     summary: { key: paramName, value: params.value, contracts: contractList, duration: `${durationMinutes} minutes` },
-    ipfs: { cid, metadata },
-  });
+  }, metadata);
 }
 
 // ──────────────────── Level 2 — vote classes propose ────────────────────
@@ -972,6 +1065,7 @@ export async function proposeClassesIntent(
   params: ProposeClassesParams
 ): Promise<TxIntent> {
   const durationMinutes = params.durationMinutes ?? 60;
+  validateGovernanceDuration(durationMinutes);
   const classes = parseClassConfigs(params.classes);
 
   const modules = await resolveOrgModules(ctx.client, params.org, ctx.chainId);
@@ -1002,7 +1096,6 @@ export async function proposeClassesIntent(
     optionNames: [title, 'Keep current classes'],
     createdAt: params.createdAt,
   });
-  const { cid, descriptionHash } = await pinProposalMetadata(ctx, metadata);
 
   const summary: Record<string, unknown> = {
     classes: classes.length,
@@ -1011,11 +1104,10 @@ export async function proposeClassesIntent(
   };
   classLines.forEach((line, i) => { summary[`class ${i}`] = line; });
 
-  return buildGovernanceProposal({
+  return pinValidatedGovernanceProposal(ctx, {
     votingAddress: hybridVotingAddress,
     votingAbiName: 'HybridVotingNew',
     title,
-    descriptionHash,
     durationMinutes,
     numOptions: 2,
     batches,
@@ -1023,6 +1115,5 @@ export async function proposeClassesIntent(
     orgId: modules.orgId,
     action: 'classes-propose',
     summary,
-    ipfs: { cid, metadata },
-  });
+  }, metadata);
 }

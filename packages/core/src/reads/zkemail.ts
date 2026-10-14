@@ -14,6 +14,7 @@ import { ethers } from 'ethers';
 import type { GraphClient } from '../graph/client';
 import {
   FETCH_ZKEMAIL_MODULE_TIERS,
+  FETCH_ZKEMAIL_MODULE,
   FETCH_ZKEMAIL_CLAIMS,
   FETCH_ZKEMAIL_ACTIVE_ROOT,
   FETCH_ORG_ROLE_NAMES,
@@ -25,6 +26,14 @@ import { bytes32ToIpfsCid, ipfsCidToBytes32 } from '../encoding';
 import { CliError } from '../errors';
 import { EXIT } from '../exit-codes';
 import type { EnvSource } from '../env';
+import {
+  Fact, SourceRef, SourceSnapshot, PlanScope, PlanResult, knownFact, unknownFact,
+  requireCompleteSnapshot, assertPlanScope, assertSourceBlock, assertSourceRef,
+} from '../data/facts';
+import { metadataPointerToBytes32 } from '../encoding/cid';
+import { VerifiedAllowlist, projectVerifiedAllowlistLeaves } from '../email/allowlist';
+import { EmailCircuitVersion } from '../email/proof';
+import { domainHash, emailHash, norm, requireAllowlistUint } from '../zkemail';
 
 export interface ZkEmailModuleState {
   orgId: string;
@@ -304,4 +313,232 @@ export function normalizeEntries(allowlist: any): SubgraphAllowlistEntry[] {
     hatIds: (e.hatIds ?? []).map((h: any) => ethers.BigNumber.from(h).toString()),
     roleIndexes: (e.roleIndexes ?? []).map((r: any) => Number(r)),
   }));
+}
+
+// Truthful companion for safety decisions. Legacy CLI display shapes above remain unchanged.
+
+export interface InviteStateFacts {
+  root: Fact<string>;
+  cidDigest: Fact<string>;
+  entries: Fact<readonly SubgraphAllowlistEntry[]>;
+  executor: Fact<string>;
+  domainVerifier: Fact<string>;
+  emailVerifier: Fact<string>;
+  dkimRegistry: Fact<string>;
+  accountRegistry: Fact<string>;
+  universalFactory: Fact<string>;
+  /** Fresh authority/router cutover and executor->authority binding, checked by the injected reader. */
+  authorityReady: Fact<boolean>;
+  authorityMatches: Fact<boolean>;
+  minterAuthorized: Fact<boolean>;
+  /** Exact proven From-domain + pubkeyHash validity, never provider DKIM domain alone. */
+  dkimKeyValid: Fact<boolean>;
+  circuitVersion: Fact<EmailCircuitVersion>;
+  /** Identity of the serving/deployed verification key, supplied by the host capability check. */
+  keyVersion: Fact<string>;
+  /** Needed only for a sponsored action. */
+  budgetAvailable: Fact<boolean>;
+}
+export interface InviteStateEvidence {
+  indexed: SourceSnapshot<InviteStateFacts>;
+  authoritative?: SourceSnapshot<InviteStateFacts>;
+}
+const inviteFields = ['root', 'cidDigest', 'entries', 'executor', 'domainVerifier', 'emailVerifier', 'dkimRegistry',
+  'accountRegistry', 'universalFactory', 'authorityReady', 'authorityMatches', 'minterAuthorized', 'dkimKeyValid',
+  'circuitVersion', 'keyVersion', 'budgetAvailable'] as const;
+function unknownInviteFacts(code: string, source: SourceRef): InviteStateFacts {
+  return Object.fromEntries(inviteFields.map(key => [key, unknownFact(code, source)])) as unknown as InviteStateFacts;
+}
+function bytesFact(value: unknown, source: SourceRef): Fact<string> {
+  return typeof value === 'string' && /^0x[\da-f]{64}$/i.test(value)
+    ? knownFact(value.toLowerCase(), source) : unknownFact('INDEXED_FIELD_UNAVAILABLE', source);
+}
+function addressFact(value: unknown, source: SourceRef): Fact<string> {
+  return typeof value === 'string' && /^0x[\da-f]{40}$/i.test(value)
+    ? knownFact(value.toLowerCase(), source) : unknownFact('INDEXED_FIELD_UNAVAILABLE', source);
+}
+
+/** Strict companion normalization; the legacy display normalizer keeps its historical defaults. */
+function indexedInviteEntries(entries: readonly any[]): SubgraphAllowlistEntry[] {
+  let previous = -1;
+  return entries.map(entry => {
+    if (!entry || !['domain', 'email'].includes(entry.entryType)
+      || (entry.identifier !== null && typeof entry.identifier !== 'string')
+      || typeof entry.identifierHash !== 'string' || !/^0x[\da-f]{64}$/i.test(entry.identifierHash)
+      || !Array.isArray(entry.hatIds) || !entry.hatIds.length || !Array.isArray(entry.roleIndexes)) throw new Error('Incomplete indexed entry');
+    const safeIndex = (value: string | number) => {
+      const exact = BigInt(requireAllowlistUint(value));
+      if (exact > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('Unsafe indexed display position');
+      return Number(exact);
+    };
+    const index = safeIndex(entry.index);
+    if (index <= previous) throw new Error('Duplicate or unordered indexed entries');
+    previous = index;
+    const identifier = entry.identifier;
+    if (entry.entryType === 'domain' && !norm(identifier)) throw new Error('Missing indexed domain name');
+    if (identifier) {
+      const hash = entry.entryType === 'domain' ? domainHash(identifier) : emailHash(identifier);
+      if (hash !== entry.identifierHash.toLowerCase()) throw new Error('Mismatched indexed descriptor');
+    }
+    return { index, entryType: entry.entryType, identifier, identifierHash: entry.identifierHash.toLowerCase(),
+      hatIds: entry.hatIds.map(requireAllowlistUint), roleIndexes: entry.roleIndexes.map(safeIndex) };
+  });
+}
+
+/**
+ * Inject the host's existing graph client and optional authoritative snapshot callback.
+ * No RPC/provider is constructed, and no network fallback is implicit. The query has a 1000-row cap.
+ */
+export async function readInviteStateFacts(args: {
+  scope: PlanScope & { orgId: string; contract: string };
+  source: SourceRef;
+  query: (document: string, variables: { orgId: string }, chainId: number) => Promise<{ organization?: any }>;
+  readAuthoritative?: () => Promise<SourceSnapshot<InviteStateFacts>>;
+}): Promise<InviteStateEvidence> {
+  assertSourceRef(args.source);
+  assertPlanScope(args.source, args.scope);
+  if (!args.source.indexed) throw new Error('Indexed invitation reader requires indexed source');
+  // The existing document has no block selector. Never label that latest query a pinned read.
+  if (args.source.snapshot === 'pinned' || args.source.block !== undefined) throw new Error('Invitation graph document cannot pin a block');
+  const source = args.source;
+  let data = unknownInviteFacts('INDEX_UNAVAILABLE', source);
+  const issues: { code: string }[] = [];
+  let status: 'complete' | 'incomplete' | 'unavailable' = 'complete';
+  try {
+    const response = await args.query(FETCH_ZKEMAIL_MODULE, { orgId: args.scope.orgId }, args.scope.chainId);
+    const org = response?.organization, mod = org?.zkEmailInvites;
+    if (String(org?.id).toLowerCase() !== args.scope.orgId.toLowerCase()
+      || String(mod?.id).toLowerCase() !== args.scope.contract.toLowerCase()) {
+      issues.push({ code: 'INDEX_SCOPE_MISMATCH' }); status = 'unavailable';
+    } else {
+      data.root = bytesFact(mod.activeRoot, source);
+      if (mod.activeAllowlistCid != null) {
+        try { data.cidDigest = knownFact(metadataPointerToBytes32(mod.activeAllowlistCid), source); }
+        catch { data.cidDigest = unknownFact('INDEXED_CID_INVALID', source); }
+      }
+      for (const field of ['executor', 'domainVerifier', 'emailVerifier', 'accountRegistry', 'universalFactory'] as const) {
+        data[field] = addressFact(mod[field], source);
+      }
+      data.dkimRegistry = addressFact(mod.dkimRegistry?.id, source);
+      const allowlist = mod.activeAllowlist;
+      if (!allowlist || data.root.state !== 'known' || typeof allowlist.root !== 'string'
+        || allowlist.root.toLowerCase() !== data.root.value || !Array.isArray(allowlist.entries)) {
+        data.entries = unknownFact('INDEX_LIST_UNVERIFIED', source);
+      } else if (allowlist.entries.length >= 1000) {
+        issues.push({ code: 'INDEX_LIST_CAPPED' }); status = 'incomplete';
+        data.entries = unknownFact('INDEX_LIST_CAPPED', source);
+      } else if (allowlist.entries.length === 0 && data.root.value !== ethers.constants.HashZero) {
+        issues.push({ code: 'INDEX_LIST_EMPTY' }); status = 'incomplete';
+        data.entries = unknownFact('INDEX_LIST_EMPTY', source);
+      } else {
+        try { data.entries = knownFact(indexedInviteEntries(allowlist.entries), source); }
+        catch {
+          data.entries = unknownFact('INDEX_LIST_INVALID', source); issues.push({ code: 'INDEX_LIST_INVALID' }); status = 'incomplete';
+        }
+      }
+      if (!Array.isArray(mod.dkimRegistry?.keys)) issues.push({ code: 'INDEX_KEYS_UNAVAILABLE' });
+      else if (mod.dkimRegistry.keys.length >= 1000) issues.push({ code: 'INDEX_KEYS_CAPPED' });
+      if (issues.length && status === 'complete') status = 'incomplete';
+    }
+  } catch {
+    data = unknownInviteFacts('INDEX_READ_FAILED', source); status = 'unavailable'; issues.push({ code: 'INDEX_READ_FAILED' });
+  }
+  const indexed: SourceSnapshot<InviteStateFacts> = { source, data, coverage: {
+    status, receivedKeys: status === 'unavailable' ? [] : [args.scope.contract], missingIds: [],
+    failedIds: status === 'unavailable' ? [args.scope.contract] : [], issues, cap: 1000, pages: 1,
+  } };
+  // A callback failure remains a rejected read. Never manufacture an authoritative empty success.
+  const authoritative = args.readAuthoritative ? await args.readAuthoritative() : undefined;
+  return { indexed, ...(authoritative ? { authoritative } : {}) };
+}
+
+export interface InviteActionReady { root: string; cidDigest: string; version: EmailCircuitVersion; keyVersion: string }
+export interface InviteStateProjection {
+  lifecycle: Fact<'active' | 'dormant'>;
+  indexedEntries: Fact<readonly SubgraphAllowlistEntry[]>;
+  action: PlanResult<InviteActionReady>;
+}
+
+/** Latest authoritative wiring is required for readiness; indexed evidence is descriptive only. */
+export function projectInviteState(args: {
+  scope: PlanScope & { orgId: string; contract: string };
+  evidence: InviteStateEvidence;
+  document?: VerifiedAllowlist;
+  /** A host must attest this fetched document belongs to the current CID, not merely an equal root. */
+  documentCidDigest?: string;
+  version: EmailCircuitVersion;
+  keyVersion: string;
+  enrollment?: boolean;
+  sponsored?: boolean;
+  /** Optional explicit freshness gate; no ambient clock. */
+  freshness?: { nowSeconds: number; maxAgeSeconds: number };
+}): InviteStateProjection {
+  const codes: string[] = [];
+  const block = (code: string) => { if (!codes.includes(code)) codes.push(code); };
+  let lifecycle: Fact<'active' | 'dormant'> = unknownFact('AUTHORITATIVE_ROOT_UNAVAILABLE');
+  let indexedEntries: Fact<readonly SubgraphAllowlistEntry[]> = unknownFact('INDEX_LIST_UNVERIFIED');
+  try {
+    const index = requireCompleteSnapshot(args.evidence.indexed, { scope: args.scope, indexed: true });
+    indexedEntries = index.entries;
+  } catch { /* Capped, failed or wrongly scoped index stays unknown. */ }
+  const authoritative = args.evidence.authoritative;
+  let facts: InviteStateFacts | undefined;
+  try {
+    if (!authoritative) throw new Error('Missing authority');
+    facts = requireCompleteSnapshot(authoritative, { scope: args.scope, indexed: false });
+    if (authoritative.source.snapshot !== 'latest' && authoritative.source.snapshot !== 'pinned') throw new Error('Unspecified live snapshot');
+    if (args.freshness) {
+      const { nowSeconds, maxAgeSeconds } = args.freshness;
+      const observed = authoritative.source.observedAt;
+      if (!Number.isSafeInteger(nowSeconds) || !Number.isSafeInteger(maxAgeSeconds) || maxAgeSeconds < 0
+        || observed === undefined || observed > nowSeconds || nowSeconds - observed > maxAgeSeconds) throw new Error('Stale source');
+    }
+  } catch { facts = undefined; block('AUTHORITATIVE_STATE_UNAVAILABLE'); }
+  function value<T>(fact: Fact<T> | undefined, name: string): T | undefined {
+    if (!fact || fact.state !== 'known') { block(`${name}_UNKNOWN`); return undefined; }
+    if (fact.source) {
+      try {
+        assertSourceRef(fact.source);
+        assertPlanScope(fact.source, args.scope);
+        if (fact.source.indexed || (fact.source.snapshot !== 'latest' && fact.source.snapshot !== 'pinned')) throw new Error('Non-authoritative fact');
+        if (authoritative?.source.block) assertSourceBlock(fact.source.block, authoritative.source.block);
+        if (args.freshness) {
+          const observed = fact.source.observedAt;
+          if (observed === undefined || observed > args.freshness.nowSeconds
+            || args.freshness.nowSeconds - observed > args.freshness.maxAgeSeconds) throw new Error('Stale fact');
+        }
+      } catch { block(`${name}_SCOPE_MISMATCH`); return undefined; }
+    }
+    return fact.value;
+  }
+  const root = value(facts?.root, 'ROOT'), cid = value(facts?.cidDigest, 'CID');
+  if (root !== undefined && /^0x[\da-f]{64}$/i.test(root)) {
+    lifecycle = knownFact(root.toLowerCase() === ethers.constants.HashZero ? 'dormant' : 'active', authoritative!.source);
+    if (root.toLowerCase() === ethers.constants.HashZero) block('ALLOWLIST_DORMANT');
+  } else block('ROOT_INVALID');
+  if (cid === undefined || !/^0x[\da-f]{64}$/i.test(cid) || cid.toLowerCase() === ethers.constants.HashZero) block('CID_UNAVAILABLE');
+  const requireAddress = (fact: Fact<string> | undefined, name: string) => {
+    const address = value(fact, name);
+    if (address !== undefined && (!/^0x[\da-f]{40}$/i.test(address) || BigInt(address) === 0n)) block(`${name}_UNSET`);
+  };
+  requireAddress(facts?.executor, 'EXECUTOR'); requireAddress(facts?.dkimRegistry, 'DKIM_REGISTRY');
+  if (args.version !== 'v1' && args.version !== 'v2') block('CIRCUIT_UNSUPPORTED');
+  requireAddress(args.version === 'v1' ? facts?.domainVerifier : facts?.emailVerifier, 'VERIFIER');
+  for (const [name, fact] of [ ['AUTHORITY_READY', facts?.authorityReady], ['AUTHORITY_MATCHES', facts?.authorityMatches],
+    ['MINTER_AUTHORIZED', facts?.minterAuthorized], ['DKIM_KEY_VALID', facts?.dkimKeyValid] ] as const) {
+    const actual = value(fact, name); if (actual !== undefined && actual !== true) block(`${name}_FALSE`);
+  }
+  if (value(facts?.circuitVersion, 'CIRCUIT_VERSION') !== args.version) block('CIRCUIT_VERSION_MISMATCH');
+  if (!args.keyVersion || value(facts?.keyVersion, 'KEY_VERSION') !== args.keyVersion) block('KEY_VERSION_MISMATCH');
+  if (args.enrollment) { requireAddress(facts?.accountRegistry, 'ACCOUNT_REGISTRY'); requireAddress(facts?.universalFactory, 'FACTORY'); }
+  if (args.sponsored && value(facts?.budgetAvailable, 'BUDGET') !== true) block('BUDGET_UNAVAILABLE');
+  try {
+    if (!args.document) throw new Error('Missing document');
+    projectVerifiedAllowlistLeaves(args.document);
+    if (args.document.orgId !== args.scope.orgId.toLowerCase() || args.document.root !== root?.toLowerCase()
+      || args.documentCidDigest?.toLowerCase() !== cid?.toLowerCase()) throw new Error('Document scope mismatch');
+  } catch { block('VERIFIED_DOCUMENT_UNAVAILABLE'); }
+  return { lifecycle, indexedEntries, action: codes.length ? { status: 'blocked', codes,
+    prerequisites: codes.map(code => ({ code, scope: args.scope })), consequences: [] }
+    : { status: 'ready', data: { root: root!, cidDigest: cid!, version: args.version, keyVersion: args.keyVersion }, consequences: [] } };
 }

@@ -1,0 +1,152 @@
+[
+  {
+    "selector": "0x0cd96ab8",
+    "name": "AllHatsWorn",
+    "signature": "AllHatsWorn(uint256)"
+  },
+  {
+    "selector": "0x643d2083",
+    "name": "AlreadyWearingHat",
+    "signature": "AlreadyWearingHat(address,uint256)"
+  },
+  {
+    "selector": "0x0b792c8f",
+    "name": "ApplicationAlreadyExists",
+    "signature": "ApplicationAlreadyExists()"
+  },
+  {
+    "selector": "0x70414907",
+    "name": "DefaultEligibilityConflictsWithVouch",
+    "signature": "DefaultEligibilityConflictsWithVouch()"
+  },
+  {
+    "selector": "0xb12d13eb",
+    "name": "ETHTransferFailed",
+    "signature": "ETHTransferFailed()"
+  },
+  {
+    "selector": "0xe629aba3",
+    "name": "HatNotActive",
+    "signature": "HatNotActive()"
+  },
+  {
+    "selector": "0x0710b3e1",
+    "name": "InsufficientDelivery",
+    "signature": "InsufficientDelivery(uint256,uint256)"
+  },
+  {
+    "selector": "0x391ab2ea",
+    "name": "InvalidApplicationHash",
+    "signature": "InvalidApplicationHash()"
+  },
+  {
+    "selector": "0xb43a0650",
+    "name": "InvalidHatId",
+    "signature": "InvalidHatId()"
+  },
+  {
+    "selector": "0xade46c67",
+    "name": "InvalidJoinTime",
+    "signature": "InvalidJoinTime()"
+  },
+  {
+    "selector": "0xd5f24564",
+    "name": "InvalidMembershipHat",
+    "signature": "InvalidMembershipHat()"
+  },
+  {
+    "selector": "0xfd684c3b",
+    "name": "InvalidUser",
+    "signature": "InvalidUser()"
+  },
+  {
+    "selector": "0x594ea677",
+    "name": "NewUserVouchingRestricted",
+    "signature": "NewUserVouchingRestricted()"
+  },
+  {
+    "selector": "0xa4f5cfae",
+    "name": "NoActiveApplication",
+    "signature": "NoActiveApplication()"
+  },
+  {
+    "selector": "0xd1e1fa49",
+    "name": "NoPendingRecovery",
+    "signature": "NoPendingRecovery()"
+  },
+  {
+    "selector": "0xf921ec01",
+    "name": "NotAdminHats",
+    "signature": "NotAdmin(address,uint256)"
+  },
+  {
+    "selector": "0x9fa7b4bb",
+    "name": "NotAuthorizedAdmin",
+    "signature": "NotAuthorizedAdmin()"
+  },
+  {
+    "selector": "0x9d28e06e",
+    "name": "NotAuthorizedEmailVerifier",
+    "signature": "NotAuthorizedEmailVerifier()"
+  },
+  {
+    "selector": "0x69d6514c",
+    "name": "NotAuthorizedExecutor",
+    "signature": "NotAuthorizedExecutor()"
+  },
+  {
+    "selector": "0xd059c6eb",
+    "name": "NotAuthorizedToVouch",
+    "signature": "NotAuthorizedToVouch()"
+  },
+  {
+    "selector": "0xf8eb54de",
+    "name": "NotEligible",
+    "signature": "NotEligible()"
+  },
+  {
+    "selector": "0x30cd7471",
+    "name": "NotOwner",
+    "signature": "NotOwner()"
+  },
+  {
+    "selector": "0x16c726b1",
+    "name": "NotSuperAdmin",
+    "signature": "NotSuperAdmin()"
+  },
+  {
+    "selector": "0xb8d29e28",
+    "name": "NotToggleAdmin",
+    "signature": "NotToggleAdmin()"
+  },
+  {
+    "selector": "0x15236fdf",
+    "name": "RequestHashAlreadyFailed",
+    "signature": "RequestHashAlreadyFailed()"
+  },
+  {
+    "selector": "0xf536e173",
+    "name": "VouchingNotEnabled",
+    "signature": "VouchingNotEnabled()"
+  },
+  {
+    "selector": "0x76370673",
+    "name": "VouchingRateLimitExceeded",
+    "signature": "VouchingRateLimitExceeded()"
+  },
+  {
+    "selector": "0xde7ad8ef",
+    "name": "WouldDrainRecoveryFunds",
+    "signature": "WouldDrainRecoveryFunds()"
+  },
+  {
+    "selector": "0x2d6ac127",
+    "name": "WrongToken",
+    "signature": "WrongToken(address,address)"
+  },
+  {
+    "selector": "0xe5d19efb",
+    "name": "ZeroDepositor",
+    "signature": "ZeroDepositor()"
+  }
+]

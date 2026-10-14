@@ -1,0 +1,468 @@
+{
+  "observedAt": "2026-10-09T20:53:58.857Z",
+  "origin": "https://poa.box",
+  "requests": 14,
+  "report": [
+    {
+      "chainId": 100,
+      "kind": "number",
+      "requested": {
+        "number": "48674328"
+      },
+      "headMeta": {
+        "block": {
+          "number": 48674328,
+          "hash": "0xce31b57dee74599db7027c29f55623add8458387983be3ad523ad874578c84d0",
+          "timestamp": 1791579235
+        }
+      },
+      "calls": [
+        {
+          "tier": "modern",
+          "variables": {
+            "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+            "block": {
+              "number": 48674328
+            },
+            "cursor": "",
+            "first": 10
+          },
+          "errors": [
+            "Type `PasskeyCredential` has no field `publicKeyX`",
+            "Type `PasskeyCredential` has no field `publicKeyY`"
+          ]
+        },
+        {
+          "tier": "legacy",
+          "variables": {
+            "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+            "block": {
+              "number": 48674328
+            },
+            "cursor": "",
+            "first": 10
+          },
+          "meta": {
+            "block": {
+              "number": 48674328,
+              "hash": null,
+              "timestamp": null
+            }
+          }
+        }
+      ],
+      "accepted": true,
+      "source": {
+        "chainId": 100,
+        "endpoint": "[redacted]",
+        "method": "CredentialPage",
+        "indexed": true,
+        "snapshot": "pinned",
+        "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+        "block": {
+          "number": "48674328"
+        }
+      },
+      "coverage": {
+        "status": "complete",
+        "receivedKeys": [
+          "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44-0xbe319768218d22e081eb69890ae41622bae977aa805290af5f8efbe6aa4882b3"
+        ],
+        "missingIds": [],
+        "failedIds": [],
+        "issues": [],
+        "cursor": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44-0xbe319768218d22e081eb69890ae41622bae977aa805290af5f8efbe6aa4882b3",
+        "pages": 1,
+        "cap": 1000
+      },
+      "rowCount": 1
+    },
+    {
+      "chainId": 100,
+      "kind": "hash",
+      "requested": {
+        "number": "48674328",
+        "hash": "0xce31b57dee74599db7027c29f55623add8458387983be3ad523ad874578c84d0"
+      },
+      "headMeta": {
+        "block": {
+          "number": 48674328,
+          "hash": "0xce31b57dee74599db7027c29f55623add8458387983be3ad523ad874578c84d0",
+          "timestamp": 1791579235
+        }
+      },
+      "calls": [
+        {
+          "tier": "modern",
+          "variables": {
+            "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+            "block": {
+              "hash": "0xce31b57dee74599db7027c29f55623add8458387983be3ad523ad874578c84d0"
+            },
+            "cursor": "",
+            "first": 10
+          },
+          "errors": [
+            "Type `PasskeyCredential` has no field `publicKeyX`",
+            "Type `PasskeyCredential` has no field `publicKeyY`"
+          ]
+        },
+        {
+          "tier": "legacy",
+          "variables": {
+            "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+            "block": {
+              "hash": "0xce31b57dee74599db7027c29f55623add8458387983be3ad523ad874578c84d0"
+            },
+            "cursor": "",
+            "first": 10
+          },
+          "meta": {
+            "block": {
+              "number": 48674328,
+              "hash": "0xce31b57dee74599db7027c29f55623add8458387983be3ad523ad874578c84d0",
+              "timestamp": 1791579235
+            }
+          }
+        }
+      ],
+      "accepted": true,
+      "source": {
+        "chainId": 100,
+        "endpoint": "[redacted]",
+        "method": "CredentialPage",
+        "indexed": true,
+        "snapshot": "pinned",
+        "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+        "block": {
+          "number": "48674328",
+          "hash": "0xce31b57dee74599db7027c29f55623add8458387983be3ad523ad874578c84d0",
+          "timestamp": "1791579235"
+        }
+      },
+      "coverage": {
+        "status": "complete",
+        "receivedKeys": [
+          "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44-0xbe319768218d22e081eb69890ae41622bae977aa805290af5f8efbe6aa4882b3"
+        ],
+        "missingIds": [],
+        "failedIds": [],
+        "issues": [],
+        "cursor": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44-0xbe319768218d22e081eb69890ae41622bae977aa805290af5f8efbe6aa4882b3",
+        "pages": 1,
+        "cap": 1000
+      },
+      "rowCount": 1
+    },
+    {
+      "chainId": 100,
+      "kind": "conflict",
+      "requested": {
+        "number": "48674327",
+        "hash": "0xce31b57dee74599db7027c29f55623add8458387983be3ad523ad874578c84d0"
+      },
+      "headMeta": {
+        "block": {
+          "number": 48674328,
+          "hash": "0xce31b57dee74599db7027c29f55623add8458387983be3ad523ad874578c84d0",
+          "timestamp": 1791579235
+        }
+      },
+      "calls": [
+        {
+          "tier": "modern",
+          "variables": {
+            "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+            "block": {
+              "hash": "0xce31b57dee74599db7027c29f55623add8458387983be3ad523ad874578c84d0"
+            },
+            "cursor": "",
+            "first": 10
+          },
+          "errors": [
+            "Type `PasskeyCredential` has no field `publicKeyX`",
+            "Type `PasskeyCredential` has no field `publicKeyY`"
+          ]
+        },
+        {
+          "tier": "legacy",
+          "variables": {
+            "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+            "block": {
+              "hash": "0xce31b57dee74599db7027c29f55623add8458387983be3ad523ad874578c84d0"
+            },
+            "cursor": "",
+            "first": 10
+          },
+          "meta": {
+            "block": {
+              "number": 48674328,
+              "hash": "0xce31b57dee74599db7027c29f55623add8458387983be3ad523ad874578c84d0",
+              "timestamp": 1791579235
+            }
+          }
+        }
+      ],
+      "accepted": false,
+      "source": {
+        "chainId": 100,
+        "endpoint": "[redacted]",
+        "method": "CredentialPage",
+        "indexed": true,
+        "snapshot": "unknown",
+        "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44"
+      },
+      "coverage": {
+        "status": "unavailable",
+        "receivedKeys": [],
+        "missingIds": [],
+        "failedIds": [
+          "page:1"
+        ],
+        "issues": [
+          {
+            "code": "PAGE_FAILED",
+            "id": "page:1"
+          },
+          {
+            "code": "BLOCK_EVIDENCE_MISMATCH",
+            "id": "page:1"
+          }
+        ],
+        "cursor": "",
+        "pages": 1,
+        "cap": 1000
+      },
+      "rowCount": 0
+    },
+    {
+      "chainId": 42161,
+      "kind": "number",
+      "requested": {
+        "number": "513312330"
+      },
+      "headMeta": {
+        "block": {
+          "number": 513312330,
+          "hash": "0x691888b4c2dcf29ff5dbe04a89bbd1178c359b510327c78fb8515be29cf9c705",
+          "timestamp": 1791579239
+        }
+      },
+      "calls": [
+        {
+          "tier": "modern",
+          "variables": {
+            "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+            "block": {
+              "number": 513312330
+            },
+            "cursor": "",
+            "first": 10
+          },
+          "errors": [
+            "Type `PasskeyCredential` has no field `publicKeyX`",
+            "Type `PasskeyCredential` has no field `publicKeyY`"
+          ]
+        },
+        {
+          "tier": "legacy",
+          "variables": {
+            "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+            "block": {
+              "number": 513312330
+            },
+            "cursor": "",
+            "first": 10
+          },
+          "meta": {
+            "block": {
+              "number": 513312330,
+              "hash": null,
+              "timestamp": null
+            }
+          }
+        }
+      ],
+      "accepted": true,
+      "source": {
+        "chainId": 42161,
+        "endpoint": "[redacted]",
+        "method": "CredentialPage",
+        "indexed": true,
+        "snapshot": "pinned",
+        "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+        "block": {
+          "number": "513312330"
+        }
+      },
+      "coverage": {
+        "status": "complete",
+        "receivedKeys": [],
+        "missingIds": [],
+        "failedIds": [],
+        "issues": [],
+        "cursor": "",
+        "pages": 1,
+        "cap": 1000
+      },
+      "rowCount": 0
+    },
+    {
+      "chainId": 42161,
+      "kind": "hash",
+      "requested": {
+        "number": "513312330",
+        "hash": "0x691888b4c2dcf29ff5dbe04a89bbd1178c359b510327c78fb8515be29cf9c705"
+      },
+      "headMeta": {
+        "block": {
+          "number": 513312330,
+          "hash": "0x691888b4c2dcf29ff5dbe04a89bbd1178c359b510327c78fb8515be29cf9c705",
+          "timestamp": 1791579239
+        }
+      },
+      "calls": [
+        {
+          "tier": "modern",
+          "variables": {
+            "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+            "block": {
+              "hash": "0x691888b4c2dcf29ff5dbe04a89bbd1178c359b510327c78fb8515be29cf9c705"
+            },
+            "cursor": "",
+            "first": 10
+          },
+          "errors": [
+            "Type `PasskeyCredential` has no field `publicKeyX`",
+            "Type `PasskeyCredential` has no field `publicKeyY`"
+          ]
+        },
+        {
+          "tier": "legacy",
+          "variables": {
+            "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+            "block": {
+              "hash": "0x691888b4c2dcf29ff5dbe04a89bbd1178c359b510327c78fb8515be29cf9c705"
+            },
+            "cursor": "",
+            "first": 10
+          },
+          "meta": {
+            "block": {
+              "number": 513312330,
+              "hash": "0x691888b4c2dcf29ff5dbe04a89bbd1178c359b510327c78fb8515be29cf9c705",
+              "timestamp": 1791579239
+            }
+          }
+        }
+      ],
+      "accepted": true,
+      "source": {
+        "chainId": 42161,
+        "endpoint": "[redacted]",
+        "method": "CredentialPage",
+        "indexed": true,
+        "snapshot": "pinned",
+        "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+        "block": {
+          "number": "513312330",
+          "hash": "0x691888b4c2dcf29ff5dbe04a89bbd1178c359b510327c78fb8515be29cf9c705",
+          "timestamp": "1791579239"
+        }
+      },
+      "coverage": {
+        "status": "complete",
+        "receivedKeys": [],
+        "missingIds": [],
+        "failedIds": [],
+        "issues": [],
+        "cursor": "",
+        "pages": 1,
+        "cap": 1000
+      },
+      "rowCount": 0
+    },
+    {
+      "chainId": 42161,
+      "kind": "conflict",
+      "requested": {
+        "number": "513312329",
+        "hash": "0x691888b4c2dcf29ff5dbe04a89bbd1178c359b510327c78fb8515be29cf9c705"
+      },
+      "headMeta": {
+        "block": {
+          "number": 513312330,
+          "hash": "0x691888b4c2dcf29ff5dbe04a89bbd1178c359b510327c78fb8515be29cf9c705",
+          "timestamp": 1791579239
+        }
+      },
+      "calls": [
+        {
+          "tier": "modern",
+          "variables": {
+            "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+            "block": {
+              "hash": "0x691888b4c2dcf29ff5dbe04a89bbd1178c359b510327c78fb8515be29cf9c705"
+            },
+            "cursor": "",
+            "first": 10
+          },
+          "errors": [
+            "Type `PasskeyCredential` has no field `publicKeyX`",
+            "Type `PasskeyCredential` has no field `publicKeyY`"
+          ]
+        },
+        {
+          "tier": "legacy",
+          "variables": {
+            "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44",
+            "block": {
+              "hash": "0x691888b4c2dcf29ff5dbe04a89bbd1178c359b510327c78fb8515be29cf9c705"
+            },
+            "cursor": "",
+            "first": 10
+          },
+          "meta": {
+            "block": {
+              "number": 513312330,
+              "hash": "0x691888b4c2dcf29ff5dbe04a89bbd1178c359b510327c78fb8515be29cf9c705",
+              "timestamp": 1791579239
+            }
+          }
+        }
+      ],
+      "accepted": false,
+      "source": {
+        "chainId": 42161,
+        "endpoint": "[redacted]",
+        "method": "CredentialPage",
+        "indexed": true,
+        "snapshot": "unknown",
+        "account": "0xbd51908f80389368fd9ea73ed7e66bb2510e9d44"
+      },
+      "coverage": {
+        "status": "unavailable",
+        "receivedKeys": [],
+        "missingIds": [],
+        "failedIds": [
+          "page:1"
+        ],
+        "issues": [
+          {
+            "code": "PAGE_FAILED",
+            "id": "page:1"
+          },
+          {
+            "code": "BLOCK_EVIDENCE_MISMATCH",
+            "id": "page:1"
+          }
+        ],
+        "cursor": "",
+        "pages": 1,
+        "cap": 1000
+      },
+      "rowCount": 0
+    }
+  ],
+  "limits": "Bounded read-only GraphQL queries; no writes/RPC/signing/pinning. Endpoints redacted. A null metadata hash is not an observed hash: requested hash is accepted only because every collection and metadata use the successful hash filter, with independently returned matching number."
+}

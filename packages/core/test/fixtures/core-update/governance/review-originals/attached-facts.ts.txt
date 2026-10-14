@@ -1,0 +1,17 @@
+import { deriveClassEligibility } from '/Users/hudsonheadley/conductor/workspaces/poa-cli/halifax-v1/packages/core/src/governance/power.ts';
+import { knownFact } from '/Users/hudsonheadley/conductor/workspaces/poa-cli/halifax-v1/packages/core/src/data/facts.ts';
+const org='0x'+'11'.repeat(32), voting='0x'+'22'.repeat(20), actor='0x'+'33'.repeat(20);
+const src={chainId:100,orgId:org,contract:voting,endpoint:'https://example.invalid',method:'proposal',indexed:false,snapshot:'pinned',block:{number:'1'}};
+const foreign={...src,chainId:42161};
+const cls={strategy:'DIRECT',slicePct:100,quadratic:false,minBalance:'0',asset:'0x'+'00'.repeat(20),hatIds:[],subjectId:knownFact('0')};
+const base={createdAt:knownFact('1'),restrictedSubjectIds:knownFact([]),classes:[cls]};
+const out=[];
+for(const which of ['control','restrictions','createdAt','classSubject']) {
+ const p={...base,classes:[{...cls}]};
+ if(which==='restrictions')p.restrictedSubjectIds=knownFact([],foreign);
+ if(which==='createdAt')p.createdAt=knownFact('1',foreign);
+ if(which==='classSubject')p.classes[0].subjectId=knownFact('0',foreign);
+ const proposal={source:src,data:p,coverage:{status:'complete',receivedKeys:[],missingIds:[],failedIds:[],issues:[]}};
+ out.push({which,result:deriveClassEligibility({proposal,scope:{chainId:100,orgId:org,contract:voting,account:actor},classIndex:0,viewerIsExecutor:knownFact(false)})});
+}
+console.log(JSON.stringify(out));

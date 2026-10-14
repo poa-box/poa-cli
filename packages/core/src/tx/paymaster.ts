@@ -18,6 +18,7 @@
  */
 
 import { ethers } from 'ethers';
+import { paymasterSubjectKey, SUBJECT_TYPE } from '../sponsorship/codec';
 import type { TxIntent } from './intent';
 import { getAbi } from '../contracts';
 import type { PopContext } from '../context';
@@ -117,7 +118,7 @@ export function buildRegisterCalldata(
   const budgets = (config.budgets ?? []).map((b) => {
     const subjectKey = b.subjectKey
       ?? (b.hatId !== undefined
-        ? ethers.utils.hexZeroPad(ethers.BigNumber.from(String(b.hatId)).toHexString(), 32)
+        ? paymasterSubjectKey(SUBJECT_TYPE.HAT, b.hatId)
         : undefined);
     if (!subjectKey) {
       throw new CliError('Each budget entry needs "subjectKey" (bytes32) or "hatId".', EXIT.USAGE);

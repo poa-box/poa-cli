@@ -1,12 +1,13 @@
 {
   "name": "@poa-box/core",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Browser-and-Node core for the POP (Proof of Participation) protocol: transaction intent builders, subgraph reads, canonical metadata, ABIs, and chain config. The stable layer the CLI, frontends, and integrators share.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "docs/frontend-adoption.md"
   ],
   "exports": {
     ".": {
@@ -45,6 +46,50 @@
     "./*": {
       "types": "./dist/*.d.ts",
       "default": "./dist/*.js"
+    },
+    "./data": {
+      "types": "./dist/data/index.d.ts",
+      "default": "./dist/data/index.js"
+    },
+    "./authority": {
+      "types": "./dist/authority/index.d.ts",
+      "default": "./dist/authority/index.js"
+    },
+    "./email": {
+      "types": "./dist/email/index.d.ts",
+      "default": "./dist/email/index.js"
+    },
+    "./accounts": {
+      "types": "./dist/accounts/index.d.ts",
+      "default": "./dist/accounts/index.js"
+    },
+    "./sponsorship": {
+      "types": "./dist/sponsorship/index.d.ts",
+      "default": "./dist/sponsorship/index.js"
+    },
+    "./deployment": {
+      "types": "./dist/deployment/index.d.ts",
+      "default": "./dist/deployment/index.js"
+    },
+    "./tasks": {
+      "types": "./dist/tasks/index.d.ts",
+      "default": "./dist/tasks/index.js"
+    },
+    "./treasury": {
+      "types": "./dist/treasury/index.d.ts",
+      "default": "./dist/treasury/index.js"
+    },
+    "./governance": {
+      "types": "./dist/governance/index.d.ts",
+      "default": "./dist/governance/index.js"
+    },
+    "./integrations": {
+      "types": "./dist/integrations/index.d.ts",
+      "default": "./dist/integrations/index.js"
+    },
+    "./errors": {
+      "types": "./dist/errors/index.d.ts",
+      "default": "./dist/errors/index.js"
     }
   },
   "typesVersions": {
@@ -75,6 +120,39 @@
       ],
       "*": [
         "dist/*"
+      ],
+      "data": [
+        "dist/data/index.d.ts"
+      ],
+      "authority": [
+        "dist/authority/index.d.ts"
+      ],
+      "email": [
+        "dist/email/index.d.ts"
+      ],
+      "accounts": [
+        "dist/accounts/index.d.ts"
+      ],
+      "sponsorship": [
+        "dist/sponsorship/index.d.ts"
+      ],
+      "deployment": [
+        "dist/deployment/index.d.ts"
+      ],
+      "tasks": [
+        "dist/tasks/index.d.ts"
+      ],
+      "treasury": [
+        "dist/treasury/index.d.ts"
+      ],
+      "governance": [
+        "dist/governance/index.d.ts"
+      ],
+      "integrations": [
+        "dist/integrations/index.d.ts"
+      ],
+      "errors": [
+        "dist/errors/index.d.ts"
       ]
     }
   },

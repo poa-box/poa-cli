@@ -5,3 +5,5 @@
  */
 export * from './ethers';
 export * from './sponsored';
+
+export * from './outcome';
