@@ -1697,6 +1697,8 @@ export function taskConfigCall(taskManagerAddress: string, config: TaskConfigInp
     meta: { domain: 'task', action: 'config', orgId, summary: { key: config.key } } };
 }
 export interface CreateTaskRawArgs extends Omit<CreateTaskArgs, 'payout' | 'bountyAmount'> {
+  /** CIDv0, nonzero bytes32, or explicit zero bytes32 for no stored metadata. */
+  metadataHash: string;
   payoutRaw: RawUintInput;
   bountyPayoutRaw?: RawUintInput;
 }
@@ -1710,13 +1712,32 @@ function taskRawArgs(a: CreateTaskRawArgs): unknown[] {
   if ((token === ethers.constants.AddressZero) !== (bounty === '0')) throw new Error('Bounty token and positive payout must be set together');
   const title = validateTaskTitle(a.title);
   if (a.requiresApplication !== undefined && typeof a.requiresApplication !== 'boolean') throw new Error('requiresApplication must be boolean');
-  return [payout, title, metadataPointerToBytes32(a.metadataHash), bytes32(a.projectId), token, bounty,
+  const metadataHash = a.metadataHash === ethers.constants.HashZero ? a.metadataHash : metadataPointerToBytes32(a.metadataHash);
+  return [payout, title, metadataHash, bytes32(a.projectId), token, bounty,
     a.requiresApplication ?? false, requireRawUint(a.absoluteDeadline ?? 0, 48), requireRawUint(a.completionWindow ?? 0, 32)];
 }
 /** Raw amounts are never scaled. Deadline freshness is checked by the contract at execution. */
 export function buildCreateTaskRaw(a: CreateTaskRawArgs): TxIntent {
   return { to: a.taskManagerAddress, abi: getAbi('TaskManagerNew'), method: 'createTask', args: taskRawArgs(a),
     meta: { domain: 'task', action: 'create', orgId: a.orgId, summary: { name: a.title, projectId: a.projectId, payoutRaw: requireRawUint(a.payoutRaw) } } };
+}
+/** Named raw row inputs; the shared project and current signature belong to the batch. */
+export interface CreateTaskBatchRawRow extends Omit<CreateTaskRawArgs, 'taskManagerAddress' | 'projectId' | 'features' | 'orgId'> {}
+export interface CreateTasksBatchRawArgs {
+  taskManagerAddress: string;
+  projectId: string;
+  tasks: readonly CreateTaskBatchRawRow[];
+  orgId?: string;
+}
+/** Validate every row with the canonical raw rules and emit one atomic batch intent. */
+export function buildCreateTasksBatchRaw(a: CreateTasksBatchRawArgs): TxIntent {
+  if (!Array.isArray(a.tasks) || a.tasks.length === 0) throw new Error('Task batch must be a nonempty array');
+  const rows = Array.from(a.tasks, task => {
+    const args = taskRawArgs({ ...task, taskManagerAddress: a.taskManagerAddress, projectId: a.projectId, features: { deadlines: true } });
+    return [...args.slice(0, 3), ...args.slice(4)];
+  });
+  return { to: a.taskManagerAddress, abi: getAbi('TaskManagerNew'), method: 'createTasksBatch', args: [a.projectId, rows],
+    meta: { domain: 'task', action: 'create-batch', orgId: a.orgId, summary: { projectId: a.projectId, tasks: rows.length } } };
 }
 export interface CreateAndAssignTaskRawArgs extends CreateTaskRawArgs { assignee: string }
 export function buildCreateAndAssignTaskRaw(a: CreateAndAssignTaskRawArgs): TxIntent {

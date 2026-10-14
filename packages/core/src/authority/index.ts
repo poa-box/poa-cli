@@ -3,3 +3,4 @@ export * from './ids';
 export * from './permissions';
 export * from './lifecycle';
 export * from './activation';
+export * from './indexed-cap';

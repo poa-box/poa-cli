@@ -120,6 +120,59 @@ export function buildAllowlistFromVerifiedLeaves(value: VerifiedAllowlist): Buil
   return buildRows(value.orgId, value.leaves);
 }
 
+export interface RetainedAllowlistLeaf {
+  /** The actual leaf object projected from current; a copied descriptor is not source authority. */
+  leaf: VerifiedAllowlistLeaf;
+  /** Omit to preserve exact committed order. Supply to replace grants, sorted canonically. */
+  hatIds?: readonly (string | bigint | number)[];
+}
+export interface ReplaceVerifiedAllowlistArgs {
+  orgId: string;
+  currentRoot: string;
+  current: VerifiedAllowlist;
+  /** Whole replacement selection. Omitted old leaves are intentionally removed. */
+  retained: readonly RetainedAllowlistLeaf[];
+  /** New identities require plaintext; email plaintext is never included in the result. */
+  additions?: readonly AllowlistInputEntry[];
+}
+
+/** Explicit whole-list edit from a root/org-verified base. No hidden identifier recovery or I/O.
+ * Retained leaf handles bind edits to the exact source, including when grants change.
+ * Existing duplicate identities are ambiguous here; republish/merge APIs remain compatible. */
+export function replaceVerifiedAllowlist(args: ReplaceVerifiedAllowlistArgs): BuiltVerifiedAllowlist {
+  checkVerified(args.current);
+  const orgId = bytes32(args.orgId), root = bytes32(args.currentRoot);
+  if (args.current.orgId !== orgId || args.current.root !== root) throw new Error('Current allowlist scope mismatch');
+  if (!Array.isArray(args.retained) || (args.additions !== undefined && !Array.isArray(args.additions))) throw new Error('Invalid allowlist replacement');
+  const sourceLeaves = new Set(args.current.leaves), identities = new Set<string>();
+  const grants = (values: readonly (string | bigint | number)[], sort: boolean): string[] => {
+    if (!Array.isArray(values) || !values.length) throw new Error('Allowlist grants are required');
+    const ids = Array.from(values, value => requireAllowlistUint(value));
+    if (new Set(ids).size !== ids.length) throw new Error('Duplicate allowlist grant');
+    return sort ? ids.sort((a, b) => BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0) : ids;
+  };
+  const rows: VerifiedAllowlistLeaf[] = [];
+  const append = (row: VerifiedAllowlistLeaf) => {
+    const key = JSON.stringify([row.type, row.id]);
+    if (identities.has(key)) throw new Error('Duplicate allowlist identity');
+    identities.add(key);
+    rows.push(row);
+  };
+  for (const selection of args.retained) {
+    if (!selection || !sourceLeaves.has(selection.leaf)) throw new Error('Retained leaf is not from the verified source');
+    const leaf = selection.leaf;
+    append({ ...leaf, hatIds: grants(selection.hatIds === undefined ? leaf.hatIds : selection.hatIds, selection.hatIds !== undefined) });
+  }
+  for (const entry of args.additions ?? []) {
+    if (!entry || !['domain', 'email'].includes(entry.type) || typeof entry.identifier !== 'string'
+      || !norm(entry.identifier) || (entry.roleIndexes !== undefined && (!Array.isArray(entry.roleIndexes)
+        || Array.from(entry.roleIndexes).some(i => typeof i !== 'number' || !Number.isSafeInteger(i) || i < 0)))) throw new Error('Invalid allowlist addition');
+    const id = identifierHash(entry.type, entry.identifier);
+    append({ type: entry.type, id, identifier: entry.type === 'domain' ? norm(entry.identifier) : '', hatIds: grants(entry.hatIds, true) });
+  }
+  return buildRows(orgId, rows);
+}
+
 /** Add grants; preserve unrelated old leaves. A positive unreadable root can never become an empty base. */
 export function mergeVerifiedAllowlist(args: {
   orgId: string;

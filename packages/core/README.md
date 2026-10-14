@@ -18,6 +18,15 @@ subgraph churn.
   JSON shapes (key order is a protocol contract), subgraph documents with
   field-fallback tiers, payout conventions, error decoding — one copy, shared.
 
+Frontend adoption leaves include strict `governance/validation` vote vectors,
+`accounts/constants` (EntryPoint v0.7 and the existing Gnosis delegation default),
+and explicitly historical `encoding/legacy-pointer` compatibility. Raw task
+creation supports one atomic `buildCreateTasksBatchRaw` intent and an explicit
+zero metadata sentinel; repeated identical creation drafts require host-attested
+operation-scoped ordered logs to recover IDs. See the
+[adoption guide](docs/frontend-adoption.md#small-adoption-apis) for examples and
+the retained host configuration, receipt and deployment boundaries.
+
 ```
 ethers ^5.7 is a peer dependency (viem + permissionless only if you use the
 sponsored/4337 execution path — they are optional peers).

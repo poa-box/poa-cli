@@ -2,6 +2,7 @@
  * Historical Role/User/task/proposal entities retain their original IDs. */
 import type { GraphClient } from '../graph/client';
 import { requireRawUint } from '../amounts';
+import { decodeIndexedAuthorityCap } from '../authority/indexed-cap';
 
 export interface AuthorityReadiness {
   membershipAuthority?: { id?: string; isRouterBound?: boolean; cutoverAt?: string | null } | null;
@@ -310,7 +311,7 @@ export async function readAuthoritySnapshot(input: {
     const vouch = row.vouchConfig;
     const manager = row.managerConfig;
     return { subjectId, name: row.name, kind: row.kind, defaultAllow: row.defaultAllow,
-      maxMembers: requireRawUint(row.maxMembers, 32), memberCount: requireRawUint(row.memberCount), activeMemberCount: requireRawUint(row.activeMemberCount),
+      maxMembers: decodeIndexedAuthorityCap(row.maxMembers), memberCount: requireRawUint(row.memberCount), activeMemberCount: requireRawUint(row.activeMemberCount),
       createdAt: requireRawUint(row.createdAt, 64),
       vouchConfig: vouch === null ? null : { ...vouch, quorum: requireRawUint(vouch.quorum, 32), epoch: requireRawUint(vouch.epoch, 64), voucherSubjectId: normalizeSubjectId(vouch.voucherSubjectId) },
       managerConfig: manager === null ? null : { ...manager, managerSubjectId: normalizeSubjectId(manager.managerSubjectId), caps: Number(requireRawUint(manager.caps, 8)), delaySecs: requireRawUint(manager.delaySecs, 32), setAt: requireRawUint(manager.setAt, 64) }, raw: row };

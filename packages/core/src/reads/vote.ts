@@ -26,6 +26,8 @@ import {
   FETCH_PROPOSAL_VOTING_CLASSES,
   selectClassSnapshot,
   SubgraphVotingClass,
+  FETCH_HYBRID_PROPOSAL_BALLOTS_PAGE,
+  FETCH_DD_PROPOSAL_BALLOTS_PAGE,
 } from '../graph/documents/voting-classes';
 import { resolveOrgId } from './resolve';
 import { bestMatches } from '../similarity';
@@ -35,6 +37,7 @@ import { requireRawUint } from '../amounts';
 import { Fact, knownFact, PlanScope, requireCompleteSnapshot, SourceRef, SourceSnapshot, unknownFact } from '../data/facts';
 import { readIndexedPageFacts, readIndexedSingletonFacts, IndexedRow, ProtocolQuery } from './protocol';
 import { FETCH_HYBRID_PROPOSALS_PAGE, FETCH_DD_PROPOSALS_PAGE, FETCH_PROPOSAL_DETAIL } from '../graph/documents/voting';
+import { requireValidVoteWeights } from '../governance/validation';
 
 // ────────────────────────── raw entity shapes ──────────────────────────
 
@@ -803,6 +806,68 @@ export async function readProposalArchive(options: ProposalArchiveOptions): Prom
     collection: options.lane === 'hybrid' ? 'proposals' : 'ddvproposals', initialCursor: '', variables: { orgId: options.source.orgId, voting: options.source.contract!.toLowerCase() },
     validateRow: row => validateProposalRow(row, options.source, options.lane) });
   return bindingFailed ? { ...result, coverage: { ...result.coverage, issues: [...result.coverage.issues, { code: 'PROPOSAL_MODULE_BINDING_MISMATCH' }] } } : result;
+}
+
+export interface ProposalBallotOptions {
+  source: SourceRef; query: ProtocolQuery; lane: 'hybrid' | 'dd';
+  /** Exact decimal uint256, never a rounded Number or an unqualified feed ID. */
+  proposalId: string;
+  /** Explicit work bound: 1..1000 rows/page and 1..1000 pages. */
+  pageSize: number; maxPages: number;
+}
+/** Complete indexed ballots for a mounted detail/on-demand read only. Raw serving
+ * values are retained, including diagnostic rows in incomplete snapshots. A short
+ * validated page proves the end; a full final allowed page never does. This does
+ * not prove the frozen class emission, RPC freshness, or an on-chain winner. */
+export async function readProposalBallotFacts(options: ProposalBallotOptions): Promise<SourceSnapshot<readonly IndexedRow[]>> {
+  proposalSource(options.source);
+  if (options.source.snapshot !== 'pinned' || !options.source.block) throw new Error('Pinned ballot source required');
+  if (!['hybrid', 'dd'].includes(options.lane)) throw new Error('Invalid proposal lane');
+  if (typeof options.proposalId !== 'string') throw new Error('Exact proposal ID required');
+  const proposalId = requireRawUint(options.proposalId);
+  for (const bound of [options.pageSize, options.maxPages]) if (!Number.isSafeInteger(bound) || bound < 1 || bound > 1000) throw new Error('Invalid ballot bounds');
+  const compositeId = `${options.source.contract!.toLowerCase()}-${proposalId}`;
+  const hybrid = options.lane === 'hybrid';
+  let proposal: IndexedRow | undefined;
+  let bindingFailed = false;
+  const validateParent = (row: IndexedRow): void => {
+    validateProposalRow(row, options.source, options.lane);
+    if (row.id !== compositeId || BigInt(row.createdAtBlock as string) > BigInt(options.source.block!.number)
+      || !Number.isInteger(row.numOptions) || (row.numOptions as number) < 1 || (row.numOptions as number) > 256
+      || (proposal && (row.numOptions !== proposal.numOptions || row.createdAtBlock !== proposal.createdAtBlock))) throw new Error('Ballot proposal mismatch');
+  };
+  const result = await readIndexedPageFacts({ ...options, initialCursor: '',
+    document: hybrid ? FETCH_HYBRID_PROPOSAL_BALLOTS_PAGE : FETCH_DD_PROPOSAL_BALLOTS_PAGE,
+    collection: hybrid ? 'votes' : 'ddvvotes', variables: { orgId: options.source.orgId, compositeId },
+    query: async (document, variables, source) => {
+      const response = await options.query(document, variables, source);
+      try {
+        validateProposalModuleBinding(response, source, options.lane);
+        const parents = response[hybrid ? 'proposals' : 'ddvproposals'];
+        if (!Array.isArray(parents) || parents.length !== 1 || !parents[0] || typeof parents[0] !== 'object') throw new Error('Proposal unavailable');
+        validateParent(parents[0]);
+        proposal ??= parents[0];
+      } catch (error) { bindingFailed = true; throw error; }
+      return response;
+    },
+    validateRow: row => {
+      const parent = row.proposal as IndexedRow | undefined;
+      if (!parent || typeof parent !== 'object') throw new Error('Ballot proposal unavailable');
+      validateParent(parent);
+      if (typeof row.voter !== 'string' || !ethers.utils.isAddress(row.voter) || row.voter.toLowerCase() === ethers.constants.AddressZero
+        || row.id !== `${compositeId}-${row.voter.toLowerCase()}`) throw new Error('Ballot identity mismatch');
+      requireValidVoteWeights(row.optionWeights as number[], row.optionIndexes as number[]);
+      if ((row.optionIndexes as number[]).some(index => index >= (parent.numOptions as number))) throw new Error('Ballot option out of range');
+      if (hybrid) {
+        if (!Array.isArray(row.classRawPowers) || !row.classRawPowers.length || row.classRawPowers.length > 8) throw new Error('Class power unavailable');
+        for (const raw of row.classRawPowers) { if (typeof raw !== 'string') throw new Error('Invalid class raw power'); requireRawUint(raw); }
+      }
+      for (const field of ['votedAt', 'votedAtBlock']) { if (typeof row[field] !== 'string') throw new Error('Invalid ballot timestamp/block'); requireRawUint(row[field] as string); }
+      if (BigInt(row.votedAtBlock as string) > BigInt(options.source.block!.number)
+        || BigInt(parent.createdAtBlock as string) > BigInt(row.votedAtBlock as string)
+        || typeof row.transactionHash !== 'string' || !/^0x[\da-fA-F]{64}$/.test(row.transactionHash)) throw new Error('Invalid ballot observation');
+    } });
+  return bindingFailed ? { ...result, coverage: { ...result.coverage, issues: [...result.coverage.issues, { code: 'BALLOT_PROPOSAL_BINDING_MISMATCH' }] } } : result;
 }
 export interface ProposalClassFallback { chainId: number; orgId: string; votingAddress: string; proposalId: string; method: 'getProposalClasses'; code: string }
 /** Even an exact indexed emission lacks the immutable proposalClassSubject values.

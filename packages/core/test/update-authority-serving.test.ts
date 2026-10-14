@@ -5,6 +5,8 @@ import { SourceRef, requireCompleteSnapshot } from '../src/data/facts';
 import { createDocumentQueryAdapter, DocumentQueryResult } from '../src/graph/sources';
 import { AuthoritySnapshotQuery, authorityAccountMembershipFacts, readAuthoritySnapshot } from '../src/reads/authority';
 import * as docs from '../src/graph/documents/authority';
+import { decodeIndexedAuthorityCap } from '../src/authority/indexed-cap';
+import { requireRawUint } from '../src/amounts';
 
 // Independently observed serving block and scalar shapes (2026-10-10).
 // The mock returns these constants, never values copied from the request.
@@ -81,6 +83,37 @@ function fixture(change?: (data: any, call: Call) => void) {
   });
   return { query: adapter.query, calls, rows, authority };
 }
+
+describe('MI-SIGNED-CAPS-AND-RULE-PREVIEWS: indexed signed cap boundary', () => {
+  it.each([-1, '-1', 0, '0', 4294967295, '4294967295'])('decodes actual paged response cap %s and retains the original DTO', async cap => {
+    const f = fixture((data, call) => { if (call.field === 'subjects') data.subjects[0].maxMembers = cap; });
+    const result = await readAuthoritySnapshot({ source, query: f.query });
+    expect(result.coverage.status).toBe('complete');
+    expect(result.data.subjects[0].maxMembers).toBe(cap === -1 || cap === '-1' ? '4294967295' : String(cap));
+    expect(result.data.subjects[0].raw.maxMembers).toBe(cap);
+    expect(result.data.collections.subjects.data[0].maxMembers).toBe(cap);
+    expect(result.data.subjects[1].maxMembers).toBe('0');
+    expect(authorityAccountMembershipFacts(result, USER).data[0].isMember.state).toBe('known');
+  });
+  it.each([undefined, null, '', '-01', ' -1', '-2', -2, 4294967296, 1.25, NaN, false, 'unlimited', '0xffffffff', {}])(
+    'malformed/missing cap %j leaves incomplete coverage without membership certainty', async cap => {
+      const f = fixture((data, call) => { if (call.field === 'subjects') data.subjects[0].maxMembers = cap; });
+      const result = await readAuthoritySnapshot({ source, query: f.query });
+      expect(result.coverage.status).toBe('incomplete');
+      expect(result.coverage.issues).toContainEqual({ code: 'INVALID_AUTHORITY_ROW', id: `subjects:${ROLE}` });
+      expect(result.data.subjects.find(s => s.subjectId === ROLE)).toBeUndefined();
+      expect(result.data.collections.subjects.data[0].maxMembers).toEqual(cap);
+      expect(() => requireCompleteSnapshot(result)).toThrow();
+      const accountFacts = authorityAccountMembershipFacts(result, USER);
+      expect(accountFacts.coverage.status).toBe('incomplete');
+      expect(accountFacts.data).toEqual([]); // No successfully decoded role can supply a known membership fact.
+    });
+  it('limits the exception to the indexed decoder and leaves raw uint validation strict', () => {
+    expect(decodeIndexedAuthorityCap(-1n)).toBe('4294967295');
+    for (const value of [-1, '-1', -1n]) expect(() => requireRawUint(value, 32)).toThrow();
+    expect(() => decodeIndexedAuthorityCap(-2n)).toThrow();
+  });
+});
 
 function wrap(query: AuthoritySnapshotQuery, transform: (result: DocumentQueryResult<any>, field: string, src: SourceRef) => void): AuthoritySnapshotQuery {
   return async <T>(src: SourceRef, document: string, vars: Record<string, unknown>) => {

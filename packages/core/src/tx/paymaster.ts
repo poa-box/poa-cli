@@ -32,6 +32,7 @@ import {
 } from '../reads/paymaster';
 import { CliError, PreconditionError } from '../errors';
 import { EXIT } from '../exit-codes';
+import { RawUintInput, requireRawUint } from '../amounts';
 
 // ---------------------------------------------------------------------------
 // Encoding — identical fragments/conversions to src/commands/paymaster/register.ts
@@ -190,6 +191,21 @@ export function buildDepositForOrg(a: DepositForOrgArgs): TxIntent {
       summary: { paymasterHub: a.paymasterHubAddress, amountWei: String(a.amountWei) },
     },
   };
+}
+
+export interface DonateToSolidarityArgs {
+  paymasterHubAddress: string;
+  /** Positive exact native wei; no ether-unit parsing or implicit scaling. */
+  amountWei: RawUintInput;
+}
+/** Pure payable PaymasterHub.donateToSolidarity() intent. Hosts select the
+ * chain/account/hub and own execution; this builder performs no reads or writes. */
+export function buildDonateToSolidarity(a: DonateToSolidarityArgs): TxIntent {
+  if (!ethers.utils.isAddress(a.paymasterHubAddress) || a.paymasterHubAddress.toLowerCase() === ethers.constants.AddressZero) throw new Error('Invalid paymaster hub address');
+  const value = requireRawUint(a.amountWei);
+  if (value === '0') throw new Error('Donation amount must be positive');
+  return { to: a.paymasterHubAddress, abi: getAbi('PaymasterHub'), method: 'donateToSolidarity', args: [], value,
+    meta: { domain: 'paymaster', action: 'donate-to-solidarity', summary: { paymasterHub: a.paymasterHubAddress, amountWei: value } } };
 }
 
 export interface AdminCallRegisterArgs {

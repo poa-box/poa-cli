@@ -79,7 +79,9 @@ export interface RoleConfigurationRequest {
   holders?: readonly { account: string; sticky: boolean }[];
   taskGrants?: { creator: boolean; organizer: boolean };
   bindingClassIndex?: number; editOrgDetails?: boolean;
-  sponsorship?: { capRaw: string; epochSeconds: string; supportPasskeys?: boolean; initializeClaimBudget?: boolean };
+  sponsorship?: { capRaw: string; epochSeconds: string; supportPasskeys?: boolean; initializeClaimBudget?: boolean;
+    /** Opt in to existing org email rules without creating role email additions. Requires supportPasskeys. */
+    includeConfiguredEmailRules?: boolean };
   /** Prepared CID binds the deterministic merger's root, rather than an arbitrary replacement. */
   email?: { current?: VerifiedAllowlist; additions: readonly { type: 'domain' | 'email'; identifier: string }[]; preparedRoot: string; cid: string };
 }
@@ -100,7 +102,7 @@ export function planRoleConfiguration(input: RolePlanningInput): PlanResult<Role
     const context = requireLivePlanningSnapshot(input.context, scope, input.freshness);
     const r = input.request;
     for (const value of [r.defaultAllow, r.editOrgDetails, r.vouch?.selfVouch, r.taskGrants?.creator, r.taskGrants?.organizer,
-      r.sponsorship?.supportPasskeys, r.sponsorship?.initializeClaimBudget]) if (value !== undefined && typeof value !== 'boolean') throw new Error('INVALID_ROLE_BOOLEAN');
+      r.sponsorship?.supportPasskeys, r.sponsorship?.initializeClaimBudget, r.sponsorship?.includeConfiguredEmailRules]) if (value !== undefined && typeof value !== 'boolean') throw new Error('INVALID_ROLE_BOOLEAN');
     if (!isAuthorityReady(context.readiness) || context.readiness.membershipAuthority!.id!.toLowerCase() !== scope.contract.toLowerCase()) throw new Error('AUTHORITY_UNAVAILABLE');
     const fact = <T>(value: Fact<T> | undefined, code: string, contract = scope.contract): T => requirePlanningFact(value, input.context, { ...scope, contract }, code);
     const enabled = (value: Fact<boolean> | undefined, code: string, contract = scope.contract): void => { if (fact(value, code, contract) !== true) throw new Error(code); };
@@ -222,8 +224,10 @@ export function planRoleConfiguration(input: RolePlanningInput): PlanResult<Role
       const sponsor = context.sponsorship;
       if (!sponsor) throw new Error('SPONSORSHIP_CONTEXT_REQUIRED');
       module('paymaster', sponsor.address);
+      const includeEmailRules = !!r.email || r.sponsorship.includeConfiguredEmailRules === true;
+      if (r.sponsorship.includeConfiguredEmailRules && !r.sponsorship.supportPasskeys) throw new Error('EMAIL_RULES_REQUIRE_PASSKEY_SUPPORT');
       if ((r.sponsorship.supportPasskeys !== undefined && typeof r.sponsorship.supportPasskeys !== 'boolean')
-        || (r.sponsorship.initializeClaimBudget && (!r.sponsorship.supportPasskeys || !r.email))) throw new Error('INVALID_CLAIM_BUDGET_REQUEST');
+        || (r.sponsorship.initializeClaimBudget && (!r.sponsorship.supportPasskeys || !includeEmailRules))) throw new Error('INVALID_CLAIM_BUDGET_REQUEST');
       enabled(sponsor.operatorAuthorized, 'SPONSORSHIP_OPERATOR_REQUIRED', sponsor.address);
       const capRaw = requireRawUint(r.sponsorship.capRaw, 128), epoch = requireRawUint(r.sponsorship.epochSeconds, 32);
       if (BigInt(epoch) < 3600n || BigInt(epoch) > 31536000n) throw new Error('INVALID_SPONSORSHIP_EPOCH');
@@ -233,20 +237,38 @@ export function planRoleConfiguration(input: RolePlanningInput): PlanResult<Role
         const rules: { target: string; selector: string; hint: number }[] = [];
         const iface = new ethers.utils.Interface(buildAuthorityAction({ authorityAddress: scope.contract, method: 'claim', args: [subjectId] }).abi);
         for (const [name, hint] of [['claim', 300000], ['renounce', 200000], ['vouch', 0], ['revokeVouch', 200000], ['delegatedGrant', 250000], ['delegatedOffer', 300000], ['delegatedRemove', 250000], ['delegatedUnremove', 200000], ['finalize', 600000], ['cancel', 200000]] as const) rules.push({ target: scope.contract, selector: iface.getSighash(name), hint });
-        if (r.email) {
-          if (!context.email) throw new Error('EMAIL_CONTEXT_REQUIRED');
+        if (includeEmailRules) {
+          const email = context.email;
+          if (!email) throw new Error('EMAIL_CONTEXT_REQUIRED');
+          module('email', email.address); module('executor', email.executorAddress);
+          enabled(email.enabled, 'EMAIL_DISABLED', email.address);
+          enabled(email.authorityMatches, 'EMAIL_AUTHORITY_MISMATCH', email.address);
+          const domainMode = fact(email.domainEnabled, 'DOMAIN_VERIFIER_UNAVAILABLE', email.address);
+          const emailMode = fact(email.emailEnabled, 'EMAIL_VERIFIER_UNAVAILABLE', email.address);
+          if (typeof domainMode !== 'boolean' || typeof emailMode !== 'boolean') throw new Error('EMAIL_MODES_UNAVAILABLE');
+          if (!domainMode && !emailMode) throw new Error('EMAIL_VERIFIERS_DISABLED');
+          // A configured-only request cannot repair minter authorization or an inactive root.
+          // The existing additions branch below explicitly plans those changes when requested.
+          if (!r.email) {
+            enabled(email.minterAuthorized, 'EMAIL_MINTER_AUTHORIZATION_REQUIRED', email.executorAddress);
+            const root = fact(email.currentRoot, 'CURRENT_ALLOWLIST_ROOT_UNAVAILABLE', email.address);
+            if (!ethers.utils.isHexString(root, 32) || root.toLowerCase() === ethers.constants.HashZero) throw new Error('ACTIVE_ALLOWLIST_REQUIRED');
+          }
           // Selectors come from the shared current ABI, never inferred from UI names.
-          for (const [name, hint] of [['claimRoleByDomain', 800000], ['claimRoleByEmail', 800000], ['registerAndClaimByDomainWithPasskey', 1200000], ['registerAndClaimByEmailWithPasskey', 1200000]] as const) {
-            rules.push({ target: address(context.email.address), selector: new ethers.utils.Interface(getAbi('ZkEmailInvites')).getSighash(name), hint });
+          for (const [name, hint, mode] of [['claimRoleByDomain', 800000, domainMode], ['claimRoleByEmail', 800000, emailMode], ['registerAndClaimByDomainWithPasskey', 1200000, domainMode], ['registerAndClaimByEmailWithPasskey', 1200000, emailMode]] as const) {
+            if (mode) rules.push({ target: address(email.address), selector: new ethers.utils.Interface(getAbi('ZkEmailInvites')).getSighash(name), hint });
           }
         }
         if (r.editOrgDetails) rules.push({ target: context.registry!.address, selector: ethers.utils.id('updateOrgMetaAsAdmin(bytes32,bytes,bytes32)').slice(0, 10), hint: 0 });
         batch.push(encodeExecutorCall('PaymasterHub', address(sponsor.address), 'setRulesBatch', [scope.orgId, rules.map(r => r.target), rules.map(r => r.selector), rules.map(() => true), rules.map(r => r.hint)]));
-        if (r.email) {
+        if (includeEmailRules) {
           const exists = fact(sponsor.claimBudgetExists, 'CLAIM_BUDGET_UNAVAILABLE', sponsor.address);
           if (typeof exists !== 'boolean') throw new Error('CLAIM_BUDGET_UNAVAILABLE');
           if (!exists && !r.sponsorship.initializeClaimBudget) throw new Error('CLAIM_BUDGET_INITIALIZATION_REQUIRED');
-          if (!exists) batch.push(budget(SUBJECT_TYPE.CLAIM, context.email!.address));
+          if (!exists) {
+            batch.push(budget(SUBJECT_TYPE.CLAIM, context.email!.address));
+            consequences.push({ code: 'INITIALIZE_EMAIL_CLAIM_BUDGET', values: { email: context.email!.address, capRaw, epochSeconds: epoch } });
+          }
         }
       }
       consequences.push({ code: 'SHARED_SPONSORSHIP_BUDGET', values: { subjectId, capRaw, epochSeconds: epoch } });

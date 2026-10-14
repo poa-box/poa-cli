@@ -45,6 +45,43 @@ import { resolveOrgModules, requireModule } from '../reads/resolve';
 import { getRegistryAndAccount } from '../reads/user';
 import { assertPlanScope, assertSourceRef, SourceRef } from '../data/facts';
 import { cidV0ToBytes32 } from '../encoding/cid';
+import { RawUintInput, requireRawUint } from '../amounts';
+import { PasskeyRegistrationArgs, passkeyRegistrationArgs } from './enrollment';
+
+export type { PasskeyEnrollment, PasskeyRegistrationArgs } from './enrollment';
+
+function enrollmentAddress(value: string): string {
+  const address = ethers.utils.getAddress(value);
+  if (address === ethers.constants.AddressZero) throw new Error('Nonzero enrollment address required');
+  return address;
+}
+
+export interface RegisterAndQuickJoinArgs {
+  quickJoinAddress: string;
+  user: string;
+  username: string;
+  deadline: RawUintInput;
+  nonce: RawUintInput;
+  signature: string;
+  orgId?: string;
+}
+/** One atomic EOA enrollment intent. Host supplies the RegisterAccount signature. */
+export function buildRegisterAndQuickJoin(a: RegisterAndQuickJoinArgs): TxIntent {
+  if (typeof a.username !== 'string') throw new Error('Invalid username');
+  if (typeof a.signature !== 'string' || !/^0x(?:[\da-f]{2})+$/i.test(a.signature)) throw new Error('Invalid registration signature');
+  return { to: enrollmentAddress(a.quickJoinAddress), abi: getAbi('QuickJoinNew'), method: 'registerAndQuickJoin',
+    args: [enrollmentAddress(a.user), requireUsernameArg(a.username), requireRawUint(a.deadline), requireRawUint(a.nonce), a.signature],
+    meta: { domain: 'user', action: 'register-and-join', orgId: a.orgId, summary: { username: a.username } } };
+}
+export interface RegisterAndQuickJoinWithPasskeyArgs extends PasskeyRegistrationArgs {
+  quickJoinAddress: string;
+  orgId?: string;
+}
+/** One atomic intent; host signs registrationChallenge(input, 'passkey') with RegisterPasskeyAccount. */
+export function buildRegisterAndQuickJoinWithPasskey(a: RegisterAndQuickJoinWithPasskeyArgs): TxIntent {
+  return { to: enrollmentAddress(a.quickJoinAddress), abi: getAbi('QuickJoinNew'), method: 'registerAndQuickJoinWithPasskey',
+    args: passkeyRegistrationArgs(a), meta: { domain: 'user', action: 'register-and-join-passkey', orgId: a.orgId, summary: { username: a.username } } };
+}
 
 // ───────────────────────────── Level 1 — pure ─────────────────────────────
 

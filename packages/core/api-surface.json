@@ -45,8 +45,13 @@
     "registrationDomain",
     "unpackPasskeySignature"
   ],
+  "accounts/constants": [
+    "ENTRY_POINT",
+    "EOA_DELEGATION"
+  ],
   "accounts/index": [
     "* (./codecs)",
+    "* (./constants)",
     "* (./userop-v07)"
   ],
   "accounts/userop-v07": [
@@ -89,8 +94,12 @@
   "authority/index": [
     "* (./activation)",
     "* (./ids)",
+    "* (./indexed-cap)",
     "* (./lifecycle)",
     "* (./permissions)"
+  ],
+  "authority/indexed-cap": [
+    "decodeIndexedAuthorityCap"
   ],
   "authority/lifecycle": [
     "ACTION_REASON",
@@ -211,11 +220,14 @@
   "email/allowlist": [
     "AllowlistScope",
     "BuiltVerifiedAllowlist",
+    "ReplaceVerifiedAllowlistArgs",
+    "RetainedAllowlistLeaf",
     "VerifiedAllowlist",
     "VerifiedAllowlistLeaf",
     "buildAllowlistFromVerifiedLeaves",
     "mergeVerifiedAllowlist",
     "projectVerifiedAllowlistLeaves",
+    "replaceVerifiedAllowlist",
     "verifyAllowlistDocument"
   ],
   "email/index": [
@@ -259,6 +271,10 @@
     "bytes32ToCidV0",
     "cidV0ToBytes32",
     "metadataPointerToBytes32"
+  ],
+  "encoding/legacy-pointer": [
+    "legacyBytes32ToIpfsCid",
+    "legacyPointerToBytes32"
   ],
   "env": [
     "EMPTY_ENV",
@@ -356,6 +372,11 @@
     "validateGovernanceBatches",
     "votingLaneForBatches"
   ],
+  "governance/dd-authorization": [
+    "DirectDemocracyAuthorizationData",
+    "DirectDemocracyAuthorizationInput",
+    "deriveDirectDemocracyAuthorization"
+  ],
   "governance/elections": [
     "BanConsent",
     "ElectionContext",
@@ -375,9 +396,11 @@
   ],
   "governance/index": [
     "* (./capabilities)",
+    "* (./dd-authorization)",
     "* (./elections)",
     "* (./power)",
-    "* (./role-planning)"
+    "* (./role-planning)",
+    "* (./validation)"
   ],
   "governance/power": [
     "ClassEligibilityInput",
@@ -407,6 +430,10 @@
     "requireLivePlanningSnapshot",
     "requirePlanningFact",
     "validateRolePlanFreshness"
+  ],
+  "governance/validation": [
+    "ValidatedVoteVector",
+    "requireValidVoteWeights"
   ],
   "graph/client": [
     "ChainQueryResult",
@@ -446,9 +473,11 @@
     "normalizeAuthorityVouches"
   ],
   "graph/documents/authority": [
+    "FETCH_AUTHORITY_CONFIG_LINTS_RECENT",
     "FETCH_AUTHORITY_GROUP_EDGES_PAGE",
     "FETCH_AUTHORITY_MEMBERSHIPS",
     "FETCH_AUTHORITY_MEMBERSHIPS_PAGE",
+    "FETCH_AUTHORITY_MEMBERSHIP_EVENTS_RECENT",
     "FETCH_AUTHORITY_PENDING",
     "FETCH_AUTHORITY_PENDING_PAGE",
     "FETCH_AUTHORITY_PERMS",
@@ -520,7 +549,11 @@
   ],
   "graph/documents/inflows": [
     "FETCH_HISTORICAL_POTS_PAGE",
-    "FETCH_NATIVE_DEPOSITS_PAGE"
+    "FETCH_INDEXED_DONATIONS_PAGE",
+    "FETCH_INDEXED_NATIVE_PAYMENTS_PAGE",
+    "FETCH_INDEXED_ORG_DEPOSITS_PAGE",
+    "FETCH_NATIVE_DEPOSITS_PAGE",
+    "FETCH_PAYMASTER_HUB_POTS_PAGE"
   ],
   "graph/documents/infrastructure": [
     "FETCH_INFRASTRUCTURE_ADDRESSES",
@@ -621,6 +654,8 @@
     "userDataTiers"
   ],
   "graph/documents/voting-classes": [
+    "FETCH_DD_PROPOSAL_BALLOTS_PAGE",
+    "FETCH_HYBRID_PROPOSAL_BALLOTS_PAGE",
     "FETCH_PROPOSAL_VOTE_ANALYSIS",
     "FETCH_PROPOSAL_VOTE_ANALYSIS_EXACT",
     "FETCH_PROPOSAL_VOTING_CLASSES",
@@ -1148,6 +1183,7 @@
     "GET_PROPOSAL_EXECUTION_STATE",
     "NormalizedClass",
     "ProposalArchiveOptions",
+    "ProposalBallotOptions",
     "ProposalCandidate",
     "ProposalClassFacts",
     "ProposalClassFallback",
@@ -1174,6 +1210,7 @@
     "fetchVotingData",
     "normalizeSubgraphClasses",
     "readProposalArchive",
+    "readProposalBallotFacts",
     "readProposalDetailFacts",
     "resolveProposalId",
     "selectAnnounceCandidates",
@@ -1295,10 +1332,28 @@
   "treasury/index": [
     "* (./distributions)",
     "* (./evidence)",
+    "* (./indexed-inflows)",
     "* (./inflows)",
     "* (./planning)"
   ],
+  "treasury/indexed-inflows": [
+    "HistoricalInflowPotFacts",
+    "IndexedNativeInflowEvent",
+    "IndexedNativeInflowPageOptions",
+    "IndexedNativeInflowStream",
+    "IndexedRecordedInflows",
+    "IndexedRecordedInflowsInput",
+    "InflowPageOptions",
+    "NativeInflowCollection",
+    "deduplicateIndexedNativeInflows",
+    "normalizeIndexedRecordedInflows",
+    "projectIndexedNativeInflow",
+    "readHistoricalPaymasterHubPotFacts",
+    "readIndexedNativeInflowFacts"
+  ],
   "treasury/inflows": [
+    "HistoricalInflowPot",
+    "HistoricalPaymasterHubPot",
     "HistoricalPot",
     "InflowEventChunk",
     "RecordedInflowEvent",
@@ -1357,6 +1412,11 @@
     "createModuleIntent",
     "removeModuleIntent",
     "updateModuleIntent"
+  ],
+  "tx/enrollment": [
+    "PasskeyEnrollment",
+    "PasskeyRegistrationArgs",
+    "passkeyRegistrationArgs"
   ],
   "tx/governance": [
     "ExecutionCall",
@@ -1428,10 +1488,12 @@
     "DEPLOY_CONFIG_TUPLE",
     "DepositForOrgArgs",
     "DepositForOrgParams",
+    "DonateToSolidarityArgs",
     "PaymasterRegisterConfig",
     "RegisterOrgParams",
     "buildAdminCallRegister",
     "buildDepositForOrg",
+    "buildDonateToSolidarity",
     "buildRegisterCalldata",
     "depositForOrgIntent",
     "parseDepositAmount",
@@ -1469,12 +1531,14 @@
     "CreateAndAssignTaskArgs",
     "CreateAndAssignTaskRawArgs",
     "CreateTaskArgs",
+    "CreateTaskBatchRawRow",
     "CreateTaskBatchRow",
     "CreateTaskBatchRowParams",
     "CreateTaskParams",
     "CreateTaskRawArgs",
     "CreateTasksBatchArgs",
     "CreateTasksBatchParams",
+    "CreateTasksBatchRawArgs",
     "EditTaskMetadataParams",
     "ProposeGlobalRolePermArgs",
     "ProposeGlobalRolePermParams",
@@ -1509,6 +1573,7 @@
     "buildCreateTask",
     "buildCreateTaskRaw",
     "buildCreateTasksBatch",
+    "buildCreateTasksBatchRaw",
     "buildProposeGlobalRolePerm",
     "buildRejectTask",
     "buildSetFolders",
@@ -1606,16 +1671,22 @@
   "tx/user": [
     "ChangeUsernameArgs",
     "ChangeUsernameParams",
+    "PasskeyEnrollment",
+    "PasskeyRegistrationArgs",
     "PreparedProfileMetadataParams",
     "QuickJoinParams",
     "QuickJoinWithUserArgs",
     "RegisterAccountArgs",
     "RegisterAccountParams",
+    "RegisterAndQuickJoinArgs",
+    "RegisterAndQuickJoinWithPasskeyArgs",
     "SetProfileMetadataArgs",
     "SetProfileMetadataParams",
     "buildChangeUsername",
     "buildQuickJoinWithUser",
     "buildRegisterAccount",
+    "buildRegisterAndQuickJoin",
+    "buildRegisterAndQuickJoinWithPasskey",
     "buildSetProfileMetadata",
     "changeUsernameIntent",
     "preparedProfileMetadataIntent",
@@ -1665,9 +1736,12 @@
   "tx/zkemail": [
     "EmailClaimArgs",
     "ProposeAllowlistParams",
+    "RegisterAndClaimWithPasskeyArgs",
     "SetAllowlistProposalArgs",
     "buildClaimRoleByDomain",
     "buildClaimRoleByEmail",
+    "buildRegisterAndClaimByDomainWithPasskey",
+    "buildRegisterAndClaimByEmailWithPasskey",
     "buildSetAllowlistProposal",
     "normalizeAllowlistCid",
     "normalizeAllowlistRoot",

@@ -6,6 +6,16 @@ import type { TreasuryPageOptions } from '../reads/treasury';
 import { FETCH_HISTORICAL_POTS_PAGE, FETCH_NATIVE_DEPOSITS_PAGE } from '../graph/documents/inflows';
 
 export interface HistoricalPot { chainId: number; address: string; kind: 'payment-manager' | 'task-manager' | 'executor'; createdAtBlock: string; orgId: string }
+/** A global hub has no organization relation; never synthesize one. */
+export interface HistoricalPaymasterHubPot { chainId: number; address: string; kind: 'paymaster-hub'; createdAtBlock: string; orgId?: never }
+export type HistoricalInflowPot = HistoricalPot | HistoricalPaymasterHubPot;
+function validatePot(pot: HistoricalInflowPot, chainId: number): void {
+  if (pot.chainId !== chainId || (pot.kind !== 'paymaster-hub' && !ethers.utils.isHexString(pot.orgId, 32))) throw new Error('POT_SCOPE_MISMATCH');
+  ethers.utils.getAddress(pot.address);
+  if (pot.kind === 'paymaster-hub') {
+    if (pot.orgId !== undefined || pot.address.toLowerCase() === ethers.constants.AddressZero) throw new Error('INVALID_GLOBAL_POT');
+  }
+}
 export interface RecordedInflowEvent {
   chainId: number; transactionHash: string; logIndex: string; blockNumber: string;
   from: string; to: string; asset: AssetRef; amountRaw: string;
@@ -39,21 +49,22 @@ export function deduplicateInflowEvents(events: readonly RecordedInflowEvent[]):
   } catch (error) { return unknownFact(error instanceof Error ? error.message : 'INVALID_INFLOW_EVENT'); }
 }
 /** Historical pots are retained even when no longer an organization's current module. */
-export function classifyInternalMovement(event: RecordedInflowEvent, pots: SourceSnapshot<readonly HistoricalPot[]>): Fact<boolean> {
+export function classifyInternalMovement(event: RecordedInflowEvent, pots: SourceSnapshot<readonly HistoricalInflowPot[]>): Fact<boolean> {
   try {
     validateEvent(event);
     const history = requireCompleteSnapshot(pots, { scope: { chainId: event.chainId }, snapshot: 'pinned' });
     if (BigInt(event.blockNumber) > BigInt(pots.source.block!.number)) throw new Error('EVENT_AFTER_SNAPSHOT');
     const active = new Set(history.filter(p => {
-      if (p.chainId !== event.chainId || !ethers.utils.isHexString(p.orgId, 32)) throw new Error('POT_SCOPE_MISMATCH');
-      ethers.utils.getAddress(p.address);
+      validatePot(p, event.chainId);
+      if (p.kind === 'paymaster-hub' && (pots.source.orgId || pots.source.account || pots.source.contract
+        || !pots.source.indexed || BigInt(p.createdAtBlock) > BigInt(pots.source.block!.number))) throw new Error('GLOBAL_POT_HISTORY_UNPROVEN');
       return BigInt(requireRawUint(p.createdAtBlock)) <= BigInt(event.blockNumber);
     }).map(p => p.address.toLowerCase()));
     return knownFact(active.has(event.from.toLowerCase()) && active.has(event.to.toLowerCase()), pots.source);
   } catch (error) { return unknownFact(error instanceof Error ? error.message : 'POT_HISTORY_UNKNOWN', pots.source); }
 }
 export interface RecordedInflowsInput {
-  pots: SourceSnapshot<readonly HistoricalPot[]>;
+  pots: SourceSnapshot<readonly HistoricalInflowPot[]>;
   chunks: readonly SourceSnapshot<InflowEventChunk>[];
   /** Requested inclusive scope; chunks must cover it once with no gaps. */
   fromBlock: string; block: SourceBlock;
@@ -79,7 +90,9 @@ export function normalizeRecordedInflows(input: RecordedInflowsInput): RecordedI
     for (const pot of pots) {
       const key = `${pot.chainId}:${ethers.utils.getAddress(pot.address).toLowerCase()}`;
       if (pot.chainId !== input.pots.source.chainId || potKeys.has(key) || BigInt(requireRawUint(pot.createdAtBlock)) > BigInt(input.block.number)
-        || !ethers.utils.isHexString(pot.orgId, 32)) throw new Error('INVALID_POT_HISTORY');
+        || (pot.kind === 'paymaster-hub' ? (pot.orgId !== undefined || pot.address.toLowerCase() === ethers.constants.AddressZero
+          || input.pots.source.orgId || input.pots.source.account || input.pots.source.contract || !input.pots.source.indexed)
+          : !ethers.utils.isHexString(pot.orgId, 32))) throw new Error('INVALID_POT_HISTORY');
       potKeys.add(key);
     }
     let next = BigInt(requireRawUint(input.fromBlock));

@@ -21,6 +21,10 @@ const contracts: Record<string, string> = JSON.parse(fixture('document-contracts
 const schema = extendSchema(buildSchema(fixture('schema.graphql')), parse('extend type _Block_ { timestamp: Int }'));
 // Hypothetical extension only: the retained serving schemas do NOT have these keys.
 const modernSchema = extendSchema(schema, parse('extend type PasskeyCredential { publicKeyX: Bytes publicKeyY: Bytes }'));
+// New bounded display APIs have a separate exact serving projection; preserve
+// the historical document-contract oracle and all its compatibility assertions.
+const displaySchema = buildSchema(readFileSync(new URL('./fixtures/core-update/authority/display-ballots-serving-schema.graphql', import.meta.url), 'utf8'));
+const displayNames = ['authority/FETCH_AUTHORITY_MEMBERSHIP_EVENTS_RECENT', 'authority/FETCH_AUTHORITY_CONFIG_LINTS_RECENT'];
 const docs: Record<string, string> = {};
 for (const [module, exports] of Object.entries({ accounts, authority, paymaster, protocol, zkemail })) {
   for (const [name, value] of Object.entries(exports)) {
@@ -69,8 +73,9 @@ describe('strict serving GraphQL compatibility and selector parity', () => {
     expect(schema.getType('PasskeyCredential')).toBeDefined();
   });
   it('retains reviewed names/tiers/selectors/entity fields and adds only same-block metadata', () => {
-    expect(Object.keys(docs).sort()).toEqual(Object.keys(contracts).sort());
-    for (const [name, doc] of Object.entries(docs)) {
+    expect(Object.keys(docs).sort()).toEqual([...Object.keys(contracts), ...displayNames].sort());
+    for (const name of Object.keys(contracts)) {
+      const doc = docs[name];
       if (addedMeta(name)) {
         const operation = parse(doc).definitions.find(d => d.kind === Kind.OPERATION_DEFINITION);
         if (!operation || operation.kind !== Kind.OPERATION_DEFINITION) throw new Error('Missing operation');
@@ -82,7 +87,7 @@ describe('strict serving GraphQL compatibility and selector parity', () => {
     }
   });
   for (const [name, doc] of Object.entries(docs)) it(`${name} validates arguments and variable positions against serving schema`, () => {
-    const errors = validate(schema, parse(doc)).map(e => e.message);
+    const errors = validate(displayNames.includes(name) ? displaySchema : schema, parse(doc)).map(e => e.message);
     if (/\bpublicKeyX\b/.test(doc)) {
       expect(errors).toEqual([
         'Cannot query field "publicKeyX" on type "PasskeyCredential".',

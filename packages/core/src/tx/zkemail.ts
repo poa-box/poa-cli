@@ -28,6 +28,7 @@ import { assertRootMatches, summarize, requireAllowlistUint } from '../zkemail';
 import { CliError } from '../errors';
 import { EXIT } from '../exit-codes';
 import { EmailProofProjection, requireEmailClaimer, requireEmailProofProjection } from '../email/proof';
+import { PasskeyRegistrationArgs, passkeyRegistrationArgs } from './enrollment';
 
 export interface EmailClaimArgs<V extends 'v1' | 'v2'> {
   zkEmailInvitesAddress: string;
@@ -45,8 +46,8 @@ function buildEmailClaim<V extends 'v1' | 'v2'>(a: EmailClaimArgs<V>, version: V
   const claimer = requireEmailClaimer(a.claimer);
   requireEmailProofProjection(a.proof, version, claimer);
   if (!Array.isArray(a.hatIds) || !a.hatIds.length) throw new Error('Email claim requires role IDs');
-  const hatIds = a.hatIds.map(requireAllowlistUint);
-  if (!Array.isArray(a.merkleProof) || a.merkleProof.some(p => !/^0x[\da-f]{64}$/i.test(p))) throw new Error('Invalid email merkle proof');
+  const hatIds = Array.from(a.hatIds, requireAllowlistUint);
+  if (!Array.isArray(a.merkleProof) || Array.from(a.merkleProof).some(p => typeof p !== 'string' || !/^0x[\da-f]{64}$/i.test(p))) throw new Error('Invalid email merkle proof');
   return { to: address, abi: getAbi('ZkEmailInvites'), method: version === 'v1' ? 'claimRoleByDomain' : 'claimRoleByEmail',
     args: [a.proof.proof, claimer, hatIds, [...a.merkleProof]], meta: { domain: 'zkemail',
       action: version === 'v1' ? 'claim-domain' : 'claim-email', ...(a.orgId ? { orgId: a.orgId } : {}), summary: { claimer, hatIds } } };
@@ -55,6 +56,17 @@ function buildEmailClaim<V extends 'v1' | 'v2'>(a: EmailClaimArgs<V>, version: V
 /** Pure current-ABI codecs; no enrollment, proving, signing, gas or refresh policy. */
 export function buildClaimRoleByDomain(a: EmailClaimArgs<'v1'>): TxIntent { return buildEmailClaim(a, 'v1'); }
 export function buildClaimRoleByEmail(a: EmailClaimArgs<'v2'>): TxIntent { return buildEmailClaim(a, 'v2'); }
+
+export interface RegisterAndClaimWithPasskeyArgs<V extends 'v1' | 'v2'> extends EmailClaimArgs<V>, PasskeyRegistrationArgs {}
+function buildRegisterAndClaim<V extends 'v1' | 'v2'>(a: RegisterAndClaimWithPasskeyArgs<V>, version: V): TxIntent {
+  const claim = buildEmailClaim(a, version);
+  return { ...claim, method: version === 'v1' ? 'registerAndClaimByDomainWithPasskey' : 'registerAndClaimByEmailWithPasskey',
+    args: [...passkeyRegistrationArgs(a), claim.args[0], claim.args[2], claim.args[3]],
+    meta: { ...claim.meta, action: version === 'v1' ? 'register-and-claim-domain-passkey' : 'register-and-claim-email-passkey' } };
+}
+/** Atomic codecs: proof is bound to the host-resolved passkey account via claimer. No factory/RPC calls. */
+export function buildRegisterAndClaimByDomainWithPasskey(a: RegisterAndClaimWithPasskeyArgs<'v1'>): TxIntent { return buildRegisterAndClaim(a, 'v1'); }
+export function buildRegisterAndClaimByEmailWithPasskey(a: RegisterAndClaimWithPasskeyArgs<'v2'>): TxIntent { return buildRegisterAndClaim(a, 'v2'); }
 
 // ---------------------------------------------------------------------------
 // Pure input normalization (the CLI's guards, verbatim messages)

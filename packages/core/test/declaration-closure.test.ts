@@ -89,4 +89,97 @@ describe('viem/permissionless never enter dependency-free declaration closures',
     expect(specifiers.filter(spec => VIEM_RE.test(spec))).toEqual(['viem', 'permissionless/accounts']);
     expect(specifiers).toContain('./local');
   });
+
+  it.each(['accounts/constants', 'governance/validation', 'encoding/legacy-pointer'])('%s declarations exclude full ethers, Node and optional executors', leaf => {
+    const closure = declarationClosure(join(DIST, leaf + '.d.ts'));
+    expect(externalOffenders(closure, /^(?:(?:ethers|viem|permissionless)(?:\/|$)|node:|@types\/node(?:\/|$))/)).toEqual([]);
+    expect([...closure.keys()].filter(file => /\/(?:execute|abis)\//.test(file))).toEqual([]);
+  });
+  it.each(['tx/user', 'tx/zkemail', 'tx/enrollment', 'email/allowlist', 'authority/indexed-cap', 'governance/role-planning',
+    'treasury/inflows', 'treasury/indexed-inflows', 'graph/documents/inflows', 'governance/dd-authorization',
+    'reads/vote', 'tx/paymaster', 'graph/documents/authority', 'graph/documents/voting-classes'])('%s public declarations exclude optional peers and Node', leaf => {
+    const closure = declarationClosure(join(DIST, leaf + '.d.ts'));
+    expect(externalOffenders(closure, /^(?:(?:viem|permissionless)(?:\/|$)|node:|@types\/node(?:\/|$))/)).toEqual([]);
+    expect([...closure.keys()].filter(file => /\/execute\//.test(file))).toEqual([]);
+  });
+
+  it.each([
+    ['classic', ts.ModuleKind.CommonJS, ts.ModuleResolutionKind.NodeJs],
+    ['Node16', ts.ModuleKind.Node16, ts.ModuleResolutionKind.Node16],
+  ] as const)('display/ballot/DD/donation public types compile strictly under %s', (_name, module, moduleResolution) => {
+    const file = resolve(DIST, '../test/__authority_display_type_regression__.ts');
+    const consumer = `
+      import { readProposalBallotFacts, type ProposalBallotOptions } from '@poa-box/core/reads/vote';
+      import { FETCH_AUTHORITY_MEMBERSHIP_EVENTS_RECENT, FETCH_AUTHORITY_CONFIG_LINTS_RECENT } from '@poa-box/core/graph/documents/authority';
+      import { FETCH_HYBRID_PROPOSAL_BALLOTS_PAGE, FETCH_DD_PROPOSAL_BALLOTS_PAGE } from '@poa-box/core/graph/documents/voting-classes';
+      import { deriveDirectDemocracyAuthorization, type DirectDemocracyAuthorizationInput } from '@poa-box/core/governance/dd-authorization';
+      import { buildDonateToSolidarity, type DonateToSolidarityArgs } from '@poa-box/core/tx/paymaster';
+      import { encodeIntent } from '@poa-box/core/tx/intent';
+      import type { Fact, SourceSnapshot } from '@poa-box/core/data/facts';
+      import type { IndexedRow } from '@poa-box/core/reads/protocol';
+      declare const options: ProposalBallotOptions;
+      const ballots: Promise<SourceSnapshot<readonly IndexedRow[]>> = readProposalBallotFacts(options);
+      const documents: readonly string[] = [FETCH_AUTHORITY_MEMBERSHIP_EVENTS_RECENT, FETCH_AUTHORITY_CONFIG_LINTS_RECENT,
+        FETCH_HYBRID_PROPOSAL_BALLOTS_PAGE, FETCH_DD_PROPOSAL_BALLOTS_PAGE];
+      declare const policy: DirectDemocracyAuthorizationInput;
+      const authorization: Fact<boolean> = deriveDirectDemocracyAuthorization(policy);
+      const donation: DonateToSolidarityArgs = { paymasterHubAddress: '0x1111111111111111111111111111111111111111', amountWei: 1n };
+      const value: string = encodeIntent(buildDonateToSolidarity(donation)).value;
+      // @ts-expect-error cursor reader requires explicit bounds
+      const unbounded: ProposalBallotOptions = { source: options.source, query: options.query, lane: 'dd', proposalId: '1' };
+      // @ts-expect-error proposal ID is never a rounded Number
+      readProposalBallotFacts({ ...options, proposalId: 9007199254740992 });
+    `;
+    const options: ts.CompilerOptions = { strict: true, skipLibCheck: false, noEmit: true, esModuleInterop: true,
+      target: ts.ScriptTarget.ES2022, module, moduleResolution, types: ['node'] };
+    const host = ts.createCompilerHost(options), original = host.getSourceFile.bind(host);
+    host.getSourceFile = (path, version, onError, fresh) => path === file ? ts.createSourceFile(path, consumer, version, true) : original(path, version, onError, fresh);
+    const program = ts.createProgram([file], options, host);
+    expect(ts.getPreEmitDiagnostics(program).map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([]);
+  });
+
+  it.each([
+    ['classic', ts.ModuleKind.CommonJS, ts.ModuleResolutionKind.NodeJs],
+    ['Node16', ts.ModuleKind.Node16, ts.ModuleResolutionKind.Node16],
+  ] as const)('recorded-inflow public types compile strictly under %s and preserve legacy inputs', (_name, module, moduleResolution) => {
+    const file = resolve(DIST, '../test/__recorded_inflows_type_regression__.ts');
+    const consumer = `
+      import { readHistoricalPotFacts, normalizeRecordedInflows, type HistoricalPot,
+        type HistoricalPaymasterHubPot, type RecordedInflows } from '@poa-box/core/treasury/inflows';
+      import { readHistoricalPaymasterHubPotFacts, readIndexedNativeInflowFacts,
+        normalizeIndexedRecordedInflows, type InflowPageOptions, type HistoricalInflowPotFacts,
+        type IndexedNativeInflowEvent, type IndexedRecordedInflows } from '@poa-box/core/treasury/indexed-inflows';
+      import type { SourceSnapshot } from '@poa-box/core/data/facts';
+      import type { InflowEventChunk } from '@poa-box/core/treasury/inflows';
+      declare const options: InflowPageOptions;
+      declare const legacy: SourceSnapshot<readonly HistoricalPot[]>;
+      declare const chunks: readonly SourceSnapshot<InflowEventChunk>[];
+      async function example() {
+        const pots: HistoricalInflowPotFacts = { ...await readHistoricalPotFacts(options),
+          'paymaster-hub': await readHistoricalPaymasterHubPotFacts(options) };
+        const collections = ['payments', 'paymasterDepositEvents', 'solidarityEvents'] as const;
+        const streams = await Promise.all(collections.map(collection =>
+          readIndexedNativeInflowFacts({ ...options, collection, fromBlock: '1' })));
+        const recorded: IndexedRecordedInflows = normalizeIndexedRecordedInflows({ pots, streams, chunks,
+          fromBlock: '1', block: options.source.block!,
+          nativeAsset: { chainId: options.source.chainId, address: '0x0000000000000000000000000000000000000000', decimals: 18 } });
+        const old: RecordedInflows = normalizeRecordedInflows({ pots: legacy, chunks, fromBlock: '1', block: options.source.block! });
+        return [recorded, old];
+      }
+      declare const hub: HistoricalPaymasterHubPot;
+      // @ts-expect-error global hubs have no organization
+      const fakeOrg: HistoricalPaymasterHubPot = { ...hub, orgId: 'fake' };
+      declare const event: IndexedNativeInflowEvent;
+      // @ts-expect-error opaque entity rows have no logIndex
+      const fakeIndex = event.logIndex;
+      // @ts-expect-error new readers require explicit page bounds
+      const noBounds: InflowPageOptions = { source: options.source, query: options.query };
+    `;
+    const options: ts.CompilerOptions = { strict: true, skipLibCheck: false, noEmit: true, esModuleInterop: true,
+      target: ts.ScriptTarget.ES2022, module, moduleResolution, types: ['node'] };
+    const host = ts.createCompilerHost(options), original = host.getSourceFile.bind(host);
+    host.getSourceFile = (path, version, onError, fresh) => path === file ? ts.createSourceFile(path, consumer, version, true) : original(path, version, onError, fresh);
+    const program = ts.createProgram([file], options, host);
+    expect(ts.getPreEmitDiagnostics(program).map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([]);
+  });
 });

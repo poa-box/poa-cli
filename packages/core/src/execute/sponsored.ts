@@ -33,15 +33,15 @@ export type { SponsoredSubmission } from '../sponsorship-config';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createPimlicoClient } from 'permissionless/clients/pimlico';
 import {
-  entryPoint07Address,
   entryPoint07Abi,
   type EntryPointVersion,
 } from 'viem/account-abstraction';
 
-// Contract addresses (Gnosis)
-export const EOA_DELEGATION = '0x776ec88A88E86e38d54a985983377f1A2A25ef8b' as Address;
+import { EOA_DELEGATION, ENTRY_POINT } from '../accounts/constants';
+export { EOA_DELEGATION, ENTRY_POINT } from '../accounts/constants';
+
+// Contract address (Gnosis)
 export const PAYMASTER_HUB = '0xdEf1038C297493c0b5f82F0CDB49e929B53B4108' as Address;
-export const ENTRY_POINT = entryPoint07Address;
 
 const GAS_BUFFER_PERCENT = 10n;
 const DUMMY_ECDSA_SIGNATURE = ('0x' + 'ff'.repeat(65)) as Hex;

@@ -1,0 +1,133 @@
+{
+  "kind": "Offline cached-schema projection; no current deployment or field-population claim",
+  "sourceEntitySchema": {
+    "path": ".context/subgraph-schema.graphql",
+    "sha256": "5f9d3a3fcfceabcb81ffa8bb847e954ef50bf32df2c5fc68d0184a32f9c76a3c"
+  },
+  "servingIntrospection": {
+    "path": ".context/review-introspection-100.json",
+    "sha256": "9a89a35abeb10d86741ffcb688cc1fce44678f46164deeced92d88164862cfb5"
+  },
+  "fixture": {
+    "path": "display-ballots-serving-schema.graphql",
+    "sha256": "725dad3c8ae974a3cc5e94786f9bc98d0071461e780f6da58e0add7db5e9d72e"
+  },
+  "selection": {
+    "Query": [
+      "organization",
+      "proposals",
+      "ddvproposals",
+      "votes",
+      "ddvvotes",
+      "_meta",
+      "subjectMembershipEvents",
+      "configLintEvents"
+    ],
+    "Organization": [
+      "id",
+      "hybridVoting",
+      "directDemocracyVoting"
+    ],
+    "HybridVotingContract": [
+      "id",
+      "organization"
+    ],
+    "DirectDemocracyVotingContract": [
+      "id",
+      "organization"
+    ],
+    "Proposal": [
+      "id",
+      "proposalId",
+      "numOptions",
+      "createdAtBlock",
+      "hybridVoting"
+    ],
+    "DDVProposal": [
+      "id",
+      "proposalId",
+      "numOptions",
+      "createdAtBlock",
+      "directDemocracyVoting"
+    ],
+    "Vote": [
+      "id",
+      "proposal",
+      "voter",
+      "voterUsername",
+      "optionIndexes",
+      "optionWeights",
+      "classRawPowers",
+      "votedAt",
+      "votedAtBlock",
+      "transactionHash"
+    ],
+    "DDVVote": [
+      "id",
+      "proposal",
+      "voter",
+      "voterUsername",
+      "optionIndexes",
+      "optionWeights",
+      "votedAt",
+      "votedAtBlock",
+      "transactionHash"
+    ],
+    "Subject": [
+      "id",
+      "subjectId",
+      "kind",
+      "name"
+    ],
+    "SubjectMembershipEvent": [
+      "id",
+      "action",
+      "user",
+      "userUsername",
+      "actor",
+      "actorUsername",
+      "banned",
+      "delegated",
+      "timestamp",
+      "transactionHash",
+      "subject"
+    ],
+    "ConfigLintEvent": [
+      "id",
+      "code",
+      "lintCode",
+      "subjectId",
+      "emittedAt",
+      "subject"
+    ],
+    "_Meta_": [
+      "block"
+    ],
+    "_Block_": [
+      "number",
+      "hash",
+      "timestamp"
+    ],
+    "Vote_filter": [
+      "proposal",
+      "id_gt"
+    ],
+    "DDVVote_filter": [
+      "proposal",
+      "id_gt"
+    ],
+    "Proposal_filter": [
+      "id"
+    ],
+    "DDVProposal_filter": [
+      "id"
+    ],
+    "SubjectMembershipEvent_filter": [
+      "authority"
+    ],
+    "ConfigLintEvent_filter": [
+      "authority"
+    ]
+  },
+  "limits": "Schema/scalar validation only. Host endpoint, chain, transport, observed block and installed module selection remain external."
+}

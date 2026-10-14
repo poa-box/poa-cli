@@ -107,3 +107,20 @@ export const FETCH_AUTHORITY_PENDING_PAGE = `query AuthorityPendingPage(${PAGE_A
     subject { id subjectId kind name }
   }
 }`;
+
+/** Recent display windows, NOT complete authority history or authorization evidence.
+ * The host owns the bounded `first` limit and may pin the shared response block. */
+export const FETCH_AUTHORITY_MEMBERSHIP_EVENTS_RECENT = `query AuthorityMembershipEventsRecent($authority: String!, $first: Int = 50, $block: Block_height) {
+  subjectMembershipEvents(first: $first, orderBy: timestamp, orderDirection: desc, where: { authority: $authority }, block: $block) {
+    id action user userUsername actor actorUsername banned delegated timestamp transactionHash
+    subject { id subjectId name kind }
+  }
+  _meta(block: $block) { block { number hash timestamp } }
+}`;
+
+export const FETCH_AUTHORITY_CONFIG_LINTS_RECENT = `query AuthorityConfigLintsRecent($authority: String!, $first: Int = 200, $block: Block_height) {
+  configLintEvents(first: $first, orderBy: emittedAt, orderDirection: desc, where: { authority: $authority }, block: $block) {
+    id code lintCode subjectId emittedAt subject { id name }
+  }
+  _meta(block: $block) { block { number hash timestamp } }
+}`;

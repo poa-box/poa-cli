@@ -71,7 +71,11 @@ describe('contract/schema oracle integrity and governance capabilities', () => {
   });
   it('fully validates every exported voting document against independent generated serving argument positions', () => {
     const schema = buildSchema(fixture('schema.graphql'));
-    for (const doc of Object.values({ ...documents, ...classDocuments })) if (typeof doc === 'string' && doc.includes('query ')) expect(validate(schema, parse(doc))).toEqual([]);
+    const ballotSchema = buildSchema(readFileSync(new URL('./fixtures/core-update/authority/display-ballots-serving-schema.graphql', import.meta.url), 'utf8'));
+    const ballotDocuments = new Set([classDocuments.FETCH_HYBRID_PROPOSAL_BALLOTS_PAGE, classDocuments.FETCH_DD_PROPOSAL_BALLOTS_PAGE]);
+    for (const doc of Object.values({ ...documents, ...classDocuments })) if (typeof doc === 'string' && doc.includes('query ')) {
+      expect(validate(ballotDocuments.has(doc) ? ballotSchema : schema, parse(doc))).toEqual([]);
+    }
     const rootProjection = JSON.parse(fixture('organization-binding-schema.json'));
     for (const row of rootProjection.rows) expect(row.queryField.args.find((a: any) => a.name === 'block').type).toMatchObject({kind:'INPUT_OBJECT',name:'Block_height'});
     const invalid = documents.FETCH_HYBRID_PROPOSALS_PAGE.replace('$voting: String!', '$voting: ID!');
@@ -212,6 +216,94 @@ function roleInput(): RolePlanningInput {
 }
 const abiByTarget: Record<string,string> = {[AUTH]:'MembershipAuthority',[TM]:'TaskManager',[HV]:'HybridVoting',[REG]:'OrgRegistry',[PM]:'PaymasterHub',[EMAIL]:'ZkEmailInvites',[EXEC]:'Executor'};
 const decode = (calls: readonly ExecutionCall[]) => calls.map(c => oracle(abiByTarget[c.target.toLowerCase()]).parseTransaction({data:c.calldata,value:c.value}));
+function configuredEmailSponsorshipInput(): RolePlanningInput {
+  const input = roleInput();
+  input.request = { kind: 'Role', name: 'Builders', sponsorship: { capRaw: '250000000000000000', epochSeconds: '2592000', supportPasskeys: true, includeConfiguredEmailRules: true } };
+  input.context.data.email!.minterAuthorized = knownFact(true);
+  input.context.data.email!.currentRoot = knownFact(HASH);
+  input.context.data.sponsorship!.claimBudgetExists = knownFact(true);
+  return input;
+}
+describe('ROLE-PLAN: configured-org email rules without role email additions', () => {
+  it.each([[true, true], [true, false], [false, true]])('includes only verified enabled modes: domain=%s email=%s', (domain, email) => {
+    const i = configuredEmailSponsorshipInput();
+    i.context.data.email!.domainEnabled = knownFact(domain); i.context.data.email!.emailEnabled = knownFact(email);
+    const result = planRoleConfiguration(i), plan = ready(result), calls = decode(plan.batch);
+    expect(calls.map(c => c.name)).toEqual(['createRole', 'setBudget', 'setRulesBatch']);
+    const rules = calls[2].args, indices = rules[1].map((target: string, index: number) => target.toLowerCase() === EMAIL ? index : -1).filter((index: number) => index >= 0);
+    const names = [domain && 'claimRoleByDomain', email && 'claimRoleByEmail', domain && 'registerAndClaimByDomainWithPasskey', email && 'registerAndClaimByEmailWithPasskey'].filter(Boolean) as string[];
+    expect(indices.map((index: number) => rules[2][index])).toEqual(names.map(name => oracle('ZkEmailInvites').getSighash(name)));
+    expect(indices.map((index: number) => rules[3][index])).toEqual(names.map(() => true));
+    expect(indices.map((index: number) => rules[4][index])).toEqual(names.map(name => name.startsWith('register') ? 1200000 : 800000));
+    expect(rules[1]).toHaveLength(10 + names.length);
+    expect(i.request.email).toBeUndefined();
+    expect(result.consequences.some(c => c.code === 'ALLOWLIST_EXECUTION_RACE' || c.code === 'INITIALIZE_EMAIL_CLAIM_BUDGET')).toBe(false);
+  });
+  it('does not infer opt-in from module presence, while the original role-email branch retains four selectors', () => {
+    const i = configuredEmailSponsorshipInput(); delete i.request.sponsorship!.includeConfiguredEmailRules;
+    delete i.context.data.email;
+    expect(decode(ready(planRoleConfiguration(i)).batch).find(c => c.name === 'setRulesBatch')!.args[1]).toHaveLength(10);
+    const old = decode(ready(planRoleConfiguration(roleInput())).batch).find(c => c.name === 'setRulesBatch')!.args;
+    const selectors = old[1].flatMap((target: string, index: number) => target.toLowerCase() === EMAIL ? [old[2][index]] : []);
+    expect(selectors).toEqual(['claimRoleByDomain', 'claimRoleByEmail', 'registerAndClaimByDomainWithPasskey', 'registerAndClaimByEmailWithPasskey'].map(name => oracle('ZkEmailInvites').getSighash(name)));
+  });
+  it('requires explicit separate claim-budget consent and reports its consequence', () => {
+    const i = configuredEmailSponsorshipInput(); i.context.data.sponsorship!.claimBudgetExists = knownFact(false);
+    code(planRoleConfiguration(i), 'CLAIM_BUDGET_INITIALIZATION_REQUIRED');
+    i.request.sponsorship!.initializeClaimBudget = true;
+    const result = planRoleConfiguration(i), calls = decode(ready(result).batch);
+    expect(calls.map(c => c.name)).toEqual(['createRole', 'setBudget', 'setRulesBatch', 'setBudget']);
+    expect(calls[3].args[1]).toBe(ethers.utils.solidityKeccak256(['uint8', 'bytes32'], [5, ethers.utils.hexZeroPad(EMAIL, 32)]));
+    expect(result.consequences).toContainEqual({ code: 'INITIALIZE_EMAIL_CLAIM_BUDGET', values: { email: EMAIL, capRaw: '250000000000000000', epochSeconds: '2592000' } });
+    i.context.data.sponsorship!.claimBudgetExists = knownFact(true);
+    expect(decode(ready(planRoleConfiguration(i)).batch).filter(c => c.name === 'setBudget')).toHaveLength(1);
+  });
+  const invalid: [string, (i: RolePlanningInput) => void][] = [
+    ['missing module', i => { delete i.context.data.email; }],
+    ['disabled module', i => { i.context.data.email!.enabled = knownFact(false); }],
+    ['missing enabled', i => { i.context.data.email!.enabled = unknownFact('missing'); }],
+    ['wrong authority', i => { i.context.data.email!.authorityMatches = knownFact(false); }],
+    ['missing authority', i => { i.context.data.email!.authorityMatches = unknownFact('missing'); }],
+    ['no minter authorization', i => { i.context.data.email!.minterAuthorized = knownFact(false); }],
+    ['unknown minter', i => { i.context.data.email!.minterAuthorized = unknownFact('missing'); }],
+    ['unknown domain mode', i => { i.context.data.email!.domainEnabled = unknownFact('missing'); }],
+    ['unknown email mode', i => { i.context.data.email!.emailEnabled = unknownFact('missing'); }],
+    ['both modes disabled', i => { i.context.data.email!.domainEnabled = knownFact(false); i.context.data.email!.emailEnabled = knownFact(false); }],
+    ['zero root', i => { i.context.data.email!.currentRoot = knownFact(ethers.constants.HashZero); }],
+    ['malformed root', i => { i.context.data.email!.currentRoot = knownFact('bad'); }],
+    ['missing root', i => { i.context.data.email!.currentRoot = unknownFact('missing'); }],
+    ['unknown claim budget', i => { i.context.data.sponsorship!.claimBudgetExists = unknownFact('missing'); }],
+    ['no sponsor authorization', i => { i.context.data.sponsorship!.operatorAuthorized = knownFact(false); }],
+    ['missing sponsor authorization', i => { i.context.data.sponsorship!.operatorAuthorized = unknownFact('missing'); }],
+    ['unbound email module', i => { delete i.context.source.contracts!.email; }],
+    ['wrong email module', i => { i.context.source.contracts!.email = B; }],
+    ['wrong expected module', i => { i.scope.contracts = { email: B }; }],
+    ['wrong executor', i => { i.context.source.contracts!.executor = B; }],
+    ['wrong field org', i => { i.context.data.email!.enabled = knownFact(true, { ...liveSource(EMAIL), orgId: HASH2 }); }],
+    ['wrong field contract', i => { i.context.data.email!.authorityMatches = knownFact(true, liveSource(B)); }],
+    ['wrong field chain', i => { i.context.data.email!.domainEnabled = knownFact(true, { ...liveSource(EMAIL), chainId: 42161 }); }],
+    ['wrong field block', i => { i.context.data.email!.emailEnabled = knownFact(true, { ...liveSource(EMAIL), block: { number: '99', hash: HASH2 } }); }],
+    ['stale context', i => { i.context.source.observedAt = 900; }],
+    ['unready authority', i => { i.context.data.readiness.membershipAuthority!.isRouterBound = false; }],
+    ['missing passkey opt-in', i => { i.request.sponsorship!.supportPasskeys = false; }],
+    ['malformed opt-in', i => { (i.request.sponsorship as any).includeConfiguredEmailRules = 'true'; }],
+  ];
+  it.each(invalid)('blocks atomically for %s', (_name, change) => {
+    const i = configuredEmailSponsorshipInput(); change(i);
+    const result = planRoleConfiguration(i); expect(result.status).toBe('blocked'); expect(result).not.toHaveProperty('data');
+  });
+  it('includes attached scoped facts and rechecks configured modes before submission', () => {
+    const i = configuredEmailSponsorshipInput(), email = i.context.data.email!;
+    for (const key of ['enabled', 'authorityMatches', 'domainEnabled', 'emailEnabled', 'currentRoot'] as const) {
+      (email as any)[key] = knownFact((email[key] as any).value, liveSource(EMAIL));
+    }
+    email.minterAuthorized = knownFact(true, liveSource(EXEC));
+    i.context.data.sponsorship!.operatorAuthorized = knownFact(true, liveSource(PM));
+    i.context.data.sponsorship!.claimBudgetExists = knownFact(true, liveSource(PM));
+    const plan = ready(planRoleConfiguration(i)); expect(validateRolePlanFreshness(plan, i).status).toBe('ready');
+    email.emailEnabled = knownFact(false, liveSource(EMAIL)); code(validateRolePlanFreshness(plan, i), 'STALE_ROLE_PLAN');
+  });
+});
 describe('ordered compound role/group configuration', () => {
   it('golden role preserves authority/composition/permission/vouch/manager/holders -> TM -> class -> admin -> sponsor -> email order', () => {
     const plan=ready(planRoleConfiguration(roleInput())),decoded=decode(plan.batch);

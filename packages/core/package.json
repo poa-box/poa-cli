@@ -167,6 +167,9 @@
     "api:update": "node scripts/check-api-surface.mjs --update"
   },
   "dependencies": {
+    "@ethersproject/bytes": "^5.8.0",
+    "@ethersproject/keccak256": "^5.8.0",
+    "@ethersproject/strings": "^5.8.0",
     "@openzeppelin/merkle-tree": "^1.0.8",
     "bs58": "^6.0.0",
     "poseidon-lite": "^0.3.0"

@@ -357,3 +357,60 @@ enum DDVProposalStatus {
   Ended
   Cleaned
 }
+
+type SubjectMembershipEvent @entity(immutable: true) {
+  id: Bytes! # txHash-logIndex
+  action: SubjectMembershipAction!
+  authority: MembershipAuthorityContract!
+  organization: Organization!
+  subject: Subject!
+  subjectId: BigInt!
+  membership: SubjectMembership!
+  user: Bytes!
+  userUsername: String
+  userEntity: User
+  # RoleRemoved(banned) — null for every other verb.
+  banned: Boolean
+  # The caller. Null for user-driven verbs whose event carries no actor (Claimed / Renounced /
+  # Reconciled — the actor IS the user, or nobody).
+  actor: Bytes
+  actorUsername: String
+  # True when the act came through the manager-delegation path (render "by Executives").
+  delegated: Boolean!
+  timestamp: BigInt!
+  block: BigInt!
+  transactionHash: Bytes!
+}
+
+type ConfigLintEvent @entity(immutable: true) {
+  id: Bytes! # txHash-logIndex
+  authority: MembershipAuthorityContract!
+  organization: Organization!
+  subject: Subject
+  subjectId: BigInt!
+  lintCode: Int!
+  code: ConfigLintCode!
+  emittedAt: BigInt!
+  emittedAtBlock: BigInt!
+  transactionHash: Bytes!
+}
+
+enum SubjectMembershipAction {
+  Offered
+  OfferWithdrawn
+  Granted
+  Claimed
+  Removed
+  Renounced
+  Reconciled
+}
+
+enum ConfigLintCode {
+  None
+  QuorumNoOp # default-ALLOW + vouch attestor on the same subject
+  VouchWithMaxMembers # vouch attestor + nonzero maxMembers
+  DefaultAllowStrongPerms # default-ALLOW on a subject holding real power
+  GroupFanout # perm key attached to many group subjects
+  SelfVoucher # voucherSubject == subject (legal; only an EMPTY subject deadlocks)
+  Unknown # forward-compat: a code this schema version predates
+}
