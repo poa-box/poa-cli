@@ -63,3 +63,6 @@ export * as deployment from './deployment/index';
 export * as tasks from './tasks/index';
 export * as treasury from './treasury/index';
 export * as governance from './governance/index';
+export type { IndexedTotalOptions } from './data/indexed-completeness';
+// Pure recovery contracts only; executor/optional-wallet peers remain explicit imports.
+export * as submissionRecovery from './execute/recovery';

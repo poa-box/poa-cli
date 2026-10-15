@@ -14,11 +14,13 @@
  */
 
 import { requireRawUint } from '../amounts';
-import { assertSourceRef, SourceSnapshot } from '../data/facts';
+import { assertSourceRef, knownFact, requireCompleteSnapshot, unknownFact, type Fact, SourceSnapshot } from '../data/facts';
 import { readIndexedPageFacts, type IndexedRow } from './protocol';
 import type { WorkPageOptions } from './project';
 import { FETCH_MODULES_PAGE, FETCH_COMPLETIONS_PAGE } from '../graph/documents/education';
 import type { GraphClient } from '../graph/client';
+import { checkedIndexedTotalQuery, indexedTotalCoverage, indexedTotalIssue, readIndexedTotalState, requireIndexedTotalOptions, type IndexedTotalOptions } from '../data/indexed-completeness';
+import { FETCH_ALL_COMPLETIONS_PAGE, FETCH_ALL_COMPLETIONS_STATE } from '../graph/documents/indexed-completeness';
 
 /** Indexed education-module metadata (from the pinned IPFS doc). */
 export interface EducationModuleMetadataRow {
@@ -212,4 +214,60 @@ export function listCompletionsComplete(options: WorkPageOptions): Promise<Sourc
       if (String(row.learner).toLowerCase() !== options.source.account!.toLowerCase()) throw new Error('Learner mismatch');
       requireRawUint(row.completedAt as string); requireRawUint(row.completedAtBlock as string);
     } });
+}
+
+function validateAllCompletionRow(row: IndexedRow, options: IndexedTotalOptions): void {
+  const variables = educationScope(options);
+  validateEducationRow(row, options);
+  if (typeof row.learner !== 'string' || !/^0x[\da-f]{40}$/i.test(row.learner) || /^0x0{40}$/i.test(row.learner)) throw new Error('INVALID_LEARNER');
+  const moduleId = requireRawUint(row.moduleId as string);
+  if (row.id !== `${variables.hub}-${moduleId}-${row.learner.toLowerCase()}` || (row.module as IndexedRow)?.id !== `${variables.hub}-${moduleId}`
+    || typeof row.transactionHash !== 'string' || !/^0x[\da-f]{64}$/i.test(row.transactionHash)) throw new Error('INVALID_COMPLETION_IDENTITY');
+  requireRawUint(row.completedAt as string);
+  if (BigInt(requireRawUint(row.completedAtBlock as string)) > BigInt(options.source.block!.number)) throw new Error('COMPLETION_AFTER_SNAPSHOT');
+}
+/** All learners, independently keyset-paged rather than nested under modules
+ * or filtered through historical organization users. No account-scoped source
+ * is accepted for an organization aggregate. */
+export function listAllCompletionsComplete(options: IndexedTotalOptions): Promise<SourceSnapshot<readonly IndexedRow[]>> {
+  requireIndexedTotalOptions(options);
+  const variables = educationScope(options);
+  if (!/^0x[\da-f]{64}$/i.test(variables.orgId)) throw new Error('EDUCATION_ORGANIZATION_SCOPE_REQUIRED');
+  return readIndexedPageFacts({ ...options, query: checkedIndexedTotalQuery(options.query), variables, document: FETCH_ALL_COMPLETIONS_PAGE, collection: 'moduleCompletions', initialCursor: '',
+    validateRow: row => validateAllCompletionRow(row, options) });
+}
+
+export interface EducationCompletionTotals {
+  completions: Fact<string>;
+  learners: Fact<string>;
+  observedCompletions: string;
+  observedLearners: readonly string[];
+  /** The completion entity does not record the reward at completion time.
+   * Multiplying by today's mutable module payout would invent history. */
+  rewardTotalRaw: Fact<never>;
+  evidence: { state: SourceSnapshot<IndexedRow | null>; completions: SourceSnapshot<readonly IndexedRow[]> };
+}
+
+export async function readEducationCompletionTotals(input: IndexedTotalOptions): Promise<SourceSnapshot<EducationCompletionTotals>> {
+  requireIndexedTotalOptions(input);
+  const variables = educationScope(input);
+  const options = { ...input, query: checkedIndexedTotalQuery(input.query) };
+  const state = await readIndexedTotalState(options, FETCH_ALL_COMPLETIONS_STATE, { hub: variables.hub }, 'educationHubContract', variables.hub);
+  const completions = await listAllCompletionsComplete(options);
+  const issues: { code: string }[] = [];
+  try {
+    const hub = requireCompleteSnapshot(state, { scope: input.source, indexed: true, snapshot: 'pinned', block: input.source.block });
+    if (!hub || hub.id !== variables.hub || (hub.organization as IndexedRow)?.id?.toString().toLowerCase() !== variables.orgId) throw new Error('EDUCATION_HUB_SCOPE_MISMATCH');
+  } catch (error) { issues.push(indexedTotalIssue(error)); }
+  const coverage = indexedTotalCoverage({ state, completions }, issues);
+  const source = completions.source.snapshot === 'pinned' ? completions.source : state.source;
+  // Invalid diagnostic rows remain in evidence but never add observed identities.
+  const rows = completions.data.filter(row => {
+    try { validateAllCompletionRow(row, options); return true; } catch { return false; }
+  });
+  const observedCompletions = String(rows.length), observedLearners = [...new Set(rows.map(row => String(row.learner).toLowerCase()))].sort();
+  return { source, coverage, data: { observedCompletions, observedLearners,
+    completions: coverage.status === 'complete' ? knownFact(observedCompletions, source) : unknownFact('EDUCATION_TOTAL_INCOMPLETE', source),
+    learners: coverage.status === 'complete' ? knownFact(String(observedLearners.length), source) : unknownFact('EDUCATION_TOTAL_INCOMPLETE', source),
+    rewardTotalRaw: unknownFact('COMPLETION_PAYOUT_NOT_INDEXED', source), evidence: { state, completions } } };
 }

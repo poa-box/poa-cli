@@ -28,3 +28,4 @@ export * as financialhistoryDocuments from './financial-history';
 export * as identityDocuments from './identity';
 export * as inflowsDocuments from './inflows';
 export * as protocolDocuments from './protocol';
+export * as indexedCompletenessDocuments from './indexed-completeness';

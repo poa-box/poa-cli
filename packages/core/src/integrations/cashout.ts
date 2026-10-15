@@ -4,6 +4,9 @@ import { ethers } from 'ethers';
 import { parseDecimalAmountToRaw, requireRawUint } from '../amounts';
 import { assertPlanScope, assertSourceBlock, assertSourceRef, knownFact, requireCompleteSnapshot, unknownFact, type Fact, type SourceBlock, type SourceSnapshot } from '../data/facts';
 import type { TxIntent } from '../tx/intent';
+import { checkedIndexedTotalQuery, indexedTotalCoverage, indexedTotalIssue, readIndexedTotalState, requireIndexedTotalOptions, type IndexedTotalOptions } from '../data/indexed-completeness';
+import { FETCH_CASHOUT_DISCOVERY_PAGE, FETCH_CASHOUT_DISCOVERY_STATE } from '../graph/documents/indexed-completeness';
+import { readIndexedPageFacts, type IndexedRow } from '../reads/protocol';
 
 export const CASHOUT_SCHEMA_V1 = Object.freeze({ version: 1, tokenDecimals: 6, conversionRateDecimals: 18, payloadBytes: 224 } as const);
 export const CASHOUT_PARAMS_TUPLE = [{ type: 'tuple', components: [
@@ -123,4 +126,71 @@ export function buildWithdrawDeposit(input: { descriptor: CashoutDescriptor; dep
   const depositId = requireRawUint(input.depositId);
   return { to: input.descriptor.escrow, abi: [...CASHOUT_ESCROW_ABI_V1], method: 'withdrawDeposit', args: [depositId], value: '0',
     meta: { domain: 'cashout', action: 'withdraw-deposit', summary: { chainId: input.descriptor.chainId, token: input.descriptor.token, depositId } } };
+}
+
+export interface CashoutDiscoveryRow {
+  id: string; requestHash: string; depositor: { id: string }; pendingFor: { id: string } | null;
+  status: 'FAILED' | 'RECOVERED' | 'DEPOSITED'; amount: string; paymentMethod: string | null; failureReason: string | null;
+  createdAtBlock: string; createdAtTimestamp: string; createdTxHash: string;
+}
+export interface CashoutDiscovery {
+  /** Includes RECOVERED rows: this mapping matches recovery events by wallet
+   * and amount FIFO, which cannot prove request identity for equal amounts.
+   * The pinned relay getter must settle these candidates too. */
+  failed: readonly CashoutDiscoveryRow[];
+  deposited: readonly CashoutDiscoveryRow[];
+  /** Discovery is not proof of an unfilled or recoverable balance. The host
+   * must still settle every candidate against bounded receipts and pinned RPC. */
+  outstandingCount: Fact<never>;
+  scope: 'indexed-relay-candidates';
+  evidence: { state: SourceSnapshot<IndexedRow | null>; failed: SourceSnapshot<readonly IndexedRow[]>; deposited: SourceSnapshot<readonly IndexedRow[]> };
+}
+
+/** Complete candidate discovery for the existing single-relay subgraph schema.
+ * Both status streams have independent strict Bytes-ID cursors and finite caps.
+ * Does not query a solver, request a signature or change initiation capability.
+ * Hosts must bind this endpoint to the descriptor's chain and single relay. */
+export async function readCashoutDiscovery(input: IndexedTotalOptions & { descriptor: CashoutDescriptor }): Promise<SourceSnapshot<CashoutDiscovery>> {
+  descriptor(input.descriptor); requireIndexedTotalOptions(input, true);
+  if (input.source.orgId || input.source.chainId !== input.descriptor.chainId
+    || input.source.contract!.toLowerCase() !== input.descriptor.relay.toLowerCase()) throw new Error('CASHOUT_DISCOVERY_SCOPE_MISMATCH');
+  const wallet = address(input.source.account!).toLowerCase(), relay = input.descriptor.relay.toLowerCase();
+  const options = { ...input, query: checkedIndexedTotalQuery(input.query) };
+  const state = await readIndexedTotalState({ ...options, query: async (document, variables, source) => {
+    const response = await options.query(document, variables, source);
+    // The schema has no request.relay relation. Every request handler creates a
+    // RelayContract, so a short first:2 list must prove the single-relay universe.
+    const relays = response.relayContracts;
+    if (!Array.isArray(relays) || relays.length !== 1 || relays[0]?.id !== relay) throw new Error('CASHOUT_SINGLE_RELAY_COVERAGE_UNPROVEN');
+    return response;
+  } }, FETCH_CASHOUT_DISCOVERY_STATE, { relay }, 'relayContract', relay);
+  const read = (status: 'FAILED' | 'DEPOSITED') => {
+    const valid = new Set<IndexedRow>();
+    const statuses = status === 'FAILED' ? ['FAILED', 'RECOVERED'] : ['DEPOSITED'];
+    return readIndexedPageFacts({ ...options, document: FETCH_CASHOUT_DISCOVERY_PAGE, collection: 'cashOutRequests', initialCursor: '0x', variables: { wallet, statuses },
+      validateRow: row => {
+        bytes32(row.id as string); bytes32(row.requestHash as string); bytes32(row.createdTxHash as string);
+        if (row.id !== String(row.requestHash).toLowerCase() || !statuses.includes(String(row.status))
+          || address((row.depositor as IndexedRow)?.id as string).toLowerCase() !== wallet
+          || (row.status === 'FAILED' ? address((row.pendingFor as IndexedRow)?.id as string).toLowerCase() !== wallet : row.pendingFor !== null)) throw new Error('CASHOUT_CANDIDATE_SCOPE_MISMATCH');
+        requireRawUint(row.amount as string); requireRawUint(row.createdAtTimestamp as string);
+        if (BigInt(requireRawUint(row.createdAtBlock as string)) > BigInt(input.source.block!.number)) throw new Error('CASHOUT_CANDIDATE_AFTER_SNAPSHOT');
+        if (row.paymentMethod !== null) bytes32(row.paymentMethod as string);
+        if (row.failureReason !== null && (typeof row.failureReason !== 'string' || !/^0x(?:[\da-f]{2})*$/i.test(row.failureReason))) throw new Error('CASHOUT_FAILURE_REASON_UNAVAILABLE');
+        valid.add(row);
+      } }).then(snapshot => ({ snapshot, rows: snapshot.data.filter(row => valid.has(row)) as unknown as CashoutDiscoveryRow[] }));
+  };
+  const [failed, deposited] = await Promise.all([read('FAILED'), read('DEPOSITED')]);
+  const issues: { code: string; id?: string }[] = [];
+  try {
+    const current = requireCompleteSnapshot(state, { scope: input.source, indexed: true, snapshot: 'pinned', block: input.source.block });
+    if (!current || current.id !== relay || address(current.usdc as string).toLowerCase() !== input.descriptor.token.toLowerCase()
+      || address(current.escrow as string).toLowerCase() !== input.descriptor.escrow.toLowerCase()) throw new Error('CASHOUT_INDEX_DESCRIPTOR_UNPROVEN');
+  } catch (error) { issues.push(indexedTotalIssue(error)); }
+  const seen = new Set(failed.rows.map(row => row.id));
+  for (const row of deposited.rows) if (seen.has(row.id)) issues.push({ code: 'CASHOUT_STATUS_STREAM_CONFLICT', id: row.id });
+  const coverage = indexedTotalCoverage({ state, failed: failed.snapshot, deposited: deposited.snapshot }, issues);
+  const source = failed.snapshot.source.snapshot === 'pinned' ? failed.snapshot.source : state.source;
+  return { source, coverage, data: { failed: failed.rows, deposited: deposited.rows, outstandingCount: unknownFact('LIVE_RECOVERY_STATE_REQUIRED', source),
+    scope: 'indexed-relay-candidates', evidence: { state, failed: failed.snapshot, deposited: deposited.snapshot } } };
 }

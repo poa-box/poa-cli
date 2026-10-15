@@ -5,3 +5,4 @@ export * from './elections';
 export * from './capabilities';
 export * from './validation';
 export * from './dd-authorization';
+export * from './provenance';

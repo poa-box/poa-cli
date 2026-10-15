@@ -7,3 +7,4 @@ export * from './ethers';
 export * from './sponsored';
 
 export * from './outcome';
+export * from './recovery';

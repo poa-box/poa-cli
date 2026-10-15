@@ -310,3 +310,74 @@ by this package candidate.
 The packaged [frontend adoption guide](docs/frontend-adoption.md) supplies the
 host-boundary checklist and domain map. Full lane contracts are available in
 [repository package docs](https://github.com/poa-box/poa-cli/tree/main/packages/core/docs).
+
+
+## Gap-closure candidate: indexed totals and recovery
+
+These additions are available through the existing wildcard leaves and public
+barrels. They do not establish frontend adoption or complete deployed history.
+
+| Leaf | Barrel / root route | Contract |
+|---|---|---|
+| `reads/member-totals` | `reads.memberTotals` | `readCurrentMemberTotals`: distinct current member accounts, with accepted-seat reconciliation and system/root exclusions |
+| `reads/token` | `reads.token` | `readTokenHolderTotals`: positive balances and raw sum reconciled against the same-block supply |
+| `reads/education` | `reads.education` | `listAllCompletionsComplete`, `readEducationCompletionTotals`: all learners, completions and distinct learner accounts |
+| `integrations/cashout` | `integrations` only | `readCashoutDiscovery`: bounded independent failed/recovered and deposited candidate streams |
+| `reads/provenance` | `reads` | Exact canonical transaction proof, freshness and direct/single-operation call decoding |
+| `governance/provenance` | `governance` | `readSubjectCreationProvenance`, `recoverSubjectCreationHistory`: exact-proposal creation intent; unknown remains unknown |
+| `email/recovery` | `email` | Proof-gated legacy pending credential migration and existing-account restart guidance |
+| `execute/recovery` | `execute`, root `submissionRecovery` | Durable record codec, owner/revision fences, exact EOA/UserOperation reconciliation; no transport or browser state |
+
+`IndexedTotalOptions` is a public type from `data` and the root. Totals require
+an explicit indexed endpoint/chain/organization/contract and a pinned block,
+unchanged documents/variables, same-response block metadata, explicit `pageSize`
+and `maxPages`, and complete evidence. Use `requireCompleteSnapshot` with the
+expected scope/block before consuming known totals; retain each field's `Fact`
+status. Exhausting the page budget, contradictory counters, missing rows or an
+unavailable schema never becomes a zero. These are display snapshots, not live
+write authorization. Education payout totals remain unknown because historical
+payout amounts are not indexed; current module reward values cannot recover them.
+
+Cashout discovery is an isolated external integration, deliberately absent from
+the root. It requires the resolved wallet and exact relay descriptor/source,
+validates the deployed single-relay universe, and pages by actual Bytes IDs.
+`FAILED` and `RECOVERED` are both candidates; FIFO recovery matching is not a
+proof that the individual balance is gone. The host must check pinned relay
+getters and deposited receipts/getDeposit, preserve failed RPC evidence, and
+keep the passkey initiation gate. `outstandingCount` stays unknown.
+
+Native inflow/revenue completeness remains externally blocked. Recorded inflow
+readers expose their documented event coverage only. Eventless Executor receives
+and causal revenue are not proven by balances, new provider interfaces or an
+undeployed indexer. Do not label those deployed-data gaps closed.
+
+EOA reconciliation always requires `getTransaction`, `getTransactionReceipt`,
+`getBlock` (canonical lookup by decimal block number) and `getChainId`.
+Transactions must include exact chain/sender/nonce/to/input/value and matching
+receipt inclusion number/hash. Canonical inclusion and receipt/chain identity
+are rechecked before settlement. Missing fields or readers keep the barrier.
+The host adapts actual ethers/viem RPC methods; use explicit `BigInt(number)` for
+viem's block-number argument and preserve transaction `chainId`, `blockNumber`
+and `blockHash`. The default missing-hash search reads at most 16 blocks from
+the persisted pre-send block (configurable hard maximum 64). Outside this window,
+`reconcileSubmissionRecovery(record, readers, { candidateTxHash })` safely checks
+one explicit EOA hash without scanning, mutating the saved record, signing or
+resending. Foreign sender/nonce/chain stays unknown; a different call consuming
+the exact mined nonce is `replaced`, never original success. UserOperations settle
+only from the expected hash/EntryPoint/sender/nonce event. RPC observations are a
+host trust boundary, not a light-client proof; hosts choose confirmation depth.
+
+The host owns atomic Web Locks, durable storage, browser lifecycle and a final
+compare-and-clear under the lock. Re-read the current record and check the full
+scope/owner/attempt/revision fence after every await; stale recovery must not
+clear a newer record. Await journal acquisition/release and clear results.
+Legacy records lacking call/source provenance remain unresolved, never guessed.
+No timeout or absence authorizes a resend.
+
+Historical recovery uses exact IDs/hashes and a bounded canonical proof, with
+both selected and inclusion block checks. Hosts cap aggregate requests/cache by
+scope and snapshot. Proof objects cannot be fabricated/copied into verified
+provenance. Creation intent is not proof of execution or an assigned subject ID.
+Email migration preserves the original audit record and never authorizes account
+activation; missing original transaction/source/initiator evidence needs a
+separately authenticated existing account, fresh proof and current invite state.

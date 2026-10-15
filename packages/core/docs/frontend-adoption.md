@@ -652,3 +652,40 @@ separate deployment evidence. Backend backfills and native-event causality
 remain backend work. Package regression checks and the local release artifact
 are available for review; final packed independent, browser and live approval
 are separate stages.
+
+
+## Indexed totals and recovery integration obligations
+
+Use the gap-closure API table and availability limits in the packaged README.
+The package implements the readers and pure recovery contracts; React adoption,
+cache ownership, Web Locks, wallet transports and actual Test6 verification are
+host work. A published/exported function does not demonstrate deployed data.
+
+* Route the unchanged indexed documents to the exact source endpoint. Require a
+  matching complete pinned snapshot before replacing an unknown member, positive
+  holder or all-learner total. Preserve unknown historical education rewards.
+* Replace capped cashout lists with `readCashoutDiscovery`; independently verify
+  every candidate with pinned relay/receipt reads. Preserve stream failures and
+  the passkey initiation gate. Do not expose an invented outstanding total.
+* Recover only explicit historical proposal IDs with independent org/voting/
+  authority bindings. Keep unproven creation markers unknown and preserve coverage.
+* Keep legacy pending email records byte-for-byte; persist a separate recovery-only
+  migration audit. Require independently authenticated credentials before login/
+  activation, and never reconstruct a missing original initiator from calldata.
+* Await journal acquisition before prepare/sign work and release in `finally`.
+  Guard account/chain/context after acquisition and before send, and check pending
+  records across the account. Read-only recovery clear must acquire the same lock,
+  compare full scope/owner/attempt/revision with the reread record and return an
+  explicit success boolean. Await it in UI and retain the record on false/error.
+* Supply exact transaction and canonical-block readers to EOA reconciliation.
+  For missing hashes outside the prefix, offer an explicit candidate hash checked
+  by core; never mutate saved call identity or resend. Display `replaced` as a
+  different action consuming the nonce. Preserve unresolved legacy descriptors.
+* Verify final installed-package behavior in tests and then under the assigned
+  single browser/server owner, with fresh per-write hashes and domain/current-state
+  evidence. Old confirmed submissions must never be replayed.
+
+Exhaustive native inflows/causal revenue and absent original historical enrollment
+provenance remain unavailable until real approved source evidence exists. An
+indexer implementation without production deployment and demonstrated population
+cannot close those gaps.

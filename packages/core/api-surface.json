@@ -192,7 +192,16 @@
     "unknownFact"
   ],
   "data/index": [
-    "* (./facts)"
+    "* (./facts)",
+    "IndexedTotalOptions"
+  ],
+  "data/indexed-completeness": [
+    "IndexedTotalOptions",
+    "checkedIndexedTotalQuery",
+    "indexedTotalCoverage",
+    "indexedTotalIssue",
+    "readIndexedTotalState",
+    "requireIndexedTotalOptions"
   ],
   "deployment/bootstrap": [
     "BootstrapAmount",
@@ -232,7 +241,8 @@
   ],
   "email/index": [
     "* (./allowlist)",
-    "* (./proof)"
+    "* (./proof)",
+    "* (./recovery)"
   ],
   "email/proof": [
     "CircuitInputHints",
@@ -249,6 +259,15 @@
     "projectGroth16Proof",
     "requireEmailClaimer",
     "requireEmailProofProjection"
+  ],
+  "email/recovery": [
+    "EmailRecoveryScope",
+    "LegacyPendingEmailCredential",
+    "MigratedPendingEmailRecord",
+    "VerifiedPendingEmailRecovery",
+    "migratePendingEmailCredential",
+    "pendingEmailRestartGuidance",
+    "readPendingEmailRecovery"
   ],
   "encoding": [
     "bytes32ToIpfsCid",
@@ -329,6 +348,7 @@
   "execute/index": [
     "* (./ethers)",
     "* (./outcome)",
+    "* (./recovery)",
     "* (./sponsored)"
   ],
   "execute/outcome": [
@@ -337,6 +357,31 @@
     "UserOperationExpectation",
     "UserOperationOutcome",
     "decodeUserOperationOutcome"
+  ],
+  "execute/recovery": [
+    "RecoveryBlock",
+    "RecoveryPhase",
+    "RecoveryReceipt",
+    "RecoveryTransaction",
+    "SubmissionFence",
+    "SubmissionRecoveryEvent",
+    "SubmissionRecoveryOptions",
+    "SubmissionRecoveryOutcome",
+    "SubmissionRecoveryReaders",
+    "SubmissionRecoveryRecord",
+    "SubmissionRecoveryResult",
+    "SubmissionScope",
+    "assertSubmissionFence",
+    "canAbandonSubmissionRecovery",
+    "createSubmissionRecovery",
+    "decodeReceiptBoundUserOperationOutcome",
+    "evaluateEoaRecoveryCandidate",
+    "normalizeSubmissionRecovery",
+    "normalizeSubmissionScope",
+    "reconcileSubmissionRecovery",
+    "sameSubmissionScope",
+    "submissionIntentKey",
+    "transitionSubmissionRecovery"
   ],
   "execute/sponsored": [
     "ENTRY_POINT",
@@ -399,6 +444,7 @@
     "* (./dd-authorization)",
     "* (./elections)",
     "* (./power)",
+    "* (./provenance)",
     "* (./role-planning)",
     "* (./validation)"
   ],
@@ -416,6 +462,11 @@
     "integerSquareRoot",
     "projectProposalPowerSnapshot",
     "rankAllocationWeights"
+  ],
+  "governance/provenance": [
+    "VerifiedSubjectCreation",
+    "readSubjectCreationProvenance",
+    "recoverSubjectCreationHistory"
   ],
   "governance/role-planning": [
     "PlanningFreshness",
@@ -531,6 +582,7 @@
     "* as educationDocuments (./education)",
     "* as financialhistoryDocuments (./financial-history)",
     "* as identityDocuments (./identity)",
+    "* as indexedCompletenessDocuments (./indexed-completeness)",
     "* as inflowsDocuments (./inflows)",
     "* as infrastructureDocuments (./infrastructure)",
     "* as orgDocuments (./org)",
@@ -546,6 +598,16 @@
     "* as votingDocuments (./voting)",
     "* as vouchDocuments (./vouch)",
     "* as zkemailDocuments (./zkemail)"
+  ],
+  "graph/documents/indexed-completeness": [
+    "FETCH_ALL_COMPLETIONS_PAGE",
+    "FETCH_ALL_COMPLETIONS_STATE",
+    "FETCH_CASHOUT_DISCOVERY_PAGE",
+    "FETCH_CASHOUT_DISCOVERY_STATE",
+    "FETCH_CURRENT_MEMBER_TOTAL_PAGE",
+    "FETCH_CURRENT_MEMBER_TOTAL_STATE",
+    "FETCH_TOKEN_HOLDER_TOTAL_PAGE",
+    "FETCH_TOKEN_HOLDER_TOTAL_STATE"
   ],
   "graph/documents/inflows": [
     "FETCH_HISTORICAL_POTS_PAGE",
@@ -755,9 +817,11 @@
     "* as metadata (./metadata)",
     "* as reads (./reads)",
     "* as sponsorship (./sponsorship/index)",
+    "* as submissionRecovery (./execute/recovery)",
     "* as tasks (./tasks/index)",
     "* as treasury (./treasury/index)",
-    "* as zkemail (./zkemail)"
+    "* as zkemail (./zkemail)",
+    "IndexedTotalOptions"
   ],
   "integrations/cashout": [
     "CASHOUT_ESCROW_ABI_V1",
@@ -766,6 +830,8 @@
     "CASHOUT_SCHEMA_V1",
     "CashoutDeposit",
     "CashoutDescriptor",
+    "CashoutDiscovery",
+    "CashoutDiscoveryRow",
     "CashoutLog",
     "CashoutPayload",
     "CashoutRecoveryFacts",
@@ -775,7 +841,8 @@
     "decodeCashoutDeposit",
     "encodeCashoutPayload",
     "prepareCashoutPayload",
-    "projectRecoveryFacts"
+    "projectRecoveryFacts",
+    "readCashoutDiscovery"
   ],
   "integrations/index": [
     "* (./cashout)"
@@ -954,6 +1021,7 @@
   ],
   "reads/education": [
     "EducationCompletionRow",
+    "EducationCompletionTotals",
     "EducationModuleForUpdateRow",
     "EducationModuleMetadataRow",
     "EducationModuleRow",
@@ -962,9 +1030,11 @@
     "FETCH_MODULE_TITLE",
     "getModuleForUpdate",
     "getModuleTitle",
+    "listAllCompletionsComplete",
     "listCompletionsComplete",
     "listEducationModules",
-    "listEducationModulesComplete"
+    "listEducationModulesComplete",
+    "readEducationCompletionTotals"
   ],
   "reads/identity": [
     "IdentityAccount",
@@ -974,10 +1044,12 @@
     "readIdentityFacts"
   ],
   "reads/index": [
+    "* (./provenance)",
     "* (./resolve)",
     "* as authority (./authority)",
     "* as education (./education)",
     "* as identity (./identity)",
+    "* as memberTotals (./member-totals)",
     "* as org (./org)",
     "* as paymaster (./paymaster)",
     "* as project (./project)",
@@ -988,6 +1060,10 @@
     "* as user (./user)",
     "* as vote (./vote)",
     "* as zkemail (./zkemail)"
+  ],
+  "reads/member-totals": [
+    "CurrentMemberTotals",
+    "readCurrentMemberTotals"
   ],
   "reads/org": [
     "FETCH_MEMBERS",
@@ -1066,6 +1142,17 @@
     "readSolidarityFacts",
     "sumIndexedOrgGasFacts"
   ],
+  "reads/provenance": [
+    "CanonicalTransaction",
+    "ExactTransactionCall",
+    "ProvenanceFreshness",
+    "ProvenanceProvider",
+    "decodeCanonicalCall",
+    "exactTransactionCall",
+    "readCanonicalTransaction",
+    "requireCanonicalTransaction",
+    "requireProvenanceFreshness"
+  ],
   "reads/resolve": [
     "OrgModules",
     "requireModule",
@@ -1120,10 +1207,12 @@
   ],
   "reads/token": [
     "TokenBalanceSnapshot",
+    "TokenHolderTotals",
     "TokenRequestRow",
     "getTokenBalance",
     "listTokenRequests",
     "listUserTokenRequests",
+    "readTokenHolderTotals",
     "resolveParticipationToken"
   ],
   "reads/treasury": [
