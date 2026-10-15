@@ -151,7 +151,7 @@ export const FETCH_VOUCH_STATUS = `
  * is acceptable for a listing but NOT for the quorum maths in FETCH_VOUCH_STATUS above.
  */
 export const FETCH_VOUCHES_FOR_ORG = `
-  query FetchVouchesForOrg($eligibilityModuleId: Bytes!) {
+  query FetchVouchesForOrg($eligibilityModuleId: String!) {
     vouches(
       where: { eligibilityModule: $eligibilityModuleId, isActive: true }
       orderBy: createdAt

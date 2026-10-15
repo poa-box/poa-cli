@@ -604,6 +604,7 @@
     "FETCH_PROJECT_TASK_PAGE",
     "FETCH_TASKS_PAGE",
     "FETCH_TASKS_PAGE_LEGACY",
+    "FETCH_TASK_APPLICATIONS_PAGE",
     "FETCH_TASK_CLAIM_EXPIRIES_PAGE",
     "FETCH_TASK_DATA",
     "FETCH_TASK_DATA_LEGACY",
@@ -1084,6 +1085,9 @@
     "SubgraphProject",
     "SubgraphRolePermission",
     "SubgraphTask",
+    "TaskApplicantInput",
+    "TaskApplicationData",
+    "TaskApplicationPageOptions",
     "TaskListRow",
     "TaskPermsRead",
     "TaskPermsResult",
@@ -1104,10 +1108,12 @@
     "fetchTaskStats",
     "fetchTaskSubmissionHistory",
     "findSubgraphTask",
+    "listTaskApplicationsComplete",
     "listTaskClaimExpiriesComplete",
     "listTasks",
     "listTasksComplete",
     "normalizeRoot",
+    "projectTaskApplicant",
     "resolveProjectFromList",
     "taskEntityId",
     "taskPermsTiers"
@@ -1301,6 +1307,7 @@
   ],
   "tasks/index": [
     "* (./policy)",
+    "* (./project-creator)",
     "* (./receipts)"
   ],
   "tasks/policy": [
@@ -1313,6 +1320,13 @@
     "decideTaskActions",
     "decideTaskRelease",
     "projectTaskPermissionMask"
+  ],
+  "tasks/project-creator": [
+    "ProjectCreatorData",
+    "ProjectCreatorFacts",
+    "ProjectCreatorInput",
+    "ProjectCreatorSources",
+    "deriveProjectCreatorAuthorization"
   ],
   "tasks/receipts": [
     "TaskCreationEvidence",

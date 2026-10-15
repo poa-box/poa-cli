@@ -1,10 +1,11 @@
 import { requireRawUint } from '../amounts';
-import { assertPlanScope, assertSourceBlock, Fact, PlanScope, requireCompleteSnapshot, SourceSnapshot } from '../data/facts';
+import { assertPlanScope, assertSourceBlock, assertSourceRef, Fact, PlanScope, requireCompleteSnapshot, SourceSnapshot } from '../data/facts';
 import type { EffectivePermission } from '../authority/permissions';
 import { AUTHORITY_KEYS, projectContext } from '../tx/authority';
 import { knownFact, unknownFact } from '../data/facts';
 import { PERM_BITS } from '../perms';
 import { effectiveTaskDeadlineSeconds, TASK_STATUS } from '../task-lens';
+import { deriveProjectCreatorAuthorization, ProjectCreatorInput, ProjectCreatorSources } from './project-creator';
 
 export type TaskActionReason = 'BAD_STATUS' | 'NOT_FOUND' | 'MISSING_PERMISSION' | 'SELF_REVIEW_REQUIRED'
   | 'NOT_CLAIMER' | 'CLAIM_NOT_EXPIRED' | 'REQUIRES_APPLICATION' | 'APPLICATION_NOT_REQUIRED'
@@ -19,7 +20,13 @@ export interface TaskPolicyFacts {
   absoluteDeadline: Fact<number>; claimDeadline: Fact<number>;
   requiresApplication: Fact<boolean>; alreadyApplied: Fact<boolean>;
 }
-export interface TaskPolicyInput { projectId: string; snapshot: SourceSnapshot<TaskPolicyFacts>; scope: PlanScope; now: number }
+export interface TaskPolicyInput {
+  projectId: string; snapshot: SourceSnapshot<TaskPolicyFacts>; scope: PlanScope; now: number;
+  /** Opt-in creator evidence for deleteProject ONLY. Indexed policy evidence must
+   * have an explicit expected endpoint and the same pinned canonical block.
+   * Other actions and their existing field-source validation are unchanged. */
+  projectCreator?: ProjectCreatorInput & { sources: ProjectCreatorSources };
+}
 export type TaskAction = 'create' | 'createAndAssign' | 'claim' | 'apply' | 'assign' | 'submit'
   | 'complete' | 'reject' | 'cancel' | 'editFull' | 'editMetadata' | 'release' | 'budget' | 'deleteProject';
 const allow = (): TaskActionDecision => ({ state: 'allowed', reasons: [] });
@@ -135,7 +142,23 @@ export function decideTaskActions(input: TaskPolicyInput): Record<TaskAction, Ta
       : code === 'SCOPE_MISMATCH' || code === 'BLOCK_MISMATCH' ? 'SOURCE_SCOPE_MISMATCH' : 'INVALID_FACT';
     return Object.fromEntries(actions.map(a => [a, unknown(reason)])) as Record<TaskAction, TaskActionDecision>;
   }
-  return Object.fromEntries(actions.map(a => [a, decide(f, a, input.now)])) as Record<TaskAction, TaskActionDecision>;
+  const decisions = Object.fromEntries(actions.map(a => [a, decide(f, a, input.now)])) as Record<TaskAction, TaskActionDecision>;
+  if (input.projectCreator) {
+    try {
+      if (!input.scope.endpoint || !input.projectCreator.sources?.block.hash) throw new Error('Expected creator/policy sources required');
+      assertPlanScope(input.projectCreator.scope, { ...input.scope, endpoint: undefined, method: undefined });
+      requireCompleteSnapshot(input.snapshot, { scope: input.scope, indexed: true, snapshot: 'pinned', block: input.projectCreator.sources.block });
+      for (const fact of [f.projectId, f.actor, f.projectExists]) if (fact.source) {
+        assertSourceRef(fact.source);
+        assertPlanScope(fact.source, { ...input.scope, contracts: undefined });
+        if (!fact.source.indexed || fact.source.snapshot !== 'pinned') throw new Error('Pinned indexed project fact required');
+        assertSourceBlock(fact.source.block, input.projectCreator.sources.block);
+      }
+      const creator = deriveProjectCreatorAuthorization(input.projectCreator);
+      decisions.deleteProject = decide({ ...f, creator: creator.creator, executor: creator.executor }, 'deleteProject', input.now);
+    } catch { decisions.deleteProject = unknown('SOURCE_SCOPE_MISMATCH'); }
+  }
+  return decisions;
 }
 export function decideTaskRelease(input: TaskPolicyInput): TaskActionDecision { return decideTaskActions(input).release; }
 export function decideProjectBudget(input: TaskPolicyInput): TaskActionDecision { return decideTaskActions(input).budget; }

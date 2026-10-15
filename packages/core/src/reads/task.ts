@@ -11,10 +11,10 @@
  */
 
 import { requireRawUint } from '../amounts';
-import type { SourceSnapshot } from '../data/facts';
+import { Fact, knownFact, PlanScope, requireCompleteSnapshot, SourceBlock, SourceRef, SourceSnapshot, unknownFact } from '../data/facts';
 import { readIndexedPageFacts, type ProtocolQuery, type IndexedRow } from './protocol';
 import { requireWorkSource, validateWorkProject, readWorkPageFacts, type WorkPageOptions } from './project';
-import { FETCH_TASKS_PAGE, FETCH_TASKS_PAGE_LEGACY, FETCH_TASK_CLAIM_EXPIRIES_PAGE } from '../graph/documents/task';
+import { FETCH_TASKS_PAGE, FETCH_TASKS_PAGE_LEGACY, FETCH_TASK_CLAIM_EXPIRIES_PAGE, FETCH_TASK_APPLICATIONS_PAGE } from '../graph/documents/task';
 import type { GraphClient, FieldFallbackTier } from '../graph/client';
 import {
   projectsDataTiers,
@@ -643,4 +643,115 @@ export function listTaskClaimExpiriesComplete(options: WorkPageOptions & { task:
       if (task?.id !== taskId || task?.taskManager?.toLowerCase() !== options.source.contract!.toLowerCase()) throw new Error('Expiry task mismatch');
       requireRawUint(row.expiredAt as string); requireRawUint(row.expiredAtBlock as string);
     } });
+}
+
+export interface TaskApplicationPageOptions {
+  source: SourceRef; query: ProtocolQuery;
+  /** Exact decimal task ID or canonical TaskManager-taskId entity ID. */
+  task: string;
+  pageSize: number; maxPages: number;
+}
+export interface TaskApplicationData {
+  /** Original validated parent, including for a terminal empty application stream. */
+  task: IndexedRow | null;
+  applications: readonly IndexedRow[];
+}
+function validateApplicationTask(row: IndexedRow, source: SourceRef, taskId: string): void {
+  if (!row || row.id !== taskId || typeof row.taskId !== 'string'
+    || requireRawUint(row.taskId) !== taskId.slice(43)
+    || typeof row.taskManager !== 'string' || row.taskManager.toLowerCase() !== source.contract!.toLowerCase()) throw new Error('Application task mismatch');
+  validateWorkProject(row.project as IndexedRow, source);
+}
+function validateApplication(row: IndexedRow, source: SourceRef, taskId: string): void {
+  if (typeof row.id !== 'string' || !row.id) throw new Error('Invalid application ID');
+  validateApplicationTask(row.task as IndexedRow, source, taskId);
+  if (typeof row.applicant !== 'string' || !ethers.utils.isAddress(row.applicant) || row.applicant.toLowerCase() === ethers.constants.AddressZero
+    || typeof row.approved !== 'boolean' || typeof row.applicationHash !== 'string' || !ethers.utils.isHexString(row.applicationHash, 32)) throw new Error('Invalid application');
+  for (const field of ['applicantUsername', 'approverUsername'] as const) if (row[field] !== null && typeof row[field] !== 'string') throw new Error('Invalid application username');
+  if (row.approver !== null && (typeof row.approver !== 'string' || !ethers.utils.isAddress(row.approver))) throw new Error('Invalid approver');
+  for (const field of ['appliedAt', 'appliedAtBlock'] as const) {
+    if (typeof row[field] !== 'string') throw new Error('Missing application timestamp/block');
+    requireRawUint(row[field]);
+  }
+  if (BigInt(row.appliedAtBlock as string) > BigInt(source.block!.number)) throw new Error('Future application');
+  if (row.approvedAt !== null) { if (typeof row.approvedAt !== 'string') throw new Error('Invalid approval time'); requireRawUint(row.approvedAt); }
+  if (row.metadata !== null) {
+    const meta = row.metadata as IndexedRow;
+    if (!meta || typeof meta !== 'object' || typeof meta.id !== 'string' || !meta.id) throw new Error('Invalid application metadata');
+    for (const field of ['notes', 'experience'] as const) if (meta[field] !== null && typeof meta[field] !== 'string') throw new Error('Invalid application metadata');
+    if (meta.indexedAt !== null) { if (typeof meta.indexedAt !== 'string') throw new Error('Invalid metadata time'); requireRawUint(meta.indexedAt); }
+  }
+}
+/** On-demand indexed detail/action read, with explicit bounds and same-response
+ * parent/module/_meta proof on EVERY page. No board-wide RPC or host cache.
+ * A full final page, malformed/foreign rows or a failed page remains incomplete. */
+export async function listTaskApplicationsComplete(options: TaskApplicationPageOptions): Promise<SourceSnapshot<TaskApplicationData>> {
+  const variables = requireWorkSource(options.source);
+  if (options.source.snapshot !== 'pinned' || typeof options.task !== 'string'
+    || ![options.pageSize, options.maxPages].every(n => Number.isSafeInteger(n) && n >= 1 && n <= 1000)) throw new Error('Pinned task applications and explicit bounds required');
+  const taskId = taskEntityId(options.source.contract!, options.task);
+  const parentIssues: { code: string; id: string }[] = [];
+  let parent: IndexedRow | null = null;
+  const applicants = new Set<string>();
+  let page = 0;
+  const result = await readWorkPageFacts({ ...options, variables: { ...variables, taskId },
+    document: FETCH_TASK_APPLICATIONS_PAGE, collection: 'taskApplications', initialCursor: '',
+    query: async (document, vars, source) => {
+      page++;
+      const response = await options.query(document, vars, source);
+      if (Array.isArray(response.errors) && response.errors.length) return response;
+      try {
+        const parents = response.tasks;
+        if (!Array.isArray(parents) || parents.length !== 1) throw new Error('Application parent unavailable');
+        validateApplicationTask(parents[0], source, taskId);
+        if (parent && (parents[0].project.id !== (parent.project as IndexedRow).id
+          || parents[0].project.projectId !== (parent.project as IndexedRow).projectId)) throw new Error('Application project changed');
+        parent ??= parents[0];
+      } catch (error) { parentIssues.push({ code: 'APPLICATION_TASK_BINDING_UNAVAILABLE', id: `page:${page}` }); throw error; }
+      return response;
+    }, validateRow: row => {
+      validateApplication(row, options.source, taskId);
+      const project = (row.task as IndexedRow).project as IndexedRow;
+      if (project.id !== (parent!.project as IndexedRow).id || project.projectId !== (parent!.project as IndexedRow).projectId) throw new Error('Application project mismatch');
+      const applicant = (row.applicant as string).toLowerCase();
+      if (applicants.has(applicant)) throw new Error('Duplicate applicant');
+      applicants.add(applicant);
+    } });
+  return { ...result, data: { task: parent, applications: result.data },
+    coverage: { ...result.coverage, issues: [...result.coverage.issues, ...parentIssues] } };
+}
+export interface TaskApplicantInput {
+  applications: SourceSnapshot<TaskApplicationData>;
+  /** TaskManager/org/account and expected endpoint. */
+  scope: PlanScope;
+  task: string;
+  /** Host's currently selected observation; never infer freshness from old rows. */
+  block: SourceBlock;
+}
+/** Exact indexed alreadyApplied fact for scope.account, gated on full enumeration.
+ * Preview/capped collections never prove absence (or bypass this coverage gate). */
+export function projectTaskApplicant(input: TaskApplicantInput): Fact<boolean> {
+  const source = input.applications.source;
+  try {
+    requireWorkSource(source);
+    if (!input.scope.account || !ethers.utils.isAddress(input.scope.account) || input.scope.account.toLowerCase() === ethers.constants.AddressZero
+      || !input.scope.orgId || !input.scope.contract || !input.scope.endpoint || !input.block || typeof input.task !== 'string') throw new Error('Applicant scope required');
+    if (source.account && source.account.toLowerCase() !== input.scope.account.toLowerCase()) throw new Error('Applicant account mismatch');
+    const data = requireCompleteSnapshot(input.applications, { scope: { ...input.scope, account: undefined }, indexed: true, snapshot: 'pinned', block: input.block });
+    const taskId = taskEntityId(input.scope.contract, input.task);
+    validateApplicationTask(data.task!, source, taskId);
+    const applicationKeys = new Set(input.applications.coverage.receivedKeys);
+    if (!Array.isArray(data.applications) || data.applications.length !== applicationKeys.size) throw new Error('Application coverage mismatch');
+    const applicants = new Set<string>();
+    for (const row of data.applications) {
+      validateApplication(row, source, taskId);
+      if (!applicationKeys.delete(row.id as string)) throw new Error('Application key mismatch');
+      const project = (row.task as IndexedRow).project as IndexedRow;
+      if (project.id !== (data.task!.project as IndexedRow).id || project.projectId !== (data.task!.project as IndexedRow).projectId) throw new Error('Application project mismatch');
+      const applicant = (row.applicant as string).toLowerCase();
+      if (applicants.has(applicant)) throw new Error('Duplicate applicant');
+      applicants.add(applicant);
+    }
+    return knownFact(applicants.has(input.scope.account.toLowerCase()), { ...source, account: input.scope.account });
+  } catch { return unknownFact('TASK_APPLICANT_EVIDENCE_UNAVAILABLE', source); }
 }

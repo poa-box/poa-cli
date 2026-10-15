@@ -1,11 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { buildSchema, extendSchema, parse, print, validate, visit, Kind } from 'graphql';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+import { gunzipSync } from 'node:zlib';
+import { buildClientSchema, buildSchema, extendSchema, parse, print, validate, visit, Kind } from 'graphql';
 import * as accounts from '../src/graph/documents/accounts';
 import * as authority from '../src/graph/documents/authority';
 import * as paymaster from '../src/graph/documents/paymaster';
 import * as protocol from '../src/graph/documents/protocol';
+import * as role from '../src/graph/documents/role';
+import * as vouch from '../src/graph/documents/vouch';
 import * as zkemail from '../src/graph/documents/zkemail';
 import { GraphRequestError } from '../src/graph/client';
 import { readCredentialFacts, projectCredentialFacts, ProtocolQuery, IndexedRow } from '../src/reads/protocol';
@@ -115,6 +120,53 @@ describe('strict serving GraphQL compatibility and selector parity', () => {
     expect(protocol.FETCH_BEACON_EVENTS_PAGE).toContain('$cursor: Bytes!');
     expect(validate(schema, parse(accounts.FETCH_ACCOUNT_FACTS.replace('$account: Bytes!', '$account: String!')))).not.toHaveLength(0);
   });
+});
+
+describe('legacy role/vouch relation scalars against full serving schemas', () => {
+  // Reuse byte-preserved full introspections and their recorded provenance;
+  // never project or extend the schema to make these documents validate.
+  const base = new URL('./fixtures/core-update/work/project-applications/', import.meta.url);
+  const provenance = JSON.parse(readFileSync(new URL('provenance.json', base), 'utf8'));
+  // The release gate replays these regressions through built/packed public leaves.
+  const publicRequire = process.env.POA_CORE_PACKED_ROOT
+    ? createRequire(resolve(process.env.POA_CORE_PACKED_ROOT, 'package.json')) : null;
+  const roleDocuments: typeof role = publicRequire ? publicRequire('@poa-box/core/graph/documents/role') : role;
+  const vouchDocuments: typeof vouch = publicRequire ? publicRequire('@poa-box/core/graph/documents/vouch') : vouch;
+  // Pre-correction AST fingerprints ignore variable types only; selections,
+  // response fields, operation names, filters, ordering and limits stay exact.
+  const documents = [
+    ['FETCH_USER_ROLE_APPLICATIONS', roleDocuments.FETCH_USER_ROLE_APPLICATIONS, 'cb53a99ab386251d869adf3f423ea4891d154af1f019c16fddee07acee5817b2'],
+    ['FETCH_ALL_ROLE_APPLICATIONS', roleDocuments.FETCH_ALL_ROLE_APPLICATIONS, 'd4d4398174f8ef3bd9f4e28c2dfdba62c89944448bbad4f95a0efa606ad80961'],
+    ['FETCH_VOUCHES_FOR_ORG', vouchDocuments.FETCH_VOUCHES_FOR_ORG, 'e54a6bebc476b36772324cd9d3f62ab3b49b5f700345ce89c01c6be4011ecfb1'],
+  ];
+  it('retains the applicant Bytes filter and both deployment fixtures', () => {
+    expect(roleDocuments.FETCH_USER_ROLE_APPLICATIONS).toContain('$applicant: Bytes!');
+    expect(provenance.sources.map((entry: { chainId: number }) => entry.chainId)).toEqual([100, 42161]);
+    if (publicRequire) for (const leaf of ['role', 'vouch']) {
+      expect(publicRequire.resolve(`@poa-box/core/graph/documents/${leaf}`))
+        .toBe(resolve(process.env.POA_CORE_PACKED_ROOT!, `dist/graph/documents/${leaf}.js`));
+      expect(publicRequire('@poa-box/core/graph/documents')[`${leaf}Documents`])
+        .toBe(publicRequire(`@poa-box/core/graph/documents/${leaf}`));
+    }
+  });
+  for (const fixture of provenance.sources) {
+    const bytes = gunzipSync(readFileSync(new URL(fixture.fixture, base)));
+    const schema = buildClientSchema(JSON.parse(bytes.toString()).data);
+    it(`pins full chain ${fixture.chainId} introspection provenance`, () => {
+      expect(hash(bytes.toString())).toBe(fixture.rawSha256);
+      expect(bytes.length).toBe(fixture.rawBytes);
+      expect(Object.keys(schema.getTypeMap()).length).toBeGreaterThan(500);
+    });
+    for (const [name, doc, fingerprint] of documents) it(`${name} validates on chain ${fixture.chainId} and rejects the old Bytes relation scalar`, () => {
+      expect(hash(normalized(doc))).toBe(fingerprint);
+      expect(doc).toContain('$eligibilityModuleId: String!');
+      expect(validate(schema, parse(doc)).map(error => error.message)).toEqual([]);
+      const wrongScalar = doc.replace('$eligibilityModuleId: String!', '$eligibilityModuleId: Bytes!');
+      expect(validate(schema, parse(wrongScalar)).map(error => error.message)).toEqual([
+        'Variable "$eligibilityModuleId" of type "Bytes!" used in position expecting type "String".',
+      ]);
+    });
+  }
 });
 
 describe('credential capability fallback using observed serving responses', () => {

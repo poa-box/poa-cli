@@ -103,6 +103,58 @@ describe('viem/permissionless never enter dependency-free declaration closures',
     expect([...closure.keys()].filter(file => /\/execute\//.test(file))).toEqual([]);
   });
 
+  it.each(['tasks/project-creator', 'tasks/policy', 'reads/task', 'graph/documents/task'])('%s declarations exclude optional peers and Node', leaf => {
+    const closure = declarationClosure(join(DIST, leaf + '.d.ts'));
+    expect(externalOffenders(closure, /^(?:(?:viem|permissionless)(?:\/|$)|node:|@types\/node(?:\/|$))/)).toEqual([]);
+    expect([...closure.keys()].filter(file => /\/execute\//.test(file))).toEqual([]);
+  });
+
+  it.each([
+    ['classic', ts.ModuleKind.CommonJS, ts.ModuleResolutionKind.NodeJs],
+    ['Node16', ts.ModuleKind.Node16, ts.ModuleResolutionKind.Node16],
+  ] as const)('project creator/application public types compile strictly under %s', (_name, module, moduleResolution) => {
+    const file = resolve(DIST, '../test/__project_applications_type_regression__.ts');
+    const consumer = `
+      import { deriveProjectCreatorAuthorization, type ProjectCreatorInput, type ProjectCreatorFacts, type ProjectCreatorSources } from '@poa-box/core/tasks/project-creator';
+      import { deriveProjectCreatorAuthorization as barrelCreator } from '@poa-box/core/tasks';
+      import { decideTaskActions, type TaskPolicyInput } from '@poa-box/core/tasks/policy';
+      import { listTaskApplicationsComplete, projectTaskApplicant, type TaskApplicationPageOptions,
+        type TaskApplicationData, type TaskApplicantInput } from '@poa-box/core/reads/task';
+      import { FETCH_TASK_APPLICATIONS_PAGE } from '@poa-box/core/graph/documents/task';
+      import { requireCompleteSnapshot, type Fact, type SourceSnapshot } from '@poa-box/core/data/facts';
+      import type { IndexedRow } from '@poa-box/core/reads/protocol';
+      declare const policy: ProjectCreatorInput;
+      const creator: ProjectCreatorFacts = deriveProjectCreatorAuthorization(policy);
+      const member: Fact<boolean> = barrelCreator(policy).creator;
+      declare const sources: ProjectCreatorSources;
+      declare const indexedTask: TaskPolicyInput;
+      const lifecycle = decideTaskActions({ ...indexedTask, projectCreator: { ...policy, sources } }).deleteProject;
+      const createProjectGate: Fact<boolean> = deriveProjectCreatorAuthorization({ ...policy, sources }).authorized;
+      // @ts-expect-error mixed policy composition requires explicit expected sources
+      decideTaskActions({ ...indexedTask, projectCreator: policy });
+      // @ts-expect-error the selected canonical block must include a hash
+      const unproven: ProjectCreatorSources = { ...sources, block: { number: '1000' } };
+      declare const options: TaskApplicationPageOptions;
+      const applications: Promise<SourceSnapshot<TaskApplicationData>> = listTaskApplicationsComplete(options);
+      declare const applicant: TaskApplicantInput;
+      const applied: Fact<boolean> = projectTaskApplicant(applicant);
+      const rows: readonly IndexedRow[] = requireCompleteSnapshot(applicant.applications).applications;
+      const document: string = FETCH_TASK_APPLICATIONS_PAGE;
+      // @ts-expect-error application pages require explicit bounds
+      const unbounded: TaskApplicationPageOptions = { source: options.source, query: options.query, task: '1' };
+      // @ts-expect-error exact IDs never use rounded Numbers
+      listTaskApplicationsComplete({ ...options, task: 9007199254740992 });
+      // @ts-expect-error host must select an expected block
+      projectTaskApplicant({ applications: applicant.applications, scope: applicant.scope, task: '1' });
+    `;
+    const options: ts.CompilerOptions = { strict: true, skipLibCheck: false, noEmit: true, esModuleInterop: true,
+      target: ts.ScriptTarget.ES2022, module, moduleResolution, types: ['node'] };
+    const host = ts.createCompilerHost(options), original = host.getSourceFile.bind(host);
+    host.getSourceFile = (path, version, onError, fresh) => path === file ? ts.createSourceFile(path, consumer, version, true) : original(path, version, onError, fresh);
+    const program = ts.createProgram([file], options, host);
+    expect(ts.getPreEmitDiagnostics(program).map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([]);
+  });
+
   it.each([
     ['classic', ts.ModuleKind.CommonJS, ts.ModuleResolutionKind.NodeJs],
     ['Node16', ts.ModuleKind.Node16, ts.ModuleResolutionKind.Node16],

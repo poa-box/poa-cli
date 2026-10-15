@@ -463,6 +463,184 @@ const donationIntent = buildDonateToSolidarity({ paymasterHubAddress: hub,
   amountWei: 1n }); // intent only; no donation is sent
 ```
 
+## Current project creators and complete task applications
+
+`tasks/project-creator` (also the `tasks` barrel) adds
+`deriveProjectCreatorAuthorization(input: ProjectCreatorInput): ProjectCreatorFacts`.
+Its input is `{ scope, taskManager, authority, memberships, sources? }`. `scope` names the
+chain, bytes32 org, nonzero TaskManager and account, with an optional expected
+endpoint and `contracts.membershipAuthority`. `taskManager.data` is
+`ProjectCreatorData`: `{ creatorSubjectIds: Fact<readonly string[]>,
+membershipAuthority: Fact<string>, executor: Fact<string> }`. These are observed
+TaskManager configuration facts. The other two snapshots contain the existing
+`AuthorityPermissionData` and `readonly AuthorityMemberFact[]` shapes:
+
+```ts
+import { deriveProjectCreatorAuthorization }
+  from '@poa-box/core/tasks/project-creator';
+import { authorityAccountMembershipFacts } from '@poa-box/core/reads/authority';
+
+const creatorInput = {
+  scope: { chainId, orgId, contract: taskManagerAddress, account,
+    endpoint: graphEndpoint, contracts: { membershipAuthority: authorityAddress } },
+  taskManager: taskManagerCreatorSnapshot,
+  authority: currentAuthoritySnapshot,
+  memberships: authorityAccountMembershipFacts(currentAuthoritySnapshot, account),
+  sources: {
+    taskManager: { endpoint: rpcEndpoint, method: 'eth_call', indexed: false },
+    authority: { endpoint: graphEndpoint, method: 'authority', indexed: true },
+    memberships: { endpoint: graphEndpoint, method: 'authority', indexed: true },
+    block: selectedCanonicalBlock, // { number: exactDecimalString, hash: bytes32 }
+  },
+};
+const creators = deriveProjectCreatorAuthorization(creatorInput);
+// creators.authorized is the createProject gate; no pre-existing project needed.
+// Preserve unknowns and the RPC source on the result.
+
+import { decideTaskActions } from '@poa-box/core/tasks/policy';
+const deletion = decideTaskActions({
+  projectId, now: hostNowSeconds, scope: creatorInput.scope,
+  snapshot: indexedTaskPolicySnapshot,
+  projectCreator: creatorInput,
+}).deleteProject;
+// Keep the indexed snapshot's creator/executor facts as originally observed
+// (unknown when absent). This seam revalidates the original creator observations
+// and combines their gate with the policy's exact project existence fact.
+```
+
+`creator` means current membership in **any configured authority subject**;
+`executor` is equality with this TaskManager's configured Executor. `authorized`
+is their OR. For a compatible same-source policy, `creator` may feed
+`TaskPolicyFacts.creator` and `executor` may feed its separate executor fact.
+For mixed sources use the explicit policy input above. Project-manager status and the task CREATE bit do
+not authorize project creation/deletion. Historically named `creatorHatIds` are
+opaque exact uint256 authority subject selectors, including adopted historical
+IDs. They are never Hats wearer facts. Current groups use active group edges
+and current Role membership through `projectSubjectMembership`. Empty selectors
+prove creator membership false; a positive selected membership can resolve an
+otherwise unknown selector match. With no positive match, missing/unknown role
+facts or missing subjects remain unknown. Complete transport coverage is
+mandatory even when one supplied membership is positive.
+
+By default all three observations must be complete, pinned to the same observed
+block dimensions, and share endpoint and indexed/RPC source kind. The optional
+`sources: ProjectCreatorSources` enables an explicit composition: it requires
+each expected endpoint, method and indexed/RPC kind, plus a selected canonical
+block number **and hash**. Every observation and attached field source must
+match its own expected origin and that common block proof. Endpoints/kinds are
+host-selected expectations, not inferred by copying unverified response fields.
+Optional expected timestamp dimensions are enforced; supplied timestamps cannot
+contradict each other. Indexed metadata may include a timestamp while a matching
+RPC block proof omits it. Each input keeps its original source; the resulting
+Fact retains the TaskManager source and is not a portable multi-source proof.
+All observations bind the same
+chain/org; the authority and membership snapshots bind the actual nonzero
+TaskManager authority, and memberships bind the account. Supplied per-field
+sources must agree; unscoped field Facts are trusted caller inputs. Foreign,
+partial, stale or malformed supplied observations cannot piggyback on Executor.
+The API conservatively requires a proven nonzero authority binding even for an
+Executor. Arbitrary mixed sources without these expectations remain rejected.
+Pinned indexed data is not claimed to be live chain state.
+Hosts retain chain/config selection, freshness, cache invalidation and transport.
+
+`TaskPolicyInput.projectCreator` accepts `ProjectCreatorInput & { sources:
+ProjectCreatorSources }` for **deleteProject only**. The policy snapshot must be
+complete, indexed, pinned, scoped to an explicitly expected endpoint/account/org/
+TaskManager, and observe the same canonical number/hash. Its authority binding
+(when expected in scope) must agree. The seam re-runs the creator projection;
+it does not accept an unverified returned boolean. Project existence must still
+be known true for deletion. Other task decisions retain their original facts
+and checks, including task CREATE, project manager, permission and Executor
+handling. Invalid optional creator evidence cannot authorize deletion. Directly
+inserting an RPC creator Fact into an indexed policy remains invalid. No source
+is stripped or relabeled, and the global Fact validation model is unchanged.
+
+The serving schemas expose TaskManager `creatorHatIds`, but expose neither its
+`executor` nor its `membershipAuthority`. Existing task documents already select
+creator IDs. An org-level pointer alone does not prove this module's binding;
+no invented Graph fields are added. Hosts can obtain the exact module facts
+through their existing read transport: inspected `getLensData` variants 5, 4
+and 12 respectively return `uint256[]`, `address`, and `address`. The existing
+`encodeLensCall`/`decodeLensResult` codecs can support that host observation;
+the old lens wrappers do not attest a pinned block by themselves. This change
+adds no RPC executor, provider, or host UI integration.
+Select an indexed canonical block with its response `_meta`, verify the same
+block number/hash on the configured chain RPC, and batch the three settings
+reads at that pinned block once per TaskManager/observation generation through
+the host's existing bounded transport. Reuse the indexed authority/account
+snapshot; no RPC authority tree or per-task settings loop is required. Reject
+number/hash drift or unavailable historical block reads. Refresh/invalidate all
+inputs on chain/org/account/module/endpoint/block changes; equal hashes do not
+establish present-time freshness. Actual deployed module configuration and
+bytecode compatibility remain host verification responsibilities.
+
+`graph/documents/task` adds `FETCH_TASK_APPLICATIONS_PAGE`.
+`reads/task` adds
+`listTaskApplicationsComplete(options: TaskApplicationPageOptions): Promise<SourceSnapshot<TaskApplicationData>>`
+and `projectTaskApplicant(input: TaskApplicantInput): Fact<boolean>`:
+
+```ts
+import { listTaskApplicationsComplete, projectTaskApplicant }
+  from '@poa-box/core/reads/task';
+import { requireCompleteSnapshot } from '@poa-box/core/data/facts';
+
+// Fetch only mounted task details / action demand, with the existing hostQuery.
+const applications = await listTaskApplicationsComplete({
+  source: pinnedTaskManagerSource, query: hostQuery,
+  task: exactDecimalTaskId, pageSize: 250, maxPages: 20,
+});
+const alreadyApplied = projectTaskApplicant({
+  applications, task: exactDecimalTaskId, block: selectedIndexedBlock,
+  scope: { chainId, orgId, contract: taskManagerAddress,
+    endpoint: pinnedTaskManagerSource.endpoint, account },
+});
+// Consume detail rows only after coverage and source validation.
+const detail = requireCompleteSnapshot(applications, {
+  scope: pinnedTaskManagerSource, indexed: true, snapshot: 'pinned',
+  block: selectedIndexedBlock,
+});
+const originalApplicationRows = detail.applications;
+const originalParentTask = detail.task;
+```
+
+Options require indexed, pinned org/module scope, `task: string` (exact decimal
+uint256 or the same TaskManager's composite entity ID), and explicit integer
+`pageSize`/`maxPages` in 1..1000. The document enumerates top-level
+`taskApplications` in ascending String-ID cursor order, filtering by exact task
+and module. Each response selects the matching parent and org/module binding
+at the same `$block` as `_meta`, including an empty terminal page. The parent
+belongs to a non-deleted project, matching the existing current-work readers.
+Missing/foreign/deleted/ambiguous parents, absent/wrong metadata block proof,
+malformed/duplicate applicants, nonadvancing/repeated cursors, errors, and a
+full final allowed page leave coverage incomplete/unavailable. Diagnostic rows
+may remain in `data.applications`; they cannot bypass the completeness gate.
+`data.task` retains the original validated parent or null when unavailable.
+This binding prevents an empty stream for one task from proving another task's
+applicant absent. `projectTaskApplicant` additionally validates the host's
+expected endpoint/account/block and returns exact indexed presence/absence.
+
+Original application IDs, applicant/approver addresses, usernames, hashes,
+approval flags/times and nullable notes/experience metadata survive unchanged;
+raw BigInt fields stay strings. Existing tree/detail `applications` relations
+still default to a 100-row preview and keep their compatible behavior. A missing
+applicant in that capped relation does not prove absence. No board-wide per-task
+RPC, host cache, frontend install or legacy CLI query changes are introduced.
+
+The offline creator oracle is `test/fixtures/core-update/work/TaskManager.sol.txt`
+from contracts commit `fa37b3e7341c9225bdc1ab6a9ba94ee41a876c8d`, SHA-256
+`c31f6434a85caf875e866e9cefd2cace1ab7aef9ff7617633be6ccce9e2f517a`.
+`_requireCreator` lines 322..325, createProject 371, deleteProject 452 and
+`_hasCreatorHat`/`_authorityHoldsAny` 1361..1381 establish this rule. The separate
+`work/project-applications/provenance.json` and compressed fixtures retain each
+**full** cached chain-100/42161 serving introspection envelope, each raw SHA-256
+`9a89a35abeb10d86741ffcb688cc1fce44678f46164deeced92d88164862cfb5`.
+Tests build both schemas with `buildClientSchema(raw.data)` without projections
+or extensions. Source-schema provenance remains in `work/provenance.json`.
+These fixtures establish inspected source behavior and cached field compatibility;
+they do not verify deployed bytecode, current field population, endpoint health,
+index completeness beyond proven pages or a live deployment. No new traffic or
+configuration was required for this follow-up.
+
 ## Adoption acceptance
 
 Keep product minimum-duration policy, storage concurrency, credentials, browser
