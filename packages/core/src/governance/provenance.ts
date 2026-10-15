@@ -75,7 +75,7 @@ export async function readSubjectCreationProvenance(input: {
     const events = tx.logs.filter(log => same(log.address, scope.contract) && ['NewProposal', 'NewHatProposal'].some(name => same(log.topics[0], voting.getEventTopic(name))));
     if (events.length !== 1) throw new Error('EXACT_PROPOSAL_EVENT_REQUIRED');
     const event = voting.parseLog({ topics: [...events[0].topics], data: events[0].data });
-    const encoded = voting.encodeEventLog(event.eventFragment, event.args);
+    const encoded = voting.encodeEventLog(event.signature, event.args);
     if (!same(encoded.data, events[0].data) || encoded.topics.length !== events[0].topics.length
       || encoded.topics.some((topic, i) => !same(topic, events[0].topics[i])) || event.args.id.toString() !== proposalId
       || !same(event.args.title, args.title) || !same(event.args.descriptionHash, args.descriptionHash) || event.args.numOptions !== args.numOptions

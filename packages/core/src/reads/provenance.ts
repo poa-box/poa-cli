@@ -82,7 +82,7 @@ const entryPoint = new ethers.utils.Interface([
 export function decodeCanonicalCall(iface: ethers.utils.Interface, data: string): ethers.utils.TransactionDescription {
   if (typeof data !== 'string' || data.length > 2_000_002) throw new Error('PROVENANCE_CALLDATA_LIMIT');
   const parsed = iface.parseTransaction({ data });
-  if (iface.encodeFunctionData(parsed.functionFragment, parsed.args).toLowerCase() !== data.toLowerCase()) throw new Error('NONCANONICAL_PROVENANCE_CALLDATA');
+  if (iface.encodeFunctionData(parsed.signature, parsed.args).toLowerCase() !== data.toLowerCase()) throw new Error('NONCANONICAL_PROVENANCE_CALLDATA');
   return parsed;
 }
 export interface ExactTransactionCall { target: string; caller: string; data: string; operationStatus: 'succeeded' | 'failed'; userOpHash?: string }
