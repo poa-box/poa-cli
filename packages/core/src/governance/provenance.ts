@@ -9,7 +9,7 @@ import { validateGovernanceBatches } from './capabilities';
 
 /** Existing serving fields only. Exact known ID, never a recent-feed lookup. */
 const proposalDocument = `query RecoverSubjectCreation($orgId: ID!, $id: String!, $block: Block_height) {
-  _meta(block: $block) { block { number hash } }
+  _meta(block: $block) { block { number hash timestamp } }
   organization(id: $orgId, block: $block) { id membershipAuthority { id } hybridVoting { id } }
   proposals(first: 1, where: {id: $id}, block: $block) {
     id proposalId title descriptionHash numOptions transactionHash createdAtBlock
