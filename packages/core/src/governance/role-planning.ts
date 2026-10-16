@@ -109,6 +109,15 @@ export interface ExistingRolePlanningInput {
 export interface ExistingRoleConfigurationPlan { subjectId: string; batch: ExecutionCall[]; createsSubject: false; fingerprint: string }
 export function planRoleCreation(input: RoleCreationInput): PlanResult<RoleCreationPlan> { return planRole(input, 'create'); }
 export function planExistingRoleConfiguration(input: ExistingRolePlanningInput): PlanResult<ExistingRoleConfigurationPlan> { return planRole(input, 'existing'); }
+/** Evidence is validated on every plan. Observation time/block attribution must not
+ * make identical reviewed protocol values stale at the next fresh observation. */
+function rolePlanningValues(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(rolePlanningValues);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => key !== 'source' && key !== 'indexedAuthoritySource')
+    .map(([key, nested]) => [key, rolePlanningValues(nested)]));
+  return value;
+}
 export function validateRoleCreationFreshness(plan: RoleCreationPlan, current: RoleCreationInput): PlanResult<RoleCreationPlan> {
   const next = planRoleCreation(current);
   return next.status !== 'ready' ? next : next.data.fingerprint !== plan.fingerprint
@@ -210,7 +219,7 @@ function planRole(input: RoleCreationInput | RolePlanningInput | ExistingRolePla
         || r.taskGrants?.creator || r.taskGrants?.organizer || r.bindingClassIndex !== undefined || r.editOrgDetails || r.sponsorship || r.email) throw new Error('CREATION_HAS_DEPENDENT_CONFIGURATION');
       const batch = [createCall()];
       validateGovernanceBatches([batch]);
-      return { status: 'ready', data: { batch, createsSubject: true, fingerprint: ethers.utils.id(JSON.stringify([scope, context, batch])) },
+      return { status: 'ready', data: { batch, createsSubject: true, fingerprint: ethers.utils.id(JSON.stringify([scope, rolePlanningValues(context), batch])) },
         consequences: [{ code: 'CONFIGURE_AFTER_SUBJECT_CREATED' }] };
     }
     // Below this point every dependent action has an explicit subject ID.
@@ -378,7 +387,7 @@ function planRole(input: RoleCreationInput | RolePlanningInput | ExistingRolePla
       if (race.hasCompetingCreation.value) throw new Error('COMPETING_SUBJECT_CREATION');
     }
     const compound = mode === 'compound' ? input as RolePlanningInput : undefined;
-    const fingerprint = ethers.utils.id(JSON.stringify([scope, context, compound?.allocations.data, compound && batch.length > 1 ? compound.proposals.data : undefined, batch]));
+    const fingerprint = ethers.utils.id(JSON.stringify([scope, rolePlanningValues(context), compound?.allocations.data, compound && batch.length > 1 ? compound.proposals.data : undefined, batch]));
     return mode === 'existing'
       ? { status: 'ready', data: { subjectId: id, batch, createsSubject: false, fingerprint }, consequences }
       : { status: 'ready', data: { subjectId: id, batch, createsSubject: true, fingerprint }, consequences };

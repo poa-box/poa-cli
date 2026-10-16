@@ -373,6 +373,37 @@ function electionInput(): ElectionPlanningInput {
       accounts:[{account:A,acceptedAnywhere:knownFact(true),acceptedSubjectIds:knownFact(['7'])},{account:B,acceptedAnywhere:knownFact(false),acceptedSubjectIds:knownFact([])}]})};
 }
 describe('staged role/group creation without irrelevant history', () => {
+  it.each(['creation', 'configuration'])('accepts the same %s values at a fresh attributed block while still rejecting changed values and invalid evidence', mode => {
+    const input = roleInput();
+    const subjectId = input.context.data.subjects[1].subjectId;
+    Object.assign(input.context.data.subjects[1], { metadataPointer: ethers.constants.HashZero, imageURI: '' });
+    input.context.data.indexedAuthoritySource = graphSource(AUTH);
+    input.context.data.executorAuthorized = knownFact(true, liveSource());
+    const request = { kind: 'Group' as const, name: 'Unchanged reviewed group' };
+    const current = { scope: input.scope, freshness: input.freshness, context: input.context, request, subjectId };
+    const planner = mode === 'creation' ? planRoleCreation : planExistingRoleConfiguration;
+    const validate = mode === 'creation' ? validateRoleCreationFreshness : validateExistingRolePlanFreshness;
+    const plan = ready(planner(current));
+    const next = structuredClone(current);
+    const block = { number: '101', hash: HASH2 };
+    next.freshness = { ...next.freshness, now: 1002, block };
+    next.context.source = { ...next.context.source, observedAt: 1002, block };
+    next.context.data.indexedAuthoritySource = { ...next.context.data.indexedAuthoritySource!, observedAt: 1002, block };
+    next.context.data.executorAuthorized = knownFact(true, { ...liveSource(), observedAt: 1002, block });
+    expect(ready(validate(plan, next)).fingerprint).toBe(plan.fingerprint);
+    code(validate(plan, { ...next, request: { ...request, name: 'Changed reviewed name' } }), 'STALE_ROLE_PLAN');
+    code(validate(plan, { ...next, freshness: { ...next.freshness, now: 2000 } }), 'LIVE_EVIDENCE_STALE');
+    const wrongSource = structuredClone(next);
+    wrongSource.context.data.indexedAuthoritySource!.block = { number: '100', hash: HASH };
+    expect(validate(plan, wrongSource).status).toBe('blocked');
+    const wrongFact = structuredClone(next);
+    wrongFact.context.data.executorAuthorized = knownFact(true, { ...liveSource(HV), observedAt: 1002, block });
+    expect(validate(plan, wrongFact).status).toBe('blocked');
+    const changedFact = structuredClone(next);
+    changedFact.context.data.executorAuthorized = knownFact(false, { ...liveSource(), observedAt: 1002, block });
+    code(validate(plan, changedFact), 'EXECUTOR_AUTHORIZATION_REQUIRED');
+  });
+
   it('creates one subject with no predicted ID, allocation enumeration or proposal history', () => {
     const { scope, freshness, context } = roleInput();
     const result = ready(planRoleCreation({ scope, freshness, context, request: { kind: 'Role', name: 'New role', maxMembers: '2' } }));
