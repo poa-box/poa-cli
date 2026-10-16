@@ -1,0 +1,22 @@
+{
+  "source": "Preserved accounts-probe.cjs inputs / accounts-probe-results.json independent frontend parity oracle",
+  "operation": {
+    "sender": "0x1111111111111111111111111111111111111111",
+    "nonce": "9",
+    "callData": "0x1234",
+    "verificationGasLimit": "500000",
+    "callGasLimit": "123456",
+    "preVerificationGas": "45000",
+    "maxFeePerGas": "17",
+    "maxPriorityFeePerGas": "3",
+    "paymaster": "0x2222222222222222222222222222222222222222",
+    "paymasterVerificationGasLimit": "20000",
+    "paymasterPostOpGasLimit": "10000",
+    "paymasterData": "0x013333333333333333333333333333333333333333333333333333333333333333010000000000000100000000000000000000000000000000000000000000000013000000000000000000000000"
+  },
+  "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+  "chainId": 100,
+  "factory": "0x2222222222222222222222222222222222222222",
+  "deployedHash": "0x322433b7bdee0b1264c7207df4653f98509709c193a79a6129b4453ea9d4ea70",
+  "deployingHash": "0x32e0886ce17afdd0fb9ac4ee8fa6a0c67262d3744ad08519ab19a8385efe717f"
+}

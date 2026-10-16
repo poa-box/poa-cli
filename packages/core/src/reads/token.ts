@@ -25,6 +25,59 @@ import {
   tokenBalanceId,
 } from '../graph/documents/token';
 import { resolveOrgModules, requireModule } from './resolve';
+import { knownFact, requireCompleteSnapshot, unknownFact, type Fact, type SourceSnapshot } from '../data/facts';
+import { checkedIndexedTotalQuery, indexedTotalCoverage, indexedTotalIssue, readIndexedTotalState, requireIndexedTotalOptions, type IndexedTotalOptions } from '../data/indexed-completeness';
+import { FETCH_TOKEN_HOLDER_TOTAL_PAGE, FETCH_TOKEN_HOLDER_TOTAL_STATE } from '../graph/documents/indexed-completeness';
+import { requireRawUint } from '../amounts';
+import { readIndexedPageFacts, type IndexedRow } from './protocol';
+
+export interface TokenHolderTotals {
+  holders: readonly { account: string; balanceRaw: string }[];
+  observedCount: string;
+  observedBalanceRaw: string;
+  total: Fact<string>;
+  balanceTotalRaw: Fact<string>;
+  evidence: { state: SourceSnapshot<IndexedRow | null>; balances: SourceSnapshot<readonly IndexedRow[]> };
+}
+
+/** All current TokenBalance rows, including zero rows for supply reconciliation.
+ * Only positive balances add holders. The exact raw sum must equal totalSupply
+ * at the SAME proven block before either total becomes known. */
+export async function readTokenHolderTotals(input: IndexedTotalOptions): Promise<SourceSnapshot<TokenHolderTotals>> {
+  requireIndexedTotalOptions(input);
+  if (!input.source.orgId || !/^0x[\da-f]{64}$/i.test(input.source.orgId)) throw new Error('HOLDER_ORGANIZATION_SCOPE_REQUIRED');
+  const token = input.source.contract!.toLowerCase(), orgId = input.source.orgId.toLowerCase();
+  const options = { ...input, query: checkedIndexedTotalQuery(input.query) };
+  const state = await readIndexedTotalState(options, FETCH_TOKEN_HOLDER_TOTAL_STATE, { token }, 'participationTokenContract', token);
+  const valid = new Set<IndexedRow>();
+  const balances = await readIndexedPageFacts({ ...options, document: FETCH_TOKEN_HOLDER_TOTAL_PAGE, collection: 'tokenBalances', variables: { token }, initialCursor: '',
+    validateRow: row => {
+      const relation = row.participationToken as IndexedRow;
+      if (relation?.id?.toString().toLowerCase() !== token || (relation.organization as IndexedRow)?.id?.toString().toLowerCase() !== orgId
+        || typeof row.account !== 'string' || !/^0x[\da-f]{40}$/i.test(row.account) || /^0x0{40}$/i.test(row.account)
+        || row.id !== tokenBalanceId(token, row.account)) throw new Error('HOLDER_ROW_SCOPE_MISMATCH');
+      requireRawUint(row.balance as string);
+      if (BigInt(requireRawUint(row.updatedAtBlock as string)) > BigInt(input.source.block!.number)) throw new Error('HOLDER_ROW_AFTER_SNAPSHOT');
+      valid.add(row);
+    } });
+  const holders: { account: string; balanceRaw: string }[] = [];
+  let balance = 0n;
+  for (const row of balances.data) if (valid.has(row)) {
+    const raw = requireRawUint(row.balance as string); balance += BigInt(raw);
+    if (raw !== '0') holders.push({ account: String(row.account).toLowerCase(), balanceRaw: raw });
+  }
+  const issues: { code: string }[] = [];
+  try {
+    const contract = requireCompleteSnapshot(state, { scope: input.source, indexed: true, snapshot: 'pinned', block: input.source.block });
+    if (!contract || contract.id !== token || (contract.organization as IndexedRow)?.id?.toString().toLowerCase() !== orgId) throw new Error('HOLDER_TOKEN_SCOPE_MISMATCH');
+    if (requireRawUint(contract.totalSupply as string) !== balance.toString()) throw new Error('TOKEN_SUPPLY_RECONCILIATION_FAILED');
+  } catch (error) { issues.push(indexedTotalIssue(error)); }
+  const coverage = indexedTotalCoverage({ state, balances }, issues), observedCount = String(holders.length), observedBalanceRaw = balance.toString();
+  const source = balances.source.snapshot === 'pinned' ? balances.source : state.source;
+  return { source, coverage, data: { holders, observedCount, observedBalanceRaw,
+    total: coverage.status === 'complete' ? knownFact(observedCount, source) : unknownFact('HOLDER_TOTAL_INCOMPLETE', source),
+    balanceTotalRaw: coverage.status === 'complete' ? knownFact(observedBalanceRaw, source) : unknownFact('HOLDER_TOTAL_INCOMPLETE', source), evidence: { state, balances } } };
+}
 
 /**
  * Resolve an org (name or hex ID) to its ParticipationToken address.

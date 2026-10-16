@@ -1,0 +1,50 @@
+{
+  "kind": "root Astra original terminal probes; exact bytes, supplementary contract oracle not deployed bytecode",
+  "files": [
+    {
+      "originalPath": "/Users/hudsonheadley/conductor/workspaces/poa-frontend/albuquerque-v4/.context/tmp/core-update/root-governance-review/attached-facts.ts",
+      "retainedPath": "packages/core/test/fixtures/core-update/governance/review-originals/attached-facts.ts.txt",
+      "sha256": "15e8797a4132ef187625574d9ada9e928c5fd3d8a7cc11e14bf94225b18e779f"
+    },
+    {
+      "originalPath": "/Users/hudsonheadley/conductor/workspaces/poa-frontend/albuquerque-v4/.context/tmp/core-update/root-governance-review/attached-facts-terminal.json",
+      "retainedPath": "packages/core/test/fixtures/core-update/governance/review-originals/attached-facts-terminal.json",
+      "sha256": "43bac52b064d5e16e49b45220ad2305be630a54ac2b0e285e501d7ab2ccce2e6"
+    },
+    {
+      "originalPath": "/Users/hudsonheadley/conductor/workspaces/poa-frontend/albuquerque-v4/.context/tmp/core-update/root-governance-review/module-bindings.ts",
+      "retainedPath": "packages/core/test/fixtures/core-update/governance/review-originals/module-bindings.ts.txt",
+      "sha256": "a78efb8bed2e414117cc96fae243afe69ad9b9711c56bc3e372dc5b88087c15e"
+    },
+    {
+      "originalPath": "/Users/hudsonheadley/conductor/workspaces/poa-frontend/albuquerque-v4/.context/tmp/core-update/root-governance-review/module-bindings-final-api.ts",
+      "retainedPath": "packages/core/test/fixtures/core-update/governance/review-originals/module-bindings-final-api.ts.txt",
+      "sha256": "79bbb047161ea14527b2f82fa627eb0201d0d614381b3a27df7c83abd68b73d9"
+    },
+    {
+      "originalPath": "/Users/hudsonheadley/conductor/workspaces/poa-frontend/albuquerque-v4/.context/tmp/core-update/root-governance-review/module-bindings-final-api.json",
+      "retainedPath": "packages/core/test/fixtures/core-update/governance/review-originals/module-bindings-final-api.json",
+      "sha256": "fe6ae05dd5cd824c03368b7eccd9f31fde4281a3d9dab958e8f53bea83e159c7"
+    },
+    {
+      "originalPath": "/Users/hudsonheadley/conductor/workspaces/poa-frontend/albuquerque-v4/.context/tmp/core-update/root-governance-review/quadratic-edge.ts",
+      "retainedPath": "packages/core/test/fixtures/core-update/governance/review-originals/quadratic-edge.ts.txt",
+      "sha256": "9a4f1a7d15b82fb4b00bad7fda9c9455d8bd7c49a03cceb415d4b1bd58590409"
+    },
+    {
+      "originalPath": "/Users/hudsonheadley/conductor/workspaces/poa-frontend/albuquerque-v4/.context/tmp/core-update/root-governance-review/quadratic-edge-terminal.json",
+      "retainedPath": "packages/core/test/fixtures/core-update/governance/review-originals/quadratic-edge-terminal.json",
+      "sha256": "2cd2db453db6d07b8a75a4ea66e2f53161c491c8a7540e7c5b4288a905b86674"
+    },
+    {
+      "originalPath": "/Users/hudsonheadley/conductor/workspaces/poa-frontend/albuquerque-v4/.context/tmp/core-update/root-governance-review/empty-bindings-terminal.ts",
+      "retainedPath": "packages/core/test/fixtures/core-update/governance/review-originals/empty-bindings-terminal.ts.txt",
+      "sha256": "7b887d4cbfa66a2f60b0f116b58f8706ae4efdbe3946a16eca910a2d590a376b"
+    },
+    {
+      "originalPath": "/Users/hudsonheadley/conductor/workspaces/poa-frontend/albuquerque-v4/.context/tmp/core-update/root-governance-review/empty-bindings-terminal.json",
+      "retainedPath": "packages/core/test/fixtures/core-update/governance/review-originals/empty-bindings-terminal.json",
+      "sha256": "c06257a76e8b7955ceabd7975d4a5a8d6e8499ead0d870c1b76f295c60d84648"
+    }
+  ]
+}

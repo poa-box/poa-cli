@@ -16,3 +16,8 @@ export * as vote from './vote';
 export * as zkemail from './zkemail';
 
 export * as authority from './authority';
+
+export * as identity from './identity';
+export * as protocol from './protocol';
+export * as memberTotals from './member-totals';
+export * from './provenance';

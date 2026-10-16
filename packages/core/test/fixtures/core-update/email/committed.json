@@ -1,0 +1,67 @@
+{
+  "schema": "poa.zkemail.allowlist/1",
+  "orgId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+  "root": "0xb1004de69d23ff09ee71f1634f4160f85fd9bad98d4fea94c63a82a98157d369",
+  "leafTypes": [
+    "uint8",
+    "bytes32",
+    "uint256[]"
+  ],
+  "entries": [
+    {
+      "type": "email",
+      "identifier": "",
+      "emailHash": "0x2c380d632241cea8851db1d6ef6480c8326b1af38498c6096625943fe3a3165f",
+      "hatIds": [
+        "0x2a"
+      ],
+      "roleIndexes": []
+    },
+    {
+      "type": "domain",
+      "identifier": "gmail.com",
+      "domainHash": "0x14d46e073cbff5944a738ea295de6c7447606fa5a270571229d8a4b1e7ca77e5",
+      "hatIds": [
+        "0x2",
+        "0x10"
+      ],
+      "roleIndexes": []
+    }
+  ],
+  "treeDump": {
+    "format": "standard-v1",
+    "leafEncoding": [
+      "uint8",
+      "bytes32",
+      "uint256[]"
+    ],
+    "tree": [
+      "0xb1004de69d23ff09ee71f1634f4160f85fd9bad98d4fea94c63a82a98157d369",
+      "0x5f7e814c6e47ad3cec11e11d16e04078470f03ae39f1076a2db2917638054a7e",
+      "0x2d0a8854ff3332a9f7f3b98f2e797adfc720ec5397b11f512668f8f4a7559acd"
+    ],
+    "values": [
+      {
+        "value": [
+          1,
+          "0x2c380d632241cea8851db1d6ef6480c8326b1af38498c6096625943fe3a3165f",
+          [
+            "42"
+          ]
+        ],
+        "treeIndex": 2
+      },
+      {
+        "value": [
+          0,
+          "0x14d46e073cbff5944a738ea295de6c7447606fa5a270571229d8a4b1e7ca77e5",
+          [
+            "2",
+            "16"
+          ]
+        ],
+        "treeIndex": 1
+      }
+    ]
+  }
+}

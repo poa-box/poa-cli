@@ -12,6 +12,7 @@
 import { bytes32ToIpfsCid, ipfsCidToBytes32 } from './encoding';
 import { IpfsError } from './errors';
 import { EnvSource } from './env';
+import { cidV0ToBytes32 } from './encoding/cid';
 
 const DEFAULT_IPFS_API = 'https://api.thegraph.com/ipfs/api/v0';
 const MAX_RETRIES = 3;
@@ -28,7 +29,15 @@ const PUBLIC_GATEWAYS = [
 /** Per-gateway fetch timeout before cascading to the next gateway. */
 const GATEWAY_TIMEOUT_MS = 5000;
 
+/** Host owns retries, caches, gateway policy and read-back checks. Each callback is dispatched once. */
+export interface ContentService {
+  pinJson(content: string): Promise<string>;
+  pinFile(content: Uint8Array): Promise<string>;
+  fetchJson(hashOrCid: string): Promise<unknown | null>;
+}
+
 export interface IpfsOptions {
+  service?: ContentService;
   /** Pinning endpoint. Default: The Graph's IPFS API. */
   apiUrl?: string;
   /** Extra gateways, prepended to PUBLIC_GATEWAYS (deduped). */
@@ -110,6 +119,11 @@ function assertNotReadonly(opts?: IpfsOptions): void {
 
 export async function pinJson(content: string, opts?: IpfsOptions): Promise<string> {
   assertNotReadonly(opts);
+  if (opts?.service) {
+    const cid = await opts.service.pinJson(content);
+    cidV0ToBytes32(cid);
+    return cid;
+  }
   const apiUrl = getIpfsApiUrl(opts);
   const doFetch = getFetch(opts);
 
@@ -143,6 +157,11 @@ export async function pinJson(content: string, opts?: IpfsOptions): Promise<stri
  */
 export async function pinFile(content: Uint8Array, opts?: IpfsOptions): Promise<string> {
   assertNotReadonly(opts);
+  if (opts?.service) {
+    const cid = await opts.service.pinFile(content);
+    cidV0ToBytes32(cid);
+    return cid;
+  }
   const apiUrl = getIpfsApiUrl(opts);
   const doFetch = getFetch(opts);
 
@@ -175,6 +194,8 @@ export async function fetchJson<T = any>(hashOrCid: string, opts?: IpfsOptions):
 
   // Handle zero hashes
   if (hashOrCid.startsWith('0x') && /^0x0+$/.test(hashOrCid)) return null;
+
+  if (opts?.service) return await opts.service.fetchJson(hashOrCid) as T | null;
 
   // Convert bytes32 to CID if needed
   let cid = hashOrCid;

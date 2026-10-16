@@ -1,0 +1,43 @@
+// Original src/TaskManager.sol:80-93
+    }
+
+    enum ConfigKey {
+        EXECUTOR,
+        CREATOR_HAT_ALLOWED,
+        ROLE_PERM,
+        PROJECT_ROLE_PERM,
+        BOUNTY_CAP,
+        PROJECT_MANAGER,
+        PROJECT_CAP,
+        ORGANIZER_HAT_ALLOWED
+    }
+
+    /*──────── Data Types ────*/
+
+// Original src/TaskManager.sol:1235-1260
+        if (key == ConfigKey.EXECUTOR) {
+            _requireExecutor();
+            address newExecutor = abi.decode(value, (address));
+            newExecutor.requireNonZeroAddress();
+            l.executor = newExecutor;
+            emit ExecutorUpdated(newExecutor);
+            return;
+        }
+
+        if (key == ConfigKey.CREATOR_HAT_ALLOWED) {
+            _requireExecutor();
+            (uint256 hat, bool allowed) = abi.decode(value, (uint256, bool));
+            SubjectSet.set(l.creatorHatIds, hat, allowed);
+            emit HatSet(HatType.CREATOR, hat, allowed);
+            return;
+        }
+
+        if (key == ConfigKey.ROLE_PERM || key == ConfigKey.PROJECT_ROLE_PERM) revert LegacyConfigRemoved();
+
+        if (key == ConfigKey.ORGANIZER_HAT_ALLOWED) {
+            _requireExecutor();
+            (uint256 hat, bool allowed) = abi.decode(value, (uint256, bool));
+            SubjectSet.set(l.organizerHatIds, hat, allowed);
+            emit OrganizerHatAllowed(hat, allowed);
+            return;
+        }

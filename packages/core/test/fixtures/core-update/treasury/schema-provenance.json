@@ -1,0 +1,23 @@
+{
+  "source": "Saved generated Graph Node introspection, wave2-check/serving-schema-100.json",
+  "sourceSha256": "2fefb5c645d84d3a8c65f1f8522fe016ef6a64cca2441b21bcfabb43c14b3047",
+  "scope": "Field/type definitions selected without changing scalar or enum semantics; no live requests in treasury lane.",
+  "derivedSha256": "629f86355144c5651658b831c8917cfe61b46093d6b643e9e941f5d1c357292d",
+  "sourceChains": [
+    100,
+    42161
+  ],
+  "sourceSchemaEquality": "Both saved generated serving introspections are byte-identical (3731519 bytes). No serving/live execution in this lane.",
+  "sourceSchemas": [
+    {
+      "chainId": 100,
+      "researchArtifact": "wave2-check/serving-schema-100.json",
+      "sha256": "2fefb5c645d84d3a8c65f1f8522fe016ef6a64cca2441b21bcfabb43c14b3047"
+    },
+    {
+      "chainId": 42161,
+      "researchArtifact": "wave2-check/serving-schema-42161.json",
+      "sha256": "2fefb5c645d84d3a8c65f1f8522fe016ef6a64cca2441b21bcfabb43c14b3047"
+    }
+  ]
+}

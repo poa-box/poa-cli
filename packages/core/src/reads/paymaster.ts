@@ -41,6 +41,7 @@
  */
 
 import { ethers } from 'ethers';
+import { paymasterSubjectKey, SUBJECT_TYPE } from '../sponsorship/codec';
 import type { GraphClient } from '../graph/client';
 import { FETCH_INFRASTRUCTURE_ADDRESSES } from '../graph/documents/infrastructure';
 import type { InfrastructureAddresses } from '../graph/documents/infrastructure';
@@ -291,9 +292,11 @@ export async function readPaymasterOrgConfigPreferSubgraph(
   return { config: await readPaymasterOrgConfig(provider, hubAddress, orgId), source: 'rpc' };
 }
 
-/** Subject key for a hat-scoped paymaster budget: the hat ID as bytes32. */
+/** Canonical typed packed hash used by PaymasterHub budget validation. */
 export function hatSubjectKey(hatId: ethers.BigNumberish): string {
-  return ethers.utils.hexZeroPad(ethers.BigNumber.from(hatId).toHexString(), 32);
+  // Preserve ethers' bytes/array-like/hex conventions while checking Number before conversion.
+  const raw = typeof hatId === 'number' ? hatId : ethers.BigNumber.from(hatId).toString();
+  return paymasterSubjectKey(SUBJECT_TYPE.HAT, raw);
 }
 
 /**

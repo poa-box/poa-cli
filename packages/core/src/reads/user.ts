@@ -199,13 +199,49 @@ export interface OrgUser {
   totalModulesCompleted: string | null;
   firstSeenAt: string | null;
   lastActiveAt: string | null;
-  assignedTasks: Array<{ id: string; taskId: string; title: string | null; payout: string | null; status: string }>;
-  completedTasks: Array<{ id: string; taskId: string; title: string | null; payout: string | null }>;
-  hybridProposalsCreated: Array<{ id: string; proposalId: string; title: string | null; status: string | null; startTimestamp: string | null; endTimestamp: string | null }>;
-  modulesCompleted: Array<{ moduleId: string; completedAt: string | null }>;
+  /** Absent for authority-only rows and history selections that did not fetch this relation.
+   * Present arrays in FETCH_USER_DATA are capped at 20, not complete activity history. */
+  assignedTasks?: Array<{ id: string; taskId: string; title: string | null; payout: string | null; status: string }> | null;
+  completedTasks?: Array<{ id: string; taskId: string; title: string | null; payout: string | null }> | null;
+  hybridProposalsCreated?: Array<{ id: string; proposalId: string; title: string | null; status: string | null; startTimestamp: string | null; endTimestamp: string | null }> | null;
+  modulesCompleted?: Array<{ moduleId: string; completedAt: string | null }> | null;
   /** v7 claim-churn counters — ONLY when hasChurnCounters (tier 0, Gnosis today). */
   totalTasksReleased?: string;
   totalTasksLostToExpiry?: string;
+}
+
+/** Historical profile selection exists; its four relation arrays still have the query's cap. */
+export interface IndexedOrgUser extends OrgUser {
+  historyIndexed: true;
+  assignedTasks: NonNullable<OrgUser['assignedTasks']>;
+  completedTasks: NonNullable<OrgUser['completedTasks']>;
+  hybridProposalsCreated: NonNullable<OrgUser['hybridProposalsCreated']>;
+  modulesCompleted: NonNullable<OrgUser['modulesCompleted']>;
+}
+
+/** A real authority identity with no indexed historical User. No synthetic zero or join time. */
+export interface AuthorityOnlyOrgUser extends OrgUser {
+  historyIndexed: false;
+  participationTokenBalance: null;
+  joinMethod: null;
+  totalTasksCompleted: null;
+  totalVotes: null;
+  totalModulesCompleted: null;
+  firstSeenAt: null;
+  lastActiveAt: null;
+  assignedTasks?: null;
+  completedTasks?: null;
+  hybridProposalsCreated?: null;
+  modulesCompleted?: null;
+  totalTasksReleased?: undefined;
+  totalTasksLostToExpiry?: undefined;
+}
+
+/** Narrow only a populated profile selection, never infer relations from historyIndexed alone. */
+export function isIndexedOrgUser(user: OrgUser): user is IndexedOrgUser {
+  return user.historyIndexed === true && Array.isArray(user.assignedTasks)
+    && Array.isArray(user.completedTasks) && Array.isArray(user.hybridProposalsCreated)
+    && Array.isArray(user.modulesCompleted);
 }
 
 export interface OrgUserProfile {

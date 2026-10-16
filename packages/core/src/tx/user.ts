@@ -43,6 +43,45 @@ import {
 } from '../metadata/user';
 import { resolveOrgModules, requireModule } from '../reads/resolve';
 import { getRegistryAndAccount } from '../reads/user';
+import { assertPlanScope, assertSourceRef, SourceRef } from '../data/facts';
+import { cidV0ToBytes32 } from '../encoding/cid';
+import { RawUintInput, requireRawUint } from '../amounts';
+import { PasskeyRegistrationArgs, passkeyRegistrationArgs } from './enrollment';
+
+export type { PasskeyEnrollment, PasskeyRegistrationArgs } from './enrollment';
+
+function enrollmentAddress(value: string): string {
+  const address = ethers.utils.getAddress(value);
+  if (address === ethers.constants.AddressZero) throw new Error('Nonzero enrollment address required');
+  return address;
+}
+
+export interface RegisterAndQuickJoinArgs {
+  quickJoinAddress: string;
+  user: string;
+  username: string;
+  deadline: RawUintInput;
+  nonce: RawUintInput;
+  signature: string;
+  orgId?: string;
+}
+/** One atomic EOA enrollment intent. Host supplies the RegisterAccount signature. */
+export function buildRegisterAndQuickJoin(a: RegisterAndQuickJoinArgs): TxIntent {
+  if (typeof a.username !== 'string') throw new Error('Invalid username');
+  if (typeof a.signature !== 'string' || !/^0x(?:[\da-f]{2})+$/i.test(a.signature)) throw new Error('Invalid registration signature');
+  return { to: enrollmentAddress(a.quickJoinAddress), abi: getAbi('QuickJoinNew'), method: 'registerAndQuickJoin',
+    args: [enrollmentAddress(a.user), requireUsernameArg(a.username), requireRawUint(a.deadline), requireRawUint(a.nonce), a.signature],
+    meta: { domain: 'user', action: 'register-and-join', orgId: a.orgId, summary: { username: a.username } } };
+}
+export interface RegisterAndQuickJoinWithPasskeyArgs extends PasskeyRegistrationArgs {
+  quickJoinAddress: string;
+  orgId?: string;
+}
+/** One atomic intent; host signs registrationChallenge(input, 'passkey') with RegisterPasskeyAccount. */
+export function buildRegisterAndQuickJoinWithPasskey(a: RegisterAndQuickJoinWithPasskeyArgs): TxIntent {
+  return { to: enrollmentAddress(a.quickJoinAddress), abi: getAbi('QuickJoinNew'), method: 'registerAndQuickJoinWithPasskey',
+    args: passkeyRegistrationArgs(a), meta: { domain: 'user', action: 'register-and-join-passkey', orgId: a.orgId, summary: { username: a.username } } };
+}
 
 // ───────────────────────────── Level 1 — pure ─────────────────────────────
 
@@ -288,6 +327,36 @@ export async function setProfileMetadataIntent(
 
   const intent = buildSetProfileMetadata({ registryAddress, metadataHash });
   intent.meta.ipfs = { cid, metadata };
+  return intent;
+}
+
+export interface PreparedProfileMetadataParams {
+  /** Host-selected account/registry chain and merge base. Core never ranks other profiles. */
+  source: SourceRef;
+  /** Final patch or replacement document, already chosen by the host. */
+  metadata: UserProfileMetadata;
+  /** Injected content writer. Tests and read-only hosts can use an offline mock. */
+  upload(serialized: string): Promise<string>;
+}
+
+/** Prepared document path: no graph resolution, HOME default, implicit old-profile merge or signing.
+ * Validate before upload; upload failure produces no intent and never mutates the supplied document.
+ * Execution chain/identity checks remain host-owned; summary chainId is descriptive only. */
+export async function preparedProfileMetadataIntent(params: PreparedProfileMetadataParams): Promise<TxIntent> {
+  assertSourceRef(params.source);
+  if (!params.source.account || !params.source.contract || /^0x0{40}$/i.test(params.source.contract)
+    || /^0x0{40}$/i.test(params.source.account)) throw new Error('Explicit nonzero account and registry source required');
+  if (params.source.contracts?.registry) assertPlanScope(params.source, { chainId: params.source.chainId, contract: params.source.contracts.registry });
+  for (const field of USER_PROFILE_FIELDS) {
+    if (params.metadata[field] !== undefined && typeof params.metadata[field] !== 'string') throw new CliError(`Invalid profile field: ${field}`, EXIT.USAGE);
+  }
+  const metadata = buildUserProfileMetadata(params.metadata);
+  const serialized = serializeUserProfileMetadata(metadata);
+  const cid = await params.upload(serialized);
+  const metadataHash = cidV0ToBytes32(cid);
+  const intent = buildSetProfileMetadata({ registryAddress: params.source.contract, metadataHash });
+  intent.meta.ipfs = { cid, metadata };
+  intent.meta.summary = { ...intent.meta.summary, chainId: params.source.chainId, account: params.source.account };
   return intent;
 }
 

@@ -36,6 +36,8 @@ export interface SponsoredSendOptions {
   value?: bigint;
   pimlicoApiKey?: string;
   bundlerUrl?: string;
+  /** Persist operation identity before receipt waits. Callback failure never permits retry. */
+  onSubmitted?: (submission: SponsoredSubmission) => void | Promise<void>;
 }
 
 /**
@@ -66,4 +68,25 @@ export function resolveSponsoredConfig(env: EnvSource = EMPTY_ENV): SponsoredCon
     orgId: orgId as Hex,
     hatId: BigInt(hatId),
   };
+}
+
+export type SponsoredSubmissionPhase = 'pre-submit' | 'submitting' | 'submitted' | 'receipt';
+export interface SponsoredSubmission {
+  phase: SponsoredSubmissionPhase;
+  /** Canonical intended identity, including a possibly accepted request with a lost response. */
+  computedHash?: Hex;
+  /** Bundler-returned identity retained diagnostically; cannot replace a differing computedHash. */
+  userOpHash?: Hex;
+  txHash?: Hex;
+  entryPoint: Hex;
+  chainId: number;
+}
+/** Only pre-submit establishes non-submission and permits a direct fallback. */
+export class SponsoredSubmissionError extends Error {
+  readonly cause: unknown;
+  constructor(message: string, public readonly submission: SponsoredSubmission, cause?: unknown) {
+    super(message);
+    this.name = 'SponsoredSubmissionError';
+    this.cause = cause;
+  }
 }

@@ -1,0 +1,25 @@
+{
+  "kind": "Offline supplementary contract source, not deployed bytecode proof",
+  "files": [
+    {
+      "fixture": "PaymentManager.sol.txt",
+      "source": "src/PaymentManager.sol",
+      "sha256": "c8f26b7f247a5b90d91314513256c9dd09ebda7b6d4cf4a4cf773975add4824c"
+    },
+    {
+      "fixture": "IPaymentManager.sol.txt",
+      "source": "src/interfaces/IPaymentManager.sol",
+      "sha256": "26f15d79161cbf5fb10b1bc60c7bea4ffb5149db23c88d61fef3ac774133589f"
+    },
+    {
+      "fixture": "CashOutRelay.sol.txt",
+      "source": "src/cashout/CashOutRelay.sol",
+      "sha256": "187a5b068756c55cc00d56da1275fb6dc2b8332f95957925827859a621ce537e"
+    },
+    {
+      "fixture": "CashOutRelay.abi.json",
+      "source": "out-production/CashOutRelay.sol/CashOutRelay.abi.json",
+      "sha256": "1fb89eaaf96826710257c8016601e4f005c7e58c36253df37c6274460ee3ea4d"
+    }
+  ]
+}

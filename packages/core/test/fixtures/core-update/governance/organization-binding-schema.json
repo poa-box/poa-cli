@@ -1,0 +1,107 @@
+{
+  "kind": "independent serving introspection projection, retained from reviewed wave2-check",
+  "rows": [
+    {
+      "chainId": 100,
+      "originalIntrospectionSha256": "2fefb5c645d84d3a8c65f1f8522fe016ef6a64cca2441b21bcfabb43c14b3047",
+      "queryField": {
+        "name": "organization",
+        "args": [
+          {
+            "name": "id",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "ID",
+                "ofType": null
+              }
+            },
+            "defaultValue": null
+          },
+          {
+            "name": "block",
+            "type": {
+              "kind": "INPUT_OBJECT",
+              "name": "Block_height",
+              "ofType": null
+            },
+            "defaultValue": null
+          },
+          {
+            "name": "subgraphError",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "ENUM",
+                "name": "_SubgraphErrorPolicy_",
+                "ofType": null
+              }
+            },
+            "defaultValue": "deny"
+          }
+        ],
+        "type": {
+          "kind": "OBJECT",
+          "name": "Organization",
+          "ofType": null
+        },
+        "isDeprecated": false,
+        "deprecationReason": null
+      }
+    },
+    {
+      "chainId": 42161,
+      "originalIntrospectionSha256": "2fefb5c645d84d3a8c65f1f8522fe016ef6a64cca2441b21bcfabb43c14b3047",
+      "queryField": {
+        "name": "organization",
+        "args": [
+          {
+            "name": "id",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "ID",
+                "ofType": null
+              }
+            },
+            "defaultValue": null
+          },
+          {
+            "name": "block",
+            "type": {
+              "kind": "INPUT_OBJECT",
+              "name": "Block_height",
+              "ofType": null
+            },
+            "defaultValue": null
+          },
+          {
+            "name": "subgraphError",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "ENUM",
+                "name": "_SubgraphErrorPolicy_",
+                "ofType": null
+              }
+            },
+            "defaultValue": "deny"
+          }
+        ],
+        "type": {
+          "kind": "OBJECT",
+          "name": "Organization",
+          "ofType": null
+        },
+        "isDeprecated": false,
+        "deprecationReason": null
+      }
+    }
+  ]
+}
