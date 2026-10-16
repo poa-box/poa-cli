@@ -445,6 +445,7 @@
     "* (./elections)",
     "* (./power)",
     "* (./provenance)",
+    "* (./role-continuation)",
     "* (./role-planning)",
     "* (./validation)"
   ],
@@ -468,18 +469,34 @@
     "readSubjectCreationProvenance",
     "recoverSubjectCreationHistory"
   ],
+  "governance/role-continuation": [
+    "RoleConfigurationOutcome",
+    "RoleConfigurationOutcomeInput",
+    "RoleContinuationInput",
+    "RoleContinuationResult",
+    "readRoleConfigurationOutcome",
+    "readRoleContinuation"
+  ],
   "governance/role-planning": [
+    "ExistingRoleConfigurationPlan",
+    "ExistingRolePlanningInput",
     "PlanningFreshness",
     "RoleConfigurationPlan",
     "RoleConfigurationRequest",
+    "RoleCreationInput",
+    "RoleCreationPlan",
     "RolePermissionRequest",
     "RolePlanningContext",
     "RolePlanningInput",
     "authorityExecutionCall",
     "governancePlanBlocked",
+    "planExistingRoleConfiguration",
     "planRoleConfiguration",
+    "planRoleCreation",
     "requireLivePlanningSnapshot",
     "requirePlanningFact",
+    "validateExistingRolePlanFreshness",
+    "validateRoleCreationFreshness",
     "validateRolePlanFreshness"
   ],
   "governance/validation": [
@@ -1144,7 +1161,10 @@
   ],
   "reads/provenance": [
     "CanonicalTransaction",
+    "ExactOperationIdentity",
     "ExactTransactionCall",
+    "ExactTransactionCallSelector",
+    "ExactTransactionExecution",
     "ProvenanceFreshness",
     "ProvenanceProvider",
     "decodeCanonicalCall",

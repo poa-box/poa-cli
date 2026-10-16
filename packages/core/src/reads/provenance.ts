@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { requireRawUint } from '../amounts';
+import { requireRawUint, RawUintInput } from '../amounts';
 import { ENTRY_POINT } from '../accounts/constants';
 import { getAbi } from '../contracts';
 import { assertSourceBlock, requireCompleteSnapshot, SourceRef, SourceSnapshot } from '../data/facts';
@@ -12,9 +12,10 @@ export interface CanonicalTransaction {
   transactionHash: string;
   inclusion: { number: string; hash: string };
   from: string; to: string; data: string; value: string;
-  logs: readonly { address: string; topics: readonly string[]; data: string }[];
+  logs: readonly { address: string; topics: readonly string[]; data: string; logIndex?: number }[];
 }
 const transactions = new WeakSet<object>();
+const transactionChains = new WeakMap<CanonicalTransaction, number>();
 function hash(value: string): string {
   if (!/^0x[\da-f]{64}$/i.test(value)) throw new Error('INVALID_PROVENANCE_HASH');
   return value.toLowerCase();
@@ -60,11 +61,12 @@ export async function readCanonicalTransaction(input: {
     || log.blockHash?.toLowerCase() !== inclusion.hash || String(log.blockNumber) !== inclusion.number)) throw new Error('RECEIPT_LOG_PROVENANCE_MISMATCH');
   const data: CanonicalTransaction = Object.freeze({ transactionHash: txHash, inclusion: Object.freeze(inclusion),
     from: ethers.utils.getAddress(tx.from), to: ethers.utils.getAddress(tx.to), data: tx.data, value: tx.value.toString(),
-    logs: Object.freeze(receipt.logs.map(log => Object.freeze({ address: log.address, topics: Object.freeze([...log.topics]), data: log.data }))) });
+    logs: Object.freeze(receipt.logs.map(log => Object.freeze({ address: log.address, topics: Object.freeze([...log.topics]), data: log.data, ...(log.logIndex === undefined ? {} : { logIndex: log.logIndex }) }))) });
   const result: SourceSnapshot<CanonicalTransaction> = Object.freeze({ source: Object.freeze({ ...source, block: Object.freeze({ ...selected }),
     ...(source.contracts ? { contracts: Object.freeze({ ...source.contracts }) } : {}) }), data,
     coverage: Object.freeze({ status: 'complete' as const, expectedKeys: Object.freeze([txHash]), receivedKeys: Object.freeze([txHash]), missingIds: Object.freeze([]), failedIds: Object.freeze([]), issues: Object.freeze([]) }) });
   transactions.add(result);
+  transactionChains.set(data, source.chainId);
   return result;
 }
 export function requireCanonicalTransaction(evidence: SourceSnapshot<CanonicalTransaction>, scope: SourceRef, freshness: ProvenanceFreshness): CanonicalTransaction {
@@ -74,10 +76,11 @@ export function requireCanonicalTransaction(evidence: SourceSnapshot<CanonicalTr
 }
 
 /** ERC-4337 v0.7 PackedUserOperation from the canonical EntryPoint interface.
- * Aggregated and multi-operation transactions deliberately need a richer exact-call proof.
+ * Only handleOps is supported; aggregated operations require a different proof.
  */
 const entryPoint = new ethers.utils.Interface([
   'function handleOps((address sender,uint256 nonce,bytes initCode,bytes callData,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData,bytes signature)[] ops,address beneficiary)',
+  'event BeforeExecution()',
 ]);
 export function decodeCanonicalCall(iface: ethers.utils.Interface, data: string): ethers.utils.TransactionDescription {
   if (typeof data !== 'string' || data.length > 2_000_002) throw new Error('PROVENANCE_CALLDATA_LIMIT');
@@ -86,22 +89,98 @@ export function decodeCanonicalCall(iface: ethers.utils.Interface, data: string)
   return parsed;
 }
 export interface ExactTransactionCall { target: string; caller: string; data: string; operationStatus: 'succeeded' | 'failed'; userOpHash?: string }
-/** A direct call or one proven v0.7 operation executing one call. No guessed log isolation. */
-export function exactTransactionCall(tx: CanonicalTransaction, chainId: number): ExactTransactionCall {
-  if (tx.value !== '0') throw new Error('UNSUPPORTED_PROVENANCE_VALUE');
-  if (tx.to.toLowerCase() !== ENTRY_POINT.toLowerCase()) return { target: tx.to, caller: tx.from, data: tx.data, operationStatus: 'succeeded' };
-  const parsed = decodeCanonicalCall(entryPoint, tx.data);
-  if (parsed.name !== 'handleOps' || parsed.args.ops.length !== 1) throw new Error('EXACT_OPERATION_ISOLATION_REQUIRED');
-  const op = parsed.args.ops[0];
+/** Optional identity is a constraint on canonical calldata, never proof by itself. */
+export interface ExactOperationIdentity { userOpHash?: string; sender?: string; nonce?: RawUintInput; entryPoint?: string }
+export interface ExactTransactionCallSelector extends ExactOperationIdentity {
+  target?: string;
+  data?: string;
+  /** Pure intent predicate over decoded calls only, never over receipt events.
+   * Domain readers must still validate the selected call and its isolated events. */
+  matchesCall?: (call: Readonly<Pick<ExactTransactionCall, 'target' | 'caller' | 'data'>>) => boolean;
+}
+export interface ExactTransactionExecution extends ExactTransactionCall {
+  /** Direct receipt logs, or only the selected operation's execution window.
+   * Includes that operation's postOp logs; excludes validation, other operations,
+   * the terminal UserOperationEvent, and beneficiary compensation. */
+  logs: CanonicalTransaction['logs'];
+}
+function operationHash(op: ethers.utils.Result, chainId: number): string {
   const digest = ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode(
     ['address', 'uint256', 'bytes32', 'bytes32', 'bytes32', 'uint256', 'bytes32', 'bytes32'],
     [op.sender, op.nonce, ethers.utils.keccak256(op.initCode), ethers.utils.keccak256(op.callData), op.accountGasLimits, op.preVerificationGas, op.gasFees, ethers.utils.keccak256(op.paymasterAndData)]));
-  const userOpHash = ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode(['bytes32', 'address', 'uint256'], [digest, ENTRY_POINT, chainId]));
-  const topic = USER_OPERATION_EVENTS.getEventTopic('UserOperationEvent').toLowerCase();
-  if (tx.logs.filter(log => log.address.toLowerCase() === ENTRY_POINT.toLowerCase() && log.topics[0]?.toLowerCase() === topic).length !== 1) throw new Error('EXACT_OPERATION_ISOLATION_REQUIRED');
-  const outcome = decodeUserOperationOutcome({ status: 1, logs: tx.logs }, { userOpHash, entryPoint: ENTRY_POINT, sender: op.sender, nonce: requireRawUint(op.nonce.toString()) });
-  if (outcome.status === 'unknown') throw new Error('OPERATION_PROVENANCE_UNSETTLED');
-  const accountCall = decodeCanonicalCall(new ethers.utils.Interface(getAbi('PasskeyAccount')), op.callData);
-  if (accountCall.name !== 'execute' || !accountCall.args.value.isZero()) throw new Error('EXACT_ACCOUNT_CALL_REQUIRED');
-  return { target: accountCall.args.target, caller: op.sender, data: accountCall.args.data, operationStatus: outcome.status, userOpHash };
+  return ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode(['bytes32', 'address', 'uint256'], [digest, ENTRY_POINT, chainId]));
+}
+function accountCall(op: ethers.utils.Result, userOpHash: string, operationStatus: 'succeeded' | 'failed'): ExactTransactionCall {
+  const parsed = decodeCanonicalCall(new ethers.utils.Interface(getAbi('PasskeyAccount')), op.callData);
+  if (parsed.name !== 'execute' || !parsed.args.value.isZero()) throw new Error('EXACT_ACCOUNT_CALL_REQUIRED');
+  return { target: parsed.args.target, caller: op.sender, data: parsed.args.data, operationStatus, userOpHash };
+}
+const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+/** Legacy two-argument form retains its strict single-operation call-only contract.
+ * Pass a selector (even {}) for canonical execution-log isolation and multi-op support.
+ * No transaction/proof cloning: the isolated view references the observed log objects. */
+export function exactTransactionCall(tx: CanonicalTransaction, chainId: number): ExactTransactionCall;
+export function exactTransactionCall(tx: CanonicalTransaction, chainId: number, selector: ExactTransactionCallSelector): ExactTransactionExecution;
+export function exactTransactionCall(tx: CanonicalTransaction, chainId: number, selector?: ExactTransactionCallSelector): ExactTransactionCall | ExactTransactionExecution {
+  if (tx.value !== '0') throw new Error('UNSUPPORTED_PROVENANCE_VALUE');
+  if (selector !== undefined && transactionChains.get(tx) !== chainId) throw new Error('CANONICAL_TRANSACTION_CHAIN_PROOF_REQUIRED');
+  const expectedHash = selector?.userOpHash === undefined ? undefined : hash(selector.userOpHash);
+  const sender = selector?.sender === undefined ? undefined : ethers.utils.getAddress(selector.sender);
+  const nonce = selector?.nonce === undefined ? undefined : requireRawUint(selector.nonce);
+  if (selector?.entryPoint !== undefined && !same(ethers.utils.getAddress(selector.entryPoint), ENTRY_POINT)) throw new Error('OPERATION_ENTRYPOINT_MISMATCH');
+  const matches = (call: ExactTransactionCall) => (sender === undefined || same(call.caller, sender))
+    && (selector?.target === undefined || same(call.target, selector.target))
+    && (selector?.data === undefined || same(call.data, selector.data)) && (!selector?.matchesCall || selector.matchesCall(Object.freeze({ target: call.target, caller: call.caller, data: call.data })));
+  if (!same(tx.to, ENTRY_POINT)) {
+    const direct: ExactTransactionCall = { target: tx.to, caller: tx.from, data: tx.data, operationStatus: 'succeeded' };
+    if (selector === undefined) return direct;
+    if (expectedHash !== undefined || nonce !== undefined || selector.entryPoint !== undefined || !matches(direct)) throw new Error('EXACT_OPERATION_IDENTITY_MISMATCH');
+    return { ...direct, logs: tx.logs };
+  }
+  let parsed: ethers.utils.TransactionDescription;
+  try { parsed = decodeCanonicalCall(entryPoint, tx.data); }
+  catch { throw new Error('EXACT_HANDLE_OPS_CALL_REQUIRED'); }
+  const ops = parsed.args.ops as ethers.utils.Result[];
+  if (parsed.name !== 'handleOps' || !ops.length) throw new Error('EXACT_OPERATION_ISOLATION_REQUIRED');
+  const topic = USER_OPERATION_EVENTS.getEventTopic('UserOperationEvent');
+  const eventIndices = tx.logs.flatMap((log, i) => same(log.address, ENTRY_POINT) && same(log.topics[0] ?? '', topic) ? [i] : []);
+  if (selector === undefined) {
+    if (ops.length !== 1 || eventIndices.length !== 1) throw new Error('EXACT_OPERATION_ISOLATION_REQUIRED');
+    const op = ops[0], userOpHash = operationHash(op, chainId);
+    const outcome = decodeUserOperationOutcome({ status: 1, logs: tx.logs }, { userOpHash, entryPoint: ENTRY_POINT, sender: op.sender, nonce: requireRawUint(op.nonce.toString()) });
+    if (outcome.status === 'unknown') throw new Error('OPERATION_PROVENANCE_UNSETTLED');
+    return accountCall(op, userOpHash, outcome.status);
+  }
+  // The whole receipt must retain its canonical order, including validation logs.
+  // Block-global log indices need not start at zero, but a complete receipt is contiguous.
+  if (tx.logs.some((log, i) => !Number.isSafeInteger(log.logIndex) || log.logIndex! < 0
+    || (i > 0 && log.logIndex !== tx.logs[i - 1].logIndex! + 1))) throw new Error('RECEIPT_LOG_ORDER_REQUIRED');
+  const beforeTopic = entryPoint.getEventTopic('BeforeExecution');
+  const before = tx.logs.flatMap((log, i) => same(log.address, ENTRY_POINT) && same(log.topics[0] ?? '', beforeTopic) ? [i] : []);
+  if (before.length !== 1 || tx.logs[before[0]].topics.length !== 1 || tx.logs[before[0]].data !== '0x'
+    || eventIndices.length !== ops.length || eventIndices.some(i => i <= before[0])) throw new Error('EXACT_OPERATION_BOUNDARIES_REQUIRED');
+  const hashes = ops.map(op => operationHash(op, chainId));
+  if (new Set(hashes).size !== ops.length || new Set(ops.map(op => op.sender.toLowerCase() + ':' + op.nonce.toString())).size !== ops.length) throw new Error('DUPLICATE_OPERATION_IDENTITY');
+  const outcomes = ops.map((op, i) => {
+    const log = tx.logs[eventIndices[i]];
+    const outcome = decodeUserOperationOutcome({ status: 1, logs: [log] }, { userOpHash: hashes[i], entryPoint: ENTRY_POINT, sender: op.sender, nonce: requireRawUint(op.nonce.toString()) });
+    // Also bind paymaster to the packed calldata. Its postOp lies in this window.
+    const paymaster = op.paymasterAndData === '0x' ? ethers.constants.AddressZero : op.paymasterAndData.slice(0, 42);
+    if ((op.paymasterAndData !== '0x' && ethers.utils.hexDataLength(op.paymasterAndData) < 52)
+      || outcome.status === 'unknown' || !same(log.topics[3] ?? '', ethers.utils.hexZeroPad(paymaster, 32))) throw new Error('OPERATION_EVENT_ORDER_OR_IDENTITY_MISMATCH');
+    return outcome.status;
+  });
+  const candidates: { call: ExactTransactionCall; index: number }[] = [];
+  for (const [i, op] of ops.entries()) {
+    if ((expectedHash !== undefined && hashes[i] !== expectedHash) || (sender !== undefined && !same(op.sender, sender))
+      || (nonce !== undefined && op.nonce.toString() !== nonce)) continue;
+    let call: ExactTransactionCall;
+    try { call = accountCall(op, hashes[i], outcomes[i]); }
+    catch { continue; } // Other accounts/methods may co-bundle; never infer their inner call.
+    if (matches(call)) candidates.push({ call, index: i });
+  }
+  if (candidates.length !== 1) throw new Error(candidates.length ? 'EXACT_OPERATION_IDENTITY_REQUIRED' : 'EXACT_OPERATION_IDENTITY_MISMATCH');
+  const { call, index } = candidates[0];
+  return { ...call, logs: Object.freeze(tx.logs.slice((index === 0 ? before[0] : eventIndices[index - 1]) + 1, eventIndices[index])) };
 }

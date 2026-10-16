@@ -16,6 +16,35 @@ const proposalDocument = `query RecoverSubjectCreation($orgId: ID!, $id: String!
     hybridVoting { id organization { id } }
   }
 }`;
+// Only requested serving bindings are selected. Hosts do not authorize arbitrary
+// targets by supplying an address: the same pinned organization must confirm it.
+const moduleFields: Readonly<Record<string, string>> = { email: 'zkEmailInvites', participationToken: 'participationToken',
+  taskManager: 'taskManager', paymentManager: 'paymentManager', executor: 'executorContract' };
+function recoveryDocument(contracts: Readonly<Record<string, string>>): string {
+  const fields = Object.keys(moduleFields).filter(key => contracts[key] !== undefined).map(key => `${moduleFields[key]} { id }`).join(' ');
+  return proposalDocument.replace('hybridVoting { id } }', `hybridVoting { id } ${fields} }`);
+}
+/** Reviewed nonallocating entrypoints only. No initialization, arbitrary relay,
+ * legacy Hats creation, transfers/callbacks or module upgrades are inferred safe. */
+function nonallocatingModuleCall(key: string, data: string): boolean {
+  const abi = { email: 'ZkEmailInvites', participationToken: 'ParticipationToken', taskManager: 'TaskManagerNew',
+    paymentManager: 'PaymentManager', executor: 'Executor' }[key];
+  if (!abi) return false;
+  const call = decodeCanonicalCall(new ethers.utils.Interface(getAbi(abi)), data);
+  if (key === 'email') return call.signature === 'setActiveAllowlist(bytes32,bytes32)';
+  if (key === 'participationToken') return ['setName(string)', 'setSymbol(string)'].includes(call.signature);
+  if (key === 'executor') return call.signature === 'setHatMinterAuthorization(address,bool)';
+  // balanceOf is STATICCALL; creation reserves a distribution, without paying it.
+  if (key === 'paymentManager') return call.signature === 'createDistribution(address,uint256,bytes32,uint256)';
+  if (key === 'taskManager' && call.signature === 'setConfig(uint8,bytes)' && [1, 2, 7].includes(call.args.key ?? call.args[0])) {
+    // Retired ROLE_PERM (2) reverts; current creator/organizer setters only edit
+    // subject sets. Require exact nested payloads, including the historic mask.
+    const types = Number(call.args[0]) === 2 ? ['uint256', 'uint8'] : ['uint256', 'bool'];
+    const values = ethers.utils.defaultAbiCoder.decode(types, call.args[1]);
+    return ethers.utils.defaultAbiCoder.encode(types, values).toLowerCase() === call.args[1].toLowerCase();
+  }
+  return false;
+}
 export interface VerifiedSubjectCreation {
   readonly id: string;
   readonly createsSubject: boolean;
@@ -48,17 +77,19 @@ export async function readSubjectCreationProvenance(input: {
 }): Promise<PlanResult<VerifiedSubjectCreation>> {
   try {
     const { scope, source, rpcSource } = input;
-    for (const value of [scope.contract, scope.contracts.membershipAuthority]) if (!ethers.utils.isAddress(value) || BigInt(value) === 0n) throw new Error('INVALID_PROVENANCE_TARGET');
+    for (const value of [scope.contract, ...Object.values(scope.contracts)]) if (!ethers.utils.isAddress(value) || BigInt(value) === 0n) throw new Error('INVALID_PROVENANCE_TARGET');
     assertPlanScope(source, scope); assertPlanScope(rpcSource, scope);
     requireProvenanceFreshness(source, input.freshness); requireProvenanceFreshness(rpcSource, input.freshness);
     assertSourceBlock(rpcSource.block, source.block!);
     const proposalId = requireRawUint(input.proposalId), id = `${scope.contract.toLowerCase()}-${proposalId}`;
-    const indexed = await readIndexedSingletonFacts(source, input.query, proposalDocument, { orgId: scope.orgId, id }, ['proposals'], { proposals: id });
+    const indexed = await readIndexedSingletonFacts(source, input.query, recoveryDocument(scope.contracts), { orgId: scope.orgId, id }, ['proposals'], { proposals: id });
     const data = requireCompleteSnapshot(indexed, { scope, indexed: true, snapshot: 'pinned', block: source.block });
     const org = data.organization as { id?: string; membershipAuthority?: { id?: string }; hybridVoting?: { id?: string } } | null;
     const rows = data.proposals as IndexedRow[];
     if (!same(org?.id, scope.orgId) || !same(org?.hybridVoting?.id, scope.contract)
       || !same(org?.membershipAuthority?.id, scope.contracts.membershipAuthority) || rows.length !== 1) throw new Error('PROPOSAL_BINDING_UNPROVEN');
+    for (const [key, field] of Object.entries(moduleFields)) if (scope.contracts[key] !== undefined
+      && !same((org as Record<string, { id?: string }>)[field]?.id, scope.contracts[key])) throw new Error('PROPOSAL_BINDING_UNPROVEN');
     const row = rows[0], module = row.hybridVoting as { id?: string; organization?: { id?: string } } | null;
     if (row.proposalId !== proposalId || !same(module?.id, scope.contract) || !same(module?.organization?.id, scope.orgId)
       || typeof row.transactionHash !== 'string' || typeof row.createdAtBlock !== 'string') throw new Error('PROPOSAL_IDENTITY_UNPROVEN');
@@ -94,7 +125,10 @@ export async function readSubjectCreationProvenance(input: {
       } else if (same(item.target, scope.contract)) {
         const decoded = decodeCanonicalCall(voting, item.calldata);
         if (!['setConfig', 'setClasses', 'addHatToClass', 'removeHatFromClass', 'setClassSubject', 'pause', 'unpause'].includes(decoded.name)) throw new Error('INDIRECT_SUBJECT_ALLOCATION_UNPROVEN');
-      } else throw new Error('INDIRECT_SUBJECT_ALLOCATION_UNPROVEN');
+      } else {
+        const key = Object.keys(moduleFields).find(key => same(item.target, scope.contracts[key] ?? ''));
+        if (!key || !nonallocatingModuleCall(key, item.calldata)) throw new Error('INDIRECT_SUBJECT_ALLOCATION_UNPROVEN');
+      }
     }
     const proof: VerifiedSubjectCreation = Object.freeze({ id, createsSubject: creations.length > 0,
       creations: Object.freeze(creations.map(c => Object.freeze(c))), transactionHash: tx.transactionHash,

@@ -21,7 +21,7 @@ describe('canonical provenance using actual ethers browser ESM classes', () => {
     expect(result.diagnostics.eventOriginalFormat).toBe('function');
     expect(result.diagnostics.originalParsedFunctionError).toContain('fragment.format is not a function');
     expect(result.diagnostics.originalParsedEventError).toContain('eventFragment.format is not a function');
-    expect(result.cases).toHaveLength(16);
+    expect(result.cases).toHaveLength(21);
     expect(result.cases.filter((c: any) => !c.passed)).toEqual([]);
     expect(result.networkCalls).toBe(0);
   });

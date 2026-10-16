@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { requireRawUint } from '../amounts';
-import { assertPlanScope, assertSourceBlock, assertSourceRef, Fact, PlanConsequence, PlanResult, PlanScope, requireCompleteSnapshot, SourceBlock, SourceSnapshot } from '../data/facts';
+import { assertPlanScope, assertSourceBlock, assertSourceRef, Fact, PlanConsequence, PlanResult, PlanScope, requireCompleteSnapshot, SourceBlock, SourceRef, SourceSnapshot } from '../data/facts';
 import { predictNextSubjectIds, normalizeSubjectId, SubjectAllocation, SubjectCreationProposal, subjectCreationRaceFacts } from '../authority/ids';
 import { AuthorityReadiness, isAuthorityReady } from '../reads/authority';
 import { buildAuthorityAction, permissionWord, projectContext } from '../tx/authority';
@@ -56,12 +56,15 @@ function address(value: string): string {
   return value.toLowerCase();
 }
 export interface RolePlanningContext {
+  /** Subjects and group edges may come from a complete indexed authority snapshot
+   * at the exact live block. This attribution never relabels them as RPC reads. */
+  indexedAuthoritySource?: SourceRef;
   readiness: AuthorityReadiness;
   executorAuthorized: Fact<boolean>;
-  subjects: readonly { subjectId: string; kind: 'Role' | 'Group' }[];
+  subjects: readonly { subjectId: string; kind: 'Role' | 'Group'; maxMembers?: string; memberCount?: string; metadataPointer?: string; imageURI?: string }[];
   groupEdges: readonly { roleSubjectId: string; groupSubjectId: string; isActive: boolean }[];
   /** _isInOrg is acceptance ANYWHERE, including an accepted but ineligible role. */
-  accounts: readonly { account: string; acceptedAnywhere: Fact<boolean> }[];
+  accounts: readonly { account: string; acceptedAnywhere: Fact<boolean>; acceptedInSubject?: Fact<boolean>; acceptedSubjectId?: string }[];
   taskManager?: { address: string; executorAuthorized: Fact<boolean> };
   hybrid?: { address: string; executorAuthorized: Fact<boolean>; classes: readonly { classIndex: number }[] };
   registry?: { address: string; executorAuthorized: Fact<boolean>; currentAdminSubject: Fact<string> };
@@ -92,15 +95,49 @@ export interface RolePlanningInput {
   proposals: SourceSnapshot<readonly SubjectCreationProposal[]>;
 }
 
+/** Creation alone never guesses an allocated ID. Resolve the actual SubjectCreated
+ * event / indexed subject after execution, then use planExistingRoleConfiguration. */
+export interface RoleCreationInput {
+  scope: PlanScope; freshness: PlanningFreshness; context: SourceSnapshot<RolePlanningContext>;
+  request: Pick<RoleConfigurationRequest, 'kind' | 'name' | 'metadataPointer' | 'imageURI' | 'maxMembers' | 'memberRoleIds'>;
+}
+export interface RoleCreationPlan { batch: ExecutionCall[]; createsSubject: true; fingerprint: string }
+export interface ExistingRolePlanningInput {
+  scope: PlanScope; freshness: PlanningFreshness; context: SourceSnapshot<RolePlanningContext>;
+  subjectId: string; request: RoleConfigurationRequest;
+}
+export interface ExistingRoleConfigurationPlan { subjectId: string; batch: ExecutionCall[]; createsSubject: false; fingerprint: string }
+export function planRoleCreation(input: RoleCreationInput): PlanResult<RoleCreationPlan> { return planRole(input, 'create'); }
+export function planExistingRoleConfiguration(input: ExistingRolePlanningInput): PlanResult<ExistingRoleConfigurationPlan> { return planRole(input, 'existing'); }
+export function validateRoleCreationFreshness(plan: RoleCreationPlan, current: RoleCreationInput): PlanResult<RoleCreationPlan> {
+  const next = planRoleCreation(current);
+  return next.status !== 'ready' ? next : next.data.fingerprint !== plan.fingerprint
+    ? governancePlanBlocked(new Error('STALE_ROLE_PLAN'), next.consequences) : next;
+}
+export function validateExistingRolePlanFreshness(plan: ExistingRoleConfigurationPlan, current: ExistingRolePlanningInput): PlanResult<ExistingRoleConfigurationPlan> {
+  const next = planExistingRoleConfiguration(current);
+  return next.status !== 'ready' ? next : next.data.fingerprint !== plan.fingerprint
+    ? governancePlanBlocked(new Error('STALE_ROLE_PLAN'), next.consequences) : next;
+}
 /** Pure ordered compound plan. Requested branches fail atomically; no uploads, gas options or partial plan. */
-export function planRoleConfiguration(input: RolePlanningInput): PlanResult<RoleConfigurationPlan> {
-  const consequences: PlanConsequence[] = [{ code: 'SUBJECT_CREATION_RACE', values: { executionStable: false } }];
+export function planRoleConfiguration(input: RolePlanningInput): PlanResult<RoleConfigurationPlan> { return planRole(input, 'compound'); }
+function planRole(input: RolePlanningInput, mode: 'compound'): PlanResult<RoleConfigurationPlan>;
+function planRole(input: RoleCreationInput, mode: 'create'): PlanResult<RoleCreationPlan>;
+function planRole(input: ExistingRolePlanningInput, mode: 'existing'): PlanResult<ExistingRoleConfigurationPlan>;
+function planRole(input: RoleCreationInput | RolePlanningInput | ExistingRolePlanningInput, mode: 'create' | 'compound' | 'existing'): PlanResult<RoleConfigurationPlan | RoleCreationPlan | ExistingRoleConfigurationPlan> {
+  const consequences: PlanConsequence[] = mode === 'compound' ? [{ code: 'SUBJECT_CREATION_RACE', values: { executionStable: false } }] : [];
   try {
     const scope = input.scope;
     if (!scope.contract || !scope.orgId) throw new Error('ROLE_SCOPE_REQUIRED');
     address(scope.contract);
     const context = requireLivePlanningSnapshot(input.context, scope, input.freshness);
-    const r = input.request;
+    if (context.indexedAuthoritySource) {
+      assertSourceRef(context.indexedAuthoritySource);
+      assertPlanScope(context.indexedAuthoritySource, { chainId: scope.chainId, orgId: scope.orgId, contract: scope.contract });
+      if (context.indexedAuthoritySource.indexed !== true || context.indexedAuthoritySource.snapshot !== 'pinned') throw new Error('INDEXED_AUTHORITY_SOURCE_REQUIRED');
+      assertSourceBlock(context.indexedAuthoritySource.block, input.freshness.block);
+    }
+    const r: RoleConfigurationRequest = input.request;
     for (const value of [r.defaultAllow, r.editOrgDetails, r.vouch?.selfVouch, r.taskGrants?.creator, r.taskGrants?.organizer,
       r.sponsorship?.supportPasskeys, r.sponsorship?.initializeClaimBudget, r.sponsorship?.includeConfiguredEmailRules]) if (value !== undefined && typeof value !== 'boolean') throw new Error('INVALID_ROLE_BOOLEAN');
     if (!isAuthorityReady(context.readiness) || context.readiness.membershipAuthority!.id!.toLowerCase() !== scope.contract.toLowerCase()) throw new Error('AUTHORITY_UNAVAILABLE');
@@ -117,23 +154,26 @@ export function planRoleConfiguration(input: RolePlanningInput): PlanResult<Role
       assertPlanScope({ chainId: scope.chainId, contract: scope.contract }, { chainId: scope.chainId, contract: source.contracts.membershipAuthority });
     }
     enabled(context.executorAuthorized, 'EXECUTOR_AUTHORIZATION_REQUIRED');
-    requireCompleteSnapshot(input.allocations, { scope, snapshot: 'pinned', block: input.freshness.block });
-    const prediction = predictNextSubjectIds({ authority: scope.contract, history: input.allocations, scope });
-    if (prediction.status !== 'ready') return prediction;
-    const subjectId = prediction.data.subjectIds[0];
-    requireCompleteSnapshot(input.proposals, { scope: { chainId: scope.chainId, orgId: scope.orgId }, snapshot: 'pinned', block: input.freshness.block });
-    const race = subjectCreationRaceFacts(input.proposals, { chainId: scope.chainId, orgId: scope.orgId });
-    if (race.hasCompetingCreation.state !== 'known') throw new Error('PROPOSAL_HISTORY_UNAVAILABLE');
-    if (race.hasCompetingCreation.value) throw new Error('COMPETING_SUBJECT_CREATION');
+    let subjectId: string | undefined;
+    if (mode === 'compound') {
+      const compound = input as RolePlanningInput;
+      requireCompleteSnapshot(compound.allocations, { scope, snapshot: 'pinned', block: input.freshness.block });
+      const prediction = predictNextSubjectIds({ authority: scope.contract, history: compound.allocations, scope });
+      if (prediction.status !== 'ready') return prediction;
+      subjectId = prediction.data.subjectIds[0];
+    } else if (mode === 'existing') subjectId = normalizeSubjectId((input as ExistingRolePlanningInput).subjectId);
     if (!['Role', 'Group'].includes(r.kind) || typeof r.name !== 'string' || !r.name.trim()) throw new Error('INVALID_ROLE_CONFIGURATION');
     if (r.defaultAllow !== undefined && typeof r.defaultAllow !== 'boolean') throw new Error('INVALID_ROLE_CONFIGURATION');
     if (r.kind === 'Group' && (r.holders?.length || r.vouch || r.defaultAllow || r.maxMembers !== undefined || r.groupIds?.length || r.email)) throw new Error('GROUP_HAS_ROLE_ONLY_REQUESTS');
     if (r.kind === 'Role' && r.memberRoleIds?.length) throw new Error('ROLE_HAS_GROUP_ONLY_REQUESTS');
     const subjects = new Map(context.subjects.map(s => [normalizeSubjectId(s.subjectId), s.kind]));
     if (subjects.size !== context.subjects.length) throw new Error('DUPLICATE_SUBJECT');
-    if (input.allocations.source.block && input.context.source.block) assertSourceBlock(input.allocations.source.block, input.context.source.block);
-    const allocated = new Set(input.allocations.data.map(row => normalizeSubjectId(row.subjectId)));
-    if (context.subjects.some(s => !allocated.has(normalizeSubjectId(s.subjectId)))) throw new Error('ALLOCATION_CONTEXT_CHANGED');
+    if (mode === 'compound') {
+      const allocations = (input as RolePlanningInput).allocations;
+      if (allocations.source.block && input.context.source.block) assertSourceBlock(allocations.source.block, input.context.source.block);
+      const allocated = new Set(allocations.data.map(row => normalizeSubjectId(row.subjectId)));
+      if (context.subjects.some(s => !allocated.has(normalizeSubjectId(s.subjectId)))) throw new Error('ALLOCATION_CONTEXT_CHANGED');
+    } else if (mode === 'existing' && subjects.get(subjectId!) !== r.kind) throw new Error('EXISTING_SUBJECT_UNAVAILABLE');
     const edges = new Set<string>();
     for (const edge of context.groupEdges) {
       const role = normalizeSubjectId(edge.roleSubjectId), group = normalizeSubjectId(edge.groupSubjectId), key = role + ':' + group;
@@ -147,14 +187,41 @@ export function planRoleConfiguration(input: RolePlanningInput): PlanResult<Role
     };
     const groups = ids(r.groupIds, 'Group'), roles = ids(r.memberRoleIds, 'Role');
     if (groups.length > 8 || roles.length > 16) throw new Error('COMPOSITION_LIMIT');
-    for (const id of groups) if (context.groupEdges.filter(e => normalizeSubjectId(e.groupSubjectId) === id && e.isActive).length >= 16) throw new Error('COMPOSITION_LIMIT');
-    for (const id of roles) if (context.groupEdges.filter(e => normalizeSubjectId(e.roleSubjectId) === id && e.isActive).length >= 8) throw new Error('COMPOSITION_LIMIT');
+    const linked = (role: string, group: string) => context.groupEdges.some(e => e.isActive && normalizeSubjectId(e.roleSubjectId) === role && normalizeSubjectId(e.groupSubjectId) === group);
+    for (const group of groups) if ((mode !== 'existing' || !linked(subjectId!, group))
+      && context.groupEdges.filter(e => normalizeSubjectId(e.groupSubjectId) === group && e.isActive).length >= 16) throw new Error('COMPOSITION_LIMIT');
+    for (const role of roles) if ((mode !== 'existing' || !linked(role, subjectId!))
+      && context.groupEdges.filter(e => normalizeSubjectId(e.roleSubjectId) === role && e.isActive).length >= 8) throw new Error('COMPOSITION_LIMIT');
+    if (mode === 'existing') {
+      const current = context.groupEdges.filter(e => e.isActive && normalizeSubjectId(r.kind === 'Role' ? e.roleSubjectId : e.groupSubjectId) === subjectId);
+      const additions = r.kind === 'Role' ? groups.filter(group => !linked(subjectId!, group)) : roles.filter(role => !linked(role, subjectId!));
+      if (current.length + additions.length > (r.kind === 'Role' ? 8 : 16)) throw new Error('COMPOSITION_LIMIT');
+    }
     const call = (method: Parameters<typeof authorityExecutionCall>[1], args: unknown[]) => authorityExecutionCall(scope.contract!, method, args);
-    const metadata = r.metadataPointer === undefined ? ethers.constants.HashZero : metadataPointerToBytes32(r.metadataPointer);
-    const batch = [r.kind === 'Role' ? call('createRole', [r.name, metadata, r.imageURI ?? '', requireRawUint(r.maxMembers ?? '0', 32)])
-      : call('createGroup', [r.name, metadata, r.imageURI ?? '', roles])];
-    if (r.defaultAllow) batch.push(call('setSubjectDefault', [subjectId, true, false]));
-    for (const id of groups) batch.push(call('addRoleToGroup', [subjectId, id]));
+    const existingSubject = mode === 'existing' ? context.subjects.find(s => normalizeSubjectId(s.subjectId) === subjectId)! : undefined;
+    const pointer = r.metadataPointer ?? existingSubject?.metadataPointer;
+    const imageURI = r.imageURI ?? existingSubject?.imageURI;
+    if (mode === 'existing' && (pointer === undefined || imageURI === undefined)) throw new Error('EXISTING_METADATA_UNAVAILABLE');
+    const metadata = pointer === undefined || pointer === ethers.constants.HashZero ? ethers.constants.HashZero : metadataPointerToBytes32(pointer);
+    const createCall = () => r.kind === 'Role' ? call('createRole', [r.name, metadata, r.imageURI ?? '', requireRawUint(r.maxMembers ?? '0', 32)])
+      : call('createGroup', [r.name, metadata, r.imageURI ?? '', roles]);
+    if (mode === 'create') {
+      if (r.defaultAllow || groups.length || r.permissions?.length || r.vouch || r.manager || r.holders?.length
+        || r.taskGrants?.creator || r.taskGrants?.organizer || r.bindingClassIndex !== undefined || r.editOrgDetails || r.sponsorship || r.email) throw new Error('CREATION_HAS_DEPENDENT_CONFIGURATION');
+      const batch = [createCall()];
+      validateGovernanceBatches([batch]);
+      return { status: 'ready', data: { batch, createsSubject: true, fingerprint: ethers.utils.id(JSON.stringify([scope, context, batch])) },
+        consequences: [{ code: 'CONFIGURE_AFTER_SUBJECT_CREATED' }] };
+    }
+    // Below this point every dependent action has an explicit subject ID.
+    const id = subjectId!;
+    const batch: ExecutionCall[] = mode === 'compound' ? [createCall()] : [call('renameSubject', [id, r.name, metadata, imageURI ?? ''])];
+    if (mode === 'existing') {
+      if (r.kind === 'Role' && r.maxMembers !== undefined) batch.push(call('setMaxMembers', [id, requireRawUint(r.maxMembers, 32)]));
+      for (const role of roles) if (!context.groupEdges.some(e => e.isActive && normalizeSubjectId(e.roleSubjectId) === role && normalizeSubjectId(e.groupSubjectId) === id)) batch.push(call('addRoleToGroup', [role, id]));
+    }
+    if (r.defaultAllow || (mode === 'existing' && r.defaultAllow !== undefined)) batch.push(call('setSubjectDefault', [id, r.defaultAllow, false]));
+    for (const group of groups) if (mode === 'compound' || !context.groupEdges.some(e => e.isActive && normalizeSubjectId(e.roleSubjectId) === id && normalizeSubjectId(e.groupSubjectId) === group)) batch.push(call('addRoleToGroup', [id, group]));
     const permissionKeys = new Set<string>();
     for (const p of r.permissions ?? []) {
       if (!ethers.utils.isHexString(p.key, 32)) throw new Error('INVALID_PERMISSION_KEY');
@@ -163,22 +230,22 @@ export function planRoleConfiguration(input: RolePlanningInput): PlanResult<Role
       const key = p.key.toLowerCase() + ctx;
       if (permissionKeys.has(key)) throw new Error('DUPLICATE_PERMISSION');
       permissionKeys.add(key);
-      batch.push(call('setPerm', [subjectId, p.key, ctx, permissionWord(requireRawUint(p.value, 254), p.inheritGlobal ?? false)]));
+      batch.push(call('setPerm', [id, p.key, ctx, permissionWord(requireRawUint(p.value, 254), p.inheritGlobal ?? false)]));
     }
     if (r.vouch) {
       const quorum = requireRawUint(r.vouch.quorum, 32);
       if (quorum === '0') throw new Error('INVALID_VOUCH_QUORUM');
-      const voucher = r.vouch.selfVouch ? subjectId : normalizeSubjectId(r.vouch.voucherSubjectId);
-      if (voucher !== subjectId && !subjects.has(voucher)) throw new Error('VOUCHER_SUBJECT_UNAVAILABLE');
-      batch.push(call('configureVouchAttestor', [subjectId, quorum, voucher]));
+      const voucher = r.vouch.selfVouch ? id : normalizeSubjectId(r.vouch.voucherSubjectId);
+      if (voucher !== id && !subjects.has(voucher)) throw new Error('VOUCHER_SUBJECT_UNAVAILABLE');
+      batch.push(call('configureVouchAttestor', [id, quorum, voucher]));
     }
     const manager = () => {
       if (!r.manager) return;
-      const id = normalizeSubjectId(r.manager.managerSubjectId);
-      if (id !== '0' && !subjects.has(id)) throw new Error('MANAGER_SUBJECT_UNAVAILABLE');
-      if (r.kind === 'Group' && roles.includes(id)) throw new Error('SELF_MANAGED_GROUP_CYCLE');
+      const managerId = normalizeSubjectId(r.manager.managerSubjectId);
+      if (managerId !== '0' && !subjects.has(managerId)) throw new Error('MANAGER_SUBJECT_UNAVAILABLE');
+      if (r.kind === 'Group' && (roles.includes(managerId) || (mode === 'existing' && linked(managerId, id)))) throw new Error('SELF_MANAGED_GROUP_CYCLE');
       if (!Number.isInteger(r.manager.caps) || r.manager.caps < 0 || r.manager.caps > 15) throw new Error('INVALID_MANAGER_CAPS');
-      batch.push(call('setManagerConfig', [subjectId, id, r.manager.caps, requireRawUint(r.manager.delaySeconds, 32)]));
+      batch.push(call('setManagerConfig', [id, managerId, r.manager.caps, requireRawUint(r.manager.delaySeconds, 32)]));
     };
     if (r.kind === 'Role') manager();
     const accounts = new Map(context.accounts.map(a => [address(a.account), a.acceptedAnywhere]));
@@ -191,17 +258,28 @@ export function planRoleConfiguration(input: RolePlanningInput): PlanResult<Role
       holders.add(account);
       const accepted = requirePlanningFact(accounts.get(account), input.context, { ...scope, account }, 'ACCEPTANCE_ANYWHERE_UNAVAILABLE');
       if (typeof accepted !== 'boolean') throw new Error('ACCEPTANCE_ANYWHERE_UNAVAILABLE');
-      if (accepted) grants++;
-      batch.push(call(accepted ? 'grant' : 'offer', [subjectId, account, !holder.sticky]));
+      if (accepted) {
+        const row = context.accounts.find(a => address(a.account) === account);
+        const current = row?.acceptedInSubject;
+        if (mode === 'existing' && current !== undefined && normalizeSubjectId(row?.acceptedSubjectId ?? '0') !== id) throw new Error('SUBJECT_ACCEPTANCE_MISMATCH');
+        const alreadyAccepted = mode === 'existing' && current !== undefined
+          ? requirePlanningFact(current, input.context, { ...scope, account }, 'SUBJECT_ACCEPTANCE_UNAVAILABLE') : false;
+        if (typeof alreadyAccepted !== 'boolean') throw new Error('SUBJECT_ACCEPTANCE_UNAVAILABLE');
+        if (!alreadyAccepted) grants++;
+      }
+      batch.push(call(accepted ? 'grant' : 'offer', [id, account, !holder.sticky]));
     }
-    const cap = BigInt(requireRawUint(r.maxMembers ?? '0', 32));
-    if (cap > 0n && BigInt(grants) > cap) throw new Error('SUBJECT_CAPACITY_EXCEEDED');
+    const existing = mode === 'existing' ? context.subjects.find(s => normalizeSubjectId(s.subjectId) === id)! : undefined;
+    if (existing && r.holders?.length && r.maxMembers === undefined && existing.maxMembers === undefined) throw new Error('EXISTING_CAPACITY_UNAVAILABLE');
+    const cap = BigInt(requireRawUint(r.maxMembers ?? existing?.maxMembers ?? '0', 32));
+    if (existing && cap > 0n && (r.holders?.length || r.maxMembers !== undefined) && existing.memberCount === undefined) throw new Error('EXISTING_CAPACITY_UNAVAILABLE');
+    if (cap > 0n && BigInt(grants) + BigInt(requireRawUint(existing?.memberCount ?? '0')) > cap) throw new Error('SUBJECT_CAPACITY_EXCEEDED');
     if (r.kind === 'Group') manager();
     if (r.taskGrants?.creator || r.taskGrants?.organizer) {
       if (!context.taskManager) throw new Error('TASK_MANAGER_CONTEXT_REQUIRED');
       module('taskManager', context.taskManager.address);
       enabled(context.taskManager.executorAuthorized, 'TASK_MANAGER_AUTHORIZATION_REQUIRED', context.taskManager.address);
-      for (const key of [...(r.taskGrants.creator ? [1] : []), ...(r.taskGrants.organizer ? [7] : [])]) batch.push(encodeExecutorCall('TaskManagerNew', address(context.taskManager.address), 'setConfig', [key, ethers.utils.defaultAbiCoder.encode(['uint256', 'bool'], [subjectId, true])]));
+      for (const key of [...(r.taskGrants.creator ? [1] : []), ...(r.taskGrants.organizer ? [7] : [])]) batch.push(encodeExecutorCall('TaskManagerNew', address(context.taskManager.address), 'setConfig', [key, ethers.utils.defaultAbiCoder.encode(['uint256', 'bool'], [id, true])]));
     }
     if (r.bindingClassIndex !== undefined) {
       const h = context.hybrid;
@@ -209,7 +287,7 @@ export function planRoleConfiguration(input: RolePlanningInput): PlanResult<Role
       module('hybridVoting', h.address);
       enabled(h.executorAuthorized, 'HYBRID_AUTHORIZATION_REQUIRED', h.address);
       if (!Number.isSafeInteger(r.bindingClassIndex) || !h.classes.some(c => c.classIndex === r.bindingClassIndex)) throw new Error('BINDING_CLASS_UNAVAILABLE');
-      batch.push(encodeExecutorCall('HybridVotingNew', address(h.address), 'addHatToClass', [r.bindingClassIndex, subjectId]));
+      batch.push(encodeExecutorCall('HybridVotingNew', address(h.address), 'addHatToClass', [r.bindingClassIndex, id]));
     }
     if (r.editOrgDetails) {
       const registry = context.registry;
@@ -217,8 +295,8 @@ export function planRoleConfiguration(input: RolePlanningInput): PlanResult<Role
       module('registry', registry.address);
       enabled(registry.executorAuthorized, 'ORG_ADMIN_AUTHORIZATION_REQUIRED', registry.address);
       normalizeSubjectId(fact(registry.currentAdminSubject, 'CURRENT_ADMIN_UNAVAILABLE', registry.address));
-      batch.push(encodeExecutorCall('OrgRegistry', address(registry.address), 'setOrgMetadataAdminHat', [scope.orgId, subjectId]));
-      consequences.push({ code: 'REPLACE_ORG_METADATA_ADMIN', values: { subjectId } });
+      batch.push(encodeExecutorCall('OrgRegistry', address(registry.address), 'setOrgMetadataAdminHat', [scope.orgId, id]));
+      consequences.push({ code: 'REPLACE_ORG_METADATA_ADMIN', values: { subjectId: id } });
     }
     if (r.sponsorship) {
       const sponsor = context.sponsorship;
@@ -232,10 +310,10 @@ export function planRoleConfiguration(input: RolePlanningInput): PlanResult<Role
       const capRaw = requireRawUint(r.sponsorship.capRaw, 128), epoch = requireRawUint(r.sponsorship.epochSeconds, 32);
       if (BigInt(epoch) < 3600n || BigInt(epoch) > 31536000n) throw new Error('INVALID_SPONSORSHIP_EPOCH');
       const budget = (type: number, id: string) => encodeExecutorCall('PaymasterHub', address(sponsor.address), 'setBudget', [scope.orgId, paymasterSubjectKey(type, id), capRaw, epoch]);
-      batch.push(budget(SUBJECT_TYPE.HAT, subjectId));
+      batch.push(budget(SUBJECT_TYPE.HAT, id));
       if (r.sponsorship.supportPasskeys) {
         const rules: { target: string; selector: string; hint: number }[] = [];
-        const iface = new ethers.utils.Interface(buildAuthorityAction({ authorityAddress: scope.contract, method: 'claim', args: [subjectId] }).abi);
+        const iface = new ethers.utils.Interface(buildAuthorityAction({ authorityAddress: scope.contract, method: 'claim', args: [id] }).abi);
         for (const [name, hint] of [['claim', 300000], ['renounce', 200000], ['vouch', 0], ['revokeVouch', 200000], ['delegatedGrant', 250000], ['delegatedOffer', 300000], ['delegatedRemove', 250000], ['delegatedUnremove', 200000], ['finalize', 600000], ['cancel', 200000]] as const) rules.push({ target: scope.contract, selector: iface.getSighash(name), hint });
         if (includeEmailRules) {
           const email = context.email;
@@ -271,7 +349,7 @@ export function planRoleConfiguration(input: RolePlanningInput): PlanResult<Role
           }
         }
       }
-      consequences.push({ code: 'SHARED_SPONSORSHIP_BUDGET', values: { subjectId, capRaw, epochSeconds: epoch } });
+      consequences.push({ code: 'SHARED_SPONSORSHIP_BUDGET', values: { subjectId: id, capRaw, epochSeconds: epoch } });
     }
     if (r.email) {
       const email = context.email;
@@ -286,14 +364,24 @@ export function planRoleConfiguration(input: RolePlanningInput): PlanResult<Role
       if (!authorized) batch.push(encodeExecutorCall('Executor', address(email.executorAddress), 'setHatMinterAuthorization', [address(email.address), true]));
       const root = fact(email.currentRoot, 'CURRENT_ALLOWLIST_ROOT_UNAVAILABLE', email.address);
       const merged = mergeVerifiedAllowlist({ orgId: scope.orgId, currentRoot: root, current: r.email.current,
-        entries: r.email.additions.map(a => ({ ...a, hatIds: [subjectId], roleIndexes: [] })) });
+        entries: r.email.additions.map(a => ({ ...a, hatIds: [id], roleIndexes: [] })) });
       if (merged.root.toLowerCase() !== r.email.preparedRoot.toLowerCase()) throw new Error('PREPARED_ALLOWLIST_CHANGED');
       batch.push(encodeExecutorCall('ZkEmailInvites', address(email.address), 'setActiveAllowlist', [merged.root, metadataPointerToBytes32(r.email.cid)]));
       consequences.push({ code: 'ALLOWLIST_EXECUTION_RACE', values: { root: merged.root } });
     }
     validateGovernanceBatches([batch]);
-    const fingerprint = ethers.utils.id(JSON.stringify([scope, input.context.data, input.allocations.data, input.proposals.data, batch]));
-    return { status: 'ready', data: { subjectId, batch, createsSubject: true, fingerprint }, consequences };
+    if (mode === 'compound' && batch.length > 1) {
+      const proposals = (input as RolePlanningInput).proposals;
+      requireCompleteSnapshot(proposals, { scope: { chainId: scope.chainId, orgId: scope.orgId }, snapshot: 'pinned', block: input.freshness.block });
+      const race = subjectCreationRaceFacts(proposals, { chainId: scope.chainId, orgId: scope.orgId });
+      if (race.hasCompetingCreation.state !== 'known') throw new Error('PROPOSAL_HISTORY_UNAVAILABLE');
+      if (race.hasCompetingCreation.value) throw new Error('COMPETING_SUBJECT_CREATION');
+    }
+    const compound = mode === 'compound' ? input as RolePlanningInput : undefined;
+    const fingerprint = ethers.utils.id(JSON.stringify([scope, context, compound?.allocations.data, compound && batch.length > 1 ? compound.proposals.data : undefined, batch]));
+    return mode === 'existing'
+      ? { status: 'ready', data: { subjectId: id, batch, createsSubject: false, fingerprint }, consequences }
+      : { status: 'ready', data: { subjectId: id, batch, createsSubject: true, fingerprint }, consequences };
   } catch (error) { return governancePlanBlocked(error, consequences); }
 }
 

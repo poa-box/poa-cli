@@ -75,6 +75,7 @@ export interface PaymentManagerAvailability {
   balanceRaw: string;
   committedRaw: string;
   spendableRaw: string;
+  /** Only releases proven by finalizeIds; unknown creation facts stay committed. */
   releasableRaw: string;
   spendableAfterReleaseRaw: string;
   finalizeIds: readonly string[];
@@ -111,13 +112,15 @@ export function paymentManagerAvailability(input: PaymentManagerAvailabilityInpu
       if (round.finalized || token.toLowerCase() !== input.asset.address.toLowerCase()) continue;
       committed = add(committed, total);
       if (claimed !== total) continue;
-      if (round.creationBlock.state !== 'known') throw new Error('CREATION_BLOCK_UNKNOWN');
       if (round.creationBlock.source) {
         assertSourceRef(round.creationBlock.source);
         assertPlanScope(round.creationBlock.source, { chainId: input.scope.chainId, orgId: input.scope.orgId, contract: input.scope.contract });
         if (round.creationBlock.source.snapshot !== 'pinned') throw new Error('CREATION_BLOCK_UNPINNED');
         assertSourceBlock(round.creationBlock.source.block, input.block);
       }
+      // Creation history gates closing this round, not the independently proven
+      // free balance. Keep its full commitment and consider other known closes.
+      if (round.creationBlock.state !== 'known') continue;
       const creation = uint(round.creationBlock.value), anchor = creation === 0n ? checkpoint : creation;
       if (creation > now || (creation !== 0n && creation <= checkpoint)) throw new Error('INCONSISTENT_CREATION_BLOCK');
       const eligibleAt = add(anchor, period);

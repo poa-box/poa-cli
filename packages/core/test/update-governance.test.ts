@@ -9,7 +9,7 @@ import { knownFact, unknownFact, SourceRef, SourceSnapshot, Fact, requireComplet
 import { GOVERNANCE_LIMITS, CONFIG_CAPABILITIES, votingLaneForBatches, requireLiveGovernanceConfigKey, validateGovernanceBatches } from '../src/governance/capabilities';
 import { buildGovernanceProposal, ExecutionCall } from '../src/tx/governance';
 import { calculateClassRawPower, calculateOptionContribution, deriveClassEligibility, derivePersonalVotingShare, deriveWeightedTally, integerSquareRoot, PowerClass, ProposalPowerSnapshot, projectProposalPowerSnapshot, rankAllocationWeights } from '../src/governance/power';
-import { planRoleConfiguration, RolePlanningInput, validateRolePlanFreshness, requirePlanningFact } from '../src/governance/role-planning';
+import { planRoleConfiguration, RolePlanningInput, validateRolePlanFreshness, requirePlanningFact, planRoleCreation, planExistingRoleConfiguration, validateRoleCreationFreshness, validateExistingRolePlanFreshness } from '../src/governance/role-planning';
 import { planElection, planRoleRemovals, validateRemovalPreflights, readRemovalPreflights, ElectionPlanningInput, electionPlanningFingerprint } from '../src/governance/elections';
 import { buildProposalMetadata, prepareProposalMetadata, serializeProposalMetadata } from '../src/metadata/proposal';
 import { parseAnnounceReceiptLogs, parseProposalReceiptOutcome, createProposalIntent, proposeConfigIntent, proposeQuorumIntent } from '../src/tx/vote';
@@ -202,7 +202,7 @@ describe('raw voting strategy, immutable subjects, activation and exact shares',
 function roleInput(): RolePlanningInput {
   const id = (n: number) => ((17n<<64n)+BigInt(n)).toString();
   const data = { readiness:{membershipAuthority:{id:AUTH,isRouterBound:true,cutoverAt:'1'}}, executorAuthorized:knownFact(true),
-    subjects:[{subjectId:id(7),kind:'Role' as const},{subjectId:id(8),kind:'Group' as const},{subjectId:id(9),kind:'Role' as const}],groupEdges:[],
+    subjects:[{subjectId:id(7),kind:'Role' as const,metadataPointer:ethers.constants.HashZero,imageURI:''},{subjectId:id(8),kind:'Group' as const,metadataPointer:ethers.constants.HashZero,imageURI:''},{subjectId:id(9),kind:'Role' as const}],groupEdges:[],
     accounts:[{account:A,acceptedAnywhere:knownFact(true)},{account:B,acceptedAnywhere:knownFact(false)}],
     taskManager:{address:TM,executorAuthorized:knownFact(true)},hybrid:{address:HV,executorAuthorized:knownFact(true),classes:[{classIndex:0}]},
     registry:{address:REG,executorAuthorized:knownFact(true),currentAdminSubject:knownFact(id(7))},
@@ -372,6 +372,73 @@ function electionInput(): ElectionPlanningInput {
         {subjectId:'8',kind:'Role',maxMembers:'2',memberCount:'0',statuses:[status(A,false),status(B,false)],rulesRevision:'r1'}],
       accounts:[{account:A,acceptedAnywhere:knownFact(true),acceptedSubjectIds:knownFact(['7'])},{account:B,acceptedAnywhere:knownFact(false),acceptedSubjectIds:knownFact([])}]})};
 }
+describe('staged role/group creation without irrelevant history', () => {
+  it('creates one subject with no predicted ID, allocation enumeration or proposal history', () => {
+    const { scope, freshness, context } = roleInput();
+    const result = ready(planRoleCreation({ scope, freshness, context, request: { kind: 'Role', name: 'New role', maxMembers: '2' } }));
+    expect(result).not.toHaveProperty('subjectId');
+    expect(decode(result.batch).map(d => d.name)).toEqual(['createRole']);
+    const legacy = roleInput(); legacy.request = { kind: 'Role', name: 'Single create' };
+    legacy.proposals.coverage.status = 'unavailable'; legacy.proposals.data = [{ id: 'unresolved' }, { id: 'known-creation', createsSubject: true }];
+    expect(planRoleConfiguration(legacy).status).toBe('ready');
+    // Dependent calls still require complete semantics, including an unknown competitor.
+    legacy.request.defaultAllow = true;
+    code(planRoleConfiguration(legacy), 'INCOMPLETE_SNAPSHOT');
+    legacy.proposals.coverage.status = 'complete';
+    code(planRoleConfiguration(legacy), 'PROPOSAL_HISTORY_UNAVAILABLE');
+  });
+  it('creates a group with existing members atomically, but never discards dependent configuration', () => {
+    const { scope, freshness, context } = roleInput();
+    const request = { kind: 'Group' as const, name: 'New team', memberRoleIds: [context.data.subjects[0].subjectId] };
+    const plan = ready(planRoleCreation({ scope, freshness, context, request }));
+    const decoded = decode(plan.batch)[0]; expect(decoded.name).toBe('createGroup');
+    expect(decoded.args[3].map(String)).toEqual(request.memberRoleIds);
+    code(planRoleCreation({ scope, freshness, context, request: { ...request, permissions: [{ key: HASH, value: '1' }] } as any }), 'CREATION_HAS_DEPENDENT_CONFIGURATION');
+  });
+  it('configures the observed allocated role, grants existing members and offers newcomers without history', () => {
+    const input = roleInput();
+    // Model the first stage having executed: the authority chose sequence 10.
+    // An unrelated creation may already have consumed sequence 11; neither shifts this ID.
+    const subjectId = '313594649253062377482';
+    input.context.data.subjects = [...input.context.data.subjects, { subjectId, kind: 'Role', maxMembers: '1', memberCount: '0', metadataPointer: ethers.constants.HashZero, imageURI: '' } as any,
+      { subjectId: '313594649253062377483', kind: 'Role' }];
+    const existing = { scope: input.scope, freshness: input.freshness, context: input.context, subjectId, request: input.request };
+    const plan = ready(planExistingRoleConfiguration(existing));
+    expect(plan).toMatchObject({ subjectId, createsSubject: false });
+    const decoded = decode(plan.batch);
+    expect(decoded.map(d => d.name)).toEqual(['renameSubject','setMaxMembers','setSubjectDefault','addRoleToGroup','setPerm','setPerm','configureVouchAttestor','setManagerConfig','grant','offer','setConfig','setConfig','addHatToClass','setOrgMetadataAdminHat','setBudget','setRulesBatch','setBudget','setHatMinterAuthorization','setActiveAllowlist']);
+    for (const name of ['grant', 'offer', 'setPerm', 'setManagerConfig']) expect(decoded.find(d => d.name === name)!.args[0].toString()).toBe(subjectId);
+    expect(decoded.find(d => d.name === 'setManagerConfig')!.args[1].toString()).toBe(input.request.manager!.managerSubjectId);
+    expect(decoded.find(d => d.name === 'grant')!.args[2]).toBe(true);
+    expect(decoded.find(d => d.name === 'offer')!.args[2]).toBe(false);
+    input.context.data.accounts[0].acceptedAnywhere = knownFact(false);
+    code(validateExistingRolePlanFreshness(plan, existing), 'STALE_ROLE_PLAN');
+  });
+  it('requires live exact allocated kind/capacity and does not configure a prediction', () => {
+    const input = roleInput(), subjectId = input.context.data.subjects[0].subjectId;
+    const existing = { scope: input.scope, freshness: input.freshness, context: input.context, subjectId,
+      request: { kind: 'Role' as const, name: 'Observed role', holders: [{ account: A, sticky: false }] } };
+    code(planExistingRoleConfiguration({ ...existing, subjectId: '313594649253062377482' }), 'EXISTING_SUBJECT_UNAVAILABLE');
+    code(planExistingRoleConfiguration({ ...existing, request: { kind: 'Group', name: 'Wrong kind' } }), 'EXISTING_SUBJECT_UNAVAILABLE');
+    code(planExistingRoleConfiguration(existing), 'EXISTING_CAPACITY_UNAVAILABLE');
+    Object.assign(input.context.data.subjects[0], { maxMembers: '1', memberCount: '1' });
+    code(planExistingRoleConfiguration(existing), 'SUBJECT_CAPACITY_EXCEEDED');
+    input.context.source.observedAt = 900;
+    code(planExistingRoleConfiguration(existing), 'LIVE_EVIDENCE_STALE');
+  });
+  it('revalidates creation facts and existing group composition without duplicate links', () => {
+    const input = roleInput(), subjectId = input.context.data.subjects[1].subjectId, role = input.context.data.subjects[0].subjectId;
+    input.context.data.groupEdges = [{ roleSubjectId: role, groupSubjectId: subjectId, isActive: true }];
+    const existing = { scope: input.scope, freshness: input.freshness, context: input.context, subjectId,
+      request: { kind: 'Group' as const, name: 'Observed group', memberRoleIds: [role], permissions: [{ key: HASH, value: '1' }] } };
+    expect(decode(ready(planExistingRoleConfiguration(existing)).batch).map(d => d.name)).toEqual(['renameSubject','setPerm']);
+    const create = { scope: input.scope, freshness: input.freshness, context: input.context, request: { kind: 'Role' as const, name: 'New' } };
+    const plan = ready(planRoleCreation(create));
+    create.context.data.executorAuthorized = knownFact(false);
+    code(validateRoleCreationFreshness(plan, create), 'EXECUTOR_AUTHORIZATION_REQUIRED');
+  });
+});
+
 describe('election and role removal safety', () => {
   it('injected preflight observer calls non-banning canRemove and fresh getStatus at exact scope; partial failures and changed status block',async()=>{
     const i=electionInput(),source=liveSource(AUTH,'removal-preflight');

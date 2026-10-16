@@ -118,6 +118,46 @@ describe('historical subject intent recovery', () => {
   ] as const)('fails closed on %s', async (_, mutate) => {
     const f = fixture(); mutate(f as any); expect((await readSubjectCreationProvenance(f.input)).status).toBe('blocked');
   });
+  it.each(['valid', 'wrong target', 'wrong binding', 'unknown selector', 'malformed', 'trailing', 'mutable setter', 'indirect creation', 'native value'])('bound module classification: %s', async mode => {
+    const email = new ethers.utils.Interface(getAbi('ZkEmailInvites'));
+    const executor = new ethers.utils.Interface(getAbi('Executor'));
+    let data = email.encodeFunctionData('setActiveAllowlist', [META, META]);
+    if (mode === 'unknown selector') data = '0x12345678';
+    if (mode === 'malformed') data = data.slice(0, -2);
+    if (mode === 'trailing') data += '00';
+    if (mode === 'mutable setter') data = email.encodeFunctionData('setDomainVerifier', [ACCOUNT]);
+    if (mode === 'indirect creation') data = executor.encodeFunctionData('configureModule', [AUTHORITY, call()[2]]);
+    const f = fixture([[[mode === 'wrong target' ? ACCOUNT : OTHER, mode === 'native value' ? 1 : 0, data]], []]);
+    const contracts = { membershipAuthority: AUTHORITY, ...(mode === 'indirect creation' ? { executor: OTHER } : { email: OTHER }) };
+    const input = { ...f.input, scope: { ...scope, contracts }, source: { ...source, contracts }, rpcSource: { ...rpcSource, contracts } };
+    Object.assign(f.response.organization, { zkEmailInvites: { id: mode === 'wrong binding' ? ACCOUNT : OTHER }, executorContract: { id: OTHER } });
+    const result = await readSubjectCreationProvenance(input);
+    expect(result.status).toBe(mode === 'valid' ? 'ready' : 'blocked');
+    if (result.status === 'ready') expect(result.data.createsSubject).toBe(false);
+  });
+  it.each([
+    ['taskManager', 'TaskManagerNew', 'setConfig', [1, ethers.utils.defaultAbiCoder.encode(['uint256', 'bool'], ['7', true])], true],
+    ['taskManager', 'TaskManagerNew', 'setConfig', [2, ethers.utils.defaultAbiCoder.encode(['uint256', 'uint8'], ['7', 133])], true],
+    ['taskManager', 'TaskManagerNew', 'setConfig', [7, ethers.utils.defaultAbiCoder.encode(['uint256', 'bool'], ['7', false])], true],
+    ['taskManager', 'TaskManagerNew', 'setConfig', [0, ethers.utils.defaultAbiCoder.encode(['address'], [ACCOUNT])], false],
+    ['taskManager', 'TaskManagerNew', 'setConfig', [1, ethers.utils.defaultAbiCoder.encode(['uint256', 'bool'], ['7', true]) + '00'], false],
+    ['executor', 'Executor', 'setHatMinterAuthorization', [ACCOUNT, true], true],
+    ['executor', 'Executor', 'configureModule', [AUTHORITY, authority.encodeFunctionData('createRole', ['Indirect', META, '', 0])], false],
+    ['participationToken', 'ParticipationToken', 'setName', ['Member ownership'], true],
+    ['participationToken', 'ParticipationToken', 'setSymbol', ['mixedCase'], true],
+    ['participationToken', 'ParticipationToken', 'transfer', [ACCOUNT, '1'], false],
+    ['paymentManager', 'PaymentManager', 'createDistribution', [ACCOUNT, '1', META, '40'], true],
+  ])('reviewed %s/%s/%s calldata keeps exact nested semantics', async (key, abi, method, args, expected) => {
+    const iface = new ethers.utils.Interface(getAbi(abi as string));
+    const f = fixture([[[OTHER, 0, iface.encodeFunctionData(method as string, args as unknown[])]], []]);
+    const contracts = { membershipAuthority: AUTHORITY, [key as string]: OTHER };
+    const fields: Record<string, string> = { taskManager: 'taskManager', executor: 'executorContract', participationToken: 'participationToken', paymentManager: 'paymentManager' };
+    Object.assign(f.response.organization, { [fields[key as string]]: { id: OTHER } });
+    const input = { ...f.input, scope: { ...scope, contracts }, source: { ...source, contracts }, rpcSource: { ...rpcSource, contracts } };
+    const result = await readSubjectCreationProvenance(input);
+    expect(result.status).toBe(expected ? 'ready' : 'blocked');
+    if (result.status === 'ready') expect(result.data.createsSubject).toBe(false);
+  });
   it('requires fresh same-snapshot evidence before reading and rejects transferred/copied proofs', async () => {
     const f = fixture();
     expect((await readSubjectCreationProvenance({ ...f.input, freshness: { now: 1001, maxAgeSeconds: 0 } })).status).toBe('blocked');

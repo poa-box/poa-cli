@@ -2,6 +2,9 @@ import { ethers } from 'ethers';
 import { getAbi } from '../../src/contracts';
 import { decodeCanonicalCall } from '../../src/reads/provenance';
 import { readSubjectCreationProvenance } from '../../src/governance/provenance';
+import { planRoleCreation, planExistingRoleConfiguration } from '../../src/governance/role-planning';
+import { readRoleContinuation } from '../../src/governance/role-continuation';
+import { knownFact } from '../../src/data/facts';
 
 // Runs unchanged in an actual browser and the retained browser-bundle regression.
 // Every transport is an exact offline fixture; no provider/network is constructed.
@@ -36,7 +39,7 @@ function fixture(restricted = false, v2 = false) {
   const provider = { getNetwork: async () => ({ chainId: 100 }), getTransaction: async () => tx,
     getTransactionReceipt: async () => receipt, getBlock: async (tag: string) => tag === '0x32'
       ? { number: 50, hash: OLD, timestamp: 1000 } : { number: 100, hash: HASH, timestamp: 1900 } };
-  return { tx, receipt, input: { scope, source, rpcSource: { ...source, endpoint: 'mock://browser-rpc', indexed: false },
+  return { tx, receipt, response, input: { scope, source, rpcSource: { ...source, endpoint: 'mock://browser-rpc', indexed: false },
     proposalId: '7', query: async () => response, provider: provider as any, freshness: { now: 2000, maxAgeSeconds: 0 } } };
 }
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
@@ -91,6 +94,56 @@ async function run() {
     assert(result.status === 'blocked', 'Unsafe proof accepted');
     if (code) assert(result.codes.includes(code), JSON.stringify(result));
     return result.codes;
+  });
+  const email = '0x4444444444444444444444444444444444444444';
+  const emailInterface = new ethers.utils.Interface(getAbi('ZkEmailInvites'));
+  for (const mode of ['valid', 'trailing', 'wrong target']) await check('bound email canonical proof ' + mode, async () => {
+    const f = fixture();
+    Object.assign(f.input.scope.contracts, { email });
+    Object.assign(f.response.organization, { zkEmailInvites: { id: email } });
+    const parsed = voting.parseTransaction({ data: f.tx.data }), args = [...parsed.args];
+    const calldata = emailInterface.encodeFunctionData('setActiveAllowlist', [META, META]) + (mode === 'trailing' ? '00' : '');
+    args[4] = [[[mode === 'wrong target' ? ACCOUNT : email, 0, calldata]], []];
+    f.tx.data = voting.encodeFunctionData(parsed.signature, args);
+    const proof = await readSubjectCreationProvenance(f.input);
+    assert(proof.status === (mode === 'valid' ? 'ready' : 'blocked'), JSON.stringify(proof));
+    if (proof.status === 'ready') assert(proof.data.createsSubject === false, 'False local allocation');
+  });
+  await check('staged creation/configuration without predicted IDs in browser ESM', () => {
+    const f = fixture(), scope = { ...f.input.scope, contract: AUTHORITY };
+    const subjectId = ((BigInt(AUTHORITY) << 64n) | 4n).toString();
+    const context = { source: { ...f.input.rpcSource, contract: AUTHORITY }, coverage: { status: 'complete' as const, receivedKeys: [], missingIds: [], failedIds: [], issues: [] },
+      data: { readiness: { membershipAuthority: { id: AUTHORITY, isRouterBound: true, cutoverAt: '1' } }, executorAuthorized: knownFact(true),
+        subjects: [{ subjectId, kind: 'Role' as const, metadataPointer: ethers.constants.HashZero, imageURI: '' }], groupEdges: [], accounts: [] } };
+    const input = { scope, context, freshness: { now: 2000, maxAgeSeconds: 0, block: context.source.block }, request: { kind: 'Role' as const, name: 'Browser role' } };
+    const create = planRoleCreation(input), configure = planExistingRoleConfiguration({ ...input, subjectId });
+    assert(create.status === 'ready' && !('subjectId' in create.data), JSON.stringify(create));
+    assert(configure.status === 'ready' && configure.data.subjectId === subjectId && configure.data.createsSubject === false, JSON.stringify(configure));
+  });
+  await check('exact executed role continuation in browser ESM', async () => {
+    const f = fixture(), exec = '0x4444444444444444444444444444444444444444', execTx = '0x' + 'e5'.repeat(32);
+    const subjectId = ((BigInt(AUTHORITY) << 64n) | 15n).toString();
+    const h = new ethers.utils.Interface(getAbi('HybridVotingNew')), e = new ethers.utils.Interface(getAbi('Executor'));
+    const logs = (iface: ethers.utils.Interface, emitter: string, name: string, args: unknown[]) => ({
+      ...iface.encodeEventLog(iface.getEvent(name), args), address: emitter, transactionHash: execTx, blockNumber: 50, blockHash: OLD, removed: false });
+    const receipt = { status: 1, transactionHash: execTx, blockNumber: 50, blockHash: OLD, logs: [
+      logs(authority, AUTHORITY, 'SubjectCreated', [subjectId, 0, 'Stewards', META, 0]),
+      logs(e, exec, 'CallExecuted', [7, 0, AUTHORITY, 0]), logs(e, exec, 'BatchExecuted', [7, 1]), logs(h, VOTING, 'ProposalExecuted', [7, 0, 1]),
+    ] };
+    const tx = { ...f.tx, hash: execTx, data: h.encodeFunctionData('announceWinner', [7]) };
+    const scope = { ...f.input.scope, contract: AUTHORITY, account: ACCOUNT,
+      contracts: { membershipAuthority: AUTHORITY, hybridVoting: VOTING, executor: exec } };
+    Object.assign(f.response.organization, { executorContract: { id: exec } });
+    Object.assign(f.response.proposals[0], { wasExecuted: true, executionFailed: false, isValid: true, winningOption: '0', status: 'Executed',
+      batchExecutions: [{ proposalId: '7', callCount: '1', transactionHash: execTx, executedAtBlock: '50', executor: { id: exec } }] });
+    const source = { ...f.input.source, ...scope }, rpcSource = { ...f.input.rpcSource, ...scope };
+    const result = await readRoleContinuation({ ...f.input, scope, source, rpcSource, creationTransactionHash: TX,
+      creationCall: { target: AUTHORITY, value: '0', calldata: authority.encodeFunctionData('createRole', ['Stewards', META, '', 0]) },
+      subjects: { source, coverage: { status: 'complete', receivedKeys: [], missingIds: [], failedIds: [], issues: [] }, data: [{ subjectId, kind: 'Role' }] },
+      provider: { ...f.input.provider, getTransaction: async (hash: string) => hash === execTx ? tx : f.tx,
+        getTransactionReceipt: async (hash: string) => hash === execTx ? receipt : f.receipt },
+    });
+    assert(result.state === 'created' && result.subjectId === subjectId, JSON.stringify(result));
   });
   return { diagnostics, cases, networkCalls: 0 };
 }

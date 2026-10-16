@@ -127,9 +127,10 @@ describe('TREASURY-PLAN / full commitment and safe closure contract regressions'
     expect(ready(availability(state)).finalizeIds).toEqual(['1']);
     expect(ready(availability(state, snap(state), { minClaimPeriodBlocks: '21' })).finalizeIds).toEqual([]);
   });
-  it('unknown/foreign creation evidence cannot claim known zero releasable funds', () => {
+  it('unknown creation keeps its full commitment; foreign creation evidence still refuses', () => {
     const state = pmState(); state.rounds = [{ ...state.rounds[0], creationBlock: unknownFact('GETTER_ABSENT') }, state.rounds[1]];
-    expect(availability(state).status).toBe('blocked');
+    expect(ready(availability(state))).toMatchObject({ committedRaw: '150', spendableRaw: '0', releasableRaw: '0', spendableAfterReleaseRaw: '0', finalizeIds: [] });
+    expect(planTreasuryTransfer(transferInput(state))).toMatchObject({ status: 'blocked', codes: ['INSUFFICIENT_SPENDABLE'] });
     state.rounds = [{ ...state.rounds[0], creationBlock: knownFact('80', src(PM, true, { orgId: OTHER_HASH })) }, state.rounds[1]];
     expect(availability(state).status).toBe('blocked');
   });
@@ -188,6 +189,94 @@ describe('TREASURY-PLAN / full commitment and safe closure contract regressions'
   });
 });
 
+describe('TREASURY:missing-creation-fact-blocks-uncommitted-spend', () => {
+  function uncommittedState(): PaymentManagerState {
+    return { asset: X, balanceRaw: '1000', distributionCounterRaw: '1', rounds: [
+      { ...pmState().rounds[0], creationBlock: unknownFact('CREATION_BLOCK_UNKNOWN') },
+    ] };
+  }
+  it.each(['10', '900'])('permits exactly %s from proven free funds without guessing a creation anchor or closing the round', amount => {
+    const state = uncommittedState();
+    expect(ready(availability(state))).toEqual({ balanceRaw: '1000', committedRaw: '100', spendableRaw: '900', releasableRaw: '0',
+      spendableAfterReleaseRaw: '900', finalizeIds: [], commitmentProvenance: 'derived-complete-rpc-enumeration' });
+    const plan = ready(planTreasuryTransfer(transferInput(state, amount)));
+    const oracle = new ethers.utils.Interface(['function withdraw(address token,address to,uint256 amount)']);
+    expect(plan.finalizeIds).toEqual([]);
+    expect(plan.calls).toEqual([{ target: PM, value: '0', calldata: oracle.encodeFunctionData('withdraw', [TOKEN, TM, amount]) }]);
+    expect(state.rounds[0].creationBlock).toEqual(unknownFact('CREATION_BLOCK_UNKNOWN'));
+    expect(state.rounds[0].finalized).toBe(false);
+  });
+  it.each(['901', '950', '1000'])('refuses %s because unknown creation cannot release the committed 100', amount => {
+    expect(planTreasuryTransfer(transferInput(uncommittedState(), amount))).toMatchObject({ status: 'blocked', codes: ['INSUFFICIENT_SPENDABLE'] });
+  });
+  it('partial claims remain fully committed even with ample free balance and an expired known creation anchor', () => {
+    const state = uncommittedState();
+    state.rounds = [{ ...state.rounds[0], totalClaimed: '99', creationBlock: knownFact('80') }];
+    expect(ready(availability(state))).toMatchObject({ committedRaw: '100', spendableRaw: '900', releasableRaw: '0', finalizeIds: [] });
+    expect(ready(planTreasuryTransfer(transferInput(state, '900'))).finalizeIds).toEqual([]);
+    expect(planTreasuryTransfer(transferInput(state, '901'))).toMatchObject({ status: 'blocked', codes: ['INSUFFICIENT_SPENDABLE'] });
+  });
+  it('mixed evidence closes only the eligible known round and matches the actual post-close withdrawal guard', () => {
+    const state = uncommittedState();
+    state.distributionCounterRaw = '4';
+    state.rounds = [state.rounds[0],
+      { ...state.rounds[0], distributionId: '2', totalAmount: '200', totalClaimed: '200', creationBlock: knownFact('80', src(PM, true)) },
+      { ...state.rounds[0], distributionId: '3', totalAmount: '300', totalClaimed: '250', creationBlock: knownFact('80') },
+      { ...state.rounds[0], distributionId: '4', totalAmount: '50', totalClaimed: '50', creationBlock: knownFact('90') },
+    ];
+    expect(ready(availability(state))).toMatchObject({ committedRaw: '650', spendableRaw: '350', releasableRaw: '200', spendableAfterReleaseRaw: '550', finalizeIds: ['2'] });
+    expect(ready(planTreasuryTransfer(transferInput(state, '350'))).finalizeIds).toEqual([]);
+    for (const amount of ['351', '550']) {
+      const plan = ready(planTreasuryTransfer(transferInput(state, amount)));
+      expect(plan.finalizeIds).toEqual(['2']);
+      const oracle = new ethers.utils.Interface(['function finalizeDistribution(uint256,uint256)', 'function withdraw(address,address,uint256)']);
+      expect(plan.calls).toEqual([
+        { target: PM, value: '0', calldata: oracle.encodeFunctionData('finalizeDistribution', ['2', '20']) },
+        { target: PM, value: '0', calldata: oracle.encodeFunctionData('withdraw', [TOKEN, TM, amount]) },
+      ]);
+      // PaymentManager subtracts the full 200 commitment and sends total-claimed
+      // (zero) to its owner. Unknown100, partial300, and immature50 stay committed.
+      const balanceAfterClose = 1000n - (200n - 200n), committedAfterClose = 650n - 200n;
+      const withdraw = oracle.parseTransaction({ data: plan.calls[1].calldata });
+      expect(balanceAfterClose >= committedAfterClose + BigInt(withdraw.args[2].toString())).toBe(true);
+      expect(balanceAfterClose - committedAfterClose).toBe(550n);
+    }
+    expect(planTreasuryTransfer(transferInput(state, '551'))).toMatchObject({ status: 'blocked', codes: ['INSUFFICIENT_SPENDABLE'] });
+  });
+  it.each(['incomplete', 'unavailable', 'missing-round', 'failed-round', 'page-cap', 'counter', 'duplicate', 'missing-balance', 'missing-counter', 'asset', 'chain', 'org', 'contract', 'block', 'hash', 'indexed', 'unpinned', 'binding'] as const)(
+    'unknown history does not bypass %s validation even for a free-funded request', kind => {
+      const state = uncommittedState(), evidence = snap(state);
+      if (kind === 'incomplete' || kind === 'unavailable') evidence.coverage.status = kind;
+      if (kind === 'missing-round') { state.rounds = []; evidence.coverage.missingIds = ['1']; }
+      if (kind === 'failed-round') evidence.coverage.failedIds = ['1'];
+      if (kind === 'page-cap') evidence.coverage.issues = [{ code: 'PAGE_CAP' }];
+      if (kind === 'counter') state.distributionCounterRaw = '2';
+      if (kind === 'duplicate') { state.distributionCounterRaw = '2'; state.rounds = [state.rounds[0], state.rounds[0]]; }
+      if (kind === 'missing-balance') delete (state as Partial<PaymentManagerState>).balanceRaw;
+      if (kind === 'missing-counter') delete (state as Partial<PaymentManagerState>).distributionCounterRaw;
+      if (kind === 'asset') state.asset = { ...X, address: ZERO };
+      if (kind === 'chain') evidence.source.chainId = 42161;
+      if (kind === 'org') evidence.source.orgId = OTHER_HASH;
+      if (kind === 'contract') evidence.source.contract = TM;
+      if (kind === 'block') evidence.source.block = { ...BLOCK, number: '99' };
+      if (kind === 'hash') evidence.source.block = { ...BLOCK, hash: OTHER_HASH };
+      if (kind === 'indexed') evidence.source.indexed = true;
+      if (kind === 'unpinned') evidence.source.snapshot = 'latest';
+      if (kind === 'binding') evidence.source.contracts = { paymentManager: TM };
+      const input = transferInput(state, '10'); input.asset = X;
+      input.sources = [{ kind: 'payment-manager', address: PM, snapshot: evidence }];
+      expect(planTreasuryTransfer(input).status).toBe('blocked');
+    });
+  it.each(['known', 'unknown'] as const)('%s attached creation facts retain their scope, block and binding checks', state => {
+    for (const overrides of [{ orgId: OTHER_HASH }, { chainId: 42161 }, { contract: TM }, { block: { ...BLOCK, number: '99' } },
+      { block: { ...BLOCK, hash: OTHER_HASH } }, { snapshot: 'latest' as const }, { contracts: { paymentManager: TM } }]) {
+      const value = uncommittedState(), source = src(PM, true, overrides);
+      value.rounds = [{ ...value.rounds[0], creationBlock: state === 'known' ? knownFact('80', source) : unknownFact('CREATION_BLOCK_UNKNOWN', source) }];
+      expect(planTreasuryTransfer(transferInput(value, '10')).status).toBe('blocked');
+    }
+  });
+});
+
 describe('ROUND-READ-COMPLETENESS / authoritative injected RPC enumeration', () => {
   function reader(): PaymentManagerPlanningReader {
     return { readCounter: vi.fn(async () => knownFact('2', src())), readBalance: vi.fn(async () => knownFact('70', src(TOKEN, false, { account: PM }))),
@@ -222,7 +311,27 @@ describe('ROUND-READ-COMPLETENESS / authoritative injected RPC enumeration', () 
     expect(empty.coverage.status).toBe('complete'); expect(empty.data.balanceRaw).toEqual(knownFact('0', src(TOKEN, false, { account: PM }))); expect(reads.readDistribution).not.toHaveBeenCalled();
     const result = await readPaymentManagerPlanningSnapshot({ source: src(), asset: X, reader: reader(), maxRounds: 20 });
     const state = paymentManagerPlanningState(result); expect(state.state).toBe('known');
-    if (state.state === 'known') expect(availability(state.value.data, state.value).status).toBe('blocked');
+    if (state.state === 'known') {
+      expect(ready(availability(state.value.data, state.value))).toMatchObject({ committedRaw: '150', spendableRaw: '0', releasableRaw: '0', finalizeIds: [] });
+      expect(planTreasuryTransfer(transferInput(state.value.data))).toMatchObject({ status: 'blocked', codes: ['INSUFFICIENT_SPENDABLE'] });
+    }
+  });
+  it('complete current getter enumeration with no indexed creation history still funds an exact uncommitted transfer', async () => {
+    const reads = reader();
+    reads.readCounter = vi.fn(async () => knownFact('1', src()));
+    reads.readBalance = vi.fn(async () => knownFact('1000', src(TOKEN, false, { account: PM })));
+    const observed = await readPaymentManagerPlanningSnapshot({ source: src(), asset: X, reader: reads, maxRounds: 1 });
+    expect(observed.coverage).toMatchObject({ status: 'complete', receivedKeys: ['counter', 'balance', '1'] });
+    const state = paymentManagerPlanningState(observed);
+    expect(state.state).toBe('known');
+    if (state.state !== 'known') throw new Error(state.code);
+    expect(state.value.data.rounds[0].creationBlock.state).toBe('unknown');
+    const input = transferInput(state.value.data, '10');
+    input.sources = [{ kind: 'payment-manager', address: PM, snapshot: state.value }];
+    const plan = ready(planTreasuryTransfer(input));
+    expect(plan.finalizeIds).toEqual([]); expect(plan.calls).toHaveLength(1);
+    expect(ready(availability(state.value.data, state.value))).toMatchObject({ spendableRaw: '900', releasableRaw: '0', spendableAfterReleaseRaw: '900' });
+    expect(reads.readCounter).toHaveBeenCalledTimes(1); expect(reads.readBalance).toHaveBeenCalledTimes(1); expect(reads.readDistribution).toHaveBeenCalledTimes(1);
   });
   it('externally supplied attached balance/counter facts cannot contradict a complete aggregate scope or block', async () => {
     const observed = await readPaymentManagerPlanningSnapshot({ source: src(), asset: X, reader: reader(), maxRounds: 20 });
