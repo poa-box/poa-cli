@@ -1,0 +1,63 @@
+{
+  "readOnly": true,
+  "sources": [
+    {
+      "chainId": 100,
+      "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/576YA6oF16nA2uG5Q9KFfBSvJm4ZNKzWZkwh8eWXaxJs",
+      "schemaSha256": "2fefb5c645d84d3a8c65f1f8522fe016ef6a64cca2441b21bcfabb43c14b3047",
+      "block": {
+        "number": "48674982",
+        "hash": "0x78575584749175e45715289ff7c2a61da485116daabf63e0678c089e8009f5f6"
+      },
+      "errors": [
+        {
+          "name": "FETCH_ORG_TASK_COUNT_PAGE",
+          "variables": {
+            "orgIds": [
+              "0x263b2b29f392647f0fb8ddbb26f099e812ab4ba2777e5e07b906277164181f6b"
+            ],
+            "cursor": "",
+            "first": 1,
+            "block": {
+              "number": 48674982
+            }
+          },
+          "errors": [
+            {
+              "message": "Child filter nesting not supported by value `taskManager`: `join on taskManager with TaskManager(organization in (0x263b2b29f392647f0fb8ddbb26f099e812ab4ba2777e5e07b906277164181f6b))`"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "chainId": 42161,
+      "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/2egvcs94ZStD38inRtK9bp3Maw3UZw4BDinH8jLyAF4G",
+      "schemaSha256": "2fefb5c645d84d3a8c65f1f8522fe016ef6a64cca2441b21bcfabb43c14b3047",
+      "block": {
+        "number": "513325115",
+        "hash": "0x9889c0d24ad14dc9767d545a92d9c81b6be344967247cf7844281e74664513f0"
+      },
+      "errors": [
+        {
+          "name": "FETCH_ORG_TASK_COUNT_PAGE",
+          "variables": {
+            "orgIds": [
+              "0x263b2b29f392647f0fb8ddbb26f099e812ab4ba2777e5e07b906277164181f6b"
+            ],
+            "cursor": "",
+            "first": 1,
+            "block": {
+              "number": 513325115
+            }
+          },
+          "errors": [
+            {
+              "message": "Child filter nesting not supported by value `taskManager`: `join on taskManager with TaskManager(organization in (0x263b2b29f392647f0fb8ddbb26f099e812ab4ba2777e5e07b906277164181f6b))`"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

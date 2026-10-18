@@ -7,16 +7,23 @@
  *   pinJson(JSON.stringify(metadata));
  *
  * KEY ORDER IS A PROTOCOL CONTRACT: {reason, submittedAt} matches the
- * frontend exactly — the subgraph's TokenRequestMetadata mapping and the UI
- * both consume this document. Do not reorder or insert keys.
+ * frontend key order — the subgraph's TokenRequestMetadata mapping and the UI
+ * both consume this document. Hosts select seconds explicitly; the CLI default
+ * stays milliseconds. Do not reorder or insert keys.
  */
 
 /** Canonical token-request document. Key order: reason, submittedAt. */
 export interface TokenRequestMetadata {
   /** Free-text justification for the request (shown to approvers). */
   reason: string;
-  /** Unix milliseconds at submission time (Date.now() in the CLI/frontend). */
+  /** Caller-selected unit; the historical CLI default is Unix milliseconds. */
   submittedAt: number;
+}
+
+/** Frontend seconds policy, explicit and deterministic; never consults a clock. */
+export function buildTokenRequestMetadataAtSeconds(reason: string, submittedAtSeconds: number): TokenRequestMetadata {
+  if (!Number.isSafeInteger(submittedAtSeconds) || submittedAtSeconds < 0) throw new Error('submittedAtSeconds must be nonnegative safe integer Unix seconds');
+  return buildTokenRequestMetadata(reason, submittedAtSeconds);
 }
 
 /**

@@ -1,0 +1,1098 @@
+[
+  {
+    "type": "function",
+    "name": "deployFullOrg",
+    "inputs": [
+      {
+        "name": "params",
+        "type": "tuple",
+        "internalType": "struct OrgDeployer.DeploymentParams",
+        "components": [
+          {
+            "name": "orgId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "orgName",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "metadataHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "registryAddr",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "deployerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "deployerUsername",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "regDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "regNonce",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "regSignature",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "autoUpgrade",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "hybridThresholdPct",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "ddThresholdPct",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "hybridClasses",
+            "type": "tuple[]",
+            "internalType": "struct IHybridVotingInit.ClassConfig[]",
+            "components": [
+              {
+                "name": "strategy",
+                "type": "uint8",
+                "internalType": "enum IHybridVotingInit.ClassStrategy"
+              },
+              {
+                "name": "slicePct",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "quadratic",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "minBalance",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "asset",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "hatIds",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+              }
+            ]
+          },
+          {
+            "name": "ddInitialTargets",
+            "type": "address[]",
+            "internalType": "address[]"
+          },
+          {
+            "name": "roles",
+            "type": "tuple[]",
+            "internalType": "struct RoleConfigStructs.RoleConfig[]",
+            "components": [
+              {
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "image",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "metadataCID",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "canVote",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "open",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "maxMembers",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "vouching",
+                "type": "tuple",
+                "internalType": "struct RoleConfigStructs.RoleVouchingConfig",
+                "components": [
+                  {
+                    "name": "enabled",
+                    "type": "bool",
+                    "internalType": "bool"
+                  },
+                  {
+                    "name": "quorum",
+                    "type": "uint32",
+                    "internalType": "uint32"
+                  },
+                  {
+                    "name": "voucherRoleIndex",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  }
+                ]
+              },
+              {
+                "name": "distribution",
+                "type": "tuple",
+                "internalType": "struct RoleConfigStructs.RoleDistributionConfig",
+                "components": [
+                  {
+                    "name": "mintToDeployer",
+                    "type": "bool",
+                    "internalType": "bool"
+                  },
+                  {
+                    "name": "additionalWearers",
+                    "type": "address[]",
+                    "internalType": "address[]"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "groups",
+            "type": "tuple[]",
+            "internalType": "struct RoleConfigStructs.GroupConfig[]",
+            "components": [
+              {
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "memberRoleIndices",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+              }
+            ]
+          },
+          {
+            "name": "roleAssignments",
+            "type": "tuple",
+            "internalType": "struct OrgDeployer.RoleAssignments",
+            "components": [
+              {
+                "name": "quickJoinRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "tokenMemberRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "tokenApproverRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "taskCreatorRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "educationCreatorRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "educationMemberRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "hybridProposalCreatorRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "ddVotingRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "ddCreatorRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              }
+            ]
+          },
+          {
+            "name": "metadataAdminRoleIndex",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "passkeyEnabled",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "educationHubConfig",
+            "type": "tuple",
+            "internalType": "struct ModulesFactory.EducationHubConfig",
+            "components": [
+              {
+                "name": "enabled",
+                "type": "bool",
+                "internalType": "bool"
+              }
+            ]
+          },
+          {
+            "name": "bootstrap",
+            "type": "tuple",
+            "internalType": "struct OrgDeployer.BootstrapConfig",
+            "components": [
+              {
+                "name": "projects",
+                "type": "tuple[]",
+                "internalType": "struct ITaskManagerBootstrap.BootstrapProjectConfig[]",
+                "components": [
+                  {
+                    "name": "title",
+                    "type": "bytes",
+                    "internalType": "bytes"
+                  },
+                  {
+                    "name": "metadataHash",
+                    "type": "bytes32",
+                    "internalType": "bytes32"
+                  },
+                  {
+                    "name": "cap",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  },
+                  {
+                    "name": "managers",
+                    "type": "address[]",
+                    "internalType": "address[]"
+                  },
+                  {
+                    "name": "createHats",
+                    "type": "uint256[]",
+                    "internalType": "uint256[]"
+                  },
+                  {
+                    "name": "claimHats",
+                    "type": "uint256[]",
+                    "internalType": "uint256[]"
+                  },
+                  {
+                    "name": "reviewHats",
+                    "type": "uint256[]",
+                    "internalType": "uint256[]"
+                  },
+                  {
+                    "name": "assignHats",
+                    "type": "uint256[]",
+                    "internalType": "uint256[]"
+                  },
+                  {
+                    "name": "bountyTokens",
+                    "type": "address[]",
+                    "internalType": "address[]"
+                  },
+                  {
+                    "name": "bountyCaps",
+                    "type": "uint256[]",
+                    "internalType": "uint256[]"
+                  }
+                ]
+              },
+              {
+                "name": "tasks",
+                "type": "tuple[]",
+                "internalType": "struct ITaskManagerBootstrap.BootstrapTaskConfig[]",
+                "components": [
+                  {
+                    "name": "projectIndex",
+                    "type": "uint8",
+                    "internalType": "uint8"
+                  },
+                  {
+                    "name": "payout",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  },
+                  {
+                    "name": "title",
+                    "type": "bytes",
+                    "internalType": "bytes"
+                  },
+                  {
+                    "name": "metadataHash",
+                    "type": "bytes32",
+                    "internalType": "bytes32"
+                  },
+                  {
+                    "name": "bountyToken",
+                    "type": "address",
+                    "internalType": "address"
+                  },
+                  {
+                    "name": "bountyPayout",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  },
+                  {
+                    "name": "requiresApplication",
+                    "type": "bool",
+                    "internalType": "bool"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "paymasterConfig",
+            "type": "tuple",
+            "internalType": "struct OrgDeployer.PaymasterConfig",
+            "components": [
+              {
+                "name": "operatorRoleIndex",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "autoWhitelistContracts",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "maxFeePerGas",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "maxPriorityFeePerGas",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "maxCallGas",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "maxVerificationGas",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "maxPreVerificationGas",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "defaultBudgetCapPerEpoch",
+                "type": "uint128",
+                "internalType": "uint128"
+              },
+              {
+                "name": "defaultBudgetEpochLen",
+                "type": "uint32",
+                "internalType": "uint32"
+              }
+            ]
+          },
+          {
+            "name": "taskManagerPerms",
+            "type": "tuple",
+            "internalType": "struct OrgDeployer.TaskManagerPermConfig",
+            "components": [
+              {
+                "name": "roleIndices",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+              },
+              {
+                "name": "masks",
+                "type": "uint8[]",
+                "internalType": "uint8[]"
+              }
+            ]
+          },
+          {
+            "name": "hybridQuorum",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "ddQuorum",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "tokenName",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "tokenSymbol",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "result",
+        "type": "tuple",
+        "internalType": "struct OrgDeployer.DeploymentResult",
+        "components": [
+          {
+            "name": "hybridVoting",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "directDemocracyVoting",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "executor",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "quickJoin",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "participationToken",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "taskManager",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "educationHub",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "paymentManager",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "membershipAuthority",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "zkEmailInvites",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "deployFullOrgWithZkEmail",
+    "inputs": [
+      {
+        "name": "params",
+        "type": "tuple",
+        "internalType": "struct OrgDeployer.DeploymentParams",
+        "components": [
+          {
+            "name": "orgId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "orgName",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "metadataHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "registryAddr",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "deployerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "deployerUsername",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "regDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "regNonce",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "regSignature",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "autoUpgrade",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "hybridThresholdPct",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "ddThresholdPct",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "hybridClasses",
+            "type": "tuple[]",
+            "internalType": "struct IHybridVotingInit.ClassConfig[]",
+            "components": [
+              {
+                "name": "strategy",
+                "type": "uint8",
+                "internalType": "enum IHybridVotingInit.ClassStrategy"
+              },
+              {
+                "name": "slicePct",
+                "type": "uint8",
+                "internalType": "uint8"
+              },
+              {
+                "name": "quadratic",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "minBalance",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "asset",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "hatIds",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+              }
+            ]
+          },
+          {
+            "name": "ddInitialTargets",
+            "type": "address[]",
+            "internalType": "address[]"
+          },
+          {
+            "name": "roles",
+            "type": "tuple[]",
+            "internalType": "struct RoleConfigStructs.RoleConfig[]",
+            "components": [
+              {
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "image",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "metadataCID",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "canVote",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "open",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "maxMembers",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "vouching",
+                "type": "tuple",
+                "internalType": "struct RoleConfigStructs.RoleVouchingConfig",
+                "components": [
+                  {
+                    "name": "enabled",
+                    "type": "bool",
+                    "internalType": "bool"
+                  },
+                  {
+                    "name": "quorum",
+                    "type": "uint32",
+                    "internalType": "uint32"
+                  },
+                  {
+                    "name": "voucherRoleIndex",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  }
+                ]
+              },
+              {
+                "name": "distribution",
+                "type": "tuple",
+                "internalType": "struct RoleConfigStructs.RoleDistributionConfig",
+                "components": [
+                  {
+                    "name": "mintToDeployer",
+                    "type": "bool",
+                    "internalType": "bool"
+                  },
+                  {
+                    "name": "additionalWearers",
+                    "type": "address[]",
+                    "internalType": "address[]"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "groups",
+            "type": "tuple[]",
+            "internalType": "struct RoleConfigStructs.GroupConfig[]",
+            "components": [
+              {
+                "name": "name",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "memberRoleIndices",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+              }
+            ]
+          },
+          {
+            "name": "roleAssignments",
+            "type": "tuple",
+            "internalType": "struct OrgDeployer.RoleAssignments",
+            "components": [
+              {
+                "name": "quickJoinRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "tokenMemberRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "tokenApproverRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "taskCreatorRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "educationCreatorRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "educationMemberRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "hybridProposalCreatorRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "ddVotingRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "ddCreatorRolesBitmap",
+                "type": "uint256",
+                "internalType": "uint256"
+              }
+            ]
+          },
+          {
+            "name": "metadataAdminRoleIndex",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "passkeyEnabled",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "educationHubConfig",
+            "type": "tuple",
+            "internalType": "struct ModulesFactory.EducationHubConfig",
+            "components": [
+              {
+                "name": "enabled",
+                "type": "bool",
+                "internalType": "bool"
+              }
+            ]
+          },
+          {
+            "name": "bootstrap",
+            "type": "tuple",
+            "internalType": "struct OrgDeployer.BootstrapConfig",
+            "components": [
+              {
+                "name": "projects",
+                "type": "tuple[]",
+                "internalType": "struct ITaskManagerBootstrap.BootstrapProjectConfig[]",
+                "components": [
+                  {
+                    "name": "title",
+                    "type": "bytes",
+                    "internalType": "bytes"
+                  },
+                  {
+                    "name": "metadataHash",
+                    "type": "bytes32",
+                    "internalType": "bytes32"
+                  },
+                  {
+                    "name": "cap",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  },
+                  {
+                    "name": "managers",
+                    "type": "address[]",
+                    "internalType": "address[]"
+                  },
+                  {
+                    "name": "createHats",
+                    "type": "uint256[]",
+                    "internalType": "uint256[]"
+                  },
+                  {
+                    "name": "claimHats",
+                    "type": "uint256[]",
+                    "internalType": "uint256[]"
+                  },
+                  {
+                    "name": "reviewHats",
+                    "type": "uint256[]",
+                    "internalType": "uint256[]"
+                  },
+                  {
+                    "name": "assignHats",
+                    "type": "uint256[]",
+                    "internalType": "uint256[]"
+                  },
+                  {
+                    "name": "bountyTokens",
+                    "type": "address[]",
+                    "internalType": "address[]"
+                  },
+                  {
+                    "name": "bountyCaps",
+                    "type": "uint256[]",
+                    "internalType": "uint256[]"
+                  }
+                ]
+              },
+              {
+                "name": "tasks",
+                "type": "tuple[]",
+                "internalType": "struct ITaskManagerBootstrap.BootstrapTaskConfig[]",
+                "components": [
+                  {
+                    "name": "projectIndex",
+                    "type": "uint8",
+                    "internalType": "uint8"
+                  },
+                  {
+                    "name": "payout",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  },
+                  {
+                    "name": "title",
+                    "type": "bytes",
+                    "internalType": "bytes"
+                  },
+                  {
+                    "name": "metadataHash",
+                    "type": "bytes32",
+                    "internalType": "bytes32"
+                  },
+                  {
+                    "name": "bountyToken",
+                    "type": "address",
+                    "internalType": "address"
+                  },
+                  {
+                    "name": "bountyPayout",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  },
+                  {
+                    "name": "requiresApplication",
+                    "type": "bool",
+                    "internalType": "bool"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "paymasterConfig",
+            "type": "tuple",
+            "internalType": "struct OrgDeployer.PaymasterConfig",
+            "components": [
+              {
+                "name": "operatorRoleIndex",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "autoWhitelistContracts",
+                "type": "bool",
+                "internalType": "bool"
+              },
+              {
+                "name": "maxFeePerGas",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "maxPriorityFeePerGas",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "maxCallGas",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "maxVerificationGas",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "maxPreVerificationGas",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "defaultBudgetCapPerEpoch",
+                "type": "uint128",
+                "internalType": "uint128"
+              },
+              {
+                "name": "defaultBudgetEpochLen",
+                "type": "uint32",
+                "internalType": "uint32"
+              }
+            ]
+          },
+          {
+            "name": "taskManagerPerms",
+            "type": "tuple",
+            "internalType": "struct OrgDeployer.TaskManagerPermConfig",
+            "components": [
+              {
+                "name": "roleIndices",
+                "type": "uint256[]",
+                "internalType": "uint256[]"
+              },
+              {
+                "name": "masks",
+                "type": "uint8[]",
+                "internalType": "uint8[]"
+              }
+            ]
+          },
+          {
+            "name": "hybridQuorum",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "ddQuorum",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "tokenName",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "tokenSymbol",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      },
+      {
+        "name": "zkConfig",
+        "type": "tuple",
+        "internalType": "struct ModulesFactory.ZkEmailConfig",
+        "components": [
+          {
+            "name": "enabled",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "initialRoot",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "initialCid",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "result",
+        "type": "tuple",
+        "internalType": "struct OrgDeployer.DeploymentResult",
+        "components": [
+          {
+            "name": "hybridVoting",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "directDemocracyVoting",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "executor",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "quickJoin",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "participationToken",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "taskManager",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "educationHub",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "paymentManager",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "membershipAuthority",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "zkEmailInvites",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "payable"
+  }
+]

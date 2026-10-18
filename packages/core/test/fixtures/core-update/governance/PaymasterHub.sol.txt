@@ -1,0 +1,55 @@
+// Original src/PaymasterHub.sol:49-55
+
+    uint32 private constant RULE_ID_GENERIC = 0x00000000;
+
+    uint32 private constant MIN_EPOCH_LENGTH = 1 hours;
+    uint32 private constant MAX_EPOCH_LENGTH = 365 days;
+
+    // ============ Storage Variables ============
+
+// Original src/PaymasterHub.sol:794-807
+    function setRulesBatch(
+        bytes32 orgId,
+        address[] calldata targets,
+        bytes4[] calldata selectors,
+        bool[] calldata allowed,
+        uint32[] calldata maxCallGasHints
+    ) external onlyOrgOperator(orgId) {
+        PaymasterRuleLib.writeLocalRulesBatch(orgId, targets, selectors, allowed, maxCallGasHints);
+    }
+
+    // ============ Global Rulebook (see PaymasterRuleLib) ============
+
+    /// @notice Set or remove protocol-wide rulebook entries keyed by (module typeId, selector)
+    /// @dev poaManager/protocolAdmin gated (inside the lib). One entry covers the matching module
+
+// Original src/PaymasterHub.sol:887-915
+    function setBudget(bytes32 orgId, bytes32 subjectKey, uint128 capPerEpoch, uint32 epochLen)
+        external
+        onlyOrgOperator(orgId)
+    {
+        if (epochLen < MIN_EPOCH_LENGTH || epochLen > MAX_EPOCH_LENGTH) {
+            revert PaymasterHubErrors.InvalidEpochLength();
+        }
+
+        mapping(bytes32 => Budget) storage budgets = _getBudgetsStorage()[orgId];
+        Budget storage budget = budgets[subjectKey];
+
+        // If changing epoch length, reset usage
+        if (budget.epochLen != epochLen && budget.epochLen != 0) {
+            budget.usedInEpoch = 0;
+        }
+
+        budget.capPerEpoch = capPerEpoch;
+        budget.epochLen = epochLen;
+
+        // Initialize epoch start if not set
+        if (budget.epochStart == 0) {
+            budget.epochStart = uint32(block.timestamp);
+        }
+
+        emit PaymasterHubErrors.BudgetSet(orgId, subjectKey, capPerEpoch, epochLen, budget.epochStart);
+    }
+
+    /**
+     * @notice Manually set epoch start for a subject

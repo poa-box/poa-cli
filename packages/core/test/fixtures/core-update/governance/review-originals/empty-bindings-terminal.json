@@ -1,0 +1,103 @@
+{
+  "readOnly": true,
+  "sourceDiscovery": {
+    "organization": {
+      "id": "0x263b2b29f392647f0fb8ddbb26f099e812ab4ba2777e5e07b906277164181f6b",
+      "hybridVoting": {
+        "id": "0xf642dde77848dc195c8089f4042a311ed650d7a6"
+      }
+    },
+    "_meta": {
+      "block": {
+        "number": 48675428,
+        "hash": "0xd070ee5fd9f2cdf271c0102008c88c07740d4e0df87b132dac13a23021f389b6",
+        "timestamp": 1791585175
+      }
+    }
+  },
+  "out": [
+    {
+      "which": "valid-module-unseen-proposal",
+      "contract": "0xf642dde77848dc195c8089f4042a311ed650d7a6",
+      "detailCoverage": {
+        "status": "complete",
+        "expectedKeys": [
+          "proposals",
+          "ddvproposals"
+        ],
+        "receivedKeys": [
+          "proposals",
+          "ddvproposals"
+        ],
+        "missingIds": [],
+        "failedIds": [],
+        "issues": []
+      },
+      "proposal": {
+        "state": "known",
+        "value": null,
+        "source": {
+          "chainId": 100,
+          "orgId": "0x263b2b29f392647f0fb8ddbb26f099e812ab4ba2777e5e07b906277164181f6b",
+          "contract": "0xf642dde77848dc195c8089f4042a311ed650d7a6",
+          "endpoint": "serving-gnosis-redacted",
+          "method": "root-empty-binding-review",
+          "indexed": true,
+          "snapshot": "pinned",
+          "block": {
+            "number": "48675428",
+            "hash": "0xd070ee5fd9f2cdf271c0102008c88c07740d4e0df87b132dac13a23021f389b6",
+            "timestamp": "1791585175"
+          }
+        }
+      }
+    },
+    {
+      "which": "unrelated-empty-module",
+      "contract": "0x0000000000000000000000000000000000123456",
+      "detailCoverage": {
+        "status": "complete",
+        "expectedKeys": [
+          "proposals",
+          "ddvproposals"
+        ],
+        "receivedKeys": [
+          "proposals",
+          "ddvproposals"
+        ],
+        "missingIds": [],
+        "failedIds": [],
+        "issues": []
+      },
+      "proposal": {
+        "state": "known",
+        "value": null,
+        "source": {
+          "chainId": 100,
+          "orgId": "0x263b2b29f392647f0fb8ddbb26f099e812ab4ba2777e5e07b906277164181f6b",
+          "contract": "0x0000000000000000000000000000000000123456",
+          "endpoint": "serving-gnosis-redacted",
+          "method": "root-empty-binding-review",
+          "indexed": true,
+          "snapshot": "pinned",
+          "block": {
+            "number": "48675428",
+            "hash": "0xd070ee5fd9f2cdf271c0102008c88c07740d4e0df87b132dac13a23021f389b6",
+            "timestamp": "1791585175"
+          }
+        }
+      },
+      "archiveCoverage": {
+        "status": "complete",
+        "receivedKeys": [],
+        "missingIds": [],
+        "failedIds": [],
+        "issues": [],
+        "cursor": "",
+        "pages": 1,
+        "cap": 1
+      },
+      "archiveRows": 0
+    }
+  ]
+}

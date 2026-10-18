@@ -1,0 +1,18 @@
+{
+  "contractSourceCommit": "fa37b3e7341c9225bdc1ab6a9ba94ee41a876c8d",
+  "scope": "Offline source/ABI oracle only; not deployed bytecode evidence",
+  "files": {
+    "OrgDeployer-bootstrap.sol.txt": "17f9223c3ab202dbfbdd4d2eca792328aca88fc8cb574dd4f275d8539c9d6026",
+    "ParticipationToken.sol": "08e4a1f746465ecf828be4d56721f31a3622e30489ef5d489e255dc5c5c09d92",
+    "ValidationLib.sol": "9c285255ce4d9e7f498f7c10a3e68a7d08033247186242f045588391d63e99d5",
+    "legacy-deployment.json": "1ac2987e2576c6355c7e298dad16e050bbbee07ef9cb76857b9bc288d17b5c5c",
+    "org-deployer-abi.json": "4aad3b860031b1b55ab8e91b521c6b2db5936000f2af4744187bbae6538b8af0"
+  },
+  "sources": {
+    "org-deployer-abi.json": "src/abi/OrgDeployerNew.json",
+    "ValidationLib.sol": "contracts/src/libs/ValidationLib.sol",
+    "ParticipationToken.sol": "contracts/src/ParticipationToken.sol",
+    "OrgDeployer-bootstrap.sol.txt": "contracts/src/OrgDeployer.sol lines 865-928",
+    "legacy-deployment.json": "Literal original CLI/core omitted-option values at core HEAD 29f76287743d0cac43533f3683992d1c8ecc48e8; independent of the updated builder."
+  }
+}

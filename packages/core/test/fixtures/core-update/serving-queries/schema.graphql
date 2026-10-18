@@ -1,0 +1,1616 @@
+# Immutable projection of the serving Gnosis/Arbitrum introspection; see provenance.json.
+# Only exercised output fields/arguments and literal input fields are retained.
+# All retained declarations keep the original type/default, enum vocabularies are intact.
+
+type _Block_ {
+  hash: Bytes
+  number: Int!
+}
+
+type _Meta_ {
+  block: _Block_!
+}
+
+type AccessRule {
+  author: RuleAuthor!
+  clearedAt: BigInt
+  delegable: Boolean!
+  id: String!
+  kind: RuleKind!
+  lastUpdatedAt: BigInt!
+  managerSubject: Subject
+  setAt: BigInt!
+  sticky: Boolean!
+  subject: Subject!
+  user: Bytes!
+}
+
+input AccessRule_filter {
+  id_gt: String
+  organization: String
+}
+
+enum AccessRule_orderBy {
+  id
+  subject
+  subject__id
+  subject__subjectId
+  subject__kind
+  subject__name
+  subject__metadataCID
+  subject__imageURI
+  subject__maxMembers
+  subject__memberCount
+  subject__activeMemberCount
+  subject__defaultAllow
+  subject__isLegacyAdopted
+  subject__createdAt
+  subject__createdAtBlock
+  subject__lastUpdatedAt
+  subject__transactionHash
+  authority
+  authority__id
+  authority__executor
+  authority__paymasterHub
+  authority__orgIdHash
+  authority__paused
+  authority__initConfigDerived
+  authority__maxDailyVouches
+  authority__subjectCount
+  authority__roleSubjectCount
+  authority__groupSubjectCount
+  authority__acceptedMembershipCount
+  authority__isRouterBound
+  authority__registeredAt
+  authority__registeredAtBlock
+  authority__cutoverAt
+  authority__lastUpdatedAt
+  authority__transactionHash
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  membership
+  membership__id
+  membership__user
+  membership__userUsername
+  membership__accepted
+  membership__acceptedAt
+  membership__seededWhilePaused
+  membership__eligible
+  membership__eligibilitySource
+  membership__isMember
+  membership__claimable
+  membership__ruleKind
+  membership__emailVerified
+  membership__vouchCount
+  membership__vouchEpoch
+  membership__vouchMet
+  membership__firstSeenAt
+  membership__lastUpdatedAt
+  membership__transactionHash
+  user
+  kind
+  author
+  delegable
+  sticky
+  managerSubject
+  managerSubject__id
+  managerSubject__subjectId
+  managerSubject__kind
+  managerSubject__name
+  managerSubject__metadataCID
+  managerSubject__imageURI
+  managerSubject__maxMembers
+  managerSubject__memberCount
+  managerSubject__activeMemberCount
+  managerSubject__defaultAllow
+  managerSubject__isLegacyAdopted
+  managerSubject__createdAt
+  managerSubject__createdAtBlock
+  managerSubject__lastUpdatedAt
+  managerSubject__transactionHash
+  setAt
+  setAtBlock
+  clearedAt
+  lastUpdatedAt
+  transactionHash
+}
+
+type Account {
+  id: Bytes!
+  isDeleted: Boolean!
+  profileMetadataHash: Bytes
+  registeredAt: BigInt!
+  registeredAtBlock: BigInt!
+  registry: UniversalAccountRegistry!
+  user: Bytes!
+  username: String!
+}
+
+input Account_filter {
+  id: Bytes
+  registry: String
+}
+
+type Beacon {
+  beaconAddress: Bytes!
+  id: String!
+}
+
+type BeaconUpgradeEvent {
+  beacon: Beacon!
+  id: Bytes!
+  newImplementation: Bytes!
+  poaManager: PoaManagerContract!
+  transactionHash: Bytes!
+  typeId: Bytes!
+  upgradedAt: BigInt!
+  upgradedAtBlock: BigInt!
+  version: String!
+}
+
+input BeaconUpgradeEvent_filter {
+  id_gt: Bytes
+  poaManager: String
+}
+
+enum BeaconUpgradeEvent_orderBy {
+  id
+  poaManager
+  poaManager__id
+  poaManager__registry
+  poaManager__beaconCount
+  poaManager__createdAt
+  poaManager__createdAtBlock
+  poaManager__orgDeployerProxy
+  poaManager__orgRegistryProxy
+  poaManager__paymasterHubProxy
+  poaManager__globalAccountRegistryProxy
+  poaManager__passkeyAccountFactoryProxy
+  beacon
+  beacon__id
+  beacon__typeId
+  beacon__typeName
+  beacon__beaconAddress
+  beacon__currentImplementation
+  beacon__version
+  beacon__createdAt
+  beacon__createdAtBlock
+  beacon__updatedAt
+  beacon__updatedAtBlock
+  beacon__transactionHash
+  typeId
+  newImplementation
+  version
+  upgradedAt
+  upgradedAtBlock
+  transactionHash
+}
+
+scalar BigInt
+
+input Block_height {
+  hash: Bytes
+  number: Int
+  number_gte: Int
+}
+
+scalar Bytes
+
+enum DepositEventType {
+  HubDeposit
+  OrgDeposit
+}
+
+type DkimKey {
+  domainHash: Bytes!
+  id: String!
+  keyHash: Bytes!
+  revokedAt: BigInt
+  valid: Boolean!
+  validUntil: BigInt!
+}
+
+type DkimRegistry {
+  id: Bytes!
+  keys(first: Int = 100): [DkimKey!]!
+  owner: Bytes
+}
+
+enum EligibilitySource {
+  None
+  ExplicitBan
+  ExplicitGrant
+  EmailVerified
+  VouchQuorum
+  SubjectDefault
+}
+
+type GroupComposition {
+  addedAt: BigInt!
+  addedAtBlock: BigInt!
+  group: Subject!
+  groupSubjectId: BigInt!
+  id: String!
+  isActive: Boolean!
+  role: Subject!
+  roleSubjectId: BigInt!
+  updatedAt: BigInt!
+}
+
+input GroupComposition_filter {
+  id_gt: String
+  isActive: Boolean
+  organization: String
+}
+
+enum GroupComposition_orderBy {
+  id
+  group
+  group__id
+  group__subjectId
+  group__kind
+  group__name
+  group__metadataCID
+  group__imageURI
+  group__maxMembers
+  group__memberCount
+  group__activeMemberCount
+  group__defaultAllow
+  group__isLegacyAdopted
+  group__createdAt
+  group__createdAtBlock
+  group__lastUpdatedAt
+  group__transactionHash
+  role
+  role__id
+  role__subjectId
+  role__kind
+  role__name
+  role__metadataCID
+  role__imageURI
+  role__maxMembers
+  role__memberCount
+  role__activeMemberCount
+  role__defaultAllow
+  role__isLegacyAdopted
+  role__createdAt
+  role__createdAtBlock
+  role__lastUpdatedAt
+  role__transactionHash
+  authority
+  authority__id
+  authority__executor
+  authority__paymasterHub
+  authority__orgIdHash
+  authority__paused
+  authority__initConfigDerived
+  authority__maxDailyVouches
+  authority__subjectCount
+  authority__roleSubjectCount
+  authority__groupSubjectCount
+  authority__acceptedMembershipCount
+  authority__isRouterBound
+  authority__registeredAt
+  authority__registeredAtBlock
+  authority__cutoverAt
+  authority__lastUpdatedAt
+  authority__transactionHash
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  groupSubjectId
+  roleSubjectId
+  isActive
+  addedAt
+  addedAtBlock
+  updatedAt
+  transactionHash
+}
+
+type ManagerConfig {
+  canGrant: Boolean!
+  canRemove: Boolean!
+  caps: Int!
+  delaySecs: BigInt!
+  enabled: Boolean!
+  id: String!
+  lastUpdatedAt: BigInt!
+  managerSubject: Subject
+  managerSubjectId: BigInt!
+  setAt: BigInt!
+}
+
+type MembershipAuthorityContract {
+  acceptedMembershipCount: Int!
+  cutoverAt: BigInt
+  executor: Bytes
+  groupSubjectCount: Int!
+  id: Bytes!
+  initConfigDerived: Boolean!
+  isRouterBound: Boolean!
+  lastUpdatedAt: BigInt!
+  maxDailyVouches: Int!
+  paused: Boolean!
+  registeredAt: BigInt!
+  roleSubjectCount: Int!
+  subjectCount: Int!
+}
+
+type OnboardingConfig {
+  accountRegistry: Bytes!
+  blockNumber: BigInt!
+  dailyCreationLimit: BigInt!
+  enabled: Boolean!
+  id: Bytes!
+  maxGasPerCreation: BigInt!
+  updatedAt: BigInt!
+}
+
+input OnboardingConfig_filter {
+  id: Bytes
+}
+
+enum OrderDirection {
+  asc
+  desc
+}
+
+type Organization {
+  id: Bytes!
+  membershipAuthority: MembershipAuthorityContract
+  name: String
+  roles: [Role!]!
+  zkEmailInvites: ZkEmailInvites
+}
+
+type OrgDeployConfig {
+  blockNumber: BigInt!
+  dailyDeployLimit: BigInt!
+  enabled: Boolean!
+  id: Bytes!
+  maxDeploysPerAccount: Int!
+  maxGasPerDeploy: BigInt!
+  orgDeployer: Bytes!
+  updatedAt: BigInt!
+}
+
+input OrgDeployConfig_filter {
+  id: Bytes
+}
+
+type OrgRegistryContract {
+  id: Bytes!
+  totalContracts: BigInt!
+  totalOrgs: BigInt!
+}
+
+input OrgRegistryContract_filter {
+  id: Bytes
+}
+
+type PasskeyAccount {
+  blockNumber: BigInt!
+  createdAt: BigInt!
+  factory: PasskeyAccountFactory!
+  guardian: Bytes!
+  id: Bytes!
+  initialCredentialId: Bytes!
+  owner: Bytes!
+  recoveryDelay: BigInt!
+  transactionHash: Bytes!
+}
+
+input PasskeyAccount_filter {
+  id: Bytes
+}
+
+type PasskeyAccountFactory {
+  accountBeacon: Bytes
+  blockNumber: BigInt!
+  createdAt: BigInt!
+  id: Bytes!
+  maxCredentialsPerAccount: Int!
+  paused: Boolean!
+  poaGuardian: Bytes!
+  poaManager: Bytes!
+  recoveryDelay: BigInt!
+}
+
+input PasskeyAccountFactory_filter {
+  id: Bytes
+}
+
+type PasskeyCredential {
+  account: PasskeyAccount!
+  active: Boolean!
+  blockNumber: BigInt!
+  createdAt: BigInt!
+  credentialId: Bytes!
+  id: String!
+  removedAt: BigInt
+  signCount: BigInt!
+}
+
+input PasskeyCredential_filter {
+  account: String
+  credentialId: Bytes
+  id_gt: String
+}
+
+enum PasskeyCredential_orderBy {
+  id
+  account
+  account__id
+  account__initialCredentialId
+  account__owner
+  account__guardian
+  account__recoveryDelay
+  account__createdAt
+  account__blockNumber
+  account__transactionHash
+  credentialId
+  active
+  signCount
+  createdAt
+  removedAt
+  blockNumber
+}
+
+type PaymasterBudget {
+  capPerEpoch: BigInt!
+  epochLen: Int!
+  epochStart: Int!
+  subjectKey: Bytes!
+  totalUsed: BigInt!
+  usedInEpoch: BigInt!
+}
+
+enum PaymasterBudget_orderBy {
+  id
+  orgConfig
+  orgConfig__id
+  orgConfig__orgId
+  orgConfig__adminHatId
+  orgConfig__operatorHatId
+  orgConfig__isPaused
+  orgConfig__isBannedFromSolidarity
+  orgConfig__rulesMode
+  orgConfig__depositBalance
+  orgConfig__totalDeposited
+  orgConfig__totalSpent
+  orgConfig__totalSolidarityReceived
+  orgConfig__registeredAt
+  orgConfig__registeredAtBlock
+  orgConfig__transactionHash
+  subjectKey
+  capPerEpoch
+  usedInEpoch
+  epochLen
+  epochStart
+  totalUsed
+  setAt
+  setAtBlock
+  transactionHash
+}
+
+type PaymasterDepositEvent {
+  amount: BigInt!
+  eventAt: BigInt!
+  eventAtBlock: BigInt!
+  eventType: DepositEventType!
+  from: Bytes
+  id: Bytes!
+  newBalance: BigInt
+  orgConfig: PaymasterOrgConfig
+  paymasterHub: PaymasterHubContract!
+  to: Bytes
+  transactionHash: Bytes!
+}
+
+input PaymasterDepositEvent_filter {
+  id_gt: Bytes
+  orgConfig: String
+  paymasterHub: String
+}
+
+enum PaymasterDepositEvent_orderBy {
+  id
+  paymasterHub
+  paymasterHub__id
+  paymasterHub__entryPoint
+  paymasterHub__hats
+  paymasterHub__poaManager
+  paymasterHub__totalDeposit
+  paymasterHub__solidarityBalance
+  paymasterHub__solidarityBackfilledAtBlock
+  paymasterHub__totalFeesCollected
+  paymasterHub__gracePeriodDays
+  paymasterHub__maxSpendDuringGrace
+  paymasterHub__minDepositRequired
+  paymasterHub__createdAt
+  paymasterHub__createdAtBlock
+  paymasterHub__transactionHash
+  paymasterHub__solidarityDistributionPaused
+  orgConfig
+  orgConfig__id
+  orgConfig__orgId
+  orgConfig__adminHatId
+  orgConfig__operatorHatId
+  orgConfig__isPaused
+  orgConfig__isBannedFromSolidarity
+  orgConfig__rulesMode
+  orgConfig__depositBalance
+  orgConfig__totalDeposited
+  orgConfig__totalSpent
+  orgConfig__totalSolidarityReceived
+  orgConfig__registeredAt
+  orgConfig__registeredAtBlock
+  orgConfig__transactionHash
+  eventType
+  from
+  to
+  amount
+  newBalance
+  eventAt
+  eventAtBlock
+  transactionHash
+}
+
+type PaymasterFeeCaps {
+  maxCallGas: BigInt!
+  maxFeePerGas: BigInt!
+  maxPreVerificationGas: BigInt!
+  maxPriorityFeePerGas: BigInt!
+  maxVerificationGas: BigInt!
+}
+
+type PaymasterHubContract {
+  createdAt: BigInt!
+  createdAtBlock: BigInt!
+  entryPoint: Bytes!
+  gracePeriodDays: Int!
+  id: Bytes!
+  maxSpendDuringGrace: BigInt!
+  minDepositRequired: BigInt!
+  solidarityBalance: BigInt!
+  solidarityDistributionPaused: Boolean!
+  totalDeposit: BigInt!
+  totalFeesCollected: BigInt!
+}
+
+input PaymasterHubContract_filter {
+  id: Bytes
+}
+
+type PaymasterOrgConfig {
+  adminHatId: BigInt!
+  budgets(first: Int = 100, orderBy: PaymasterBudget_orderBy, orderDirection: OrderDirection): [PaymasterBudget!]!
+  depositBalance: BigInt!
+  feeCaps: PaymasterFeeCaps
+  id: String!
+  isBannedFromSolidarity: Boolean!
+  isPaused: Boolean!
+  operatorHatId: BigInt!
+  orgId: Bytes!
+  paymasterHub: PaymasterHubContract!
+  registeredAt: BigInt!
+  stats: PaymasterOrgStats
+  totalDeposited: BigInt!
+  totalSolidarityReceived: BigInt!
+  totalSpent: BigInt!
+}
+
+input PaymasterOrgConfig_filter {
+  id_gt: String
+  orgId: Bytes
+  paymasterHub: String
+}
+
+enum PaymasterOrgConfig_orderBy {
+  id
+  paymasterHub
+  paymasterHub__id
+  paymasterHub__entryPoint
+  paymasterHub__hats
+  paymasterHub__poaManager
+  paymasterHub__totalDeposit
+  paymasterHub__solidarityBalance
+  paymasterHub__solidarityBackfilledAtBlock
+  paymasterHub__totalFeesCollected
+  paymasterHub__gracePeriodDays
+  paymasterHub__maxSpendDuringGrace
+  paymasterHub__minDepositRequired
+  paymasterHub__createdAt
+  paymasterHub__createdAtBlock
+  paymasterHub__transactionHash
+  paymasterHub__solidarityDistributionPaused
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  orgId
+  adminHatId
+  operatorHatId
+  isPaused
+  isBannedFromSolidarity
+  rulesMode
+  depositBalance
+  totalDeposited
+  totalSpent
+  totalSolidarityReceived
+  registeredAt
+  registeredAtBlock
+  transactionHash
+  rules
+  budgets
+  feeCaps
+  feeCaps__id
+  feeCaps__maxFeePerGas
+  feeCaps__maxPriorityFeePerGas
+  feeCaps__maxCallGas
+  feeCaps__maxVerificationGas
+  feeCaps__maxPreVerificationGas
+  feeCaps__setAt
+  feeCaps__setAtBlock
+  feeCaps__transactionHash
+  stats
+  stats__id
+  stats__totalUserOps
+  stats__totalGasSponsored
+  stats__totalDeposited
+  stats__totalWithdrawn
+  stats__totalSolidarityFeesCollected
+  stats__lastOperationAt
+  stats__lastOperationAtBlock
+  usageEvents
+  depositEvents
+  configChanges
+  pauseToggles
+  banRecords
+  targetTypes
+  globalRuleBlocks
+  rulesModeChanges
+}
+
+type PaymasterOrgStats {
+  totalGasSponsored: BigInt!
+  totalUserOps: BigInt!
+}
+
+type PendingAction {
+  action: PendingActionKind!
+  activatesAt: BigInt!
+  actor: Bytes!
+  actorUsername: String
+  cancelledBy: Bytes
+  createdAt: BigInt!
+  id: String!
+  pendingId: BigInt!
+  resolvedAt: BigInt
+  status: PendingActionStatus!
+  subject: Subject!
+  transactionHash: Bytes!
+  user: Bytes!
+}
+
+input PendingAction_filter {
+  id_gt: String
+  organization: String
+}
+
+enum PendingAction_orderBy {
+  id
+  authority
+  authority__id
+  authority__executor
+  authority__paymasterHub
+  authority__orgIdHash
+  authority__paused
+  authority__initConfigDerived
+  authority__maxDailyVouches
+  authority__subjectCount
+  authority__roleSubjectCount
+  authority__groupSubjectCount
+  authority__acceptedMembershipCount
+  authority__isRouterBound
+  authority__registeredAt
+  authority__registeredAtBlock
+  authority__cutoverAt
+  authority__lastUpdatedAt
+  authority__transactionHash
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  subject
+  subject__id
+  subject__subjectId
+  subject__kind
+  subject__name
+  subject__metadataCID
+  subject__imageURI
+  subject__maxMembers
+  subject__memberCount
+  subject__activeMemberCount
+  subject__defaultAllow
+  subject__isLegacyAdopted
+  subject__createdAt
+  subject__createdAtBlock
+  subject__lastUpdatedAt
+  subject__transactionHash
+  membership
+  membership__id
+  membership__user
+  membership__userUsername
+  membership__accepted
+  membership__acceptedAt
+  membership__seededWhilePaused
+  membership__eligible
+  membership__eligibilitySource
+  membership__isMember
+  membership__claimable
+  membership__ruleKind
+  membership__emailVerified
+  membership__vouchCount
+  membership__vouchEpoch
+  membership__vouchMet
+  membership__firstSeenAt
+  membership__lastUpdatedAt
+  membership__transactionHash
+  pendingId
+  action
+  user
+  actor
+  actorUsername
+  activatesAt
+  status
+  createdAt
+  createdAtBlock
+  resolvedAt
+  cancelledBy
+  transactionHash
+}
+
+enum PendingActionKind {
+  Grant
+  Offer
+  Remove
+}
+
+enum PendingActionStatus {
+  Pending
+  Cancelled
+  Voided
+  Finalized
+}
+
+type PermRow {
+  clearedAt: BigInt
+  ctx: Bytes!
+  exists: Boolean!
+  foldTag: Int!
+  id: String!
+  inheritGlobal: Boolean!
+  isGlobalCtx: Boolean!
+  lastUpdatedAt: BigInt!
+  permKey: Bytes!
+  setAt: BigInt!
+  subject: Subject!
+  value: BigInt!
+  word: BigInt!
+}
+
+input PermRow_filter {
+  id_gt: String
+  organization: String
+}
+
+enum PermRow_orderBy {
+  id
+  subject
+  subject__id
+  subject__subjectId
+  subject__kind
+  subject__name
+  subject__metadataCID
+  subject__imageURI
+  subject__maxMembers
+  subject__memberCount
+  subject__activeMemberCount
+  subject__defaultAllow
+  subject__isLegacyAdopted
+  subject__createdAt
+  subject__createdAtBlock
+  subject__lastUpdatedAt
+  subject__transactionHash
+  authority
+  authority__id
+  authority__executor
+  authority__paymasterHub
+  authority__orgIdHash
+  authority__paused
+  authority__initConfigDerived
+  authority__maxDailyVouches
+  authority__subjectCount
+  authority__roleSubjectCount
+  authority__groupSubjectCount
+  authority__acceptedMembershipCount
+  authority__isRouterBound
+  authority__registeredAt
+  authority__registeredAtBlock
+  authority__cutoverAt
+  authority__lastUpdatedAt
+  authority__transactionHash
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  permKey
+  ctx
+  isGlobalCtx
+  foldTag
+  word
+  exists
+  inheritGlobal
+  value
+  setAt
+  clearedAt
+  lastUpdatedAt
+  transactionHash
+}
+
+type PoaManagerContract {
+  beaconCount: BigInt!
+  createdAt: BigInt!
+  createdAtBlock: BigInt!
+  globalAccountRegistryProxy: Bytes
+  id: Bytes!
+  orgDeployerProxy: Bytes
+  orgRegistryProxy: Bytes
+  passkeyAccountFactoryProxy: Bytes
+  paymasterHubProxy: Bytes
+  registry: Bytes!
+}
+
+input PoaManagerContract_filter {
+  id: Bytes
+}
+
+type Query {
+  _meta(block: Block_height): _Meta_
+  accessRules(first: Int = 100, orderBy: AccessRule_orderBy, orderDirection: OrderDirection, where: AccessRule_filter, block: Block_height): [AccessRule!]!
+  accounts(first: Int = 100, where: Account_filter, block: Block_height): [Account!]!
+  beaconUpgradeEvents(first: Int = 100, orderBy: BeaconUpgradeEvent_orderBy, orderDirection: OrderDirection, where: BeaconUpgradeEvent_filter, block: Block_height): [BeaconUpgradeEvent!]!
+  groupCompositions(first: Int = 100, orderBy: GroupComposition_orderBy, orderDirection: OrderDirection, where: GroupComposition_filter, block: Block_height): [GroupComposition!]!
+  onboardingConfigs(first: Int = 100, where: OnboardingConfig_filter, block: Block_height): [OnboardingConfig!]!
+  orgDeployConfigs(first: Int = 100, where: OrgDeployConfig_filter, block: Block_height): [OrgDeployConfig!]!
+  orgRegistryContracts(first: Int = 100, where: OrgRegistryContract_filter, block: Block_height): [OrgRegistryContract!]!
+  organization(id: ID!, block: Block_height): Organization
+  passkeyAccountFactories(first: Int = 100, where: PasskeyAccountFactory_filter, block: Block_height): [PasskeyAccountFactory!]!
+  passkeyAccounts(first: Int = 100, where: PasskeyAccount_filter, block: Block_height): [PasskeyAccount!]!
+  passkeyCredentials(first: Int = 100, orderBy: PasskeyCredential_orderBy, orderDirection: OrderDirection, where: PasskeyCredential_filter, block: Block_height): [PasskeyCredential!]!
+  paymasterDepositEvents(first: Int = 100, orderBy: PaymasterDepositEvent_orderBy, orderDirection: OrderDirection, where: PaymasterDepositEvent_filter, block: Block_height): [PaymasterDepositEvent!]!
+  paymasterHubContracts(first: Int = 100, where: PaymasterHubContract_filter, block: Block_height): [PaymasterHubContract!]!
+  paymasterOrgConfigs(first: Int = 100, orderBy: PaymasterOrgConfig_orderBy, orderDirection: OrderDirection, where: PaymasterOrgConfig_filter, block: Block_height): [PaymasterOrgConfig!]!
+  pendingActions(first: Int = 100, orderBy: PendingAction_orderBy, orderDirection: OrderDirection, where: PendingAction_filter, block: Block_height): [PendingAction!]!
+  permRows(first: Int = 100, orderBy: PermRow_orderBy, orderDirection: OrderDirection, where: PermRow_filter, block: Block_height): [PermRow!]!
+  poaManagerContracts(first: Int = 100, where: PoaManagerContract_filter, block: Block_height): [PoaManagerContract!]!
+  solidarityEvents(first: Int = 100, orderBy: SolidarityEvent_orderBy, orderDirection: OrderDirection, where: SolidarityEvent_filter, block: Block_height): [SolidarityEvent!]!
+  subjectMemberships(first: Int = 100, orderBy: SubjectMembership_orderBy, orderDirection: OrderDirection, where: SubjectMembership_filter, block: Block_height): [SubjectMembership!]!
+  subjectVouchRecords(first: Int = 100, orderBy: SubjectVouchRecord_orderBy, orderDirection: OrderDirection, where: SubjectVouchRecord_filter, block: Block_height): [SubjectVouchRecord!]!
+  subjects(first: Int = 100, orderBy: Subject_orderBy, orderDirection: OrderDirection, where: Subject_filter, block: Block_height): [Subject!]!
+  universalAccountRegistries(first: Int = 100, where: UniversalAccountRegistry_filter, block: Block_height): [UniversalAccountRegistry!]!
+  usageEvents(first: Int = 100, orderBy: UsageEvent_orderBy, orderDirection: OrderDirection, where: UsageEvent_filter, block: Block_height): [UsageEvent!]!
+  zkEmailClaims(first: Int = 100, orderBy: ZkEmailClaim_orderBy, orderDirection: OrderDirection, where: ZkEmailClaim_filter): [ZkEmailClaim!]!
+  zkEmailRegisteredEmail(id: ID!): ZkEmailRegisteredEmail
+}
+
+type Role {
+  canVote: Boolean
+  hatId: BigInt!
+  id: String!
+  isUserRole: Boolean
+  name: String
+}
+
+enum RuleAuthor {
+  Governance
+  Delegated
+}
+
+enum RuleKind {
+  None
+  Grant
+  Ban
+}
+
+type SolidarityEvent {
+  amount: BigInt
+  eventAt: BigInt!
+  eventAtBlock: BigInt!
+  eventType: SolidarityEventType!
+  from: Bytes
+  id: Bytes!
+  orgConfig: PaymasterOrgConfig
+  paymasterHub: PaymasterHubContract!
+  transactionHash: Bytes!
+}
+
+input SolidarityEvent_filter {
+  id_gt: Bytes
+  paymasterHub: String
+}
+
+enum SolidarityEvent_orderBy {
+  id
+  paymasterHub
+  paymasterHub__id
+  paymasterHub__entryPoint
+  paymasterHub__hats
+  paymasterHub__poaManager
+  paymasterHub__totalDeposit
+  paymasterHub__solidarityBalance
+  paymasterHub__solidarityBackfilledAtBlock
+  paymasterHub__totalFeesCollected
+  paymasterHub__gracePeriodDays
+  paymasterHub__maxSpendDuringGrace
+  paymasterHub__minDepositRequired
+  paymasterHub__createdAt
+  paymasterHub__createdAtBlock
+  paymasterHub__transactionHash
+  paymasterHub__solidarityDistributionPaused
+  orgConfig
+  orgConfig__id
+  orgConfig__orgId
+  orgConfig__adminHatId
+  orgConfig__operatorHatId
+  orgConfig__isPaused
+  orgConfig__isBannedFromSolidarity
+  orgConfig__rulesMode
+  orgConfig__depositBalance
+  orgConfig__totalDeposited
+  orgConfig__totalSpent
+  orgConfig__totalSolidarityReceived
+  orgConfig__registeredAt
+  orgConfig__registeredAtBlock
+  orgConfig__transactionHash
+  eventType
+  from
+  amount
+  eventAt
+  eventAtBlock
+  transactionHash
+}
+
+enum SolidarityEventType {
+  FeeCollected
+  DonationReceived
+  OrgBanned
+  OrgUnbanned
+}
+
+type Subject {
+  activeMemberCount: Int!
+  createdAt: BigInt!
+  createdAtBlock: BigInt!
+  defaultAllow: Boolean!
+  id: String!
+  imageURI: String
+  isLegacyAdopted: Boolean!
+  kind: SubjectKind!
+  lastUpdatedAt: BigInt!
+  managerConfig: ManagerConfig
+  maxMembers: Int!
+  memberCount: Int!
+  memberRoles(first: Int = 100, where: GroupComposition_filter): [GroupComposition!]!
+  metadataCID: Bytes
+  name: String
+  subjectId: BigInt!
+  vouchConfig: SubjectVouchConfig
+}
+
+input Subject_filter {
+  id_gt: String
+  organization: String
+}
+
+enum Subject_orderBy {
+  id
+  authority
+  authority__id
+  authority__executor
+  authority__paymasterHub
+  authority__orgIdHash
+  authority__paused
+  authority__initConfigDerived
+  authority__maxDailyVouches
+  authority__subjectCount
+  authority__roleSubjectCount
+  authority__groupSubjectCount
+  authority__acceptedMembershipCount
+  authority__isRouterBound
+  authority__registeredAt
+  authority__registeredAtBlock
+  authority__cutoverAt
+  authority__lastUpdatedAt
+  authority__transactionHash
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  subjectId
+  kind
+  name
+  metadataCID
+  imageURI
+  maxMembers
+  memberCount
+  activeMemberCount
+  acceptedUsers
+  defaultAllow
+  isLegacyAdopted
+  role
+  role__id
+  role__hatId
+  role__name
+  role__image
+  role__metadataCID
+  role__canVote
+  role__isUserRole
+  role__createdAt
+  role__createdAtBlock
+  role__transactionHash
+  vouchConfig
+  vouchConfig__id
+  vouchConfig__quorum
+  vouchConfig__voucherSubjectId
+  vouchConfig__epoch
+  vouchConfig__configuredAt
+  vouchConfig__lastUpdatedAt
+  vouchConfig__transactionHash
+  managerConfig
+  managerConfig__id
+  managerConfig__managerSubjectId
+  managerConfig__caps
+  managerConfig__canGrant
+  managerConfig__canRemove
+  managerConfig__delaySecs
+  managerConfig__enabled
+  managerConfig__setAt
+  managerConfig__lastUpdatedAt
+  managerConfig__transactionHash
+  createdAt
+  createdAtBlock
+  lastUpdatedAt
+  transactionHash
+  memberships
+  rules
+  perms
+  memberRoles
+  groups
+  pendingActions
+  lints
+}
+
+enum SubjectKind {
+  Role
+  Group
+}
+
+type SubjectMembership {
+  accepted: Boolean!
+  acceptedAt: BigInt
+  claimable: Boolean!
+  eligibilitySource: EligibilitySource!
+  eligible: Boolean!
+  emailVerified: Boolean!
+  firstSeenAt: BigInt!
+  id: String!
+  isMember: Boolean!
+  lastUpdatedAt: BigInt!
+  pendingAction: PendingAction
+  rule: AccessRule
+  ruleKind: RuleKind!
+  seededWhilePaused: Boolean!
+  subject: Subject!
+  user: Bytes!
+  userUsername: String
+  vouchCount: Int!
+  vouchEpoch: BigInt!
+  vouchMet: Boolean!
+}
+
+input SubjectMembership_filter {
+  id_gt: String
+  organization: String
+}
+
+enum SubjectMembership_orderBy {
+  id
+  subject
+  subject__id
+  subject__subjectId
+  subject__kind
+  subject__name
+  subject__metadataCID
+  subject__imageURI
+  subject__maxMembers
+  subject__memberCount
+  subject__activeMemberCount
+  subject__defaultAllow
+  subject__isLegacyAdopted
+  subject__createdAt
+  subject__createdAtBlock
+  subject__lastUpdatedAt
+  subject__transactionHash
+  authority
+  authority__id
+  authority__executor
+  authority__paymasterHub
+  authority__orgIdHash
+  authority__paused
+  authority__initConfigDerived
+  authority__maxDailyVouches
+  authority__subjectCount
+  authority__roleSubjectCount
+  authority__groupSubjectCount
+  authority__acceptedMembershipCount
+  authority__isRouterBound
+  authority__registeredAt
+  authority__registeredAtBlock
+  authority__cutoverAt
+  authority__lastUpdatedAt
+  authority__transactionHash
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  user
+  userUsername
+  userEntity
+  userEntity__id
+  userEntity__address
+  userEntity__joinMethod
+  userEntity__membershipStatus
+  userEntity__participationTokenBalance
+  userEntity__totalVotes
+  userEntity__totalTasksCompleted
+  userEntity__totalTasksCancelled
+  userEntity__totalTasksLostToExpiry
+  userEntity__totalTasksReleased
+  userEntity__totalModulesCompleted
+  userEntity__totalClaimsAmount
+  userEntity__totalPaymentsAmount
+  userEntity__totalTokenRequestsAmount
+  userEntity__firstSeenAt
+  userEntity__firstSeenAtBlock
+  userEntity__lastActiveAt
+  userEntity__lastActiveAtBlock
+  accepted
+  acceptedAt
+  seededWhilePaused
+  eligible
+  eligibilitySource
+  isMember
+  claimable
+  rule
+  rule__id
+  rule__user
+  rule__kind
+  rule__author
+  rule__delegable
+  rule__sticky
+  rule__setAt
+  rule__setAtBlock
+  rule__clearedAt
+  rule__lastUpdatedAt
+  rule__transactionHash
+  ruleKind
+  emailVerified
+  vouchCount
+  vouchEpoch
+  vouchMet
+  pendingAction
+  pendingAction__id
+  pendingAction__pendingId
+  pendingAction__action
+  pendingAction__user
+  pendingAction__actor
+  pendingAction__actorUsername
+  pendingAction__activatesAt
+  pendingAction__status
+  pendingAction__createdAt
+  pendingAction__createdAtBlock
+  pendingAction__resolvedAt
+  pendingAction__cancelledBy
+  pendingAction__transactionHash
+  vouches
+  firstSeenAt
+  lastUpdatedAt
+  transactionHash
+}
+
+type SubjectVouchConfig {
+  configuredAt: BigInt!
+  epoch: BigInt!
+  id: String!
+  lastUpdatedAt: BigInt!
+  quorum: Int!
+  voucherSubject: Subject
+  voucherSubjectId: BigInt!
+}
+
+type SubjectVouchRecord {
+  active: Boolean!
+  config: SubjectVouchConfig
+  epoch: BigInt!
+  id: String!
+  revokedAt: BigInt
+  seeded: Boolean!
+  subject: Subject!
+  user: Bytes!
+  vouchedAt: BigInt!
+  voucher: Bytes!
+  voucherUsername: String
+}
+
+input SubjectVouchRecord_filter {
+  id_gt: String
+  organization: String
+}
+
+enum SubjectVouchRecord_orderBy {
+  id
+  membership
+  membership__id
+  membership__user
+  membership__userUsername
+  membership__accepted
+  membership__acceptedAt
+  membership__seededWhilePaused
+  membership__eligible
+  membership__eligibilitySource
+  membership__isMember
+  membership__claimable
+  membership__ruleKind
+  membership__emailVerified
+  membership__vouchCount
+  membership__vouchEpoch
+  membership__vouchMet
+  membership__firstSeenAt
+  membership__lastUpdatedAt
+  membership__transactionHash
+  config
+  config__id
+  config__quorum
+  config__voucherSubjectId
+  config__epoch
+  config__configuredAt
+  config__lastUpdatedAt
+  config__transactionHash
+  subject
+  subject__id
+  subject__subjectId
+  subject__kind
+  subject__name
+  subject__metadataCID
+  subject__imageURI
+  subject__maxMembers
+  subject__memberCount
+  subject__activeMemberCount
+  subject__defaultAllow
+  subject__isLegacyAdopted
+  subject__createdAt
+  subject__createdAtBlock
+  subject__lastUpdatedAt
+  subject__transactionHash
+  authority
+  authority__id
+  authority__executor
+  authority__paymasterHub
+  authority__orgIdHash
+  authority__paused
+  authority__initConfigDerived
+  authority__maxDailyVouches
+  authority__subjectCount
+  authority__roleSubjectCount
+  authority__groupSubjectCount
+  authority__acceptedMembershipCount
+  authority__isRouterBound
+  authority__registeredAt
+  authority__registeredAtBlock
+  authority__cutoverAt
+  authority__lastUpdatedAt
+  authority__transactionHash
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  user
+  voucher
+  voucherUsername
+  active
+  seeded
+  epoch
+  vouchedAt
+  vouchedAtBlock
+  revokedAt
+  transactionHash
+}
+
+type UniversalAccountRegistry {
+  createdAt: BigInt!
+  createdAtBlock: BigInt!
+  id: Bytes!
+  passkeyFactory: Bytes
+  totalAccounts: BigInt!
+}
+
+input UniversalAccountRegistry_filter {
+  id: Bytes
+}
+
+type UsageEvent {
+  delta: BigInt!
+  epochStart: Int!
+  eventAt: BigInt!
+  eventAtBlock: BigInt!
+  id: Bytes!
+  orgConfig: PaymasterOrgConfig!
+  subjectKey: Bytes!
+  transactionHash: Bytes!
+  usedInEpoch: BigInt!
+}
+
+input UsageEvent_filter {
+  id_gt: Bytes
+  orgConfig: String
+}
+
+enum UsageEvent_orderBy {
+  id
+  orgConfig
+  orgConfig__id
+  orgConfig__orgId
+  orgConfig__adminHatId
+  orgConfig__operatorHatId
+  orgConfig__isPaused
+  orgConfig__isBannedFromSolidarity
+  orgConfig__rulesMode
+  orgConfig__depositBalance
+  orgConfig__totalDeposited
+  orgConfig__totalSpent
+  orgConfig__totalSolidarityReceived
+  orgConfig__registeredAt
+  orgConfig__registeredAtBlock
+  orgConfig__transactionHash
+  budget
+  budget__id
+  budget__subjectKey
+  budget__capPerEpoch
+  budget__usedInEpoch
+  budget__epochLen
+  budget__epochStart
+  budget__totalUsed
+  budget__setAt
+  budget__setAtBlock
+  budget__transactionHash
+  subjectKey
+  delta
+  usedInEpoch
+  epochStart
+  eventAt
+  eventAtBlock
+  transactionHash
+}
+
+type ZkEmailAllowlist {
+  entries(first: Int = 100, orderBy: ZkEmailAllowlistEntry_orderBy, orderDirection: OrderDirection): [ZkEmailAllowlistEntry!]!
+  id: String!
+  indexedAt: BigInt
+  root: Bytes
+}
+
+type ZkEmailAllowlistEntry {
+  entryType: String!
+  hatIds: [BigInt!]!
+  id: String!
+  identifier: String
+  identifierHash: Bytes
+  index: Int!
+  roleIndexes: [Int!]!
+}
+
+enum ZkEmailAllowlistEntry_orderBy {
+  id
+  allowlist
+  allowlist__id
+  allowlist__root
+  allowlist__indexedAt
+  entryType
+  identifier
+  identifierHash
+  hatIds
+  roleIndexes
+  index
+}
+
+type ZkEmailClaim {
+  claimedAt: BigInt!
+  claimedAtBlock: BigInt!
+  claimer: Bytes!
+  claimerUsername: String
+  hatIds: [BigInt!]!
+  id: String!
+  identifierHash: Bytes!
+  kind: ZkEmailClaimKind!
+  nullifier: Bytes
+  registeredUsername: String
+  transactionHash: Bytes!
+}
+
+input ZkEmailClaim_filter {
+  module: String
+}
+
+enum ZkEmailClaim_orderBy {
+  id
+  module
+  module__id
+  module__activeRoot
+  module__activeAllowlistCid
+  module__executor
+  module__domainVerifier
+  module__emailVerifier
+  module__accountRegistry
+  module__universalFactory
+  module__claimCount
+  module__createdAt
+  module__lastUpdatedAt
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  claimer
+  claimerUser
+  claimerUser__id
+  claimerUser__address
+  claimerUser__joinMethod
+  claimerUser__membershipStatus
+  claimerUser__participationTokenBalance
+  claimerUser__totalVotes
+  claimerUser__totalTasksCompleted
+  claimerUser__totalTasksCancelled
+  claimerUser__totalTasksLostToExpiry
+  claimerUser__totalTasksReleased
+  claimerUser__totalModulesCompleted
+  claimerUser__totalClaimsAmount
+  claimerUser__totalPaymentsAmount
+  claimerUser__totalTokenRequestsAmount
+  claimerUser__firstSeenAt
+  claimerUser__firstSeenAtBlock
+  claimerUser__lastActiveAt
+  claimerUser__lastActiveAtBlock
+  claimerUsername
+  kind
+  identifierHash
+  hatIds
+  nullifier
+  registeredUsername
+  credentialId
+  claimedAt
+  claimedAtBlock
+  transactionHash
+}
+
+enum ZkEmailClaimKind {
+  Domain
+  Email
+}
+
+type ZkEmailInvites {
+  accountRegistry: Bytes
+  activeAllowlist: ZkEmailAllowlist
+  activeAllowlistCid: String
+  activeRoot: Bytes
+  claimCount: Int!
+  dkimRegistry: DkimRegistry
+  domainVerifier: Bytes
+  emailVerifier: Bytes
+  executor: Bytes
+  id: Bytes!
+  universalFactory: Bytes
+}
+
+type ZkEmailRegisteredEmail {
+  claimedAt: BigInt
+  claimer: Bytes
+  clearedAt: BigInt
+  id: String!
+  registered: Boolean!
+}
+

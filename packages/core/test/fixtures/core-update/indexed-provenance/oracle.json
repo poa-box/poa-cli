@@ -1,0 +1,159 @@
+{
+  "provenance": "Deterministic synthetic block/store oracle, not a live population claim. Block identities are independent of requested SourceRef. Serving types/capabilities come from retained same-day both-chain introspection.",
+  "account": "0x2222222222222222222222222222222222222222",
+  "hub": "0x1111111111111111111111111111111111111111",
+  "registry": "0x3333333333333333333333333333333333333333",
+  "orgId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "blocks": [
+    {
+      "number": 123,
+      "hash": "0xabababababababababababababababababababababababababababababababab",
+      "timestamp": 1000
+    },
+    {
+      "number": 124,
+      "hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "timestamp": 1005
+    }
+  ],
+  "rows": {
+    "passkeyAccounts": [
+      {
+        "id": "0x2222222222222222222222222222222222222222"
+      }
+    ],
+    "accounts": [
+      {
+        "id": "0x2222222222222222222222222222222222222222"
+      }
+    ],
+    "passkeyAccountFactories": [
+      {
+        "id": "0x1111111111111111111111111111111111111111"
+      }
+    ],
+    "universalAccountRegistries": [
+      {
+        "id": "0x3333333333333333333333333333333333333333"
+      }
+    ],
+    "paymasterHubContracts": [
+      {
+        "id": "0x1111111111111111111111111111111111111111"
+      }
+    ],
+    "onboardingConfigs": [
+      {
+        "id": "0x1111111111111111111111111111111111111111"
+      }
+    ],
+    "orgDeployConfigs": [
+      {
+        "id": "0x1111111111111111111111111111111111111111"
+      }
+    ],
+    "orgRegistryContracts": [
+      {
+        "id": "0x3333333333333333333333333333333333333333"
+      }
+    ],
+    "poaManagerContracts": [
+      {
+        "id": "0x3333333333333333333333333333333333333333"
+      }
+    ],
+    "passkeyCredentials": [
+      {
+        "id": "credential-001",
+        "account": {
+          "id": "0x2222222222222222222222222222222222222222",
+          "factory": {
+            "id": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "credentialId": "0xabababababababababababababababababababababababababababababababab",
+        "active": false,
+        "signCount": "9007199254740993",
+        "createdAt": "1000",
+        "removedAt": "1001",
+        "blockNumber": "122"
+      }
+    ],
+    "paymasterOrgConfigs": [
+      {
+        "id": "orgcfg",
+        "orgId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "paymasterHub": {
+          "id": "0x1111111111111111111111111111111111111111"
+        },
+        "totalSpent": "9007199254740993",
+        "totalSolidarityReceived": "0",
+        "depositBalance": "1",
+        "totalDeposited": "2",
+        "stats": {
+          "totalUserOps": "1",
+          "totalGasSponsored": "2"
+        }
+      }
+    ],
+    "beaconUpgradeEvents": [
+      {
+        "id": "0x01",
+        "poaManager": {
+          "id": "0x1111111111111111111111111111111111111111"
+        },
+        "upgradedAt": "1000",
+        "upgradedAtBlock": "122",
+        "transactionHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      }
+    ],
+    "solidarityEvents": [
+      {
+        "id": "0x01",
+        "paymasterHub": {
+          "id": "0x1111111111111111111111111111111111111111"
+        },
+        "from": "0x2222222222222222222222222222222222222222",
+        "amount": "9007199254740993",
+        "eventAt": "1000",
+        "eventAtBlock": "122",
+        "transactionHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      }
+    ],
+    "paymasterDepositEvents": [
+      {
+        "id": "0x01",
+        "paymasterHub": {
+          "id": "0x1111111111111111111111111111111111111111"
+        },
+        "orgConfig": {
+          "id": "orgcfg",
+          "orgId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "from": "0x2222222222222222222222222222222222222222",
+        "to": "0x1111111111111111111111111111111111111111",
+        "amount": "9007199254740993",
+        "eventAt": "1000",
+        "eventAtBlock": "122",
+        "transactionHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      }
+    ],
+    "usageEvents": [
+      {
+        "id": "0x01",
+        "orgConfig": {
+          "id": "orgcfg",
+          "orgId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "paymasterHub": {
+            "id": "0x1111111111111111111111111111111111111111"
+          }
+        },
+        "delta": "-9007199254740993",
+        "subjectKey": "0xabababababababababababababababababababababababababababababababab",
+        "eventAt": "1000",
+        "eventAtBlock": "122",
+        "transactionHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      }
+    ]
+  }
+}

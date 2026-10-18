@@ -1,0 +1,6 @@
+import { calculateClassRawPower, integerSquareRoot } from '/Users/hudsonheadley/conductor/workspaces/poa-cli/halifax-v1/packages/core/src/governance/power.ts';
+import { knownFact } from '/Users/hudsonheadley/conductor/workspaces/poa-cli/halifax-v1/packages/core/src/data/facts.ts';
+const max=(1n<<256n)-1n;
+function contractSqrt(x:bigint):bigint{if(x===0n)return 0n;if(x<=3n)return 1n;let y=x,z=((x+1n)&max)/2n;while(z<y){y=z;z=((x/z+z)&max)/2n;}return y;}
+const result=[max-1n,max].map(balance=>{let expected:any;try{expected={state:'known',value:(contractSqrt(balance)*100n).toString()}}catch{expected={state:'unknown',code:'CONTRACT_DIVISION_BY_ZERO'}};return{balance:balance.toString(),mathematicalRoot:integerSquareRoot(balance.toString()),expectedFromSupplementaryContract:expected,actual:calculateClassRawPower({classConfig:knownFact({strategy:'ERC20_BAL',slicePct:100,quadratic:true,minBalance:'0',asset:'0x0000000000000000000000000000000000000001',hatIds:[],subjectId:knownFact('0')}),eligible:knownFact(true),balance:knownFact(balance.toString())})}});
+console.log(JSON.stringify(result));

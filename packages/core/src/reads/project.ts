@@ -9,6 +9,10 @@
  */
 
 import { ethers } from 'ethers';
+import { requireRawUint } from '../amounts';
+import { assertSourceRef, Fact, knownFact, PlanScope, requireCompleteSnapshot, SourceRef, SourceSnapshot, unknownFact } from '../data/facts';
+import { readIndexedPageFacts, type ProtocolQuery, type IndexedRow, type IndexedPageFactsOptions } from './protocol';
+import { FETCH_PROJECTS_PAGE, FETCH_PROJECT_MANAGERS_PAGE } from '../graph/documents/task';
 import type { GraphClient } from '../graph/client';
 import { FETCH_PROJECTS_DATA } from '../graph/documents/task';
 import { parseProjectId } from '../encoding';
@@ -76,4 +80,74 @@ export async function resolveProjectInput(
     EXIT.USAGE,
     `Available projects: ${available || 'none'} (or pass the 0x-prefixed bytes32 project ID).`
   );
+}
+
+export interface WorkPageOptions { source: SourceRef; query: ProtocolQuery; pageSize?: number; maxPages?: number }
+/** Complete transport evidence does not make indexed membership current live authority. */
+export function requireWorkSource(source: SourceRef): { orgId: string; taskManager: string } {
+  assertSourceRef(source);
+  if (source.block && source.snapshot !== 'pinned') throw new Error('Explicit indexed block requires pinned source');
+  if (!source.indexed || !source.orgId || !source.contract) throw new Error('Explicit indexed org/contract scope required');
+  if (!ethers.utils.isHexString(source.orgId, 32) || source.contract.toLowerCase() === ethers.constants.AddressZero) throw new Error('Valid org/nonzero task-manager scope required');
+  return { orgId: source.orgId.toLowerCase(), taskManager: source.contract.toLowerCase() };
+}
+export function validateWorkProject(row: IndexedRow, source: SourceRef): void {
+  const manager = row.taskManager as { id?: string; organization?: { id?: string } } | undefined;
+  if (manager?.id?.toLowerCase() !== source.contract!.toLowerCase() || manager?.organization?.id?.toLowerCase() !== source.orgId!.toLowerCase()) throw new Error('Project source mismatch');
+  if (typeof row.id !== 'string' || !row.id || row.deleted !== false) throw new Error('Missing/deleted project');
+  if (typeof row.projectId !== 'string' || !ethers.utils.isHexString(row.projectId, 32)) throw new Error('Invalid project ID');
+}
+/** Lightweight binding is selected in every page response at the collection's block.
+ * In particular, an empty stream cannot certify an unrelated/missing module. */
+export async function readWorkPageFacts(options: IndexedPageFactsOptions): Promise<SourceSnapshot<readonly IndexedRow[]>> {
+  requireWorkSource(options.source);
+  const bindingIssues: { code: string; id: string }[] = [];
+  let page = 0;
+  const result = await readIndexedPageFacts({ ...options, query: async (document, variables, source) => {
+    page++;
+    const response = await options.query(document, variables, source);
+    if (Array.isArray(response.errors) && response.errors.length) return response;
+    const org = response.organization as { id?: string; taskManager?: { id?: string; organization?: { id?: string } } | null } | null | undefined;
+    const manager = org?.taskManager;
+    const missing = !org || typeof org.id !== 'string' || !manager || typeof manager.id !== 'string' || typeof manager.organization?.id !== 'string';
+    if (missing || org!.id!.toLowerCase() !== source.orgId!.toLowerCase() || manager!.id!.toLowerCase() !== source.contract!.toLowerCase()
+      || manager!.organization!.id!.toLowerCase() !== source.orgId!.toLowerCase()) {
+      bindingIssues.push({ code: missing ? 'MODULE_BINDING_UNAVAILABLE' : 'MODULE_BINDING_MISMATCH', id: `page:${page}` });
+      throw new Error('Organization/task-manager binding unavailable or mismatched');
+    }
+    return response;
+  } });
+  return { ...result, coverage: { ...result.coverage, issues: [...result.coverage.issues, ...bindingIssues] } };
+}
+export function listProjectsComplete(options: WorkPageOptions): Promise<SourceSnapshot<readonly IndexedRow[]>> {
+  const variables = requireWorkSource(options.source);
+  return readWorkPageFacts({ ...options, variables, document: FETCH_PROJECTS_PAGE, collection: 'projects', initialCursor: '',
+    validateRow: row => { validateWorkProject(row, options.source); if (row.deleted !== false) throw new Error('Deleted project'); requireRawUint(row.cap as string); } });
+}
+export function listProjectManagersComplete(options: WorkPageOptions): Promise<SourceSnapshot<readonly IndexedRow[]>> {
+  const variables = requireWorkSource(options.source);
+  return readWorkPageFacts({ ...options, variables, document: FETCH_PROJECT_MANAGERS_PAGE, collection: 'projectManagers', initialCursor: '',
+    validateRow: row => {
+      validateWorkProject(row.project as IndexedRow, options.source);
+      if (row.isActive !== true || typeof row.manager !== 'string' || !ethers.utils.isAddress(row.manager) || row.manager.toLowerCase() === ethers.constants.AddressZero) throw new Error('Invalid manager row');
+    } });
+}
+export function projectManagerFact(snapshot: SourceSnapshot<readonly IndexedRow[]>, scope: PlanScope, projectId: string, account: string): Fact<boolean> {
+  try {
+    if (!scope.orgId || !scope.contract || !ethers.utils.isAddress(account) || !ethers.utils.isHexString(projectId, 32)) throw new Error('Explicit project/account scope required');
+    if ((scope.account && scope.account.toLowerCase() !== account.toLowerCase()) || (snapshot.source.account && snapshot.source.account.toLowerCase() !== account.toLowerCase())) throw new Error('Manager account mismatch');
+    const rows = requireCompleteSnapshot(snapshot, { scope });
+    const managers = new Set<string>();
+    let active = false;
+    for (const row of rows) {
+      validateWorkProject(row.project as IndexedRow, snapshot.source);
+      if (typeof row.isActive !== 'boolean' || typeof row.manager !== 'string' || !ethers.utils.isAddress(row.manager)) throw new Error('Invalid manager');
+      if (String((row.project as IndexedRow).projectId).toLowerCase() !== projectId.toLowerCase()) continue;
+      const key = row.manager.toLowerCase();
+      if (managers.has(key)) throw new Error('Duplicate manager');
+      managers.add(key);
+      if (key === account.toLowerCase()) active = row.isActive;
+    }
+    return knownFact(active, { ...snapshot.source, account });
+  } catch { return unknownFact('MANAGER_EVIDENCE_UNAVAILABLE', snapshot.source); }
 }

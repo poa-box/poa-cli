@@ -1,0 +1,12 @@
+{
+  "fixture": "recorded-inflows-serving-schema.graphql",
+  "sha256": "407474c32f94480d18a7bd7162962ae440e3a0421f923a45ba5e5bb40095f7db",
+  "retainedIntrospectionSha256": "9a89a35abeb10d86741ffcb688cc1fce44678f46164deeced92d88164862cfb5",
+  "matchingRetainedChains": [
+    100,
+    42161
+  ],
+  "originalProvenance": "../serving-queries/provenance.json",
+  "derivation": "Offline projection from existing .context/review-introspection-{100,42161}.json (identical __schema). No new requests. Retain actual exercised fields/filter fields, query argument type/defaults, Block_height, event enum vocabulary; orderBy enums retain actual id only. No changes to historical fixture or evidence.",
+  "limits": "Confirms schema compatibility on the previously observed serving definitions, not live current population, deployment, trace or exhaustive revenue."
+}

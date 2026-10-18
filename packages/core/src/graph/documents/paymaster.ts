@@ -132,3 +132,21 @@ export interface PaymasterStateResponse {
     }>;
   }>;
 }
+
+/** ID cursor avoids skipping records sharing an event timestamp. Nested legacy lists remain unchanged. */
+export const FETCH_PAYMASTER_DEPOSITS_PAGE = `
+  query PaymasterDepositsPage($hub: String!, $orgConfig: String!, $cursor: Bytes!, $first: Int!, $block: Block_height) {
+    _meta(block: $block) { block { number hash timestamp } }
+    paymasterDepositEvents(where: { paymasterHub: $hub, orgConfig: $orgConfig, id_gt: $cursor }, first: $first, orderBy: id, orderDirection: asc, block: $block) {
+      id paymasterHub { id } orgConfig { id orgId } eventType from to amount newBalance eventAt eventAtBlock transactionHash
+    }
+  }
+`;
+export const FETCH_PAYMASTER_USAGE_PAGE = `
+  query PaymasterUsagePage($orgConfig: String!, $cursor: Bytes!, $first: Int!, $block: Block_height) {
+    _meta(block: $block) { block { number hash timestamp } }
+    usageEvents(where: { orgConfig: $orgConfig, id_gt: $cursor }, first: $first, orderBy: id, orderDirection: asc, block: $block) {
+      id orgConfig { id orgId paymasterHub { id } } subjectKey delta usedInEpoch epochStart eventAt eventAtBlock transactionHash
+    }
+  }
+`;

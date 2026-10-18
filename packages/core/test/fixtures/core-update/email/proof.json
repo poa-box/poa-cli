@@ -1,0 +1,5 @@
+{
+  "provenance": "Finite coordinate/signals fixture from reviewed work order; projection and ABI parity only, not a cryptographic proof.",
+  "proof": {"pi_a":["1","2","1"],"pi_b":[["3","4"],["5","6"],["1","0"]],"pi_c":["7","8","1"],"protocol":"groth16","curve":"bn128"},
+  "expected": {"pA":["0x1","0x2"],"pB":[["0x4","0x3"],["0x6","0x5"]],"pC":["0x7","0x8"]}
+}

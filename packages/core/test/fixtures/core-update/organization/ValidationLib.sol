@@ -1,0 +1,117 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+pragma solidity ^0.8.30;
+
+/**
+ * @title ValidationLib
+ * @notice Library for common validation operations
+ * @dev Reduces bytecode by extracting validation logic into reusable functions
+ */
+library ValidationLib {
+    /* ─────────── Errors ─────────── */
+    error ZeroAddress();
+    error InvalidString();
+    error InvalidPayout();
+    error CapBelowCommitted();
+    error EmptyTitle();
+    error TitleTooLong();
+
+    /* ─────────── Constants ─────────── */
+    uint256 internal constant MAX_PAYOUT = 1e24; // 1 000 000 tokens (18 dec)
+    uint96 internal constant MAX_PAYOUT_96 = 1e24; // same as above, but as uint96
+    uint256 internal constant MAX_TITLE_LENGTH = 256; // max title length in bytes
+
+    /* ─────────── Core Functions ─────────── */
+
+    /**
+     * @notice Validate that an address is not zero
+     * @param addr The address to validate
+     */
+    function requireNonZeroAddress(address addr) internal pure {
+        if (addr == address(0)) revert ZeroAddress();
+    }
+
+    /**
+     * @notice Validate that a string/bytes is not empty
+     * @param data The bytes data to validate
+     */
+    function requireNonEmptyBytes(bytes calldata data) internal pure {
+        if (data.length == 0) revert InvalidString();
+    }
+
+    /**
+     * @notice Validate that a title is not empty and within length limits
+     * @param title The title to validate (dynamic bytes)
+     */
+    function requireValidTitle(bytes calldata title) internal pure {
+        if (title.length == 0) revert EmptyTitle();
+        if (title.length > MAX_TITLE_LENGTH) revert TitleTooLong();
+    }
+
+    /**
+     * @notice Validate payout amount (non-zero and within limits)
+     * @param payout The payout amount to validate
+     */
+    function requireValidPayout(uint256 payout) internal pure {
+        if (payout == 0 || payout > MAX_PAYOUT) revert InvalidPayout();
+    }
+
+    /**
+     * @notice Validate payout amount for uint96 (non-zero and within limits)
+     * @param payout The payout amount to validate
+     */
+    function requireValidPayout96(uint256 payout) internal pure {
+        if (payout == 0 || payout > MAX_PAYOUT_96) revert InvalidPayout();
+    }
+
+    /**
+     * @notice Validate bounty payout (can be zero, but if non-zero must be within limits)
+     * @param payout The bounty payout amount to validate
+     */
+    function requireValidBountyPayout(uint256 payout) internal pure {
+        if (payout > MAX_PAYOUT_96) revert InvalidPayout();
+    }
+
+    /**
+     * @notice Validate bounty token and payout combination
+     * @param bountyToken The bounty token address
+     * @param bountyPayout The bounty payout amount
+     */
+    function requireValidBountyConfig(address bountyToken, uint256 bountyPayout) internal pure {
+        // If bounty payout > 0, token must not be zero address
+        if (bountyPayout > 0 && bountyToken == address(0)) revert ZeroAddress();
+
+        // If token is set, payout must be > 0
+        if (bountyToken != address(0) && bountyPayout == 0) revert InvalidPayout();
+
+        // Validate bounty payout amount
+        requireValidBountyPayout(bountyPayout);
+    }
+
+    /**
+     * @notice Validate that a new cap is not below committed amount
+     * @param newCap The new cap to validate
+     * @param committed The currently committed/spent amount
+     */
+    function requireValidCap(uint256 newCap, uint256 committed) internal pure {
+        // 0 (disabled) and type(uint128).max (unlimited) are always valid
+        if (newCap == 0 || newCap == type(uint128).max) return;
+        if (newCap < committed) revert CapBelowCommitted();
+    }
+
+    /**
+     * @notice Validate cap amount (within max limits)
+     * @param cap The cap amount to validate
+     */
+    function requireValidCapAmount(uint256 cap) internal pure {
+        if (cap == type(uint128).max) return; // unlimited sentinel is always valid
+        if (cap > MAX_PAYOUT) revert InvalidPayout();
+    }
+
+    /**
+     * @notice Validate that an application hash is not empty
+     * @param applicationHash The application hash to validate
+     */
+    function requireValidApplicationHash(bytes32 applicationHash) internal pure {
+        if (applicationHash == bytes32(0)) revert InvalidString();
+    }
+}

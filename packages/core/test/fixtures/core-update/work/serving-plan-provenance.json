@@ -1,0 +1,7 @@
+{
+  "schemaFixture": "serving-schema.graphql",
+  "sha256": "d2585f4bb2331cd1e64b00568ede6e1567a46f859f51b085be69052b68d145e1",
+  "derivation": "Original immutable serving schema projection plus exact repair field/input declarations independently checked against both saved Graph Node introspections. Original schema/provenance unchanged.",
+  "fullIntrospectionSha256": "2fefb5c645d84d3a8c65f1f8522fe016ef6a64cca2441b21bcfabb43c14b3047",
+  "capability": "Graph Node supports one child relation filter hop; recursively nested child filters fail execution despite passing GraphQL validation. The retained unsupported documents and sanitized original errors are portable counterexamples."
+}

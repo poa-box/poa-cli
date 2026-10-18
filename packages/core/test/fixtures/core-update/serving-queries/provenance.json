@@ -1,0 +1,26 @@
+{
+  "fixture": "schema.graphql",
+  "sha256": "470c2b88cfab386f73781d81e8c76151f9b410d6fc46d7f1eec9ccd1ce69d6bf",
+  "fullIntrospectionSha256": "2fefb5c645d84d3a8c65f1f8522fe016ef6a64cca2441b21bcfabb43c14b3047",
+  "sources": [
+    {
+      "chainId": 100,
+      "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/576YA6oF16nA2uG5Q9KFfBSvJm4ZNKzWZkwh8eWXaxJs",
+      "origin": "https://poa.box",
+      "configPath": "poa-frontend/poa-app/src/config/networks.js",
+      "configSha256": "8cef9709edc7c9657b15d3ba231d942bc6aa23cc4b55799b92e695fedc4bb8d1",
+      "observedAt": "2026-10-09T20:02:05.852Z"
+    },
+    {
+      "chainId": 42161,
+      "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/2egvcs94ZStD38inRtK9bp3Maw3UZw4BDinH8jLyAF4G",
+      "origin": "https://poa.box",
+      "configPath": "poa-frontend/poa-app/src/config/networks.js",
+      "configSha256": "8cef9709edc7c9657b15d3ba231d942bc6aa23cc4b55799b92e695fedc4bb8d1",
+      "observedAt": "2026-10-09T20:02:05.864Z"
+    }
+  ],
+  "derivation": "GraphQL TypeInfo traversal of the reviewed pre-repair documents. Retained fields and used arguments have unchanged generated type/default; used literal input fields retained; Block_height and all referenced enums retained intact. This is a schema projection, not a source entity schema or schema inferred from the repaired declarations.",
+  "originalDocuments": "document-contracts.json preserves normalized pre-repair exported documents/tiers with variable types erased; selector keys, defaults, filters and selected fields are unchanged.",
+  "limits": "Current PasskeyCredential lacks publicKeyX/publicKeyY. Tests extend it with hypothetical Bytes key fields solely to check modern compatibility, never as live availability evidence."
+}

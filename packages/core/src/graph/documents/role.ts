@@ -4,7 +4,7 @@
  */
 
 export const FETCH_USER_ROLE_APPLICATIONS = `
-  query FetchUserRoleApplications($eligibilityModuleId: Bytes!, $applicant: Bytes!) {
+  query FetchUserRoleApplications($eligibilityModuleId: String!, $applicant: Bytes!) {
     roleApplications(
       where: { eligibilityModule: $eligibilityModuleId, applicant: $applicant, active: true }
       first: 50
@@ -21,7 +21,7 @@ export const FETCH_USER_ROLE_APPLICATIONS = `
 `;
 
 export const FETCH_ALL_ROLE_APPLICATIONS = `
-  query FetchAllRoleApplications($eligibilityModuleId: Bytes!) {
+  query FetchAllRoleApplications($eligibilityModuleId: String!) {
     roleApplications(
       where: { eligibilityModule: $eligibilityModuleId, active: true }
       orderBy: appliedAt

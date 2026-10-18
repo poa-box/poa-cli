@@ -118,17 +118,21 @@ export function serializeTaskRejectionMetadata(metadata: TaskRejectionMetadata):
 export interface TaskApplicationMetadata {
   notes: string;
   experience: string;
+  /** Optional ISO timestamp, appended last; old two-key documents stay byte-identical. */
+  appliedAt?: string;
 }
 
 export function buildTaskApplicationMetadata(fields: {
   notes?: string;
   experience?: string;
+  appliedAt?: string;
 }): TaskApplicationMetadata {
   // Key order is load-bearing: notes, then experience. Empty-string defaults
   // match the CLI (`argv.notes || ''`).
   return {
     notes: fields.notes || '',
     experience: fields.experience || '',
+    ...(fields.appliedAt !== undefined ? { appliedAt: fields.appliedAt } : {}),
   };
 }
 
@@ -152,4 +156,39 @@ export function buildProjectMetadata(description: string): ProjectMetadata {
 
 export function serializeProjectMetadata(metadata: ProjectMetadata): string {
   return JSON.stringify(metadata);
+}
+
+/** Full editor values. Undefined means retain; empty submission deliberately clears. */
+export type TaskMetadataUpdates = Partial<TaskMetadataFields>;
+export interface PreparedTaskMetadata { document: TaskMetadata; pointer?: string }
+
+/** Validate complete final documents before a pin callback; old builders keep CLI coercion. */
+export function requireTaskMetadataFinal(value: unknown): TaskMetadata {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Task metadata must be an object');
+  const v = value as Record<string, unknown>;
+  for (const k of ['name', 'description', 'location', 'difficulty', 'submission']) {
+    if (typeof v[k] !== 'string') throw new Error('Task metadata requires ' + k);
+  }
+  if (!((typeof v.estHours === 'number' && Number.isFinite(v.estHours) && v.estHours >= 0)
+    || (typeof v.estHours === 'string' && /^\d+(?:\.\d+)?$/.test(v.estHours)))) throw new Error('Invalid estHours');
+  if (v.dueDate !== undefined && (!Number.isSafeInteger(v.dueDate) || Number(v.dueDate) < 0)) throw new Error('Invalid dueDate');
+  return {
+    name: v.name as string, description: v.description as string, location: v.location as string,
+    difficulty: v.difficulty as string, estHours: v.estHours as number | string, submission: v.submission as string,
+    ...(v.dueDate !== undefined ? { dueDate: v.dueDate as number } : {}),
+  };
+}
+
+/** Missing fields cannot silently become blank write values; use a complete base or supply every field. */
+export function mergeTaskMetadataFinal(base: Partial<TaskMetadataFields> | null, updates: TaskMetadataUpdates): TaskMetadata {
+  const final: Record<string, unknown> = { ...base };
+  for (const key of ['name', 'description', 'location', 'difficulty', 'estHours', 'submission', 'dueDate'] as const) {
+    if (updates[key] !== undefined) final[key] = updates[key];
+  }
+  if (final.dueDate === null) delete final.dueDate;
+  if (typeof final.dueDate === 'string') {
+    if (!/^\d+$/.test(final.dueDate)) throw new Error('Invalid dueDate');
+    final.dueDate = Number(final.dueDate);
+  }
+  return requireTaskMetadataFinal(final);
 }

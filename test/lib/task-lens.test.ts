@@ -155,15 +155,25 @@ describe('deriveClaimState', () => {
     expect(deriveClaimState(claimedTask({ status: TASK_STATUS.SUBMITTED, claimDeadline: NOW - 100 }), NOW)).toBe('none');
   });
 
-  it('returns none for CLAIMED with no deadline (zero/undefined)', () => {
-    expect(deriveClaimState(claimedTask(), NOW)).toBe('none');
-    expect(deriveClaimState(claimedTask({ claimDeadline: undefined, absoluteDeadline: undefined }), NOW)).toBe('none');
+  it.each([
+    { claimDeadline: 0, absoluteDeadline: 0 },
+    { claimDeadline: undefined, absoluteDeadline: undefined },
+    { claimDeadline: 0, absoluteDeadline: undefined },
+    { claimDeadline: undefined, absoluteDeadline: 0 },
+  ])('returns none for CLAIMED with no positive deadline (%j)', (deadlines) => {
+    expect(deriveClaimState(claimedTask(deadlines), NOW)).toBe('none');
   });
 
-  it('is expired only strictly after the deadline: exactly-now is still expiring-soon', () => {
-    // Implementation uses `deadline < ts` — a deadline of exactly now is not yet expired
-    expect(deriveClaimState(claimedTask({ claimDeadline: NOW }), NOW)).toBe('expiring-soon');
-    expect(deriveClaimState(claimedTask({ claimDeadline: NOW - 1 }), NOW)).toBe('expired-claimable');
+  it.each([
+    { claimDeadline: NOW, absoluteDeadline: 0 },
+    { claimDeadline: 0, absoluteDeadline: NOW },
+    { claimDeadline: NOW, absoluteDeadline: NOW + 48 * 3600 },
+    { claimDeadline: NOW + 48 * 3600, absoluteDeadline: NOW },
+    { claimDeadline: NOW, absoluteDeadline: NOW },
+  ])('expires only strictly after the earliest positive deadline (%j)', (deadlines) => {
+    // TaskManager._claimExpired protects equality for both deadline fields.
+    expect(deriveClaimState(claimedTask(deadlines), NOW)).toBe('expiring-soon');
+    expect(deriveClaimState(claimedTask(deadlines), NOW + 1)).toBe('expired-claimable');
   });
 
   it('flags expiring-soon inside the 24h window (inclusive boundary)', () => {
@@ -172,10 +182,25 @@ describe('deriveClaimState', () => {
     expect(deriveClaimState(claimedTask({ claimDeadline: NOW + 24 * 3600 + 1 }), NOW)).toBe('on-track');
   });
 
-  it('prefers claimDeadline over absoluteDeadline', () => {
-    expect(deriveClaimState(claimedTask({ claimDeadline: NOW + 48 * 3600, absoluteDeadline: NOW - 100 }), NOW)).toBe('on-track');
-    // Zero claimDeadline falls through to absoluteDeadline
-    expect(deriveClaimState(claimedTask({ claimDeadline: 0, absoluteDeadline: NOW - 100 }), NOW)).toBe('expired-claimable');
+  it.each([
+    { claimDeadline: NOW + 48 * 3600, absoluteDeadline: NOW - 100 },
+    { claimDeadline: NOW - 100, absoluteDeadline: NOW + 48 * 3600 },
+  ])('expires when either positive deadline is past despite the other future cutoff (%j)', (deadlines) => {
+    expect(deriveClaimState(claimedTask(deadlines), NOW)).toBe('expired-claimable');
+  });
+
+  it.each([
+    { claimDeadline: NOW + 48 * 3600, absoluteDeadline: NOW + 3600 },
+    { claimDeadline: NOW + 3600, absoluteDeadline: NOW + 48 * 3600 },
+  ])('flags expiring-soon using the earlier positive future deadline (%j)', (deadlines) => {
+    expect(deriveClaimState(claimedTask(deadlines), NOW)).toBe('expiring-soon');
+  });
+
+  it.each([0, undefined])('ignores an absent cutoff (%s) when the other deadline is positive', (absent) => {
+    expect(deriveClaimState(claimedTask({ claimDeadline: absent, absoluteDeadline: NOW - 100 }), NOW)).toBe('expired-claimable');
+    expect(deriveClaimState(claimedTask({ claimDeadline: NOW - 100, absoluteDeadline: absent }), NOW)).toBe('expired-claimable');
+    expect(deriveClaimState(claimedTask({ claimDeadline: absent, absoluteDeadline: NOW + 48 * 3600 }), NOW)).toBe('on-track');
+    expect(deriveClaimState(claimedTask({ claimDeadline: NOW + 48 * 3600, absoluteDeadline: absent }), NOW)).toBe('on-track');
   });
 });
 
