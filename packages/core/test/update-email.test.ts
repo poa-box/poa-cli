@@ -219,8 +219,26 @@ describe('EMAIL-PROOF / EMAIL-PROOF-SCOPE: pure versioned recipe, signed hints a
       expect(() => hints(version, simpleHeader.replace(A, A + 'f'))).toThrow(/malformed/);
       expect(() => hints(version, simpleHeader.replace(A, A.slice(0, -1) + 'g'))).toThrow(/malformed/);
       expect(() => hints(version, simpleHeader.replace('Claim', 'claim'))).toThrow(/command/);
-      expect(() => hints(version, simpleHeader + buildEmailClaimCommand(A))).toThrow(/one exact/);
     });
+    for (const later of [A, B]) {
+      for (const location of ['subject', 'signed X-Original-Subject']) {
+        it(`${version}: first command remains bound with ${later === A ? 'same' : 'different'} later command in ${location}`, () => {
+          const command = buildEmailClaimCommand(later);
+          const header = location === 'subject'
+            ? simpleHeader.replace('\r\nsubject:', '\r\nsubject:Re: ').replace(/\r\n$/, ` (was: ${command})\r\n`)
+            : simpleHeader + `x-original-subject:${command}\r\n`;
+          const result = hints(version, header);
+          expect(result).toEqual({ ...hints(version, simpleHeader), commandIndex: String(header.indexOf(buildEmailClaimCommand(A))) });
+          expect(header.lastIndexOf('Claim POP role for 0x')).toBeGreaterThan(Number(result.commandIndex));
+        });
+      }
+    }
+    for (const first of [B, A + 'f', A.slice(0, -1) + 'g']) {
+      it(`${version}: a later correct command cannot rescue ${first === B ? 'wrong' : 'malformed'} first command ${first}`, () => {
+        const header = simpleHeader.replace(A, first) + `x-original-subject:${buildEmailClaimCommand(A)}\r\n`;
+        expect(() => hints(version, header)).toThrow(/claimer mismatch or malformed/);
+      });
+    }
     it(`${version}: cannot search unsigned SHA/zero padding for the command`, () => {
       expect(() => hints(version, simpleHeader, { signedHeaderLength: 18 })).toThrow(/command/);
     });

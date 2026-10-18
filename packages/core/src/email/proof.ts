@@ -60,7 +60,9 @@ export function buildCircuitInputHints(args: {
   if (!Number.isSafeInteger(length) || length <= 0 || length > bytes.length) throw new Error('Invalid signed header length');
   const header = String.fromCharCode(...bytes.slice(0, length));
   const start = header.indexOf(prefix);
-  if (start < 0 || header.indexOf(prefix, start + prefix.length) >= 0) throw new Error('Signed header requires one exact bound claim command');
+  // The shipped circuits bind one selected span; replies may repeat the command later.
+  // Preserve first-prefix selection and validate that command rather than searching for a match.
+  if (start < 0) throw new Error('Signed header requires one exact bound claim command');
   const command = header.slice(start, start + prefix.length + 40);
   if (!/^Claim POP role for 0x[\da-fA-F]{40}$/.test(command)
     || /[\da-fA-F]/.test(header[start + prefix.length + 40] ?? '')
