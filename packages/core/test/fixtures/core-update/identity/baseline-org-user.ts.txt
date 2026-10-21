@@ -1,0 +1,22 @@
+export interface OrgUser {
+  id: string;
+  address: string;
+  participationTokenBalance: string | null;
+  /** False when authority membership exists but its historical User is not indexed. */
+  historyIndexed?: boolean;
+  membershipStatus: string | null;
+  currentHatIds: string[] | null;
+  joinMethod: string | null;
+  totalTasksCompleted: string | null;
+  totalVotes: string | null;
+  totalModulesCompleted: string | null;
+  firstSeenAt: string | null;
+  lastActiveAt: string | null;
+  assignedTasks: Array<{ id: string; taskId: string; title: string | null; payout: string | null; status: string }>;
+  completedTasks: Array<{ id: string; taskId: string; title: string | null; payout: string | null }>;
+  hybridProposalsCreated: Array<{ id: string; proposalId: string; title: string | null; status: string | null; startTimestamp: string | null; endTimestamp: string | null }>;
+  modulesCompleted: Array<{ moduleId: string; completedAt: string | null }>;
+  /** v7 claim-churn counters — ONLY when hasChurnCounters (tier 0, Gnosis today). */
+  totalTasksReleased?: string;
+  totalTasksLostToExpiry?: string;
+}

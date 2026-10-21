@@ -83,6 +83,17 @@ const LEGACY_FEATURES = { deadlines: false, batchCreate: false, editMeta: false,
 const SIG_V6 = 'createTask(uint256,bytes,bytes32,bytes32,address,uint256,bool,uint48,uint32)';
 const SIG_LEGACY = 'createTask(uint256,bytes,bytes32,bytes32,address,uint256,bool)';
 
+function successfulCreation(contract: ethers.Contract, method: string, args: any[]) {
+  const values = method === 'createAndAssignTask' ? [...args.slice(0, 4), ...args.slice(5)] : args;
+  const event = contract.interface.encodeEventLog(contract.interface.getEvent('TaskCreated'),
+    [42, values[3], values[0], values[4], values[5], values[6], values[1], values[2]]);
+  return { success: true, txHash: '0xhash', explorerUrl: 'https://explorer/tx/0xhash',
+    receipt: { status: 1, logs: [{ address: TM_ADDR, ...event }] },
+    logs: [{ name: 'TaskCreated', args: { id: ethers.BigNumber.from(42) } },
+      { name: 'TaskDeadlinesSet', args: { id: ethers.BigNumber.from(42), absoluteDeadline: ethers.BigNumber.from(values[7]), completionWindow: values[8] } }] };
+}
+
+
 /** Thrown by the process.exit spy so handlers stop like the real thing. */
 class ExitError extends Error {
   constructor(public exitCode: number) {
@@ -133,12 +144,7 @@ describe('pop task create — v6/legacy signature selection', () => {
     mocks.pinJson.mockResolvedValue(CID);
     mocks.checkIdempotencyCache.mockReturnValue(null);
     mocks.query.mockResolvedValue({ organization: { taskManager: { projects: [] } } });
-    mocks.executeTx.mockResolvedValue({
-      success: true,
-      txHash: '0xhash',
-      explorerUrl: 'https://explorer/tx/0xhash',
-      logs: [{ name: 'TaskCreated', args: { id: ethers.BigNumber.from(42) } }],
-    });
+    mocks.executeTx.mockImplementation(async (contract, method, args) => successfulCreation(contract, method, args));
   });
 
   afterEach(() => {
@@ -147,22 +153,7 @@ describe('pop task create — v6/legacy signature selection', () => {
 
   it('v6 org: sends the 9-arg createTask with parsed deadline values', async () => {
     mocks.detectTaskManagerFeatures.mockResolvedValue(V6_FEATURES);
-    mocks.executeTx.mockResolvedValue({
-      success: true,
-      txHash: '0xhash',
-      explorerUrl: 'https://explorer/tx/0xhash',
-      logs: [
-        { name: 'TaskCreated', args: { id: ethers.BigNumber.from(42) } },
-        {
-          name: 'TaskDeadlinesSet',
-          args: {
-            id: ethers.BigNumber.from(42),
-            absoluteDeadline: ethers.BigNumber.from(DEADLINE_TS),
-            completionWindow: 172800,
-          },
-        },
-      ],
-    });
+    mocks.executeTx.mockImplementation(async (contract, method, args) => successfulCreation(contract, method, args));
 
     await createHandler.handler(baseArgv({ deadline: String(DEADLINE_TS), completionWindow: '48h' }));
 
@@ -175,8 +166,8 @@ describe('pop task create — v6/legacy signature selection', () => {
     expect(args[3]).toBe(PID);
     expect(args[4]).toBe(ethers.constants.AddressZero);
     expect(args[6]).toBe(false);
-    expect(args[7]).toBe(DEADLINE_TS);
-    expect(args[8]).toBe(48 * 3600);
+    expect(args[7].toString()).toBe(String(DEADLINE_TS));
+    expect(args[8].toString()).toBe(String(48 * 3600));
 
     // Contract was built from the real v6 ABI and the args encode against it
     expect(contract.interface.functions[SIG_V6]).toBeDefined();
@@ -202,6 +193,29 @@ describe('pop task create — v6/legacy signature selection', () => {
     expect(mocks.recordIdempotentResult).toHaveBeenCalled();
   });
 
+  it('atomic assignment preserves one-wei payout and places the assignee at argument four', async () => {
+    mocks.detectTaskManagerFeatures.mockResolvedValue(V6_FEATURES);
+    await createHandler.handler(baseArgv({ payout: '0.000000000000000001', assignee: WALLET }));
+    const [contract, method, args] = mocks.executeTx.mock.calls[0];
+    expect(method).toBe('createAndAssignTask');
+    expect(args[0]).toBe('1'); expect(args[4]).toBe(WALLET); expect(args).toHaveLength(10);
+    expect(() => contract.interface.encodeFunctionData(method, args)).not.toThrow();
+    expect(output.success).toHaveBeenCalledWith('Task created', expect.objectContaining({ taskId: '42' }));
+  });
+
+  it('parsed event names and foreign receipt emitters cannot establish the created task ID', async () => {
+    mocks.detectTaskManagerFeatures.mockResolvedValue(V6_FEATURES);
+    mocks.executeTx.mockImplementation(async (contract, method, args) => {
+      const result = successfulCreation(contract, method, args);
+      result.receipt.logs[0].address = WALLET;
+      return result;
+    });
+    await createHandler.handler(baseArgv());
+    expect(output.success).toHaveBeenCalledWith('Task created', expect.objectContaining({
+      taskId: undefined, creationEvidence: expect.objectContaining({ state: 'unknown' }),
+    }));
+  });
+
   it('v6 org without deadline flags: 9-arg createTask with 0/0 defaults, no deadline fields in output', async () => {
     mocks.detectTaskManagerFeatures.mockResolvedValue(V6_FEATURES);
 
@@ -209,8 +223,8 @@ describe('pop task create — v6/legacy signature selection', () => {
 
     const [, , args] = mocks.executeTx.mock.calls[0];
     expect(args).toHaveLength(9);
-    expect(args[7]).toBe(0);
-    expect(args[8]).toBe(0);
+    expect(args[7].toString()).toBe('0');
+    expect(args[8].toString()).toBe('0');
     const fields = (output.success as any).mock.calls[0][1];
     expect(fields.taskId).toBe('42');
     expect(fields.deadline).toBeUndefined();
@@ -337,12 +351,7 @@ describe('pop task create — payout derivation vs org payout config', () => {
     mocks.pinJson.mockResolvedValue(CID);
     mocks.checkIdempotencyCache.mockReturnValue(null);
     mocks.detectTaskManagerFeatures.mockResolvedValue(V6_FEATURES);
-    mocks.executeTx.mockResolvedValue({
-      success: true,
-      txHash: '0xhash',
-      explorerUrl: 'https://explorer/tx/0xhash',
-      logs: [{ name: 'TaskCreated', args: { id: ethers.BigNumber.from(42) } }],
-    });
+    mocks.executeTx.mockImplementation(async (contract, method, args) => successfulCreation(contract, method, args));
   });
 
   afterEach(() => {

@@ -1,0 +1,9 @@
+
+  query TasksPage($orgId: String!, $taskManager: Bytes!, $cursor: String!, $first: Int!, $block: Block_height) {
+    _meta(block: $block) { block { number hash timestamp } }
+    tasks(where: { taskManager: $taskManager, project_: { taskManager_: { organization: $orgId }, deleted: false }, id_gt: $cursor }, first: $first, orderBy: id, orderDirection: asc, block: $block) {
+      id taskId taskManager project { id projectId taskManager { id organization { id } } }
+      title metadataHash metadata { name description location difficulty estimatedHours submission dueDate }
+      payout bountyToken bountyPayout requiresApplication assignee status createdAt
+    }
+  }

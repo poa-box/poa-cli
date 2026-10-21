@@ -10,3 +10,6 @@ export * as proposal from './proposal';
 export * as task from './task';
 export * as token from './token';
 export * as user from './user';
+
+export * as folders from './folders';
+export * as distribution from './distribution';

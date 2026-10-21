@@ -1,0 +1,555 @@
+{
+  "sources": [
+    {
+      "chainId": 100,
+      "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/576YA6oF16nA2uG5Q9KFfBSvJm4ZNKzWZkwh8eWXaxJs",
+      "schemaSha256": "2fefb5c645d84d3a8c65f1f8522fe016ef6a64cca2441b21bcfabb43c14b3047",
+      "test6Present": true,
+      "documents": [
+        {
+          "name": "FETCH_ORG_TASK_COUNT_PAGE",
+          "documentSha256": "76d16243e06e1971a6d62bb4e0558a737026e64db1b945323fda8093a2723270",
+          "variables": {
+            "taskManagers": [
+              "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc"
+            ],
+            "cursor": "",
+            "first": 1,
+            "block": {
+              "number": 48674982
+            }
+          },
+          "httpStatus": 200,
+          "data": {
+            "tasks": [
+              {
+                "id": "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-0",
+                "status": "Cancelled",
+                "taskManager": "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc",
+                "project": {
+                  "id": "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-0x0000000000000000000000000000000000000000000000000000000000000000",
+                  "deleted": false,
+                  "taskManager": {
+                    "id": "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc",
+                    "organization": {
+                      "id": "0x263b2b29f392647f0fb8ddbb26f099e812ab4ba2777e5e07b906277164181f6b"
+                    }
+                  }
+                }
+              }
+            ],
+            "_meta": {
+              "block": {
+                "number": 48674982,
+                "hash": null,
+                "timestamp": null
+              }
+            }
+          }
+        }
+      ],
+      "canonicalProof": {
+        "number": {
+          "counts": {
+            "source": {
+              "chainId": 100,
+              "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/576YA6oF16nA2uG5Q9KFfBSvJm4ZNKzWZkwh8eWXaxJs",
+              "method": "repair-serving-read",
+              "indexed": true,
+              "snapshot": "pinned",
+              "block": {
+                "number": "48674982"
+              }
+            },
+            "coverage": {
+              "status": "complete",
+              "receivedKeys": [
+                "0x2d9d397a842b8d691ea2a232062cbc8ef8ebbdb7-10",
+                "0x2d9d397a842b8d691ea2a232062cbc8ef8ebbdb7-11",
+                "0x2d9d397a842b8d691ea2a232062cbc8ef8ebbdb7-12",
+                "0x2d9d397a842b8d691ea2a232062cbc8ef8ebbdb7-13",
+                "0x2d9d397a842b8d691ea2a232062cbc8ef8ebbdb7-14",
+                "0x2d9d397a842b8d691ea2a232062cbc8ef8ebbdb7-9",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-0",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-1",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-10",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-11",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-12",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-13",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-14",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-15",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-16",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-17",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-18",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-19",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-2",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-20",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-21",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-22",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-23",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-24",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-25",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-26",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-27",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-28",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-29",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-3",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-30",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-31",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-32",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-4",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-5",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-6",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-7",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-8",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-9",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-1",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-10",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-11",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-12",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-13",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-14",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-15",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-16",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-17",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-18",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-19",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-2",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-20",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-21",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-22",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-23",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-24",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-25",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-26",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-27",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-28",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-29",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-3",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-30",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-31",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-32",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-33",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-34",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-35",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-36",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-37",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-38",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-39",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-4",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-40",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-5",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-6",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-7",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-8",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-9"
+              ],
+              "missingIds": [],
+              "failedIds": [],
+              "issues": [],
+              "cursor": "0xf57024fc77915fce8f2608afdd027941bcee3336-9",
+              "pages": 1,
+              "cap": 4000
+            },
+            "rows": 79
+          }
+        },
+        "hash": {
+          "counts": {
+            "source": {
+              "chainId": 100,
+              "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/576YA6oF16nA2uG5Q9KFfBSvJm4ZNKzWZkwh8eWXaxJs",
+              "method": "repair-serving-read",
+              "indexed": true,
+              "snapshot": "pinned",
+              "block": {
+                "number": "48674982",
+                "hash": "0x78575584749175e45715289ff7c2a61da485116daabf63e0678c089e8009f5f6",
+                "timestamp": "1791582670"
+              }
+            },
+            "coverage": {
+              "status": "complete",
+              "receivedKeys": [
+                "0x2d9d397a842b8d691ea2a232062cbc8ef8ebbdb7-10",
+                "0x2d9d397a842b8d691ea2a232062cbc8ef8ebbdb7-11",
+                "0x2d9d397a842b8d691ea2a232062cbc8ef8ebbdb7-12",
+                "0x2d9d397a842b8d691ea2a232062cbc8ef8ebbdb7-13",
+                "0x2d9d397a842b8d691ea2a232062cbc8ef8ebbdb7-14",
+                "0x2d9d397a842b8d691ea2a232062cbc8ef8ebbdb7-9",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-0",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-1",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-10",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-11",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-12",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-13",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-14",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-15",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-16",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-17",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-18",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-19",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-2",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-20",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-21",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-22",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-23",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-24",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-25",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-26",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-27",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-28",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-29",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-3",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-30",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-31",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-32",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-4",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-5",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-6",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-7",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-8",
+                "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc-9",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-1",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-10",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-11",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-12",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-13",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-14",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-15",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-16",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-17",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-18",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-19",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-2",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-20",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-21",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-22",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-23",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-24",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-25",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-26",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-27",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-28",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-29",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-3",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-30",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-31",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-32",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-33",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-34",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-35",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-36",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-37",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-38",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-39",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-4",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-40",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-5",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-6",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-7",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-8",
+                "0xf57024fc77915fce8f2608afdd027941bcee3336-9"
+              ],
+              "missingIds": [],
+              "failedIds": [],
+              "issues": [],
+              "cursor": "0xf57024fc77915fce8f2608afdd027941bcee3336-9",
+              "pages": 1,
+              "cap": 4000
+            },
+            "rows": 79
+          }
+        }
+      }
+    },
+    {
+      "chainId": 42161,
+      "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/2egvcs94ZStD38inRtK9bp3Maw3UZw4BDinH8jLyAF4G",
+      "schemaSha256": "2fefb5c645d84d3a8c65f1f8522fe016ef6a64cca2441b21bcfabb43c14b3047",
+      "test6Present": false,
+      "documents": [
+        {
+          "name": "FETCH_ORG_TASK_COUNT_PAGE",
+          "documentSha256": "76d16243e06e1971a6d62bb4e0558a737026e64db1b945323fda8093a2723270",
+          "variables": {
+            "taskManagers": [
+              "0x3d93f0d090356d25e7a1614f0f8764b103ca99bc"
+            ],
+            "cursor": "",
+            "first": 1,
+            "block": {
+              "number": 513325115
+            }
+          },
+          "httpStatus": 200,
+          "data": {
+            "tasks": [],
+            "_meta": {
+              "block": {
+                "number": 513325115,
+                "hash": null,
+                "timestamp": null
+              }
+            }
+          }
+        }
+      ],
+      "canonicalProof": {
+        "number": {
+          "counts": {
+            "source": {
+              "chainId": 42161,
+              "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/2egvcs94ZStD38inRtK9bp3Maw3UZw4BDinH8jLyAF4G",
+              "method": "repair-serving-read",
+              "indexed": true,
+              "snapshot": "pinned",
+              "block": {
+                "number": "513325115"
+              }
+            },
+            "coverage": {
+              "status": "complete",
+              "receivedKeys": [
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-0",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-1",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-10",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-11",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-12",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-13",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-14",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-2",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-3",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-4",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-5",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-6",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-7",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-8",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-9"
+              ],
+              "missingIds": [],
+              "failedIds": [],
+              "issues": [],
+              "cursor": "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-9",
+              "pages": 1,
+              "cap": 4000
+            },
+            "rows": 15
+          }
+        },
+        "hash": {
+          "counts": {
+            "source": {
+              "chainId": 42161,
+              "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/2egvcs94ZStD38inRtK9bp3Maw3UZw4BDinH8jLyAF4G",
+              "method": "repair-serving-read",
+              "indexed": true,
+              "snapshot": "pinned",
+              "block": {
+                "number": "513325115",
+                "hash": "0x9889c0d24ad14dc9767d545a92d9c81b6be344967247cf7844281e74664513f0",
+                "timestamp": "1791582682"
+              }
+            },
+            "coverage": {
+              "status": "complete",
+              "receivedKeys": [
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-0",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-1",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-10",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-11",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-12",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-13",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-14",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-2",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-3",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-4",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-5",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-6",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-7",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-8",
+                "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-9"
+              ],
+              "missingIds": [],
+              "failedIds": [],
+              "issues": [],
+              "cursor": "0x681f29751724d2bed331d3eb35e0c9b1c57af9f0-9",
+              "pages": 1,
+              "cap": 4000
+            },
+            "rows": 15
+          }
+        }
+      }
+    }
+  ],
+  "legitimateEmpty": {
+    "readOnly": true,
+    "scope": "Existing indexed retired organization with actual installed module; legitimate empty indexed work stream, not a supported-directory claim or live authority",
+    "source": {
+      "chainId": 100,
+      "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/576YA6oF16nA2uG5Q9KFfBSvJm4ZNKzWZkwh8eWXaxJs",
+      "method": "repair-legitimate-empty",
+      "indexed": true,
+      "snapshot": "pinned",
+      "block": {
+        "number": "48674982",
+        "hash": "0x78575584749175e45715289ff7c2a61da485116daabf63e0678c089e8009f5f6"
+      },
+      "orgId": "0xf8eb3652e8f049128d4e3c9315875697f42990714f5e3410f15458805cc9073c",
+      "contract": "0x5fd3d65eb46ed4258e5d94902ada696188079e1f"
+    },
+    "tasks": {
+      "source": {
+        "chainId": 100,
+        "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/576YA6oF16nA2uG5Q9KFfBSvJm4ZNKzWZkwh8eWXaxJs",
+        "method": "repair-legitimate-empty",
+        "indexed": true,
+        "snapshot": "pinned",
+        "block": {
+          "number": "48674982",
+          "hash": "0x78575584749175e45715289ff7c2a61da485116daabf63e0678c089e8009f5f6",
+          "timestamp": "1791582670"
+        },
+        "orgId": "0xf8eb3652e8f049128d4e3c9315875697f42990714f5e3410f15458805cc9073c",
+        "contract": "0x5fd3d65eb46ed4258e5d94902ada696188079e1f"
+      },
+      "data": [],
+      "coverage": {
+        "status": "complete",
+        "receivedKeys": [],
+        "missingIds": [],
+        "failedIds": [],
+        "issues": [],
+        "cursor": "",
+        "pages": 1,
+        "cap": 200
+      }
+    },
+    "managers": {
+      "source": {
+        "chainId": 100,
+        "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/576YA6oF16nA2uG5Q9KFfBSvJm4ZNKzWZkwh8eWXaxJs",
+        "method": "repair-legitimate-empty",
+        "indexed": true,
+        "snapshot": "pinned",
+        "block": {
+          "number": "48674982",
+          "hash": "0x78575584749175e45715289ff7c2a61da485116daabf63e0678c089e8009f5f6",
+          "timestamp": "1791582670"
+        },
+        "orgId": "0xf8eb3652e8f049128d4e3c9315875697f42990714f5e3410f15458805cc9073c",
+        "contract": "0x5fd3d65eb46ed4258e5d94902ada696188079e1f"
+      },
+      "data": [],
+      "coverage": {
+        "status": "complete",
+        "receivedKeys": [],
+        "missingIds": [],
+        "failedIds": [],
+        "issues": [],
+        "cursor": "",
+        "pages": 1,
+        "cap": 200
+      }
+    },
+    "countDocument": {
+      "tasks": [],
+      "_meta": {
+        "block": {
+          "number": 48674982,
+          "hash": "0x78575584749175e45715289ff7c2a61da485116daabf63e0678c089e8009f5f6",
+          "timestamp": 1791582670
+        }
+      }
+    },
+    "requests": [
+      {
+        "variables": {
+          "orgId": "0xf8eb3652e8f049128d4e3c9315875697f42990714f5e3410f15458805cc9073c",
+          "taskManager": "0x5fd3d65eb46ed4258e5d94902ada696188079e1f",
+          "block": {
+            "hash": "0x78575584749175e45715289ff7c2a61da485116daabf63e0678c089e8009f5f6"
+          },
+          "cursor": "",
+          "first": 100
+        },
+        "httpStatus": 200,
+        "data": {
+          "organization": {
+            "id": "0xf8eb3652e8f049128d4e3c9315875697f42990714f5e3410f15458805cc9073c",
+            "taskManager": {
+              "id": "0x5fd3d65eb46ed4258e5d94902ada696188079e1f",
+              "organization": {
+                "id": "0xf8eb3652e8f049128d4e3c9315875697f42990714f5e3410f15458805cc9073c"
+              }
+            }
+          },
+          "tasks": [],
+          "_meta": {
+            "block": {
+              "number": 48674982,
+              "hash": "0x78575584749175e45715289ff7c2a61da485116daabf63e0678c089e8009f5f6",
+              "timestamp": 1791582670
+            }
+          }
+        }
+      },
+      {
+        "variables": {
+          "orgId": "0xf8eb3652e8f049128d4e3c9315875697f42990714f5e3410f15458805cc9073c",
+          "taskManager": "0x5fd3d65eb46ed4258e5d94902ada696188079e1f",
+          "block": {
+            "hash": "0x78575584749175e45715289ff7c2a61da485116daabf63e0678c089e8009f5f6"
+          },
+          "cursor": "",
+          "first": 100
+        },
+        "httpStatus": 200,
+        "data": {
+          "organization": {
+            "id": "0xf8eb3652e8f049128d4e3c9315875697f42990714f5e3410f15458805cc9073c",
+            "taskManager": {
+              "id": "0x5fd3d65eb46ed4258e5d94902ada696188079e1f",
+              "organization": {
+                "id": "0xf8eb3652e8f049128d4e3c9315875697f42990714f5e3410f15458805cc9073c"
+              }
+            }
+          },
+          "projectManagers": [],
+          "_meta": {
+            "block": {
+              "number": 48674982,
+              "hash": "0x78575584749175e45715289ff7c2a61da485116daabf63e0678c089e8009f5f6",
+              "timestamp": 1791582670
+            }
+          }
+        }
+      },
+      {
+        "variables": {
+          "taskManagers": [
+            "0x5fd3d65eb46ed4258e5d94902ada696188079e1f"
+          ],
+          "cursor": "",
+          "first": 1,
+          "block": {
+            "hash": "0x78575584749175e45715289ff7c2a61da485116daabf63e0678c089e8009f5f6"
+          }
+        },
+        "httpStatus": 200,
+        "data": {
+          "tasks": [],
+          "_meta": {
+            "block": {
+              "number": 48674982,
+              "hash": "0x78575584749175e45715289ff7c2a61da485116daabf63e0678c089e8009f5f6",
+              "timestamp": 1791582670
+            }
+          }
+        }
+      }
+    ]
+  },
+  "limits": "Read-only snapshot evidence; Test6 absent on Arbitrum. Legitimate empty work module is an existing retired org, not a supported-directory/live-authority claim."
+}

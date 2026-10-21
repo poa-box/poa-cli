@@ -1,3 +1,4 @@
+import { buildCompleteModule } from '@poa-box/core/tx/education';
 /**
  * pop education complete — answer a module's quiz and claim its PT reward.
  *
@@ -86,10 +87,11 @@ export const completeHandler = {
         const txSpin = output.spinner('Completing module...');
         txSpin.start();
         const contract = createWriteContract(educationHubAddress, 'EducationHubNew', ctx.signer);
+        const intent = buildCompleteModule({ educationHubAddress, moduleId, answer: argv.answer });
         const result = await executeTx(
           contract,
-          'completeModule',
-          [moduleId, argv.answer],
+          intent.method,
+          intent.args,
           { dryRun: argv.dryRun }
         );
         txSpin.stop();

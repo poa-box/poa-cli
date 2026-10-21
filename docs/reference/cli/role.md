@@ -39,6 +39,94 @@ pop role pending [flags]
 | `--subject` | string | no | - | Filter by authority subject ID |
 | `--user` | string | no | - | Filter by target wallet address |
 
+## pop role snapshot
+
+Read complete pinned authority evidence, permissions and membership lifecycle
+
+```text
+pop role snapshot [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--block` | string | no | - | Exact indexed block number (otherwise current indexed head) |
+| `--context` | string | no | `0x0000000000000000000000000000000000000000000000000000000000000000` | Permission bytes32 context |
+| `--key` | string | no | - | Semantic permission key or bytes32; defaults to each indexed key |
+| `--max-pages` | number | no | `100` | Maximum pages per collection; reaching the cap stays incomplete |
+| `--page-size` | number | no | `1000` | Rows per indexed page |
+| `--subject` | string | no | - | Optional authority subject ID for permission projection |
+| `--user` | string | no | - | Optional observed account for membership and permission projections |
+
+## pop role plan
+
+Plan role creation alone or configure an existing subject from fresh evidence
+
+```text
+pop role plan [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--file` | string | yes | - | RoleConfigurationRequest JSON; desired values only, never source evidence |
+| `--subject` | string | no | - | Existing verified subject ID; omit to plan creation alone |
+
+## pop role propose
+
+Submit a reviewed role plan after collecting fresh evidence again
+
+```text
+pop role propose [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--expected-fingerprint` | string | yes | - | Fingerprint from a reviewed plan; current evidence is collected again |
+| `--file` | string | yes | - | RoleConfigurationRequest JSON; desired values only, never source evidence |
+| `--subject` | string | no | - | Existing verified subject ID; omit to plan creation alone |
+
+## pop role continuation
+
+Reconcile exact creation or configuration proposal execution
+
+```text
+pop role continuation [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--account` | string | yes | - | Original proposal caller address |
+| `--batch-file` | string | no | - | Exact configuration ExecutionCall[] JSON (configuration outcome) |
+| `--creation-calldata` | string | no | - | Exact MembershipAuthority createRole/createGroup calldata (creation continuation) |
+| `--creation-operation` | string | no | - | Optional ERC-4337 exact operation identity JSON |
+| `--creation-tx` | string | yes | - | Exact transaction that submitted the creation/configuration proposal |
+| `--execution-operation` | string | no | - | Optional independent execution operation identity JSON |
+| `--proposal` | string | no | - | Optional exact proposal ID constraint |
+
+## pop role election-plan
+
+Plan capacity-safe election batches with exact removal and ban consent
+
+```text
+pop role election-plan [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--file` | string | yes | - | JSON choices: subjectId, removals, confirmedBans, candidates, stickyWinner, fallbackSubjectId, includeNoOneOption, expectedFingerprint |
+
+## pop role removal-plan
+
+Plan removals after fresh non-banning preflights
+
+```text
+pop role removal-plan [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--file` | string | yes | - | JSON choices: subjectId, removals, confirmedBans, candidates, stickyWinner, fallbackSubjectId, includeNoOneOption, expectedFingerprint |
+
 ## pop role create
 
 Propose creation of an authority role

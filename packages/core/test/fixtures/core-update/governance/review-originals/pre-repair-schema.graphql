@@ -1,0 +1,176 @@
+schema { query: Query }
+type Account {
+  username: String!
+}
+scalar BigInt
+input Block_height {
+  hash: Bytes
+  number: Int
+  number_gte: Int
+}
+scalar Bytes
+type DDVProposal {
+  createdAtBlock: BigInt!
+  descriptionHash: Bytes!
+  directDemocracyVoting: DirectDemocracyVotingContract!
+  endTimestamp: BigInt!
+  executionError: Bytes
+  executionFailed: Boolean!
+  id: String!
+  isHatRestricted: Boolean!
+  isValid: Boolean
+  metadata: ProposalMetadata
+  numOptions: Int!
+  proposalId: BigInt!
+  proposer: Bytes!
+  proposerUsername: String
+  restrictedHatIds: [BigInt!]
+  startTimestamp: BigInt!
+  status: DDVProposalStatus!
+  title: String!
+  transactionHash: Bytes!
+  votes: [DDVVote!]!
+  winningOption: BigInt
+}
+enum DDVProposalStatus { Active Ended Cleaned }
+input DDVProposal_filter {
+  directDemocracyVoting: String
+  id: String
+  id_gt: String
+  proposalId: BigInt
+}
+enum DDVProposal_orderBy { id proposalId directDemocracyVoting directDemocracyVoting__id directDemocracyVoting__executor directDemocracyVoting__thresholdPct directDemocracyVoting__quorum directDemocracyVoting__hats directDemocracyVoting__createdAt directDemocracyVoting__createdAtBlock proposer proposerUsername proposerUser proposerUser__id proposerUser__address proposerUser__joinMethod proposerUser__membershipStatus proposerUser__participationTokenBalance proposerUser__totalVotes proposerUser__totalTasksCompleted proposerUser__totalTasksCancelled proposerUser__totalTasksLostToExpiry proposerUser__totalTasksReleased proposerUser__totalModulesCompleted proposerUser__totalClaimsAmount proposerUser__totalPaymentsAmount proposerUser__totalTokenRequestsAmount proposerUser__firstSeenAt proposerUser__firstSeenAtBlock proposerUser__lastActiveAt proposerUser__lastActiveAtBlock title descriptionHash metadata metadata__id metadata__description metadata__createdAt metadata__promotedFrom numOptions startTimestamp endTimestamp isHatRestricted restrictedHatIds status votes batchExecutions winningOption isValid winnerAnnouncedAt executionFailed executionError cleanedAt createdAtBlock transactionHash }
+type DDVVote {
+  optionIndexes: [Int!]!
+  optionWeights: [Int!]!
+  voter: Bytes!
+}
+type DirectDemocracyVotingContract {
+  ddvProposals(first: Int = 100, orderBy: DDVProposal_orderBy, orderDirection: OrderDirection, where: DDVProposal_filter): [DDVProposal!]!
+  id: Bytes!
+  organization: Organization!
+  quorum: BigInt!
+  thresholdPct: Int!
+}
+type HybridVotingContract {
+  classVersion: BigInt!
+  classesChange: VotingClassChange
+  id: Bytes!
+  organization: Organization!
+  proposals(first: Int = 100, orderBy: Proposal_orderBy, orderDirection: OrderDirection, where: Proposal_filter): [Proposal!]!
+  quorum: BigInt!
+  thresholdPct: Int!
+  votingClasses(first: Int = 100, orderBy: VotingClass_orderBy, orderDirection: OrderDirection, where: VotingClass_filter): [VotingClass!]!
+}
+enum OrderDirection { asc desc }
+type Organization {
+  directDemocracyVoting: DirectDemocracyVotingContract
+  hybridVoting: HybridVotingContract
+  id: Bytes!
+  users(first: Int = 100): [User!]!
+}
+type Proposal {
+  classesChange: VotingClassChange
+  classesVersion: BigInt!
+  createdAtBlock: BigInt!
+  creatorUsername: String
+  descriptionHash: Bytes!
+  endTimestamp: BigInt!
+  executionError: Bytes
+  executionFailed: Boolean!
+  hybridVoting: HybridVotingContract!
+  id: String!
+  isHatRestricted: Boolean!
+  isValid: Boolean
+  metadata: ProposalMetadata
+  numOptions: Int!
+  proposalId: BigInt!
+  proposer: Bytes!
+  proposerUsername: String
+  restrictedHatIds: [BigInt!]
+  startTimestamp: BigInt!
+  status: ProposalStatus!
+  title: String!
+  transactionHash: Bytes!
+  votes(first: Int = 100, orderBy: Vote_orderBy, orderDirection: OrderDirection, where: Vote_filter): [Vote!]!
+  wasExecuted: Boolean!
+  winningOption: BigInt
+}
+type ProposalMetadata {
+  actionSummaries: [String!]
+  createdAt: BigInt
+  description: String!
+  id: String!
+  optionNames: [String!]!
+  promotedFrom: String
+}
+enum ProposalStatus { Active Ended Executed }
+input Proposal_filter {
+  hybridVoting: String
+  id: String
+  id_gt: String
+  proposalId: BigInt
+}
+enum Proposal_orderBy { id proposalId hybridVoting hybridVoting__id hybridVoting__executor hybridVoting__thresholdPct hybridVoting__quorum hybridVoting__hats hybridVoting__createdAt hybridVoting__createdAtBlock hybridVoting__classVersion creator creatorUsername creatorUser creatorUser__id creatorUser__address creatorUser__joinMethod creatorUser__membershipStatus creatorUser__participationTokenBalance creatorUser__totalVotes creatorUser__totalTasksCompleted creatorUser__totalTasksCancelled creatorUser__totalTasksLostToExpiry creatorUser__totalTasksReleased creatorUser__totalModulesCompleted creatorUser__totalClaimsAmount creatorUser__totalPaymentsAmount creatorUser__totalTokenRequestsAmount creatorUser__firstSeenAt creatorUser__firstSeenAtBlock creatorUser__lastActiveAt creatorUser__lastActiveAtBlock proposer proposerUsername classesVersion classesChange classesChange__id classesChange__version classesChange__logIndex classesChange__classesHash classesChange__numClasses classesChange__changedAt classesChange__changedAtBlock classesChange__transactionHash title descriptionHash metadata metadata__id metadata__description metadata__createdAt metadata__promotedFrom numOptions startTimestamp endTimestamp isHatRestricted restrictedHatIds status votes batchExecutions winningOption isValid wasExecuted executionFailed executionError winnerAnnouncedAt executedAt executedCallsCount createdAtBlock transactionHash }
+type Query {
+  _meta(block: Block_height): _Meta_
+  ddvproposals(first: Int = 100, orderBy: DDVProposal_orderBy, orderDirection: OrderDirection, where: DDVProposal_filter, block: Block_height): [DDVProposal!]!
+  directDemocracyVotingContract(id: ID!): DirectDemocracyVotingContract
+  hybridVotingContract(id: ID!): HybridVotingContract
+  organization(id: ID!): Organization
+  proposals(first: Int = 100, orderBy: Proposal_orderBy, orderDirection: OrderDirection, where: Proposal_filter, block: Block_height): [Proposal!]!
+}
+type User {
+  account: Account
+  address: Bytes!
+}
+type Vote {
+  classRawPowers: [BigInt!]!
+  id: String!
+  optionIndexes: [Int!]!
+  optionWeights: [Int!]!
+  votedAt: BigInt!
+  voter: Bytes!
+  voterUsername: String
+}
+input Vote_filter {
+  id_gt: String
+}
+enum Vote_orderBy { id proposal proposal__id proposal__proposalId proposal__creator proposal__creatorUsername proposal__proposer proposal__proposerUsername proposal__classesVersion proposal__title proposal__descriptionHash proposal__numOptions proposal__startTimestamp proposal__endTimestamp proposal__isHatRestricted proposal__status proposal__winningOption proposal__isValid proposal__wasExecuted proposal__executionFailed proposal__executionError proposal__winnerAnnouncedAt proposal__executedAt proposal__executedCallsCount proposal__createdAtBlock proposal__transactionHash voter voterUsername voterUser voterUser__id voterUser__address voterUser__joinMethod voterUser__membershipStatus voterUser__participationTokenBalance voterUser__totalVotes voterUser__totalTasksCompleted voterUser__totalTasksCancelled voterUser__totalTasksLostToExpiry voterUser__totalTasksReleased voterUser__totalModulesCompleted voterUser__totalClaimsAmount voterUser__totalPaymentsAmount voterUser__totalTokenRequestsAmount voterUser__firstSeenAt voterUser__firstSeenAtBlock voterUser__lastActiveAt voterUser__lastActiveAtBlock optionIndexes optionWeights classRawPowers votedAt votedAtBlock transactionHash }
+type VotingClass {
+  asset: Bytes!
+  change: VotingClassChange!
+  classIndex: Int!
+  hatIds: [BigInt!]!
+  id: String!
+  isActive: Boolean!
+  minBalance: BigInt!
+  quadratic: Boolean!
+  slicePct: Int!
+  strategy: VotingClassStrategy!
+  version: BigInt!
+}
+type VotingClassChange {
+  changedAt: BigInt!
+  changedAtBlock: BigInt!
+  classesHash: Bytes!
+  hybridVoting: HybridVotingContract!
+  id: Bytes!
+  numClasses: Int!
+  transactionHash: Bytes!
+  version: BigInt!
+  votingClasses(first: Int = 100, orderBy: VotingClass_orderBy, orderDirection: OrderDirection): [VotingClass!]!
+}
+enum VotingClassStrategy { DIRECT ERC20_BAL }
+input VotingClass_filter {
+  isActive: Boolean
+}
+enum VotingClass_orderBy { id hybridVoting hybridVoting__id hybridVoting__executor hybridVoting__thresholdPct hybridVoting__quorum hybridVoting__hats hybridVoting__createdAt hybridVoting__createdAtBlock hybridVoting__classVersion change change__id change__version change__logIndex change__classesHash change__numClasses change__changedAt change__changedAtBlock change__transactionHash version classIndex strategy slicePct quadratic minBalance asset hatIds isActive createdAt createdAtBlock transactionHash }
+type _Block_ {
+  hash: Bytes
+  number: Int!
+  timestamp: Int
+}
+type _Meta_ {
+  block: _Block_!
+}

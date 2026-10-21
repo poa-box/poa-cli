@@ -19,13 +19,15 @@ import { requireModule } from '../../lib/resolve';
 import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
-import { encodeProjectStruct } from '@poa-box/core/tx/project';
+import { encodeProjectStructRaw } from '@poa-box/core/tx/project';
+import { buildProjectMetadata, serializeProjectMetadata } from '@poa-box/core/metadata/task';
+import { buildProposalMetadata, serializeProposalMetadata } from '@poa-box/core/metadata/proposal';
 
 interface ProposeArgs {
   org: string;
   name: string;
   description?: string;
-  cap: number;
+  cap: string | number;
   managers?: string;
   duration: number;
   chain?: number;
@@ -46,7 +48,7 @@ export const proposeHandler = {
     .option('name', { type: 'string', demandOption: true, describe: 'Project name' })
     .option('managers', { type: 'string', describe: 'Comma-separated project manager addresses' })
     .option('description', { type: 'string', describe: 'Project description' })
-    .option('cap', { type: 'number', default: 0, describe: 'PT budget cap (0 = unlimited)' })
+    .option('cap', { type: 'string', default: '0', describe: 'PT budget cap (0 = unlimited)' })
     .option('duration', { type: 'number', default: 1440, describe: 'Vote duration in minutes (default 24h)' })
     .example('pop project propose --name "Research" --cap 1000', 'Propose a 1000 PT project (24h vote)')
     .epilogue('Configure project permissions with pop task perms set after creation.'),
@@ -63,8 +65,8 @@ export const proposeHandler = {
         throw new CliError('No HybridVoting found for this org', EXIT.PRECONDITION, 'This org cannot run governance proposals.');
       }
 
-      const projectStruct = encodeProjectStruct({ taskManagerAddress: taskManagerAddr,
-        name: argv.name, cap: argv.cap,
+      const projectStruct = encodeProjectStructRaw({ taskManagerAddress: taskManagerAddr,
+        name: argv.name, capRaw: ethers.utils.parseUnits(String(argv.cap), 18).toString(),
         managers: (argv.managers ?? '').split(',').map(address => address.trim()).filter(Boolean) });
 
       // Encode the createProject call the executor performs if the vote passes
@@ -73,11 +75,11 @@ export const proposeHandler = {
       let calldata = iface.encodeFunctionData('createProject', [projectStruct]);
 
       // Build proposal metadata
-      const proposalMeta = {
+      const proposalMeta = buildProposalMetadata({
         description: `Create project "${argv.name}"${argv.description ? ': ' + argv.description : ''}. PT cap: ${argv.cap || 'unlimited'}. If this proposal passes, the project will be created automatically via execution call.`,
         optionNames: [`Create "${argv.name}"`, 'Do not create'],
         createdAt: Date.now(),
-      };
+      });
 
       // Build execution batches: option 0 = create project, option 1 = do nothing
       const batches = [
@@ -99,14 +101,14 @@ export const proposeHandler = {
       }, { actionLabel: 'Propose project creation' });
 
       if (argv.description && !argv.dryRun) {
-        const cid = await pinJson(JSON.stringify({ description: argv.description }));
+        const cid = await pinJson(serializeProjectMetadata(buildProjectMetadata(argv.description)));
         projectStruct[1] = ipfsCidToBytes32(cid);
         calldata = iface.encodeFunctionData('createProject', [projectStruct]);
         batches[0][0][2] = calldata;
       }
       const txSpin = output.spinner('Pinning metadata + creating proposal...');
       txSpin.start();
-      const proposalCid = argv.dryRun ? undefined : await pinJson(JSON.stringify(proposalMeta));
+      const proposalCid = argv.dryRun ? undefined : await pinJson(serializeProposalMetadata(proposalMeta));
       const descriptionHash = proposalCid ? ipfsCidToBytes32(proposalCid) : ethers.constants.HashZero;
       const proposalTitle = stringToBytes(`Create project: ${argv.name}`);
 

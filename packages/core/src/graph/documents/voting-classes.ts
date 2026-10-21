@@ -127,8 +127,10 @@ export const FETCH_PROPOSAL_VOTE_ANALYSIS = `
 
 /** Exact per-emission joins are populated by current subgraphs on both supported chains. */
 const CLASS_CHANGE_FIELDS = `classesChange {
-  id numClasses
+  id numClasses version classesHash changedAt changedAtBlock transactionHash
+  hybridVoting { id organization { id } }
   votingClasses(first: 8, orderBy: classIndex, orderDirection: asc) {${VOTING_CLASS_FIELDS}
+    id change { id }
   }
 }`;
 export const FETCH_VOTING_CLASS_CONFIG_EXACT = `
@@ -152,6 +154,35 @@ export const FETCH_PROPOSAL_VOTE_ANALYSIS_EXACT = FETCH_PROPOSAL_VOTE_ANALYSIS
   .replace('classesVersion', `classesVersion ${CLASS_CHANGE_FIELDS}`)
   .replace(`votingClasses(first: 1000) {${VOTING_CLASS_FIELDS}
       }`, '');
+
+/** One explicit proposal only. Every page proves its org/module/proposal binding
+ * and observed block, including the terminal empty page. No class-history join. */
+export const FETCH_HYBRID_PROPOSAL_BALLOTS_PAGE = `
+  query FetchHybridProposalBallotsPage($orgId: ID!, $compositeId: String!, $cursor: String!, $first: Int!, $block: Block_height!) {
+    organization(id: $orgId, block: $block) { id hybridVoting { id } }
+    proposals(first: 1, where: { id: $compositeId }, block: $block) {
+      id proposalId numOptions createdAtBlock hybridVoting { id organization { id } }
+    }
+    votes(first: $first, orderBy: id, orderDirection: asc, where: { proposal: $compositeId, id_gt: $cursor }, block: $block) {
+      id voter voterUsername optionIndexes optionWeights classRawPowers votedAt votedAtBlock transactionHash
+      proposal { id proposalId numOptions createdAtBlock hybridVoting { id organization { id } } }
+    }
+    _meta(block: $block) { block { number hash timestamp } }
+  }
+`;
+export const FETCH_DD_PROPOSAL_BALLOTS_PAGE = `
+  query FetchDDProposalBallotsPage($orgId: ID!, $compositeId: String!, $cursor: String!, $first: Int!, $block: Block_height!) {
+    organization(id: $orgId, block: $block) { id directDemocracyVoting { id } }
+    ddvproposals(first: 1, where: { id: $compositeId }, block: $block) {
+      id proposalId numOptions createdAtBlock directDemocracyVoting { id organization { id } }
+    }
+    ddvvotes(first: $first, orderBy: id, orderDirection: asc, where: { proposal: $compositeId, id_gt: $cursor }, block: $block) {
+      id voter voterUsername optionIndexes optionWeights votedAt votedAtBlock transactionHash
+      proposal { id proposalId numOptions createdAtBlock directDemocracyVoting { id organization { id } } }
+    }
+    _meta(block: $block) { block { number hash timestamp } }
+  }
+`;
 
 /**
  * Select one complete, unambiguous class emission. Restricted polls can use a
@@ -181,6 +212,8 @@ export function selectIndexedClassSnapshot(contract: any, proposalId?: number): 
 
 /** One VotingClass row as returned by the subgraph (all scalars are strings/numbers). */
 export interface SubgraphVotingClass {
+  id?: string;
+  change?: { id: string };
   version: string;
   classIndex: number;
   strategy: string;

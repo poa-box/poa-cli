@@ -4,6 +4,30 @@
 
 Gas sponsorship (ERC-4337)
 
+## pop paymaster donate
+
+Donate native tokens to the global solidarity fund
+
+```text
+pop paymaster donate [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--amount` | string | yes | - | Exact native-token donation in human units |
+
+## pop paymaster prefund
+
+Calculate exact v0.7 prefund from the final estimated operation
+
+```text
+pop paymaster prefund [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--operation` | string | yes | - | JSON with final v0.7 gas limits and maxFeePerGas, all exact raw strings |
+
 ## pop paymaster status
 
 View paymaster registration, balance, budgets, and solidarity state
@@ -14,7 +38,7 @@ pop paymaster status [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--hat` | string | no | - | Additional hat ID(s) whose sponsorship budgets to show (admin/operator hats are probed automatically) |
+| `--hat` | array | no | - | Additional hat ID(s) whose sponsorship budgets to show (admin/operator hats are probed automatically) |
 
 ## pop paymaster deposit
 

@@ -1,4 +1,5 @@
 import type { Argv } from 'yargs';
+import { holdersHandler } from './holders';
 import { requestHandler } from './request';
 import { approveHandler } from './approve';
 import { cancelHandler } from './cancel';
@@ -11,6 +12,7 @@ export function registerTokenCommands(yargs: Argv) {
     .command('approve', 'Approve a token request — MINTS the requested PT to the requester', approveHandler.builder, approveHandler.handler)
     .command('cancel', 'Cancel a pending token request (requester or approver)', cancelHandler.builder, cancelHandler.handler)
     .command('requests', 'List token requests', requestsHandler.builder, requestsHandler.handler)
+    .command('holders', 'Enumerate token holders and reconcile totals against indexed supply', holdersHandler.builder, holdersHandler.handler)
     .command('balance', 'Check participation token balance', balanceHandler.builder, balanceHandler.handler)
     .demandCommand(1, 'Please specify a token action')
     .epilogue('Guide: see docs/guides/treasury-and-tokens.md');

@@ -1,3 +1,4 @@
+import { effectiveTaskDeadlineSeconds } from '@poa-box/core/task-lens';
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { resolveIdentityAddress } from '../../lib/signer';
 import { ethers } from 'ethers';
@@ -76,7 +77,7 @@ const UNCLAIMED_STATUSES = new Set(['open', 'unclaimed']);
  */
 function governingDeadline(row: TaskRow): number | undefined {
   const dl = CLAIMED_STATUSES.has(row.statusRaw.toLowerCase())
-    ? (row.claimDeadline || row.absoluteDeadline)
+    ? effectiveTaskDeadlineSeconds({ claimDeadline: row.claimDeadline, absoluteDeadline: row.absoluteDeadline })
     : row.absoluteDeadline;
   return dl || undefined;
 }

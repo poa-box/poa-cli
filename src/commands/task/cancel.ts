@@ -1,3 +1,4 @@
+import { buildCancelTask } from '@poa-box/core/tx/task';
 /**
  * pop task cancel — cancel a not-yet-completed task (destructive).
  *
@@ -99,7 +100,8 @@ export const cancelHandler = {
         const txSpin = output.spinner('Cancelling task...');
         txSpin.start();
         const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);
-        const result = await executeTx(contract, 'cancelTask', [parsedTaskId], { dryRun: argv.dryRun });
+        const intent = buildCancelTask({ taskManagerAddress, taskId: parsedTaskId });
+        const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
         txSpin.stop();
 
         finishWrite(result, {

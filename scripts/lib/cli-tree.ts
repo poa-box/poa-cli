@@ -29,6 +29,8 @@ import { registerZkEmailCommands } from '../../src/commands/zkemail';
 import { registerConfigCommands } from '../../src/commands/config';
 import { registerMcpCommands } from '../../src/commands/mcp/serve';
 import { initHandler } from '../../src/commands/init';
+import { registerCashoutCommands } from '../../src/commands/cashout';
+import { registerExecutionCommands } from '../../src/commands/execution';
 
 export interface OptSpec {
   name: string;
@@ -100,6 +102,8 @@ const DOMAINS: Array<{ domain: string; description: string; register: (y: any) =
   { domain: 'group', description: 'Authority groups', register: registerGroupCommands },
   { domain: 'zkemail', description: 'ZK Email role invites (allowlists)', register: registerZkEmailCommands },
   { domain: 'config', description: 'View and validate configuration', register: registerConfigCommands },
+  { domain: 'cashout', description: 'EOA cash-out discovery and explicit recovery', register: registerCashoutCommands },
+  { domain: 'execution', description: 'Inspect and recover exact transaction submissions', register: registerExecutionCommands },
   { domain: 'mcp', description: 'Serve the CLI as an MCP server for AI integrations', register: registerMcpCommands },
 ];
 
@@ -137,11 +141,13 @@ interface Recording {
 }
 
 function inferType(spec: Record<string, unknown>): string | undefined {
+  // yargs uses `type` for each element when combined with `array: true`.
+  // Preserve the collection in the manifest/MCP schema instead of a scalar.
+  if (spec.array === true) return 'array';
   if (typeof spec.type === 'string') return spec.type;
   if (spec.boolean === true) return 'boolean';
   if (spec.number === true) return 'number';
   if (spec.string === true) return 'string';
-  if (spec.array === true) return 'array';
   if (spec.count === true) return 'count';
   if (Array.isArray(spec.choices) && spec.choices.length > 0) return typeof spec.choices[0];
   if ('default' in spec && spec.default !== undefined && spec.default !== null) return typeof spec.default;

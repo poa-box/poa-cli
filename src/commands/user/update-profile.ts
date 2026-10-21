@@ -1,3 +1,6 @@
+import { buildChangeUsername, buildSetProfileMetadata } from '@poa-box/core/tx/user';
+import { buildUserProfileMetadata, serializeUserProfileMetadata } from '@poa-box/core/metadata/user';
+import { ethers } from 'ethers';
 /**
  * pop user update-profile — profile metadata edits + username changes.
  *
@@ -158,17 +161,8 @@ export const updateProfileHandler = {
       // Merge with existing metadata
       let metadata: Record<string, string> = {};
       if (metadataChanging) {
-        const existing = indexed.account?.metadata || {};
-
-        if (argv.bio !== undefined || existing.bio) metadata.bio = (argv.bio as string) ?? existing.bio ?? '';
-        if (argv.avatar !== undefined || existing.avatar) metadata.avatar = (argv.avatar as string) ?? existing.avatar ?? '';
-        if (argv.github !== undefined || existing.github) metadata.github = (argv.github as string) ?? existing.github ?? '';
-        if (argv.twitter !== undefined || existing.twitter) metadata.twitter = (argv.twitter as string) ?? existing.twitter ?? '';
-        if (argv.website !== undefined || existing.website) metadata.website = (argv.website as string) ?? existing.website ?? '';
-
-        if (metadata.bio && metadata.bio.length > 280) {
-          throw new CliError(`Bio too long: ${metadata.bio.length}/280 chars`, EXIT.USAGE);
-        }
+        metadata = buildUserProfileMetadata({ bio: argv.bio, avatar: argv.avatar, github: argv.github,
+          twitter: argv.twitter, website: argv.website }, indexed.account?.metadata) as Record<string, string>;
       }
 
       // ── Pre-flight (skippable with --no-preflight) ────────────────────
@@ -200,7 +194,8 @@ export const updateProfileHandler = {
       if (usernameChanging) {
         const txSpin = output.spinner('Sending changeUsername...');
         txSpin.start();
-        const renameResult = await executeTx(contract, 'changeUsername', [newUsername], { dryRun: argv.dryRun });
+        const intent = buildChangeUsername({ registryAddress: uarAddr, newUsername: newUsername! });
+        const renameResult = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
         txSpin.stop();
         finishWrite(renameResult, {
           successMsg: `Username changed to "${newUsername}"`,
@@ -216,11 +211,12 @@ export const updateProfileHandler = {
       if (metadataChanging) {
         spin.start();
         spin.text = 'Pinning metadata...';
-        const cid = await pinJson(JSON.stringify(metadata));
-        const metadataHash = ipfsCidToBytes32(cid);
+        const cid = argv.dryRun ? undefined : await pinJson(serializeUserProfileMetadata(metadata));
+        const metadataHash = cid ? ipfsCidToBytes32(cid) : ethers.constants.HashZero;
 
         spin.text = 'Sending transaction...';
-        const result = await executeTx(contract, 'setProfileMetadata', [metadataHash], { dryRun: argv.dryRun });
+        const intent = buildSetProfileMetadata({ registryAddress: uarAddr, metadataHash });
+        const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
         spin.stop();
 
         finishWrite(result, {

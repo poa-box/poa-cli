@@ -1,0 +1,8 @@
+{
+  "coreCommit": "29f76287743d0cac43533f3683992d1c8ecc48e8",
+  "querySource": "packages/core/src/graph/documents/user.ts",
+  "querySourceSha256": "3219cf6f86bb0f785a16a0719c702ab16d24982049ed1171aaf9993d40fea827",
+  "declarationSource": "packages/core/src/reads/user.ts",
+  "declarationSourceSha256": "a167005c2beb63c3dc818baf9fa06c5d4772621ef0a72223925629b971dbdd2a",
+  "derivation": "Unchanged FETCH_USER_DATA literal and exported OrgUser interface extracted from reviewed checkout HEAD, not derived from new implementation. Runtime authority-only mismatch was separately observed by original audited package evidence."
+}

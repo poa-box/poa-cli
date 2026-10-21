@@ -4,6 +4,35 @@
 
 Project management
 
+## pop project prepare
+
+Prepare raw project creation or source-qualified creator evidence locally
+
+```text
+pop project prepare [action] [flags]
+```
+
+| Positional | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `<action>` | string | no | `create` | Raw creation calldata or supplied creator-evidence projection (choices: `create`, `creator-authorization`) |
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--file` | string | yes | - | JSON raw project arguments, or scoped taskManager/authority/memberships snapshots for creator-authorization |
+
+## pop project snapshot
+
+Read complete paged domain facts at a proven indexed block with coverage
+
+```text
+pop project snapshot [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--max-pages` | number | no | `100` | Maximum pages per collection |
+| `--page-size` | number | no | `100` | Rows per page (1–1000) |
+
 ## pop project create
 
 Create a new project (direct tx; creator-hat/executor)
@@ -16,7 +45,7 @@ pop project create [flags]
 | --- | --- | --- | --- | --- |
 | `--bounty-caps` | string | no | - | Comma-separated bounty caps (wei) |
 | `--bounty-tokens` | string | no | - | Comma-separated bounty token addresses |
-| `--cap` | number | no | `0` | PT cap (0 = unlimited) |
+| `--cap` | string | no | `0` | PT cap (0 = unlimited) |
 | `--description` | string | no | - | Project description |
 | `--managers` | string | no | - | Comma-separated project manager addresses |
 | `--name` | string | yes | - | Project name |
@@ -31,7 +60,7 @@ pop project propose [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--cap` | number | no | `0` | PT budget cap (0 = unlimited) |
+| `--cap` | string | no | `0` | PT budget cap (0 = unlimited) |
 | `--description` | string | no | - | Project description |
 | `--duration` | number | no | `1440` | Vote duration in minutes (default 24h) |
 | `--managers` | string | no | - | Comma-separated project manager addresses |

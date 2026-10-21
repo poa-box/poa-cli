@@ -1,0 +1,64 @@
+     * @notice Resolve role indices to subject ids in bootstrap project configs
+     */
+    function _resolveBootstrapRoles(
+        ITaskManagerBootstrap.BootstrapProjectConfig[] calldata projects,
+        uint256[] memory roleSubjectIds
+    ) internal pure returns (ITaskManagerBootstrap.BootstrapProjectConfig[] memory resolved) {
+        resolved = new ITaskManagerBootstrap.BootstrapProjectConfig[](projects.length);
+
+        for (uint256 i = 0; i < projects.length; i++) {
+            resolved[i] = ITaskManagerBootstrap.BootstrapProjectConfig({
+                title: projects[i].title,
+                metadataHash: projects[i].metadataHash,
+                cap: projects[i].cap,
+                managers: projects[i].managers,
+                createHats: _resolveRoleIndices(projects[i].createHats, roleSubjectIds),
+                claimHats: _resolveRoleIndices(projects[i].claimHats, roleSubjectIds),
+                reviewHats: _resolveRoleIndices(projects[i].reviewHats, roleSubjectIds),
+                assignHats: _resolveRoleIndices(projects[i].assignHats, roleSubjectIds),
+                bountyTokens: projects[i].bountyTokens,
+                bountyCaps: projects[i].bountyCaps
+            });
+        }
+
+        return resolved;
+    }
+
+    /**
+     * @notice Convert an array of role indices to authority subject ids
+     */
+    function _resolveRoleIndices(uint256[] calldata roleIndices, uint256[] memory roleSubjectIds)
+        internal
+        pure
+        returns (uint256[] memory subjectIds)
+    {
+        subjectIds = new uint256[](roleIndices.length);
+        for (uint256 i = 0; i < roleIndices.length; i++) {
+            if (roleIndices[i] >= roleSubjectIds.length) revert InvalidRoleConfiguration();
+            subjectIds[i] = roleSubjectIds[roleIndices[i]];
+        }
+        return subjectIds;
+    }
+
+    /// @dev Mirror each bootstrap project's role lists into the authority's per-project TM_PERMS
+    ///      rows (AccessFactory builds them; see `buildProjectPermRows` for the inherit semantics).
+    function _seedProjectPerms(
+        DeploymentResult memory result,
+        uint256[] memory roleSubjectIds,
+        ITaskManagerBootstrap.BootstrapProjectConfig[] calldata projects,
+        bytes32[] memory projectIds
+    ) internal {
+        AccessFactory factory = _layout().accessFactory;
+        for (uint256 p = 0; p < projects.length; p++) {
+            (uint256[] memory subjects, bytes32[] memory keys, bytes32[] memory ctxs, uint256[] memory words) =
+                factory.buildProjectPermRows(projects[p], roleSubjectIds, projectIds[p]);
+            if (subjects.length == 0) continue;
+            IExecutorAdmin(result.executor)
+                .configureModule(
+                    result.membershipAuthority, abi.encodeCall(IAuthoritySeed.seedPerms, (subjects, keys, ctxs, words))
+                );
+        }
+    }
+
+    /*══════════════  SUBGRAPH EVENTS  ═════════════=*/
+

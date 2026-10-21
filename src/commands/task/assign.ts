@@ -1,3 +1,4 @@
+import { buildAssignTask } from '@poa-box/core/tx/task';
 /**
  * pop task assign — assign a task to an address/username (v6 takeover aware).
  *
@@ -122,7 +123,8 @@ export const assignHandler = {
         const txSpin = output.spinner('Assigning task...');
         txSpin.start();
         const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);
-        const result = await executeTx(contract, 'assignTask', [parsedTaskId, assignee], { dryRun: argv.dryRun });
+        const intent = buildAssignTask({ taskManagerAddress, taskId: parsedTaskId, assignee });
+        const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
         txSpin.stop();
 
         const receiptFields = claimReceiptFields(result);

@@ -1,3 +1,6 @@
+import { buildCreateTasksBatchRaw, type CreateTaskBatchRawRow } from '@poa-box/core/tx/task';
+import { buildTaskMetadata, serializeTaskMetadata } from '@poa-box/core/metadata/task';
+import { parseTaskCreatedReceipt } from '@poa-box/core/tasks/receipts';
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import fs from 'fs';
@@ -43,12 +46,12 @@ interface BatchArgs {
 interface TaskLine {
   name: string;
   description: string;
-  payout?: number;
+  payout?: string | number;
   difficulty?: string;
   estHours?: number;
   location?: string;
   bountyToken?: string;
-  bountyAmount?: number;
+  bountyAmount?: string | number;
   requiresApplication?: boolean;
   /** v6 orgs only: per-row absolute claim deadline (overrides --deadline) */
   deadline?: string | number;
@@ -58,7 +61,7 @@ interface TaskLine {
 
 interface ParsedTask extends TaskLine {
   /** Resolved payout — the row's own value, or one derived from the org's payout convention. */
-  payout: number;
+  payout: string | number;
   /** True when the JSONL row supplied `payout` explicitly (so 0 stays 0). */
   payoutProvided: boolean;
   /** Resolved absolute deadline (unix seconds; 0 = none) */
@@ -71,14 +74,14 @@ interface ParsedTask extends TaskLine {
 
 /** Build the frontend-key-order metadata object for a task row. */
 function buildMetadata(task: TaskLine): Record<string, any> {
-  return {
+  return buildTaskMetadata({
     name: task.name,
     description: task.description,
     location: task.location || '',
     difficulty: task.difficulty || 'medium',
     estHours: task.estHours || 0,
     submission: '',
-  };
+  });
 }
 
 export const createBatchHandler = {
@@ -190,14 +193,14 @@ export const createBatchHandler = {
           t.payout = calculatePayout(t.difficulty || 'medium', t.estHours || 0, payoutConfig);
         }
       }
-      const unpriced = tasks.filter((t) => !t.payoutProvided && t.payout <= 0);
+      const unpriced = tasks.filter((t) => !t.payoutProvided && Number(t.payout) <= 0);
       if (unpriced.length > 0) {
         throw new Error(
           `${unpriced.length} row(s) could not be priced (no "payout", and difficulty/estHours `
           + `derive to 0): ${unpriced.map((t) => t.name).join(', ')}`
         );
       }
-      const { signer, provider, chainId } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
+      const { signer, provider, address, chainId } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
       const pid = parseProjectId(argv.project);
 
       const features = await detectTaskManagerFeatures(provider, taskManagerAddress, chainId);
@@ -240,35 +243,25 @@ export const createBatchHandler = {
         // components in src/abi/TaskManagerNew.json (NOTE: no pid inside):
         // payout, title, metadataHash, bountyToken, bountyPayout,
         // requiresApplication, absoluteDeadline, completionWindow
-        const inputs: any[][] = [];
-        for (const task of tasks) {
-          const cid = argv.dryRun ? undefined : await pinJson(JSON.stringify(buildMetadata(task)));
-          const metadataHash = cid ? ipfsCidToBytes32(cid) : ethers.constants.HashZero;
-          const titleBytes = stringToBytes(task.name);
-          const payoutWei = ethers.utils.parseUnits(task.payout.toString(), 18);
-
+        const prepared: CreateTaskBatchRawRow[] = tasks.map(task => {
           const bountyToken = task.bountyToken || ethers.constants.AddressZero;
-          let bountyPayoutWei: ethers.BigNumber | number = 0;
-          if (task.bountyAmount && task.bountyAmount > 0 && bountyToken !== ethers.constants.AddressZero) {
-            const decimals = getTokenDecimals(bountyToken);
-            bountyPayoutWei = ethers.utils.parseUnits(task.bountyAmount.toString(), decimals);
-          }
-
-          inputs.push([
-            payoutWei,
-            titleBytes,
-            metadataHash,
-            bountyToken,
-            bountyPayoutWei,
-            task.requiresApplication || false,
-            task.absoluteDeadline,
-            task.completionWindowSecs,
-          ]);
+          const bountyPayoutRaw = task.bountyAmount && Number(task.bountyAmount) > 0 && bountyToken !== ethers.constants.AddressZero
+            ? ethers.utils.parseUnits(task.bountyAmount.toString(), getTokenDecimals(bountyToken)).toString() : '0';
+          return { payoutRaw: ethers.utils.parseUnits(task.payout.toString(), 18).toString(), title: task.name,
+            metadataHash: ethers.constants.HashZero, bountyToken, bountyPayoutRaw,
+            requiresApplication: task.requiresApplication || false,
+            absoluteDeadline: task.absoluteDeadline, completionWindow: task.completionWindowSecs };
+        });
+        buildCreateTasksBatchRaw({ taskManagerAddress, projectId: pid, tasks: prepared, orgId });
+        for (let i = 0; i < tasks.length; i++) {
+          const cid = argv.dryRun ? undefined : await pinJson(serializeTaskMetadata(buildMetadata(tasks[i]) as any));
+          prepared[i].metadataHash = cid ? ipfsCidToBytes32(cid) : ethers.constants.HashZero;
         }
 
         spin.text = `Creating ${tasks.length} tasks in one transaction...`;
         const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', signer);
-        const result = await executeTx(contract, 'createTasksBatch', [pid, inputs], { dryRun: argv.dryRun });
+        const intent = buildCreateTasksBatchRaw({ taskManagerAddress, projectId: pid, tasks: prepared, orgId });
+        const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
 
         spin.stop();
 
@@ -285,10 +278,22 @@ export const createBatchHandler = {
           return;
         }
 
-        // One TaskCreated log per task, emitted in input order
-        const taskIds = (result.logs ?? [])
-          .filter(l => l.name === 'TaskCreated')
-          .map(l => l.args?.id?.toString());
+        // Repeated drafts require all events from exactly this successful call.
+        // Sponsored receipt logs are usable only after runtime operation isolation;
+        // a direct receipt must identify this sender/target and acknowledged tx.
+        const sameHash = (left?: string, right?: string) => typeof left === 'string' && typeof right === 'string'
+          && /^0x[\da-f]{64}$/i.test(left) && left.toLowerCase() === right.toLowerCase();
+        const selectedOperation = result.sponsored === true && result.logScope === 'operation'
+          && result.outcome?.status === 'succeeded' && sameHash(result.outcome.userOpHash, result.userOpHash);
+        const directOperation = typeof address === 'string' && !result.sponsored && !result.userOpHash && !result.outerReceipt && result.logScope === undefined
+          && result.receipt?.to?.toLowerCase() === taskManagerAddress.toLowerCase()
+          && result.receipt?.from?.toLowerCase() === address.toLowerCase();
+        const orderedScope = (selectedOperation || directOperation) && sameHash(result.receipt?.transactionHash, result.txHash);
+        const created = parseTaskCreatedReceipt({ taskManagerAddress, status: result.success && result.receipt?.status === 1,
+          ...(orderedScope ? { creationLogScope: 'ordered-single-operation' as const } : {}),
+          logs: result.receipt?.logs ?? [], creations: prepared.map(task => ({ ...task, projectId: pid,
+            bountyToken: task.bountyToken!, bountyPayoutRaw: task.bountyPayoutRaw!, requiresApplication: task.requiresApplication! })) });
+        const taskIds = created.state === 'known' ? [...created.value] : [];
         const results = tasks.map((t, i) => ({ name: t.name, taskId: taskIds[i], txHash: result.txHash, status: 'ok' }));
 
         if (output.isJsonMode()) {
@@ -299,6 +304,7 @@ export const createBatchHandler = {
             failed: 0,
             txHash: result.txHash,
             explorerUrl: result.explorerUrl,
+            creationEvidence: created,
           });
         } else {
           output.success(`Batch created: ${tasks.length} tasks in one transaction`, {

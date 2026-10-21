@@ -1,3 +1,4 @@
+import { buildClaimTask } from '@poa-box/core/tx/task';
 /**
  * pop task claim — claim an open task (v6 expired-claim takeover aware).
  *
@@ -207,7 +208,8 @@ export const claimHandler = {
         const txSpin = output.spinner('Claiming task...');
         txSpin.start();
         const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);
-        const result = await executeTx(contract, 'claimTask', [parsedTaskId], { dryRun: argv.dryRun });
+        const intent = buildClaimTask({ taskManagerAddress, taskId: parsedTaskId });
+        const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
         txSpin.stop();
 
         const receiptFields = claimReceiptFields(result);

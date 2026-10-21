@@ -1,21 +1,4 @@
-/**
- * pop paymaster status — subgraph-served hub state, RPC only where the indexer
- * is demonstrably wrong.
- *
- * Before this change the command issued ENTRY_POINT() + getFeeCaps() +
- * getOrgConfig() + getOrgFinancials() + getSolidarityFund(), then a SECOND round
- * trip for EntryPoint.balanceOf (which could not start until ENTRY_POINT
- * resolved), then a THIRD for N getBudget() calls. ENTRY_POINT, the OrgConfig,
- * the fee caps and every budget are now read from the subgraph — each verified
- * field-by-field against both live deployments — leaving exactly three eth_calls
- * batched into ONE Multicall3 round trip.
- *
- * getOrgFinancials and getSolidarityFund deliberately stay on RPC: the indexed
- * totalSpent omits the solidarity fee the hub also debits (it sits at exactly
- * 1/1.01 of the contract's `spent` on Gnosis and Arbitrum alike), and
- * numActiveOrgs / feePercentageBps / solidarityUsedThisPeriod / periodStart have
- * no subgraph field at all.
- */
+/** Current budget state and lazy rollover time must share one canonical RPC block. */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -73,6 +56,7 @@ import {
   fetchPaymasterSubgraphState,
   readPaymasterOrgConfigPreferSubgraph,
   subgraphMatchesHub,
+  hatSubjectKey,
 } from '../../src/commands/paymaster/helpers';
 import { createReadContract } from '../../src/lib/contracts';
 
@@ -83,8 +67,11 @@ const ENTRY_POINT = '0x0000000071727De22E5E9d8BAf0edAc6f37da032';
 const ORG_ID = '0x112de94b6e6cba0ccece7301df866a932711655946942d795f07334e3fd6f46b';
 const ADMIN_HAT = '30222100213875867209821723912549005985147238897667981751317147089371136';
 const OPERATOR_HAT = '30222100625258283641858621132055137413908072809768050515156576961036288';
-const OPERATOR_KEY = '0x0000046100010001000000000000000000000000000000000000000000000000';
-const HASHED_KEY = '0x05924c0398c75d0181aa851a777916677944836dc7081a3d39c21232d8e27953';
+// Contract key = keccak256(uint8(HAT), bytes32(hatId)), never the raw hat ID.
+const OPERATOR_KEY = '0x05924c0398c75d0181aa851a777916677944836dc7081a3d39c21232d8e27953';
+const HASHED_KEY = '0x' + '22'.repeat(32);
+const RPC_BLOCK = { number: 123456, hash: '0x' + 'aa'.repeat(32), timestamp: 1800000000 };
+const currentBudgets = new Map<string, [string, string, number, number]>();
 
 const fakeProvider = new ethers.providers.JsonRpcProvider('http://127.0.0.1:1', 100);
 const hubIface = createReadContract(HUB, 'PaymasterHub', fakeProvider).interface;
@@ -168,6 +155,9 @@ function respond(calls: Array<{ to: string; data: string }>) {
     }
     if (s === sel('getBudget')) {
       const [, key] = hubIface.decodeFunctionData('getBudget', c.data);
+      const override = currentBudgets.get(String(key).toLowerCase());
+      if (override) return ok(hubIface.encodeFunctionResult('getBudget', [override]));
+      if (String(key).toLowerCase() === HASHED_KEY) return ok(hubIface.encodeFunctionResult('getBudget', [['1000000000000000000', '203970081150000000', 604800, 1778187145]]));
       if (String(key).toLowerCase() === OPERATOR_KEY) {
         return ok(hubIface.encodeFunctionResult('getBudget', [['100000000000000000', '0', 86400, 1775859070]]));
       }
@@ -195,6 +185,9 @@ describe('pop paymaster status — subgraph-first hub state', () => {
     mocks.isJsonMode.mockReturnValue(true);
     mocks.resolveOrgId.mockResolvedValue(ORG_ID);
     mocks.createProvider.mockReturnValue(fakeProvider);
+    currentBudgets.clear();
+    vi.spyOn(fakeProvider, 'getNetwork').mockResolvedValue({ chainId: 100 } as any);
+    vi.spyOn(fakeProvider, 'getBlock').mockResolvedValue({ ...RPC_BLOCK } as any);
     mocks.query.mockResolvedValue({
       poaManagerContracts: [{ id: POA_MANAGER, paymasterHubProxy: HUB }],
     });
@@ -202,26 +195,22 @@ describe('pop paymaster status — subgraph-first hub state', () => {
     mocks.tryAggregate.mockImplementation(async (_p: any, calls: any[]) => respond(calls));
   });
 
-  afterEach(() => exitSpy.mockRestore());
+  afterEach(() => { exitSpy.mockRestore(); vi.restoreAllMocks(); });
 
-  it('issues exactly three eth_calls, in one batch, and none of them are the converted reads', async () => {
+  it('batches current budgets for requested and discovered keys at the same canonical block as financials', async () => {
     await statusHandler.handler({ org: 'Argus', chain: 100 } as any);
-
-    // One round trip: the EntryPoint deposit no longer waits on ENTRY_POINT().
-    expect(mocks.tryAggregate).toHaveBeenCalledTimes(1);
+    expect(mocks.tryAggregate).toHaveBeenCalledTimes(2);
     const calls = mocks.tryAggregate.mock.calls[0][1];
     expect(calls).toHaveLength(3);
-
-    const sels = selectorsOf(calls);
-    expect(sels).toContain(sel('getOrgFinancials'));
-    expect(sels).toContain(sel('getSolidarityFund'));
-    expect(sels).toContain(epIface.getSighash('balanceOf'));
-    // The converted reads must be gone entirely.
-    for (const gone of ['ENTRY_POINT', 'getOrgConfig', 'getFeeCaps', 'getBudget']) {
-      expect(sels, `${gone} must not be called`).not.toContain(sel(gone));
-    }
-    // ...and balanceOf goes to the EntryPoint the subgraph supplied.
-    expect(calls.find((c: any) => c.data.startsWith(epIface.getSighash('balanceOf'))).to).toBe(ENTRY_POINT);
+    const selectors = selectorsOf(calls);
+    expect(selectors).toContain(sel('getOrgFinancials')); expect(selectors).toContain(sel('getSolidarityFund'));
+    expect(selectors).toContain(epIface.getSighash('balanceOf'));
+    const budgetCalls = mocks.tryAggregate.mock.calls[1][1];
+    expect(budgetCalls).toHaveLength(3);
+    expect(new Set(budgetCalls.map((call: any) => String(hubIface.decodeFunctionData('getBudget', call.data)[1]).toLowerCase())))
+      .toEqual(new Set([hatSubjectKey(ADMIN_HAT), OPERATOR_KEY, HASHED_KEY]));
+    for (const [, , options] of mocks.tryAggregate.mock.calls) expect(options).toEqual({ blockTag: RPC_BLOCK.number });
+    expect(calls.find((call: any) => call.data.startsWith(epIface.getSighash('balanceOf'))).to).toBe(ENTRY_POINT);
   });
 
   it('preserves the --json contract: same keys, same order, same formats', async () => {
@@ -232,7 +221,7 @@ describe('pop paymaster status — subgraph-first hub state', () => {
       'paymasterHub', 'entryPoint', 'deposit', 'maxFeePerGas', 'maxPriorityFeePerGas', 'paused',
       'registered', 'adminHatId', 'operatorHatId', 'registeredAt', 'bannedFromSolidarity',
       'financials', 'solidarityFund', 'budgets',
-      'dataSource', // additive
+      'dataSource', 'budgetObservedAtSeconds', 'rpcObservation', 'indexedObservation', 'indexedBudgetHistory', // additive
     ]);
 
     // entryPoint is re-checksummed: the subgraph stores Bytes lowercased, but
@@ -257,7 +246,7 @@ describe('pop paymaster status — subgraph-first hub state', () => {
       distributionPaused: false,
     });
     expect(payload.dataSource).toEqual({
-      entryPoint: 'subgraph', orgConfig: 'subgraph', feeCaps: 'subgraph', budgets: 'subgraph',
+      entryPoint: 'subgraph', orgConfig: 'subgraph', feeCaps: 'subgraph', budgets: 'rpc',
       financials: 'rpc', solidarityFund: 'rpc', deposit: 'rpc',
     });
   });
@@ -278,7 +267,7 @@ describe('pop paymaster status — subgraph-first hub state', () => {
 
     // A hashed subject key the CLI cannot derive — invisible before this change.
     expect(budgets[1].subjectKey).toBe(HASHED_KEY);
-    expect(budgets[1].subject).toMatch(/^subject 0x05924c03/);
+    expect(budgets[1].subject).toMatch(/^subject 0x22222222/);
     // totalUsed has no getBudget() counterpart at all.
     expect(budgets[1].totalUsed).toBe('1.2516698832');
   });
@@ -296,7 +285,8 @@ describe('pop paymaster status — subgraph-first hub state', () => {
   });
 
   it('leaves a live epoch alone', async () => {
-    const now = Math.floor(Date.now() / 1000);
+    const now = RPC_BLOCK.timestamp;
+    currentBudgets.set(OPERATOR_KEY, ['100000000000000000', '25000000000000000', 604800, now - 60]);
     const fixture = subgraphFixture();
     fixture.paymasterOrgConfigs[0].budgets = [{
       subjectKey: OPERATOR_KEY,
@@ -313,6 +303,68 @@ describe('pop paymaster status — subgraph-first hub state', () => {
     expect(b.epochExpired).toBe(false);
     expect(b.usedInEpochEffective).toBe('0.025');
     expect(b.usedInEpochEffective).toBe(b.usedInEpoch);
+  });
+
+  it('never replenishes a lagged indexed budget when the same-block RPC epoch is already exhausted', async () => {
+    const previous = subgraphFixture();
+    previous.paymasterOrgConfigs[0].budgets[1] = { subjectKey: OPERATOR_KEY, capPerEpoch: '100000000000000000',
+      usedInEpoch: '1', epochLen: 86400, epochStart: RPC_BLOCK.timestamp - 2 * 86400, totalUsed: '9007199254740993000001' };
+    mocks.queryWithFieldFallback.mockResolvedValue({ data: previous, tierIndex: 0 });
+    currentBudgets.set(OPERATOR_KEY, ['100000000000000000', '100000000000000000', 86400, RPC_BLOCK.timestamp - 30]);
+    // Wall-clock rollover would replenish even the current row; chain time must win.
+    vi.spyOn(Date, 'now').mockReturnValue((RPC_BLOCK.timestamp + 100 * 86400) * 1000);
+    await statusHandler.handler({ org: 'Argus', chain: 100 } as any);
+    const payload = mocks.json.mock.calls[0][0], budget = payload.budgets.find((row: any) => row.subjectKey === OPERATOR_KEY);
+    expect(budget).toMatchObject({ remainingRaw: '0', epochExpired: false, source: 'rpc', blockNumber: RPC_BLOCK.number, blockHash: RPC_BLOCK.hash,
+      raw: { capPerEpoch: '100000000000000000', usedInEpoch: '100000000000000000', epochStart: String(RPC_BLOCK.timestamp - 30) },
+      totalUsedSource: 'indexed-history', indexedHistory: { snapshot: 'latest', block: null, usedInEpochRaw: '1', totalUsedRaw: '9007199254740993000001' } });
+    expect(payload.budgetObservedAtSeconds).toBe(RPC_BLOCK.timestamp);
+    expect(payload.rpcObservation).toEqual({ chainId: 100, blockNumber: RPC_BLOCK.number, blockHash: RPC_BLOCK.hash, timestamp: RPC_BLOCK.timestamp });
+    expect(payload.indexedObservation.currentAvailabilityVerified).toBe(false);
+  });
+
+  it('includes an explicitly requested key omitted from indexed discovery and honors --rpc', async () => {
+    const key = hatSubjectKey('7');
+    currentBudgets.set(key, ['9007199254740993', '1', 86400, RPC_BLOCK.timestamp - 1]);
+    await statusHandler.handler({ org: 'Argus', chain: 100, hat: ['7'], rpc: 'https://rpc.example.org' } as any);
+    expect(mocks.createProvider).toHaveBeenCalledWith({ chainId: 100, rpcUrl: 'https://rpc.example.org' });
+    const budget = mocks.json.mock.calls[0][0].budgets.find((row: any) => row.subjectKey === key);
+    expect(budget).toMatchObject({ remainingRaw: '9007199254740992', source: 'rpc', totalUsed: null, totalUsedSource: 'unavailable', indexedHistory: null });
+  });
+
+  it('does not let an indexed zero budget suppress a current RPC budget', async () => {
+    const fixture = subgraphFixture();
+    fixture.paymasterOrgConfigs[0].budgets[0].capPerEpoch = '0'; fixture.paymasterOrgConfigs[0].budgets[0].usedInEpoch = '0';
+    mocks.queryWithFieldFallback.mockResolvedValue({ data: fixture, tierIndex: 0 });
+    currentBudgets.set(HASHED_KEY, ['100', '25', 86400, RPC_BLOCK.timestamp - 1]);
+    await statusHandler.handler({ org: 'Argus', chain: 100 } as any);
+    expect(mocks.json.mock.calls[0][0].budgets.find((row: any) => row.subjectKey === HASHED_KEY).remainingRaw).toBe('75');
+  });
+
+  it('retains labeled indexed lifetime totals when the current budget is unset', async () => {
+    currentBudgets.set(HASHED_KEY, ['0', '0', 0, 0]);
+    await statusHandler.handler({ org: 'Argus', chain: 100 } as any);
+    const result = mocks.json.mock.calls[0][0];
+    expect(result.budgets.some((budget: any) => budget.subjectKey === HASHED_KEY)).toBe(false);
+    expect(result.indexedBudgetHistory.find((budget: any) => budget.subjectKey === HASHED_KEY)).toMatchObject({
+      snapshot: 'latest', block: null, totalUsedRaw: '1251669883200000000' });
+  });
+
+  it('fails closed when a current budget and its pinned direct retry are unavailable', async () => {
+    mocks.tryAggregate.mockImplementation(async (_provider, calls) => calls.map((call: any) => call.data.startsWith(sel('getBudget'))
+      ? { success: false, returnData: '0x' } : respond([call])[0]));
+    const direct = vi.spyOn(fakeProvider, 'call').mockRejectedValue(new Error('Pinned budget unavailable'));
+    await expect(statusHandler.handler({ org: 'Argus', chain: 100 } as any)).rejects.toThrow('exit:1');
+    expect(mocks.json).not.toHaveBeenCalled(); expect(direct).toHaveBeenCalled();
+    expect(direct.mock.calls.every(([, block]) => block === RPC_BLOCK.number)).toBe(true);
+  });
+
+  it.each(['chain', 'hash', 'timestamp'] as const)('refuses %s drift before reporting current remaining gas', async dimension => {
+    if (dimension === 'chain') vi.mocked(fakeProvider.getNetwork).mockResolvedValueOnce({ chainId: 42161 } as any);
+    else vi.mocked(fakeProvider.getBlock).mockResolvedValueOnce({ ...RPC_BLOCK } as any).mockResolvedValue({ ...RPC_BLOCK,
+      ...(dimension === 'hash' ? { hash: '0x' + 'bb'.repeat(32) } : { timestamp: RPC_BLOCK.timestamp + 1 }) } as any);
+    await expect(statusHandler.handler({ org: 'Argus', chain: 100 } as any)).rejects.toThrow('exit:1');
+    expect(mocks.json).not.toHaveBeenCalled();
   });
 
   it('a null feeCaps edge means the contract default of zero, not "unknown"', async () => {

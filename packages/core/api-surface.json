@@ -33,6 +33,109 @@
     "UniversalAccountRegistryAbi",
     "ZkEmailInvitesAbi"
   ],
+  "accounts/codecs": [
+    "REGISTER_ACCOUNT_TYPES",
+    "REGISTER_PASSKEY_ACCOUNT_TYPES",
+    "RegistrationChallengeInput",
+    "WebAuthnAuth",
+    "credentialIdDigest",
+    "derivePasskeySalt",
+    "packPasskeySignature",
+    "registrationChallenge",
+    "registrationDomain",
+    "unpackPasskeySignature"
+  ],
+  "accounts/constants": [
+    "ENTRY_POINT",
+    "EOA_DELEGATION"
+  ],
+  "accounts/index": [
+    "* (./codecs)",
+    "* (./constants)",
+    "* (./userop-v07)"
+  ],
+  "accounts/userop-v07": [
+    "PackedUserOperationV07",
+    "UserOperationV07",
+    "hashUserOperationV07",
+    "packUserOperationV07"
+  ],
+  "amounts": [
+    "AssetRef",
+    "RawAssetAmount",
+    "RawUintInput",
+    "normalizeNativeAsset",
+    "parseDecimalAmountToRaw",
+    "requireAssetDecimals",
+    "requireAssetRef",
+    "requireRawUint",
+    "sumRawAssetAmounts"
+  ],
+  "authority/activation": [
+    "ActivationMembership",
+    "ElectorateActivation",
+    "electorateActivationFacts"
+  ],
+  "authority/ids": [
+    "AUTHORITY_ADDR_SHIFT",
+    "HATS_NAMESPACE_FLOOR",
+    "SubjectAllocation",
+    "SubjectCreationProposal",
+    "SubjectIdClassification",
+    "SubjectPrediction",
+    "classifySubjectId",
+    "composeSubjectId",
+    "embeddedAuthority",
+    "localSequence",
+    "normalizeSubjectId",
+    "predictNextSubjectIds",
+    "subjectCreationRaceFacts"
+  ],
+  "authority/index": [
+    "* (./activation)",
+    "* (./ids)",
+    "* (./indexed-cap)",
+    "* (./lifecycle)",
+    "* (./permissions)"
+  ],
+  "authority/indexed-cap": [
+    "decodeIndexedAuthorityCap"
+  ],
+  "authority/lifecycle": [
+    "ACTION_REASON",
+    "AuthorityMembershipInput",
+    "AuthorityPendingInput",
+    "AuthorityRule",
+    "AuthorityVouchConfig",
+    "AuthorityVouchRecord",
+    "ELIG_SOURCE",
+    "LINT_CODE",
+    "MembershipLifecycle",
+    "PENDING_KIND",
+    "RULE_AUTHOR",
+    "RULE_KIND",
+    "predictAuthorityLints",
+    "projectMembershipLifecycle",
+    "projectPendingAction",
+    "projectVouchEligibility"
+  ],
+  "authority/permissions": [
+    "AuthorityGroupEdge",
+    "AuthorityMemberFact",
+    "AuthorityPermissionData",
+    "AuthorityPermissionRow",
+    "AuthoritySubject",
+    "DecodedPermissionWord",
+    "EffectivePermission",
+    "PermissionContextValue",
+    "PermissionContribution",
+    "PermissionProjectionInput",
+    "decodePermissionWord",
+    "projectEffectiveSubjectPermissions",
+    "projectSubjectMembership",
+    "projectUserPermissions",
+    "resolvePermissionContext"
+  ],
   "chains": [
     "DEFAULT_DEPLOY_CHAIN_ID",
     "DEFAULT_DEPLOY_NETWORK",
@@ -67,6 +170,105 @@
     "getAbi",
     "loadAbi"
   ],
+  "data/facts": [
+    "Coverage",
+    "EvidenceIssue",
+    "Fact",
+    "PlanConsequence",
+    "PlanPrerequisite",
+    "PlanResult",
+    "PlanScope",
+    "SnapshotRequirements",
+    "SnapshotValidationError",
+    "SourceBlock",
+    "SourceRef",
+    "SourceSnapshot",
+    "assertCoverage",
+    "assertPlanScope",
+    "assertSourceBlock",
+    "assertSourceRef",
+    "knownFact",
+    "requireCompleteSnapshot",
+    "unknownFact"
+  ],
+  "data/index": [
+    "* (./facts)",
+    "IndexedTotalOptions"
+  ],
+  "data/indexed-completeness": [
+    "IndexedTotalOptions",
+    "checkedIndexedTotalQuery",
+    "indexedTotalCoverage",
+    "indexedTotalIssue",
+    "readIndexedTotalState",
+    "requireIndexedTotalOptions"
+  ],
+  "deployment/bootstrap": [
+    "BootstrapAmount",
+    "BootstrapConfigInput",
+    "BootstrapConfigTuple",
+    "BootstrapProjectInput",
+    "BootstrapProjectTuple",
+    "BootstrapTaskInput",
+    "BootstrapTaskTuple",
+    "buildBootstrapConfig",
+    "validateBootstrapConfig"
+  ],
+  "deployment/index": [
+    "* (./bootstrap)",
+    "* (./policy)"
+  ],
+  "deployment/policy": [
+    "DeployerSemVer",
+    "parseDeployerSemVer",
+    "requireDeploymentModuleAddresses",
+    "requireSupportedDeployerVersion",
+    "selectDeploymentEntrypoint",
+    "validateParticipationTokenText"
+  ],
+  "email/allowlist": [
+    "AllowlistScope",
+    "BuiltVerifiedAllowlist",
+    "ReplaceVerifiedAllowlistArgs",
+    "RetainedAllowlistLeaf",
+    "VerifiedAllowlist",
+    "VerifiedAllowlistLeaf",
+    "buildAllowlistFromVerifiedLeaves",
+    "mergeVerifiedAllowlist",
+    "projectVerifiedAllowlistLeaves",
+    "replaceVerifiedAllowlist",
+    "verifyAllowlistDocument"
+  ],
+  "email/index": [
+    "* (./allowlist)",
+    "* (./proof)",
+    "* (./recovery)"
+  ],
+  "email/proof": [
+    "CircuitInputHints",
+    "EMAIL_BASE_FIELD",
+    "EMAIL_CIRCUIT_RECIPES",
+    "EMAIL_SCALAR_FIELD",
+    "EmailCircuitVersion",
+    "EmailProofProjection",
+    "Groth16ProofInput",
+    "ZkEmailProof",
+    "ZkEmailProofV2",
+    "buildCircuitInputHints",
+    "buildEmailClaimCommand",
+    "projectGroth16Proof",
+    "requireEmailClaimer",
+    "requireEmailProofProjection"
+  ],
+  "email/recovery": [
+    "EmailRecoveryScope",
+    "LegacyPendingEmailCredential",
+    "MigratedPendingEmailRecord",
+    "VerifiedPendingEmailRecovery",
+    "migratePendingEmailCredential",
+    "pendingEmailRestartGuidance",
+    "readPendingEmailRecovery"
+  ],
   "encoding": [
     "bytes32ToIpfsCid",
     "bytesToString",
@@ -82,6 +284,16 @@
     "stringToBytes",
     "stringToBytes32",
     "toChecksumAddress"
+  ],
+  "encoding/cid": [
+    "CidCodecOptions",
+    "bytes32ToCidV0",
+    "cidV0ToBytes32",
+    "metadataPointerToBytes32"
+  ],
+  "encoding/legacy-pointer": [
+    "legacyBytes32ToIpfsCid",
+    "legacyPointerToBytes32"
   ],
   "env": [
     "EMPTY_ENV",
@@ -102,10 +314,29 @@
     "SubgraphError",
     "TxRevertError"
   ],
+  "errors/compat": [
+    "HISTORICAL_EXTERNAL_ERROR_FRAGMENTS",
+    "HISTORICAL_EXTERNAL_ERROR_NAMES",
+    "historicalExternalErrorInterface"
+  ],
+  "errors/envelope": [
+    "DecodeRevertTreeOptions",
+    "ErrorEnvelopeBounds",
+    "RevertEvidence",
+    "RevertTree",
+    "decodeRevertTree",
+    "extractRevertEvidence"
+  ],
+  "errors/index": [
+    "* (../errors)",
+    "* (./compat)",
+    "* (./envelope)"
+  ],
   "execute/ethers": [
     "ClassifiedError",
     "ErrorCode",
     "SponsoredConfig",
+    "SponsoredExecutionAdapter",
     "TxOptions",
     "TxResult",
     "classifyError",
@@ -116,18 +347,60 @@
   ],
   "execute/index": [
     "* (./ethers)",
+    "* (./outcome)",
+    "* (./recovery)",
     "* (./sponsored)"
   ],
+  "execute/outcome": [
+    "OperationReceipt",
+    "USER_OPERATION_EVENTS",
+    "UserOperationExpectation",
+    "UserOperationOutcome",
+    "decodeUserOperationOutcome"
+  ],
+  "execute/recovery": [
+    "RecoveryAuthorization",
+    "RecoveryBlock",
+    "RecoveryPhase",
+    "RecoveryReceipt",
+    "RecoveryTransaction",
+    "SubmissionFence",
+    "SubmissionRecoveryEvent",
+    "SubmissionRecoveryOptions",
+    "SubmissionRecoveryOutcome",
+    "SubmissionRecoveryReaders",
+    "SubmissionRecoveryRecord",
+    "SubmissionRecoveryResult",
+    "SubmissionScope",
+    "assertSubmissionFence",
+    "canAbandonSubmissionRecovery",
+    "createSubmissionRecovery",
+    "decodeReceiptBoundUserOperationOutcome",
+    "evaluateEoaRecoveryCandidate",
+    "normalizeSubmissionRecovery",
+    "normalizeSubmissionScope",
+    "reconcileSubmissionRecovery",
+    "sameSubmissionScope",
+    "submissionAuthorizationKey",
+    "submissionIntentKey",
+    "transitionSubmissionRecovery"
+  ],
   "execute/sponsored": [
+    "DelegationPrepared",
+    "DelegationSendOptions",
     "ENTRY_POINT",
     "EOA_DELEGATION",
     "PAYMASTER_HUB",
+    "SponsoredReconciliation",
     "SponsoredSendOptions",
+    "SponsoredSubmission",
+    "SponsoredSubmissionError",
     "delegateEOA",
     "encodeCall",
     "encodePaymasterData",
     "getUserOpHash",
     "isDelegated",
+    "reconcileSponsoredSubmission",
     "sendSponsored"
   ],
   "exit-codes": [
@@ -138,6 +411,102 @@
     "formatRelativeTime",
     "formatToken",
     "formatUsd"
+  ],
+  "governance/capabilities": [
+    "CONFIG_CAPABILITIES",
+    "GOVERNANCE_LIMITS",
+    "GovernanceLane",
+    "classifyGovernanceConfigKey",
+    "requireLiveGovernanceConfigKey",
+    "validateGovernanceBatches",
+    "votingLaneForBatches"
+  ],
+  "governance/dd-authorization": [
+    "DirectDemocracyAuthorizationData",
+    "DirectDemocracyAuthorizationInput",
+    "deriveDirectDemocracyAuthorization"
+  ],
+  "governance/elections": [
+    "BanConsent",
+    "ElectionContext",
+    "ElectionMemberStatus",
+    "ElectionPlanningInput",
+    "ElectionSubjectState",
+    "RemovalChoice",
+    "RemovalPlanningInput",
+    "RemovalPreflight",
+    "RemovalPreflightReader",
+    "RemovalReadRequest",
+    "electionPlanningFingerprint",
+    "planElection",
+    "planRoleRemovals",
+    "readRemovalPreflights",
+    "validateRemovalPreflights"
+  ],
+  "governance/index": [
+    "* (./capabilities)",
+    "* (./dd-authorization)",
+    "* (./elections)",
+    "* (./power)",
+    "* (./provenance)",
+    "* (./role-continuation)",
+    "* (./role-planning)",
+    "* (./validation)"
+  ],
+  "governance/power": [
+    "ClassEligibilityInput",
+    "PersonalVotingShare",
+    "PowerClass",
+    "ProposalPowerClassInput",
+    "ProposalPowerSnapshot",
+    "calculateClassRawPower",
+    "calculateOptionContribution",
+    "deriveClassEligibility",
+    "derivePersonalVotingShare",
+    "deriveProposalQuorum",
+    "deriveWeightedTally",
+    "integerSquareRoot",
+    "projectProposalPowerSnapshot",
+    "rankAllocationWeights"
+  ],
+  "governance/provenance": [
+    "VerifiedSubjectCreation",
+    "readSubjectCreationProvenance",
+    "recoverSubjectCreationHistory"
+  ],
+  "governance/role-continuation": [
+    "RoleConfigurationOutcome",
+    "RoleConfigurationOutcomeInput",
+    "RoleContinuationInput",
+    "RoleContinuationResult",
+    "readRoleConfigurationOutcome",
+    "readRoleContinuation"
+  ],
+  "governance/role-planning": [
+    "ExistingRoleConfigurationPlan",
+    "ExistingRolePlanningInput",
+    "PlanningFreshness",
+    "RoleConfigurationPlan",
+    "RoleConfigurationRequest",
+    "RoleCreationInput",
+    "RoleCreationPlan",
+    "RolePermissionRequest",
+    "RolePlanningContext",
+    "RolePlanningInput",
+    "authorityExecutionCall",
+    "governancePlanBlocked",
+    "planExistingRoleConfiguration",
+    "planRoleConfiguration",
+    "planRoleCreation",
+    "requireLivePlanningSnapshot",
+    "requirePlanningFact",
+    "validateExistingRolePlanFreshness",
+    "validateRoleCreationFreshness",
+    "validateRolePlanFreshness"
+  ],
+  "governance/validation": [
+    "ValidatedVoteVector",
+    "requireValidVoteWeights"
   ],
   "graph/client": [
     "ChainQueryResult",
@@ -162,9 +531,37 @@
     "isUnknownFieldError",
     "redactSubgraphUrl"
   ],
+  "graph/documents/accounts": [
+    "FETCH_ACCOUNT_FACTS",
+    "FETCH_CREDENTIAL_DISCOVERY_PAGE",
+    "FETCH_CREDENTIAL_DISCOVERY_PAGE_TIERS",
+    "FETCH_CREDENTIAL_PAGE",
+    "FETCH_CREDENTIAL_PAGE_LEGACY",
+    "FETCH_CREDENTIAL_PAGE_TIERS",
+    "FETCH_FACTORY_FACTS",
+    "FETCH_SOLIDARITY_STATE"
+  ],
   "graph/documents/activity": [
     "FETCH_ORG_ACTIVITY",
     "normalizeAuthorityVouches"
+  ],
+  "graph/documents/authority": [
+    "FETCH_AUTHORITY_CONFIG_LINTS_RECENT",
+    "FETCH_AUTHORITY_GROUP_EDGES_PAGE",
+    "FETCH_AUTHORITY_MEMBERSHIPS",
+    "FETCH_AUTHORITY_MEMBERSHIPS_PAGE",
+    "FETCH_AUTHORITY_MEMBERSHIP_EVENTS_RECENT",
+    "FETCH_AUTHORITY_PENDING",
+    "FETCH_AUTHORITY_PENDING_PAGE",
+    "FETCH_AUTHORITY_PERMS",
+    "FETCH_AUTHORITY_PERMS_PAGE",
+    "FETCH_AUTHORITY_RULES_PAGE",
+    "FETCH_AUTHORITY_STATE",
+    "FETCH_AUTHORITY_SUBJECTS",
+    "FETCH_AUTHORITY_SUBJECTS_PAGE",
+    "FETCH_AUTHORITY_VOUCHES",
+    "FETCH_AUTHORITY_VOUCHES_PAGE",
+    "FETCH_ORG_AUTHORITY"
   ],
   "graph/documents/beacons": [
     "BeaconRow",
@@ -187,12 +584,32 @@
     "latestImplementationFromSnapshot",
     "resolveImplementationFromSnapshot"
   ],
+  "graph/documents/education": [
+    "FETCH_COMPLETIONS_PAGE",
+    "FETCH_MODULES_PAGE"
+  ],
+  "graph/documents/financial-history": [
+    "FETCH_EXECUTED_DISTRIBUTION_PROPOSALS_PAGE"
+  ],
+  "graph/documents/identity": [
+    "FETCH_ACCOUNTS_BY_NAMES",
+    "FETCH_PROFILES_BY_ADDRESSES",
+    "SEARCH_ACCOUNTS_PAGE"
+  ],
   "graph/documents/index": [
+    "* as accountsDocuments (./accounts)",
     "* as activityDocuments (./activity)",
+    "* as authorityDocuments (./authority)",
     "* as beaconsDocuments (./beacons)",
+    "* as educationDocuments (./education)",
+    "* as financialhistoryDocuments (./financial-history)",
+    "* as identityDocuments (./identity)",
+    "* as indexedCompletenessDocuments (./indexed-completeness)",
+    "* as inflowsDocuments (./inflows)",
     "* as infrastructureDocuments (./infrastructure)",
     "* as orgDocuments (./org)",
     "* as paymasterDocuments (./paymaster)",
+    "* as protocolDocuments (./protocol)",
     "* as roleDocuments (./role)",
     "* as rolesDocuments (./roles)",
     "* as taskDocuments (./task)",
@@ -204,22 +621,52 @@
     "* as vouchDocuments (./vouch)",
     "* as zkemailDocuments (./zkemail)"
   ],
+  "graph/documents/indexed-completeness": [
+    "FETCH_ALL_COMPLETIONS_PAGE",
+    "FETCH_ALL_COMPLETIONS_STATE",
+    "FETCH_CASHOUT_DISCOVERY_PAGE",
+    "FETCH_CASHOUT_DISCOVERY_STATE",
+    "FETCH_CURRENT_MEMBER_TOTAL_PAGE",
+    "FETCH_CURRENT_MEMBER_TOTAL_STATE",
+    "FETCH_TOKEN_HOLDER_TOTAL_PAGE",
+    "FETCH_TOKEN_HOLDER_TOTAL_STATE"
+  ],
+  "graph/documents/inflows": [
+    "FETCH_HISTORICAL_POTS_PAGE",
+    "FETCH_INDEXED_DONATIONS_PAGE",
+    "FETCH_INDEXED_NATIVE_PAYMENTS_PAGE",
+    "FETCH_INDEXED_ORG_DEPOSITS_PAGE",
+    "FETCH_NATIVE_DEPOSITS_PAGE",
+    "FETCH_PAYMASTER_HUB_POTS_PAGE"
+  ],
   "graph/documents/infrastructure": [
     "FETCH_INFRASTRUCTURE_ADDRESSES",
     "InfrastructureAddresses"
   ],
   "graph/documents/org": [
+    "FETCH_AUTHORITY_MEMBERSHIP_CARDS_PAGE",
     "FETCH_ORG_BY_ID",
+    "FETCH_ORG_DIRECTORY_PAGE",
     "FETCH_ORG_FULL_DATA",
     "FETCH_ORG_PAYOUT_CONFIG",
+    "FETCH_ORG_TASK_COUNT_PAGE",
+    "FETCH_USER_MEMBERSHIP_HISTORY_PAGE",
     "FETCH_USER_ORGANIZATIONS",
     "GET_ORG_BY_NAME"
   ],
   "graph/documents/paymaster": [
+    "FETCH_PAYMASTER_DEPOSITS_PAGE",
     "FETCH_PAYMASTER_STATE",
     "FETCH_PAYMASTER_STATE_LEGACY",
     "FETCH_PAYMASTER_STATE_TIERS",
+    "FETCH_PAYMASTER_USAGE_PAGE",
     "PaymasterStateResponse"
+  ],
+  "graph/documents/protocol": [
+    "FETCH_BEACON_EVENTS_PAGE",
+    "FETCH_PROTOCOL_ORGS_PAGE",
+    "FETCH_PROTOCOL_OVERVIEW",
+    "FETCH_SOLIDARITY_EVENTS_PAGE"
   ],
   "graph/documents/role": [
     "FETCH_ALL_ROLE_APPLICATIONS",
@@ -236,7 +683,13 @@
     "FETCH_PROJECTS_DATA",
     "FETCH_PROJECTS_DATA_LEGACY",
     "FETCH_PROJECTS_DATA_WITH_RELEASES",
+    "FETCH_PROJECTS_PAGE",
+    "FETCH_PROJECT_MANAGERS_PAGE",
     "FETCH_PROJECT_TASK_PAGE",
+    "FETCH_TASKS_PAGE",
+    "FETCH_TASKS_PAGE_LEGACY",
+    "FETCH_TASK_APPLICATIONS_PAGE",
+    "FETCH_TASK_CLAIM_EXPIRIES_PAGE",
     "FETCH_TASK_DATA",
     "FETCH_TASK_DATA_LEGACY",
     "FETCH_TASK_DATA_WITH_RELEASES",
@@ -245,6 +698,7 @@
     "FETCH_TASK_SUBMISSION_HISTORY",
     "PROJECTS_DATA_TIERS",
     "PROJECT_TASK_PAGE_TIERS",
+    "TASK_CLAIM_EXPIRY_FRAGMENT",
     "TASK_RELEASE_INDEXING_CHAIN_IDS",
     "chainIndexesTaskReleases",
     "projectsDataTiers"
@@ -259,8 +713,13 @@
   ],
   "graph/documents/treasury": [
     "FETCH_ACTIVE_DISTRIBUTIONS",
+    "FETCH_DISTRIBUTIONS_PAGE",
     "FETCH_DISTRIBUTION_BY_ID",
+    "FETCH_DISTRIBUTION_CLAIMS_PAGE",
+    "FETCH_PAYMENTS_PAGE",
+    "FETCH_PROMISED_BOUNTIES_PAGE",
     "FETCH_TREASURY_DATA",
+    "FETCH_TREASURY_TASK_ACTIVITY_PAGE",
     "distributionEntityId"
   ],
   "graph/documents/user": [
@@ -280,6 +739,8 @@
     "userDataTiers"
   ],
   "graph/documents/voting-classes": [
+    "FETCH_DD_PROPOSAL_BALLOTS_PAGE",
+    "FETCH_HYBRID_PROPOSAL_BALLOTS_PAGE",
     "FETCH_PROPOSAL_VOTE_ANALYSIS",
     "FETCH_PROPOSAL_VOTE_ANALYSIS_EXACT",
     "FETCH_PROPOSAL_VOTING_CLASSES",
@@ -292,6 +753,9 @@
     "selectIndexedClassSnapshot"
   ],
   "graph/documents/voting": [
+    "FETCH_DD_PROPOSALS_PAGE",
+    "FETCH_HYBRID_PROPOSALS_PAGE",
+    "FETCH_PROPOSAL_DETAIL",
     "FETCH_VOTING_DATA",
     "FETCH_VOTING_DATA_LEGACY",
     "PROPOSAL_STATE_FOR_PREFLIGHT",
@@ -314,12 +778,35 @@
   ],
   "graph/index": [
     "* (./client)",
+    "* (./pagination)",
+    "* (./sources)",
     "* as documents (./documents)"
   ],
+  "graph/pagination": [
+    "CollectCursorPagesOptions",
+    "CursorDescriptor",
+    "CursorPage",
+    "CursorPageRequest",
+    "collectCursorPages"
+  ],
+  "graph/sources": [
+    "DocumentQueryAdapterOptions",
+    "DocumentQueryResult",
+    "QueryEnvelope",
+    "RawQueryClient",
+    "SourceReduction",
+    "SourceResult",
+    "SourceSnapshot",
+    "createDocumentQueryAdapter",
+    "reduceSourceResults",
+    "sourceIdentityKey"
+  ],
   "index": [
+    "* (./amounts)",
     "* (./chains)",
     "* (./context)",
     "* (./contracts)",
+    "* (./data/facts)",
     "* (./encoding)",
     "* (./env)",
     "* (./error-catalog)",
@@ -342,13 +829,48 @@
     "* (./validation)",
     "* (./version)",
     "* as abis (./abis)",
+    "* as accounts (./accounts/index)",
+    "* as authority (./authority/index)",
+    "* as deployment (./deployment/index)",
     "* as documents (./graph/documents)",
+    "* as email (./email/index)",
+    "* as governance (./governance/index)",
     "* as intents (./tx)",
     "* as metadata (./metadata)",
     "* as reads (./reads)",
-    "* as zkemail (./zkemail)"
+    "* as sponsorship (./sponsorship/index)",
+    "* as submissionRecovery (./execute/recovery)",
+    "* as tasks (./tasks/index)",
+    "* as treasury (./treasury/index)",
+    "* as zkemail (./zkemail)",
+    "IndexedTotalOptions"
+  ],
+  "integrations/cashout": [
+    "CASHOUT_ESCROW_ABI_V1",
+    "CASHOUT_PARAMS_TUPLE",
+    "CASHOUT_RELAY_ABI_V1",
+    "CASHOUT_SCHEMA_V1",
+    "CashoutDeposit",
+    "CashoutDescriptor",
+    "CashoutDiscovery",
+    "CashoutDiscoveryRow",
+    "CashoutLog",
+    "CashoutPayload",
+    "CashoutRecoveryFacts",
+    "CashoutRecoveryState",
+    "buildRecoverFailed",
+    "buildWithdrawDeposit",
+    "decodeCashoutDeposit",
+    "encodeCashoutPayload",
+    "prepareCashoutPayload",
+    "projectRecoveryFacts",
+    "readCashoutDiscovery"
+  ],
+  "integrations/index": [
+    "* (./cashout)"
   ],
   "ipfs": [
+    "ContentService",
     "IpfsOptions",
     "bytes32ToIpfsCid",
     "fetchJson",
@@ -361,13 +883,36 @@
     "LABEL_ALIASES",
     "expandAliases"
   ],
+  "metadata/distribution": [
+    "DistributionClaim",
+    "DistributionClaimsDocument",
+    "DistributionClaimsReference",
+    "VerifiedDistributionClaimsDocument",
+    "buildDistributionClaimsDocument",
+    "distributionClaimCacheKey",
+    "distributionClaimsDiscoveryMarker",
+    "findDistributionClaim",
+    "parseDistributionClaimsDiscoveryMarker",
+    "requireDistributionClaimsReference",
+    "verifyDistributionClaimsDocument"
+  ],
   "metadata/education": [
     "EducationModuleMetadata",
     "buildEducationModuleMetadata",
     "serializeEducationModuleMetadata"
   ],
+  "metadata/folders": [
+    "FOLDERS_SCHEMA_VERSION",
+    "FolderDocument",
+    "FolderRecord",
+    "makeEmptyFolderDoc",
+    "serializeFolderDoc",
+    "validateFolderDoc"
+  ],
   "metadata/index": [
+    "* as distribution (./distribution)",
     "* as education (./education)",
+    "* as folders (./folders)",
     "* as org (./org)",
     "* as proposal (./proposal)",
     "* as task (./task)",
@@ -375,32 +920,47 @@
     "* as user (./user)"
   ],
   "metadata/org": [
+    "DEFAULT_TOKEN_LABEL",
     "IndexedOrgLink",
+    "LegacyOrgDeployMetadataInput",
     "OrgDeployMetadata",
+    "OrgDeployMetadataDocument",
+    "OrgDeployMetadataInput",
     "OrgLink",
     "OrgMetadata",
     "OrgMetadataUpdates",
+    "PreparedOrgMetadata",
     "buildOrgDeployMetadata",
     "mergeOrgMetadata",
+    "requireRawOrgMetadata",
+    "resolveTokenLabel",
     "serializeOrgMetadata",
-    "stampLinkIndices"
+    "stampLinkIndices",
+    "validateOrgMetadataUpdates"
   ],
   "metadata/proposal": [
     "BuildProposalMetadataParams",
+    "ProposalJsonValue",
     "ProposalMetadata",
     "buildProposalMetadata",
-    "serializeProposalMetadata"
+    "prepareProposalMetadata",
+    "serializeProposalMetadata",
+    "validateProposalMetadata"
   ],
   "metadata/task": [
+    "PreparedTaskMetadata",
     "ProjectMetadata",
     "TaskApplicationMetadata",
     "TaskMetadata",
     "TaskMetadataFields",
+    "TaskMetadataUpdates",
     "TaskRejectionMetadata",
     "buildProjectMetadata",
     "buildTaskApplicationMetadata",
     "buildTaskMetadata",
     "buildTaskRejectionMetadata",
+    "mergeTaskMetadataFinal",
+    "requireTaskMetadataFinal",
     "serializeProjectMetadata",
     "serializeTaskApplicationMetadata",
     "serializeTaskMetadata",
@@ -409,6 +969,7 @@
   "metadata/token": [
     "TokenRequestMetadata",
     "buildTokenRequestMetadata",
+    "buildTokenRequestMetadataAtSeconds",
     "serializeTokenRequestMetadata"
   ],
   "metadata/user": [
@@ -418,6 +979,7 @@
     "UserProfileMetadata",
     "UserProfileUpdates",
     "buildUserProfileMetadata",
+    "replaceUserProfileMetadata",
     "serializeUserProfileMetadata"
   ],
   "multicall": [
@@ -459,21 +1021,29 @@
   ],
   "reads/authority": [
     "AuthorityReadiness",
+    "AuthoritySnapshotData",
+    "AuthoritySnapshotQuery",
+    "AuthoritySnapshotSubject",
     "FETCH_AUTHORITY_MEMBERSHIPS",
     "FETCH_AUTHORITY_PENDING",
     "FETCH_AUTHORITY_PERMS",
     "FETCH_AUTHORITY_SUBJECTS",
     "FETCH_AUTHORITY_VOUCHES",
     "FETCH_ORG_AUTHORITY",
+    "authorityAccountActivationMemberships",
+    "authorityAccountMembershipFacts",
+    "authorityMemberRoleSubjects",
     "isAuthorityReady",
     "projectAuthorityMembership",
     "projectAuthorityUsers",
     "readAuthorityMemberships",
     "readAuthorityRows",
+    "readAuthoritySnapshot",
     "readAuthorityUsers"
   ],
   "reads/education": [
     "EducationCompletionRow",
+    "EducationCompletionTotals",
     "EducationModuleForUpdateRow",
     "EducationModuleMetadataRow",
     "EducationModuleRow",
@@ -482,15 +1052,30 @@
     "FETCH_MODULE_TITLE",
     "getModuleForUpdate",
     "getModuleTitle",
-    "listEducationModules"
+    "listAllCompletionsComplete",
+    "listCompletionsComplete",
+    "listEducationModules",
+    "listEducationModulesComplete",
+    "readEducationCompletionTotals"
+  ],
+  "reads/identity": [
+    "IdentityAccount",
+    "IdentityFacts",
+    "IdentitySelector",
+    "lookupIdentityFact",
+    "readIdentityFacts"
   ],
   "reads/index": [
+    "* (./provenance)",
     "* (./resolve)",
     "* as authority (./authority)",
     "* as education (./education)",
+    "* as identity (./identity)",
+    "* as memberTotals (./member-totals)",
     "* as org (./org)",
     "* as paymaster (./paymaster)",
     "* as project (./project)",
+    "* as protocol (./protocol)",
     "* as task (./task)",
     "* as token (./token)",
     "* as treasury (./treasury)",
@@ -498,14 +1083,22 @@
     "* as vote (./vote)",
     "* as zkemail (./zkemail)"
   ],
+  "reads/member-totals": [
+    "CurrentMemberTotals",
+    "readCurrentMemberTotals"
+  ],
   "reads/org": [
     "FETCH_MEMBERS",
     "LIST_ORGS_QUERY",
+    "MembershipCard",
     "OrgListRow",
     "OrgMembersResult",
     "OrgModuleRef",
     "OrgRolesResult",
+    "OrganizationDirectoryRow",
     "OrganizationFullRow",
+    "OrganizationTaskCount",
+    "OrganizationTaskCounts",
     "USER_AUTHORITY_ORGS_QUERY",
     "UserOrganizationRow",
     "findOrgId",
@@ -518,7 +1111,10 @@
     "listOrgs",
     "listOrgsAllChains",
     "listRoles",
-    "listUserOrganizations"
+    "listUserOrganizations",
+    "readMembershipCardFacts",
+    "readOrganizationDirectoryFacts",
+    "readOrganizationTaskCounts"
   ],
   "reads/paymaster": [
     "PaymasterBudgetRecord",
@@ -535,8 +1131,53 @@
     "subgraphMatchesHub"
   ],
   "reads/project": [
+    "WorkPageOptions",
+    "listProjectManagersComplete",
     "listProjects",
-    "resolveProjectInput"
+    "listProjectsComplete",
+    "projectManagerFact",
+    "readWorkPageFacts",
+    "requireWorkSource",
+    "resolveProjectInput",
+    "validateWorkProject"
+  ],
+  "reads/protocol": [
+    "CredentialFacts",
+    "CredentialReadOptions",
+    "IndexedPageFactsOptions",
+    "IndexedRow",
+    "PaymasterHistoryOptions",
+    "ProtocolFacts",
+    "ProtocolPageOptions",
+    "ProtocolQuery",
+    "projectCredentialFacts",
+    "projectProtocolFacts",
+    "readAccountFacts",
+    "readCredentialFacts",
+    "readFactoryFacts",
+    "readIndexedPageFacts",
+    "readIndexedSingletonFacts",
+    "readPaymasterHistoryFacts",
+    "readProtocolEventFacts",
+    "readProtocolOrgFacts",
+    "readProtocolOverviewFacts",
+    "readSolidarityFacts",
+    "sumIndexedOrgGasFacts"
+  ],
+  "reads/provenance": [
+    "CanonicalTransaction",
+    "ExactOperationIdentity",
+    "ExactTransactionCall",
+    "ExactTransactionCallSelector",
+    "ExactTransactionExecution",
+    "ProvenanceFreshness",
+    "ProvenanceProvider",
+    "decodeCanonicalCall",
+    "exactTransactionCall",
+    "isolateUserOperationReceiptLogs",
+    "readCanonicalTransaction",
+    "requireCanonicalTransaction",
+    "requireProvenanceFreshness"
   ],
   "reads/resolve": [
     "OrgModules",
@@ -557,6 +1198,9 @@
     "SubgraphProject",
     "SubgraphRolePermission",
     "SubgraphTask",
+    "TaskApplicantInput",
+    "TaskApplicationData",
+    "TaskApplicationPageOptions",
     "TaskListRow",
     "TaskPermsRead",
     "TaskPermsResult",
@@ -577,32 +1221,42 @@
     "fetchTaskStats",
     "fetchTaskSubmissionHistory",
     "findSubgraphTask",
+    "listTaskApplicationsComplete",
+    "listTaskClaimExpiriesComplete",
     "listTasks",
+    "listTasksComplete",
     "normalizeRoot",
+    "projectTaskApplicant",
     "resolveProjectFromList",
     "taskEntityId",
     "taskPermsTiers"
   ],
   "reads/token": [
     "TokenBalanceSnapshot",
+    "TokenHolderTotals",
     "TokenRequestRow",
     "getTokenBalance",
     "listTokenRequests",
     "listUserTokenRequests",
+    "readTokenHolderTotals",
     "resolveParticipationToken"
   ],
   "reads/treasury": [
     "ActiveDistributionRow",
     "DistributionClaimRow",
+    "DistributionReferenceRow",
     "DistributionRow",
     "FETCH_MEMBERS_AT_BLOCK",
     "FETCH_MEMBERS_PT",
     "IndexedDistribution",
     "MemberPtRow",
     "OptOutToggleRow",
+    "PaymentManagerObservedState",
+    "PaymentManagerPlanningReader",
     "PaymentRow",
     "PayoutTokenInfo",
     "TreasuryData",
+    "TreasuryPageOptions",
     "distributionEntityId",
     "fetchActiveDistributions",
     "fetchDistributionById",
@@ -611,12 +1265,22 @@
     "fetchTreasuryData",
     "listDistributions",
     "optedOutSetFromToggles",
+    "paymentManagerPlanningState",
+    "projectTreasuryBountyTotals",
+    "readDistributionClaimFacts",
+    "readDistributionHistoryFacts",
+    "readDistributionReferences",
+    "readPaymentHistoryFacts",
+    "readPaymentManagerPlanningSnapshot",
+    "readTreasuryWorkFacts",
     "resolvePayoutTokenInfo"
   ],
   "reads/user": [
     "AccountByUsername",
     "AccountProfile",
+    "AuthorityOnlyOrgUser",
     "IndexedAccount",
+    "IndexedOrgUser",
     "IndexedQuickJoin",
     "OrgUser",
     "OrgUserProfile",
@@ -630,7 +1294,8 @@
     "getQuickJoinModules",
     "getRegistryAndAccount",
     "getWhoamiOrgData",
-    "isAccountAuthoritative"
+    "isAccountAuthoritative",
+    "isIndexedOrgUser"
   ],
   "reads/vote": [
     "AnnounceCandidate",
@@ -638,7 +1303,12 @@
     "ExecuteGateDecision",
     "GET_PROPOSAL_EXECUTION_STATE",
     "NormalizedClass",
+    "ProposalArchiveOptions",
+    "ProposalBallotOptions",
     "ProposalCandidate",
+    "ProposalClassFacts",
+    "ProposalClassFallback",
+    "ProposalDetailFacts",
     "ProposalExecutionState",
     "ProposalResults",
     "ProposalResultsRankEntry",
@@ -660,10 +1330,18 @@
     "fetchRecentProposals",
     "fetchVotingData",
     "normalizeSubgraphClasses",
+    "readProposalArchive",
+    "readProposalBallotFacts",
+    "readProposalDetailFacts",
     "resolveProposalId",
-    "selectAnnounceCandidates"
+    "selectAnnounceCandidates",
+    "selectProposalClassSnapshotFacts"
   ],
   "reads/zkemail": [
+    "InviteActionReady",
+    "InviteStateEvidence",
+    "InviteStateFacts",
+    "InviteStateProjection",
     "SubgraphAllowlistEntry",
     "ZkEmailClaimRow",
     "ZkEmailModuleState",
@@ -672,6 +1350,8 @@
     "fetchZkEmailClaims",
     "labelHat",
     "normalizeEntries",
+    "projectInviteState",
+    "readInviteStateFacts",
     "readModuleState",
     "resolveZkEmailModule"
   ],
@@ -685,29 +1365,152 @@
     "Hex",
     "SponsoredConfig",
     "SponsoredSendOptions",
+    "SponsoredSubmission",
+    "SponsoredSubmissionError",
+    "SponsoredSubmissionPhase",
     "resolveSponsoredConfig"
+  ],
+  "sponsorship/budget": [
+    "PrefundV07Input",
+    "SponsorshipBudget",
+    "remainingBudget",
+    "requiredPrefundV07"
+  ],
+  "sponsorship/codec": [
+    "ParsedSponsorshipPayload",
+    "SUBJECT_TYPE",
+    "SponsorshipPayload",
+    "SponsorshipSubjectType",
+    "ZERO_SUBJECT",
+    "encodeSponsorshipPayload",
+    "parseSponsorshipPayload",
+    "paymasterSubjectKey",
+    "subjectIdBytes32"
+  ],
+  "sponsorship/index": [
+    "* (./budget)",
+    "* (./codec)"
   ],
   "stats": [
     "computeGini"
   ],
   "task-lens": [
     "ClaimState",
+    "ProjectBudgetOnChain",
     "STORAGE_KEYS",
     "TASK_STATUS",
     "TASK_STATUS_NAMES",
     "TaskEnrichmentResult",
     "TaskOnChain",
+    "decodeBountyBudget",
     "decodeLensResult",
+    "decodeOrganizerSubjects",
+    "decodeProjectBudget",
     "decodeTaskInfo",
     "deriveClaimState",
+    "effectiveTaskDeadlineSeconds",
     "encodeLensCall",
     "enrichTasksWithDeadlines",
+    "getBountyBudget",
     "getFoldersRoot",
     "getOrganizerHats",
     "getPermissionHats",
+    "getProjectBudget",
     "getTaskApplicants",
     "getTaskOnChain",
     "taskStatusName"
+  ],
+  "tasks/index": [
+    "* (./policy)",
+    "* (./project-creator)",
+    "* (./receipts)"
+  ],
+  "tasks/policy": [
+    "TaskAction",
+    "TaskActionDecision",
+    "TaskActionReason",
+    "TaskPolicyFacts",
+    "TaskPolicyInput",
+    "decideProjectBudget",
+    "decideTaskActions",
+    "decideTaskRelease",
+    "projectTaskPermissionMask"
+  ],
+  "tasks/project-creator": [
+    "ProjectCreatorData",
+    "ProjectCreatorFacts",
+    "ProjectCreatorInput",
+    "ProjectCreatorSources",
+    "deriveProjectCreatorAuthorization"
+  ],
+  "tasks/receipts": [
+    "TaskCreationEvidence",
+    "TaskReceiptInput",
+    "parseTaskCreatedReceipt"
+  ],
+  "treasury/distributions": [
+    "AllocateDistributionInput",
+    "AllocationPolicy",
+    "DistributionOptOutFact",
+    "PreparedDistributionAllocation",
+    "allocateDistribution"
+  ],
+  "treasury/evidence": [
+    "assertTreasuryModuleBindings"
+  ],
+  "treasury/index": [
+    "* (./distributions)",
+    "* (./evidence)",
+    "* (./indexed-inflows)",
+    "* (./inflows)",
+    "* (./planning)"
+  ],
+  "treasury/indexed-inflows": [
+    "HistoricalInflowPotFacts",
+    "IndexedNativeInflowEvent",
+    "IndexedNativeInflowPageOptions",
+    "IndexedNativeInflowStream",
+    "IndexedRecordedInflows",
+    "IndexedRecordedInflowsInput",
+    "InflowPageOptions",
+    "NativeInflowCollection",
+    "deduplicateIndexedNativeInflows",
+    "normalizeIndexedRecordedInflows",
+    "projectIndexedNativeInflow",
+    "readHistoricalPaymasterHubPotFacts",
+    "readIndexedNativeInflowFacts"
+  ],
+  "treasury/inflows": [
+    "HistoricalInflowPot",
+    "HistoricalPaymasterHubPot",
+    "HistoricalPot",
+    "InflowEventChunk",
+    "RecordedInflowEvent",
+    "RecordedInflows",
+    "RecordedInflowsInput",
+    "classifyInternalMovement",
+    "deduplicateInflowEvents",
+    "inflowEventKey",
+    "normalizeRecordedInflows",
+    "readHistoricalPotFacts",
+    "readRecordedNativeDepositFacts"
+  ],
+  "treasury/planning": [
+    "ExactRecipient",
+    "PaymentManagerAvailability",
+    "PaymentManagerAvailabilityInput",
+    "PaymentManagerRound",
+    "PaymentManagerState",
+    "RawRecipient",
+    "TreasuryTransferInput",
+    "TreasuryTransferPlan",
+    "TreasuryTransferSource",
+    "buildTreasuryTransferCalls",
+    "paymentManagerAvailability",
+    "planTreasuryTransfer",
+    "prepareExactRecipients",
+    "treasuryTokenAddress",
+    "validateRawRecipients"
   ],
   "tx/authority": [
     "AUTHORITY_KEYS",
@@ -739,12 +1542,19 @@
     "removeModuleIntent",
     "updateModuleIntent"
   ],
+  "tx/enrollment": [
+    "PasskeyEnrollment",
+    "PasskeyRegistrationArgs",
+    "passkeyRegistrationArgs"
+  ],
   "tx/governance": [
     "ExecutionCall",
     "GovernanceWrapParams",
     "buildGovernanceProposal",
     "encodeExecutorCall",
-    "parseProposalCreatedLogs"
+    "parseProposalCreatedLogs",
+    "validateGovernanceBatches",
+    "validateGovernanceDuration"
   ],
   "tx/index": [
     "* (./intent)",
@@ -762,17 +1572,22 @@
     "* as zkemail (./zkemail)"
   ],
   "tx/intent": [
+    "IntentExecutionRequest",
     "TxIntent",
     "TxIntentMeta",
     "encodeIntent",
-    "intentToContractCall"
+    "executeIntentWithHost",
+    "intentToContractCall",
+    "intentToExecutionRequest"
   ],
   "tx/org": [
     "DEPLOY_FULL_ORG_GAS_LIMIT",
     "DeployFullOrgArgs",
     "DeployFullOrgParams",
+    "DeployFullOrgWithZkEmailArgs",
     "DeploymentResolvedInputs",
     "OrgDeployConfig",
+    "PreparedZkEmailDeployConfig",
     "REGISTER_ACCOUNT_TYPES",
     "RegisterAccountMessage",
     "RegisterAccountSigner",
@@ -782,6 +1597,7 @@
     "UpdateOrgMetaParams",
     "assertRoleIndices",
     "buildDeployFullOrg",
+    "buildDeployFullOrgWithZkEmail",
     "buildDeploymentParams",
     "buildSetMetadataAdminProposal",
     "buildUpdateOrgMetaAsAdmin",
@@ -801,10 +1617,12 @@
     "DEPLOY_CONFIG_TUPLE",
     "DepositForOrgArgs",
     "DepositForOrgParams",
+    "DonateToSolidarityArgs",
     "PaymasterRegisterConfig",
     "RegisterOrgParams",
     "buildAdminCallRegister",
     "buildDepositForOrg",
+    "buildDonateToSolidarity",
     "buildRegisterCalldata",
     "depositForOrgIntent",
     "parseDepositAmount",
@@ -814,18 +1632,22 @@
   "tx/project": [
     "CreateProjectArgs",
     "CreateProjectParams",
+    "CreateProjectRawArgs",
     "DeleteProjectArgs",
     "DeleteProjectParams",
     "ProposeProjectArgs",
     "ProposeProjectParams",
     "buildCreateProject",
     "buildCreateProjectCall",
+    "buildCreateProjectRaw",
     "buildDeleteProject",
     "buildProposeProject",
     "createProjectIntent",
     "deleteProjectIntent",
     "encodeProjectStruct",
-    "proposeProjectIntent"
+    "encodeProjectStructRaw",
+    "proposeProjectIntent",
+    "requireProjectCapRaw"
   ],
   "tx/task": [
     "ApplyForTaskArgs",
@@ -835,12 +1657,17 @@
     "AssignTaskArgs",
     "AssignTaskParams",
     "CONFIG_KEY_ROLE_PERM",
+    "CreateAndAssignTaskArgs",
+    "CreateAndAssignTaskRawArgs",
     "CreateTaskArgs",
+    "CreateTaskBatchRawRow",
     "CreateTaskBatchRow",
     "CreateTaskBatchRowParams",
     "CreateTaskParams",
+    "CreateTaskRawArgs",
     "CreateTasksBatchArgs",
     "CreateTasksBatchParams",
+    "CreateTasksBatchRawArgs",
     "EditTaskMetadataParams",
     "ProposeGlobalRolePermArgs",
     "ProposeGlobalRolePermParams",
@@ -852,7 +1679,10 @@
     "SetProjectRolePermParams",
     "SubmitTaskArgs",
     "SubmitTaskParams",
+    "TASK_CONFIG_KEYS",
     "TaskActionParams",
+    "TaskConfigInput",
+    "TaskEditorMetadataParams",
     "TaskIdArgs",
     "UnclaimTaskParams",
     "UpdateTaskArgs",
@@ -867,8 +1697,12 @@
     "buildCancelTask",
     "buildClaimTask",
     "buildCompleteTask",
+    "buildCreateAndAssignTask",
+    "buildCreateAndAssignTaskRaw",
     "buildCreateTask",
+    "buildCreateTaskRaw",
     "buildCreateTasksBatch",
+    "buildCreateTasksBatchRaw",
     "buildProposeGlobalRolePerm",
     "buildRejectTask",
     "buildSetFolders",
@@ -887,11 +1721,13 @@
     "parseFoldersRoot",
     "parseHatId",
     "parseUpdateDeadline",
+    "projectTaskWriteOutcomes",
     "proposeGlobalRolePermIntent",
     "rejectTaskIntent",
     "setFoldersIntent",
     "setProjectRolePermIntent",
     "submitTaskIntent",
+    "taskConfigCall",
     "unclaimTaskIntent",
     "updateTaskIntent"
   ],
@@ -929,6 +1765,8 @@
     "SDAI",
     "SdaiProposalArgs",
     "SendProposalArgs",
+    "SendProposalExactArgs",
+    "SendProposalExactParams",
     "SendProposalParams",
     "SwapProposalArgs",
     "TreasuryRecipient",
@@ -942,6 +1780,7 @@
     "buildPayErc20",
     "buildSdaiProposal",
     "buildSendProposal",
+    "buildSendProposalExact",
     "buildSwapProposal",
     "claimDistributionIntent",
     "computeDistributionAllocations",
@@ -955,22 +1794,31 @@
     "proposeFinalizeIntent",
     "proposeSdaiIntent",
     "proposeSwapIntent",
+    "sendProposalExactIntent",
     "sendProposalIntent"
   ],
   "tx/user": [
     "ChangeUsernameArgs",
     "ChangeUsernameParams",
+    "PasskeyEnrollment",
+    "PasskeyRegistrationArgs",
+    "PreparedProfileMetadataParams",
     "QuickJoinParams",
     "QuickJoinWithUserArgs",
     "RegisterAccountArgs",
     "RegisterAccountParams",
+    "RegisterAndQuickJoinArgs",
+    "RegisterAndQuickJoinWithPasskeyArgs",
     "SetProfileMetadataArgs",
     "SetProfileMetadataParams",
     "buildChangeUsername",
     "buildQuickJoinWithUser",
     "buildRegisterAccount",
+    "buildRegisterAndQuickJoin",
+    "buildRegisterAndQuickJoinWithPasskey",
     "buildSetProfileMetadata",
     "changeUsernameIntent",
+    "preparedProfileMetadataIntent",
     "quickJoinWithUserIntent",
     "registerAccountIntent",
     "setProfileMetadataIntent"
@@ -990,6 +1838,8 @@
     "MAX_CLASSES",
     "MODULE_LABELS",
     "ParsedClassConfig",
+    "ProposalRawLog",
+    "ProposalReceiptOutcome",
     "ProposeClassesParams",
     "ProposeConfigParams",
     "ProposeQuorumParams",
@@ -1007,13 +1857,20 @@
     "executeProposalIntent",
     "parseAnnounceReceiptLogs",
     "parseClassConfigs",
+    "parseProposalReceiptOutcome",
     "proposeClassesIntent",
     "proposeConfigIntent",
     "proposeQuorumIntent"
   ],
   "tx/zkemail": [
+    "EmailClaimArgs",
     "ProposeAllowlistParams",
+    "RegisterAndClaimWithPasskeyArgs",
     "SetAllowlistProposalArgs",
+    "buildClaimRoleByDomain",
+    "buildClaimRoleByEmail",
+    "buildRegisterAndClaimByDomainWithPasskey",
+    "buildRegisterAndClaimByEmailWithPasskey",
     "buildSetAllowlistProposal",
     "normalizeAllowlistCid",
     "normalizeAllowlistRoot",
@@ -1061,6 +1918,7 @@
     "poseidonCommit",
     "proofForDomain",
     "proofForEmailHash",
+    "requireAllowlistUint",
     "summarize",
     "treeFromDoc"
   ]

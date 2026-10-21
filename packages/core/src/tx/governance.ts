@@ -26,6 +26,8 @@ import { ethers } from 'ethers';
 import type { TxIntent } from './intent';
 import { getAbi } from '../contracts';
 import { stringToBytes } from '../encoding';
+import { GOVERNANCE_LIMITS, validateGovernanceBatches, votingLaneForBatches } from '../governance/capabilities';
+export { validateGovernanceBatches } from '../governance/capabilities';
 
 /** One execution call in an option batch: encoded as [target, value, calldata]. */
 export interface ExecutionCall {
@@ -75,6 +77,11 @@ export interface GovernanceWrapParams {
  * propose, perms propose-global, set-metadata-admin, project propose).
  */
 export function buildGovernanceProposal(p: GovernanceWrapParams): TxIntent {
+  validateGovernanceBatches(p.batches, p.numOptions);
+  if (p.votingAbiName === 'DirectDemocracyVotingNew' && votingLaneForBatches(p.batches) === 'hybrid') {
+    throw new Error('EXECUTING_BATCH_REQUIRES_HYBRID');
+  }
+  validateGovernanceDuration(p.durationMinutes);
   // [target, BigNumber(value), data] — same tuple construction as the CLI
   // (`c.value || '0'` handles undefined/empty values as zero).
   const batchTuples = p.batches.map(batch =>
@@ -86,6 +93,7 @@ export function buildGovernanceProposal(p: GovernanceWrapParams): TxIntent {
     if (value.lt(0) || value.gt(ethers.constants.MaxUint256)) throw new Error('Subject IDs must fit uint256.');
     return value;
   });
+  if (hatIds.length > GOVERNANCE_LIMITS.maxPollSubjects) throw new Error('TOO_MANY_POLL_SUBJECTS');
   const quorum = p.quorumOverride ?? 0;
   if (!Number.isInteger(quorum) || quorum < 0 || quorum > 4294967295) throw new Error('quorumOverride must be a uint32 voter count.');
   if (p.equalWeight !== undefined && typeof p.equalWeight !== 'boolean') throw new Error('equalWeight must be a boolean.');
@@ -114,6 +122,12 @@ export function buildGovernanceProposal(p: GovernanceWrapParams): TxIntent {
       ...(p.ipfs ? { ipfs: p.ipfs } : {}),
     },
   };
+}
+
+/** Contract floor/ceiling only. Hosts retain any stricter product minimum. */
+export function validateGovernanceDuration(value: ethers.BigNumberish): void {
+  const minutes = ethers.BigNumber.from(value);
+  if (minutes.lt(GOVERNANCE_LIMITS.minDurationMinutes) || minutes.gt(GOVERNANCE_LIMITS.maxDurationMinutes)) throw new Error('DURATION_OUT_OF_RANGE');
 }
 
 /**

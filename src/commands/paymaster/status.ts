@@ -1,52 +1,16 @@
 /**
- * pop paymaster status — org gas-sponsorship state from the PaymasterHub.
- *
- * Getters — VERIFIED against contracts origin/main src/PaymasterHub.sol:
- *   getOrgConfig(orgId)     → (adminHatId, operatorHatId, paused, registeredAt, bannedFromSolidarity)
- *   getOrgFinancials(orgId) → (deposited, spent, solidarityUsedThisPeriod, periodStart) — 90-day periods
- *   getFeeCaps(orgId), getBudget(orgId, subjectKey), getSolidarityFund()
- *
- * ── Where the numbers come from ──────────────────────────────────────────────
- * ENTRY_POINT, the OrgConfig, the fee caps and EVERY budget now come from the
- * subgraph (see src/queries/paymaster.ts for the field-by-field verification
- * against both live deployments). That removes 3 + N eth_calls and, more
- * importantly, the serialization: ENTRY_POINT() used to have to resolve before
- * the EntryPoint deposit could even be requested, and each budget was its own
- * call. What is left is three reads — getOrgFinancials, getSolidarityFund and
- * EntryPoint.balanceOf — batched into ONE Multicall3 round trip.
- *
- * Three things deliberately stayed on RPC:
- *   • getOrgFinancials — PaymasterOrgConfig.totalSpent/.depositBalance are
- *     indexed WITHOUT the solidarity fee the hub also debits, so they sit at
- *     exactly 1/1.01 of the contract's `spent` on both live chains. `available`
- *     decides whether sponsorship still works, so it must be the chain's number.
- *     The call also carries solidarityUsedThisPeriod + periodStart, which have
- *     no subgraph field at all.
- *   • getSolidarityFund — numActiveOrgs and feePercentageBps have no field, the
- *     indexed solidarityBalance is stale on Gnosis, and
- *     solidarityDistributionPaused reads `false` on Arbitrum while the contract
- *     reports `true`.
- *   • EntryPoint.balanceOf — the ERC-4337 singleton is not a subgraph data source.
- *
- * ── Budgets and epoch rollover ───────────────────────────────────────────────
- * PaymasterHub resets `usedInEpoch` LAZILY, on the next sponsored UserOperation,
- * so a budget whose epoch elapsed months ago still reports the old spend — and
- * getBudget() returns exactly the same stale figure the subgraph does (verified:
- * both return 7993482525000000 for a Gnosis epoch that ended in May). Rather
- * than print a stale number as if it were current spend, each row is checked
- * against epochStart + epochLen and reported as lapsed, with the effective
- * (post-reset) spend of zero alongside the raw counter.
- *
- * Registration is derived exactly like the contract does it: adminHatId != 0.
- * Budget subject keys are bytes32; for hat-scoped budgets the key is the hat
- * ID zero-padded to 32 bytes (the convention used by agent setup-sponsorship).
- * The admin/operator hats are still probed by name, and the subgraph adds any
- * further subjects the org has funded — hashed keys the CLI could never guess.
- * Pass --hat to name extra subjects when running against the RPC fallback.
+ * pop paymaster status — indexed configuration/history plus current RPC state.
+ * Every consumable budget, org financial and deposit observation uses one
+ * canonical RPC block; lazy epoch rollover uses that block's chain timestamp.
+ * Indexed budgets discover additional subject keys and retain separately labeled
+ * historical lifetime counters. They never establish current remaining gas.
+ * Subject keys use the canonical PaymasterHub HAT hash, not padded subject IDs.
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
+import { remainingBudget } from '@poa-box/core/sponsorship/budget';
+import { resolveNetworkConfig } from '../../config/networks';
 import { resolveOrgId } from '../../lib/resolve';
 import { createReadContract } from '../../lib/contracts';
 import { createProvider } from '../../lib/signer';
@@ -66,6 +30,7 @@ import * as output from '../../lib/output';
 interface StatusArgs {
   org?: string;
   chain?: number;
+  rpc?: string;
   hat?: Array<string | number>;
 }
 
@@ -87,6 +52,15 @@ interface BudgetRow {
   epochExpired: boolean;
   usedInEpochEffective: string;
   totalUsed: string | null;
+  remainingRaw: string | null;
+  remaining: string | null;
+  remainingCode?: string;
+  raw: { capPerEpoch: string; usedInEpoch: string; epochLen: string; epochStart: string };
+  source: 'rpc';
+  blockNumber: number;
+  blockHash: string;
+  totalUsedSource: 'indexed-history' | 'unavailable';
+  indexedHistory: { snapshot: 'latest'; block: null; totalUsedRaw: string | null; capPerEpochRaw: string; usedInEpochRaw: string; epochLen: number; epochStart: number } | null;
 }
 
 interface PlannedCall {
@@ -104,20 +78,22 @@ interface PlannedCall {
  */
 async function runBatch(
   provider: ethers.providers.Provider,
-  planned: PlannedCall[]
+  planned: PlannedCall[],
+  blockTag: number
 ): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   if (planned.length === 0) return out;
 
-  const results = await tryAggregate(provider, planned.map(p => ({ to: p.to, data: p.data })));
+  const results = await tryAggregate(provider, planned.map(p => ({ to: p.to, data: p.data })), { blockTag });
+  if (results.length !== planned.length) throw new Error('PAYMASTER_READ_INCOMPLETE');
   const retries: PlannedCall[] = [];
   results.forEach((r, i) => {
     if (r.success && r.returnData && r.returnData !== '0x') out.set(planned[i].key, r.returnData);
     else retries.push(planned[i]);
   });
-  for (const p of retries) {
-    out.set(p.key, await provider.call({ to: p.to, data: p.data }));
-  }
+  await Promise.all(retries.map(async p => {
+    out.set(p.key, await provider.call({ to: p.to, data: p.data }, blockTag));
+  }));
   return out;
 }
 
@@ -127,7 +103,7 @@ export function budgetEpochState(
   epochLen: number,
   now: number
 ): { epochEnd: number | null; expired: boolean } {
-  if (!epochLen || !epochStart) return { epochEnd: null, expired: false };
+  if (!epochLen) return { epochEnd: null, expired: false };
   const epochEnd = epochStart + epochLen;
   return { epochEnd, expired: now >= epochEnd };
 }
@@ -152,9 +128,12 @@ export const statusHandler = {
 
     try {
       const orgId = await resolveOrgId(argv.org, argv.chain);
-      // createProvider pins the chain id, so ethers skips the eth_chainId
-      // probe it would otherwise fire before the first read.
-      const provider = createProvider({ chainId: argv.chain });
+      const network = resolveNetworkConfig(argv.chain);
+      const provider = createProvider({ chainId: network.chainId, rpcUrl: argv.rpc });
+      const [rpcNetwork, block] = await Promise.all([provider.getNetwork(), provider.getBlock('latest')]);
+      if (rpcNetwork.chainId !== network.chainId) throw new Error('RPC_CHAIN_MISMATCH');
+      if (!block?.hash || !/^0x[\da-f]{64}$/i.test(block.hash) || !Number.isSafeInteger(block.number) || block.number < 0
+        || !Number.isSafeInteger(block.timestamp) || block.timestamp < 0) throw new Error('PAYMASTER_BLOCK_UNAVAILABLE');
 
       // The hub address itself already comes from the subgraph, so pulling the
       // hub/org state alongside it costs no extra latency.
@@ -190,7 +169,7 @@ export const statusHandler = {
         planned.push({ key: 'feeCaps', to: paymasterAddr, data: hubIface.encodeFunctionData('getFeeCaps', [orgId]) });
       }
 
-      const round1 = await runBatch(provider, planned);
+      const round1 = await runBatch(provider, planned, block.number);
 
       const financials = hubIface.decodeFunctionResult('getOrgFinancials', round1.get('financials')!)[0];
       const solidarity = hubIface.decodeFunctionResult('getSolidarityFund', round1.get('solidarity')!)[0];
@@ -256,26 +235,32 @@ export const statusHandler = {
       const uniqueSubjects = subjects.filter(s => !seen.has(s.key) && seen.add(s.key));
 
       // ── Round 2: the EntryPoint deposit (only when ENTRY_POINT had to be
-      // read first) plus per-subject budgets when the subgraph has none.
+      // read first) plus current budgets for all requested/discovered subjects.
       const planned2: PlannedCall[] = [];
       if (!round1.has('deposit')) {
         planned2.push({ key: 'deposit', to: entryPoint, data: EP_IFACE.encodeFunctionData('balanceOf', [paymasterAddr]) });
       }
-      if (!sg.budgets) {
-        for (const s of uniqueSubjects) {
-          planned2.push({ key: `budget:${s.key.toLowerCase()}`, to: paymasterAddr, data: hubIface.encodeFunctionData('getBudget', [orgId, s.key]) });
+      const budgetSubjects = [...uniqueSubjects];
+      for (const budget of sg.budgets ?? []) {
+        if (!/^0x[\da-f]{64}$/i.test(budget.subjectKey)) throw new Error('INVALID_INDEXED_BUDGET_KEY');
+        if (!seen.has(budget.subjectKey.toLowerCase())) {
+          seen.add(budget.subjectKey.toLowerCase());
+          budgetSubjects.push({ label: `subject ${shortKey(budget.subjectKey)}`, key: budget.subjectKey });
         }
       }
-      const round2 = await runBatch(provider, planned2);
+      for (const subject of budgetSubjects) {
+        planned2.push({ key: `budget:${subject.key.toLowerCase()}`, to: paymasterAddr, data: hubIface.encodeFunctionData('getBudget', [orgId, subject.key]) });
+      }
+      const round2 = await runBatch(provider, planned2, block.number);
 
       const depositData = round1.get('deposit') ?? round2.get('deposit')!;
       const deposit = EP_IFACE.decodeFunctionResult('balanceOf', depositData)[0] as ethers.BigNumber;
 
       const byKey = new Map<string, PaymasterBudgetRecord>();
-      for (const b of sg.budgets ?? []) byKey.set(b.subjectKey.toLowerCase(), b);
-      for (const s of uniqueSubjects) {
+      const indexedBudgets = new Map((sg.budgets ?? []).map(budget => [budget.subjectKey.toLowerCase(), budget]));
+      for (const s of budgetSubjects) {
         const data = round2.get(`budget:${s.key.toLowerCase()}`);
-        if (!data) continue;
+        if (!data) throw new Error('CURRENT_BUDGET_UNAVAILABLE');
         const raw = hubIface.decodeFunctionResult('getBudget', data)[0];
         byKey.set(s.key.toLowerCase(), {
           subjectKey: s.key,
@@ -283,13 +268,17 @@ export const statusHandler = {
           usedInEpoch: ethers.BigNumber.from(raw.usedInEpoch),
           epochLen: Number(raw.epochLen),
           epochStart: Number(raw.epochStart),
-          totalUsed: null, // getBudget() has no lifetime counter — subgraph only
+          totalUsed: indexedBudgets.get(s.key.toLowerCase())?.totalUsed ?? null, // historical display only
         });
       }
 
-      const now = Math.floor(Date.now() / 1000);
+      const now = block.timestamp;
       const toRow = (label: string, b: PaymasterBudgetRecord): BudgetRow => {
         const { epochEnd, expired } = budgetEpochState(b.epochStart, b.epochLen, now);
+        let remainingRaw: string | null = null, remainingCode: string | undefined;
+        try { remainingRaw = remainingBudget({ capPerEpoch: b.capPerEpoch.toString(), usedInEpoch: b.usedInEpoch.toString(), epochLen: b.epochLen, epochStart: b.epochStart }, now); }
+        catch { remainingCode = 'BUDGET_STATE_INVALID'; }
+        const historical = indexedBudgets.get(b.subjectKey.toLowerCase());
         return {
           subject: label,
           subjectKey: b.subjectKey,
@@ -303,6 +292,15 @@ export const statusHandler = {
             ? ethers.utils.formatEther(0)
             : ethers.utils.formatEther(b.usedInEpoch),
           totalUsed: b.totalUsed ? ethers.utils.formatEther(b.totalUsed) : null,
+          remainingRaw,
+          remaining: remainingRaw === null ? null : ethers.utils.formatEther(remainingRaw),
+          remainingCode,
+          raw: { capPerEpoch: b.capPerEpoch.toString(), usedInEpoch: b.usedInEpoch.toString(), epochLen: String(b.epochLen), epochStart: String(b.epochStart) },
+          source: 'rpc', blockNumber: block.number, blockHash: block.hash,
+          totalUsedSource: b.totalUsed === null ? 'unavailable' : 'indexed-history',
+          indexedHistory: historical ? { snapshot: 'latest', block: null, totalUsedRaw: historical.totalUsed?.toString() ?? null,
+            capPerEpochRaw: historical.capPerEpoch.toString(), usedInEpochRaw: historical.usedInEpoch.toString(),
+            epochLen: historical.epochLen, epochStart: historical.epochStart } : null,
         };
       };
 
@@ -322,8 +320,10 @@ export const statusHandler = {
         const k = b.subjectKey.toLowerCase();
         if (emitted.has(k)) continue;
         emitted.add(k);
-        if (b.capPerEpoch.isZero() && b.usedInEpoch.isZero()) continue;
-        budgets.push(toRow(`subject ${shortKey(b.subjectKey)}`, b));
+        const current = byKey.get(k);
+        if (!current) throw new Error('CURRENT_BUDGET_UNAVAILABLE');
+        if (current.capPerEpoch.isZero() && current.usedInEpoch.isZero()) continue;
+        budgets.push(toRow(`subject ${shortKey(b.subjectKey)}`, current));
         discovered++;
       }
 
@@ -331,12 +331,15 @@ export const statusHandler = {
         entryPoint: sg.entryPoint ? 'subgraph' : 'rpc',
         orgConfig: sg.orgConfig ? 'subgraph' : 'rpc',
         feeCaps: sg.feeCaps ? 'subgraph' : 'rpc',
-        budgets: sg.budgets ? 'subgraph' : 'rpc',
+        budgets: 'rpc',
         financials: 'rpc',
         solidarityFund: 'rpc',
         deposit: 'rpc',
       };
 
+      const [afterBlock, afterNetwork] = await Promise.all([provider.getBlock(block.number), provider.getNetwork()]);
+      if (afterNetwork.chainId !== network.chainId || afterBlock?.hash?.toLowerCase() !== block.hash.toLowerCase()
+        || afterBlock.number !== block.number || afterBlock.timestamp !== block.timestamp) throw new Error('PAYMASTER_OBSERVATION_CHANGED');
       spin.stop();
 
       if (output.isJsonMode()) {
@@ -371,6 +374,12 @@ export const statusHandler = {
           budgets,
           // Additive: which reads the subgraph served this run.
           dataSource,
+          budgetObservedAtSeconds: now,
+          rpcObservation: { chainId: network.chainId, blockNumber: block.number, blockHash: block.hash, timestamp: now },
+          indexedObservation: sg.hubAddress ? { snapshot: 'latest', block: null, currentAvailabilityVerified: false } : null,
+          indexedBudgetHistory: (sg.budgets ?? []).map(budget => ({ subjectKey: budget.subjectKey, snapshot: 'latest', block: null,
+            totalUsedRaw: budget.totalUsed?.toString() ?? null, capPerEpochRaw: budget.capPerEpoch.toString(),
+            usedInEpochRaw: budget.usedInEpoch.toString(), epochLen: budget.epochLen, epochStart: budget.epochStart })),
         });
       } else {
         console.log('');
@@ -435,14 +444,12 @@ export const statusHandler = {
           }
         } else if (registered) {
           console.log('');
-          console.log(sg.budgets
-            ? '  Budgets: none configured for this org'
-            : '  Budgets: none set for the probed subjects (admin/operator hats' + ((argv.hat?.length ?? 0) > 0 ? ' + --hat' : '') + ')');
+          console.log('  Budgets: none set for the observed or requested subjects (admin/operator hats' + ((argv.hat?.length ?? 0) > 0 ? ' + --hat' : '') + ')');
         }
 
         console.log('');
         console.log('  Note: Gas sponsorship requires ERC-4337 UserOperations.');
-        console.log('  CLI uses direct EOA transactions (not sponsored).');
+        console.log('  CLI routes configured delegated EOAs through the bundler and paymaster.');
         console.log('  Frontend passkey accounts use the bundler + paymaster flow.');
         console.log('');
       }

@@ -11,6 +11,7 @@ import { confirmWrite } from '../../lib/command';
 import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
+import { validateOrgDeployConfig } from '@poa-box/core/tx/org';
 
 interface DeployConfigArgs {
   name: string;
@@ -19,6 +20,7 @@ interface DeployConfigArgs {
   output: string;
   template?: string;
   yes?: boolean;
+  bootstrap?: string;
 }
 
 export const deployConfigHandler = {
@@ -28,14 +30,17 @@ export const deployConfigHandler = {
     .option('username', { type: 'string', demandOption: true, describe: 'Deployer username' })
     .option('output', { type: 'string', default: 'org-deploy-config.json', describe: 'Output file path' })
     .option('template', { type: 'string', choices: ['standard', 'minimal'], default: 'standard', describe: 'Config template' })
+    .option('bootstrap', { type: 'string', describe: 'BootstrapConfigInput JSON file with authority role indices and explicit raw/decimal amounts' })
     .example('pop org deploy-config --name "My Org" --username alice', 'Write org-deploy-config.json from the standard template')
     .example('pop org deploy-config --name "My Org" --username alice --template minimal --output my-org.json', 'Minimal single-role template to a custom path'),
 
   handler: async (argv: ArgumentsCamelCase<DeployConfigArgs>) => {
     try {
-      const config = argv.template === 'minimal'
+      const config: any = argv.template === 'minimal'
         ? buildMinimalConfig(argv.name, argv.description || '', argv.username)
         : buildStandardConfig(argv.name, argv.description || '', argv.username);
+      if (argv.bootstrap) config.bootstrap = JSON.parse(fs.readFileSync(argv.bootstrap, 'utf8'));
+      validateOrgDeployConfig(config);
 
       const outPath = argv.output as string;
 

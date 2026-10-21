@@ -15,12 +15,14 @@ import type { InfrastructureAddresses } from '../../queries/infrastructure';
 import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
-import { buildDeploymentParams, deriveOrgId, signRegisterAccount, validateOrgDeployConfig, requireAuthorityDeployerVersion, DEPLOY_FULL_ORG_GAS_LIMIT } from '@poa-box/core/tx/org';
+import { buildDeploymentParams, deriveOrgId, signRegisterAccount, validateOrgDeployConfig, buildDeployFullOrg, buildDeployFullOrgWithZkEmail, DEPLOY_FULL_ORG_GAS_LIMIT, type PreparedZkEmailDeployConfig } from '@poa-box/core/tx/org';
+import { requireSupportedDeployerVersion, requireDeploymentModuleAddresses } from '@poa-box/core/deployment/policy';
 import type { OrgDeployConfig } from '@poa-box/core/tx/org';
 import { buildOrgDeployMetadata, serializeOrgMetadata } from '@poa-box/core/metadata/org';
 
 interface DeployArgs {
   config: string;
+  'zk-email-config'?: string;
   deployer?: string;
   chain?: number;
   rpc?: string;
@@ -34,6 +36,7 @@ export const deployHandler = {
   builder: (yargs: Argv) => yargs
     .option('config', { type: 'string', demandOption: true, describe: 'Path to native authority org deploy config JSON file' })
     .option('deployer', { type: 'string', describe: 'Public deployer address for an unsigned dry run (no private key needed)' })
+    .option('zk-email-config', { type: 'string', describe: 'Prepared email deployment JSON: enabled, initialRoot, initialCid (bytes32). Zero root/CID leaves enabled email dormant.' })
     .example('pop org deploy --config org-deploy-config.json', 'Deploy a native authority organization')
     .example('pop org deploy --config org.json --dry-run --deployer 0xYourAddress', 'Validate and preview unsigned calldata without publishing or signing'),
 
@@ -48,14 +51,23 @@ export const deployHandler = {
       validateOrgDeployConfig(config);
       const { orgId, normalizedName } = deriveOrgId(config.orgName);
       const deployerUsername = config.deployerUsername || normalizedName;
-      const metadata = buildOrgDeployMetadata(config);
+      const metadata = buildOrgDeployMetadata({ description: config.description, links: config.links, ...config.metadata });
       // Encode once with placeholders before any network work to reject malformed ABI inputs.
       const placeholders = {
         orgId, metadataHash: ethers.constants.HashZero, registryAddr: ethers.constants.AddressZero,
         deployerAddress: ethers.constants.AddressZero, deployerUsername: '', regDeadline: 0, regNonce: 0, regSignature: '0x',
       };
       const iface = new ethers.utils.Interface(getAbi('OrgDeployerNew'));
-      iface.encodeFunctionData('deployFullOrg', [buildDeploymentParams(config, placeholders)]);
+      const zkConfig: PreparedZkEmailDeployConfig | undefined = argv.zkEmailConfig === undefined ? undefined
+        : JSON.parse(fs.readFileSync(argv.zkEmailConfig, 'utf8'));
+      if (argv.zkEmailConfig !== undefined && (!zkConfig || typeof zkConfig !== 'object' || Array.isArray(zkConfig))) {
+        throw new CliError('Email deploy configuration must be a prepared JSON object', EXIT.USAGE);
+      }
+      const buildIntent = (orgDeployerAddress: string, deployParams: unknown[]) => zkConfig
+        ? buildDeployFullOrgWithZkEmail({ orgDeployerAddress, deployParams, zkConfig, orgId, orgName: config.orgName })
+        : buildDeployFullOrg({ orgDeployerAddress, deployParams, orgId, orgName: config.orgName });
+      const preview = buildIntent(ethers.constants.AddressZero, buildDeploymentParams(config, placeholders));
+      iface.encodeFunctionData(preview.method, preview.args);
       const txValue = config.paymaster?.funding ? ethers.utils.parseEther(config.paymaster.funding) : undefined;
       if (txValue?.lt(0)) throw new CliError('Paymaster funding must not be negative', EXIT.USAGE);
       if (argv.deployer && !argv.dryRun) throw new CliError('--deployer is only for unsigned dry runs; real deployments use the signer address', EXIT.USAGE);
@@ -71,18 +83,20 @@ export const deployHandler = {
       if (!registryAddr) throw new CliError('Could not resolve UniversalAccountRegistry address', EXIT.INFRA);
       if (argv.dryRun) {
         const params = buildDeploymentParams(config, { ...placeholders, registryAddr, deployerAddress: address });
+        const intent = buildIntent(orgDeployerAddr, params);
         spin.stop();
         output.success('DRY RUN — unsigned deployment preview', {
-          method: 'deployFullOrg', to: orgDeployerAddr, orgId, orgName: config.orgName,
+          method: intent.method, to: orgDeployerAddr, orgId, orgName: config.orgName,
           metadataCid: null, gasUsed: null, gasEstimate: null, dryRun: true,
-          calldata: iface.encodeFunctionData('deployFullOrg', [params]), value: txValue?.toString() ?? '0',
+          calldata: iface.encodeFunctionData(intent.method, intent.args), value: txValue?.toString() ?? '0',
           metadata, deployerUsername, requiresRegistrationSignature: true,
+          bootstrap: config.bootstrap ?? { projects: [], tasks: [] }, zkEmail: zkConfig ?? null,
           deployerCompatibility: 'unverified unsigned preview',
           note: 'Preview uses zero metadata hash and skips registration. Execution pins metadata and signs registration before gas estimation.',
         });
         return;
       }
-      requireAuthorityDeployerVersion(await createReadContract(orgDeployerAddr, 'OrgDeployerNew', ctx!.provider).VERSION());
+      requireSupportedDeployerVersion(await createReadContract(orgDeployerAddr, 'OrgDeployerNew', ctx!.provider).VERSION());
       spin.stop();
       await confirmWrite(argv, {
         org: config.orgName, orgId, chain: ctx!.networkName, deployer: `${address} (@${deployerUsername})`,
@@ -91,6 +105,8 @@ export const deployHandler = {
         votingClasses: config.hybridVoting.classes.map(c => `${c.strategy} ${c.slicePct}%`).join(' + '),
         paymasterFunding: config.paymaster?.funding ? `${config.paymaster.funding} ${getNetworkByChainId(chainId)?.nativeCurrency.symbol ?? 'ETH'}` : undefined,
         autoUpgrade: String(config.autoUpgrade ?? true),
+        bootstrapProjects: config.bootstrap?.projects.length, bootstrapTasks: config.bootstrap?.tasks.length,
+        email: zkConfig ? (zkConfig.enabled ? 'enabled' : 'disabled') : undefined,
       }, { destructive: true, actionLabel: 'About to DEPLOY a new organization' });
       // Only an actual, confirmed execution publishes metadata and signs account registration.
       const metaCid = await pinJson(serializeOrgMetadata(metadata));
@@ -99,12 +115,20 @@ export const deployHandler = {
       const regDeadline = Math.floor(Date.now() / 1000) + 900;
       const regSignature = await signRegisterAccount(ctx!.signer, { registryAddress: registryAddr, chainId, user: address, username: deployerUsername, nonce: regNonce, deadline: regDeadline });
       const params = buildDeploymentParams(config, { orgId, metadataHash: ipfsCidToBytes32(metaCid), registryAddr, deployerAddress: address, deployerUsername, regDeadline, regNonce, regSignature });
+      const intent = buildIntent(orgDeployerAddr, params);
       const contract = createWriteContract(orgDeployerAddr, 'OrgDeployerNew', ctx!.signer);
       await runPreflight(ctx!.provider, [checkGasBalance(address, txValue ? txValue.add(ethers.utils.parseEther('0.0001')) : undefined)], { skip: !argv.preflight });
-      const result = await executeTx(contract, 'deployFullOrg', [params], { dryRun: false, gasLimit: DEPLOY_FULL_ORG_GAS_LIMIT, value: txValue });
+      const result = await executeTx(contract, intent.method, intent.args, { dryRun: false, gasLimit: DEPLOY_FULL_ORG_GAS_LIMIT, value: txValue });
+      const deployed = result.logs?.find(row => row.name === 'OrgDeployed')?.args;
+      const deploymentModules = deployed ? Object.fromEntries(['membershipAuthority', 'executor', 'hybridVoting', 'directDemocracyVoting', 'taskManager', 'participationToken', 'paymentManager', 'educationHub']
+        .map(key => [key, deployed[key]])) : {};
+      let moduleReadiness = 'unavailable';
+      try { requireDeploymentModuleAddresses(deploymentModules, ['membershipAuthority', 'executor', 'hybridVoting', 'directDemocracyVoting', 'taskManager']); moduleReadiness = 'ready'; }
+      catch { /* Successful receipt remains successful; absent module evidence stays explicit. */ }
       finishWrite(result, {
         successMsg: 'Organization deployed',
-        fields: { orgId, orgName: config.orgName, metadataCid: metaCid, gasUsed: result.gasUsed, nextStep: `pop org status --org ${orgId}` },
+        fields: { orgId, orgName: config.orgName, metadataCid: metaCid, gasUsed: result.gasUsed, nextStep: `pop org status --org ${orgId}`,
+          deploymentModules, moduleReadiness, emailReadiness: zkConfig?.enabled ? 'requires-indexed-verification' : 'not-requested' },
       });
     } catch (err: any) {
       spin.stop();

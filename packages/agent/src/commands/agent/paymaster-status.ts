@@ -1,113 +1,88 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
-import { createPublicClient, http, pad, toHex, formatEther, type Address } from 'viem';
-import { gnosis } from 'viem/chains';
-import { entryPoint07Address } from 'viem/account-abstraction';
-import { PAYMASTER_HUB } from '@poa-box/cli/lib/sponsored';
+import { ethers } from 'ethers';
+import { createProvider } from '@poa-box/cli/lib/signer';
+import { createReadContract } from '@poa-box/cli/lib/contracts';
+import { resolveNetworkConfig } from '@poa-box/cli/config/networks';
+import { tryAggregate } from '@poa-box/cli/lib/multicall';
+import { resolvePaymasterInfra, fetchPaymasterSubgraphState, subgraphMatchesHub, hatSubjectKey } from '@poa-box/cli/commands/paymaster/helpers';
+import { remainingBudget } from '@poa-box/cli/lib/protocol-reads';
 import * as output from '@poa-box/cli/lib/output';
 import { resolveOrgModules } from '@poa-box/cli/lib/resolve';
 
-interface PaymasterStatusArgs {
-  org: string;
-  subject?: string;
-  'hat-id'?: string;
-  chain?: number;
-  rpc?: string;
-}
+interface PaymasterStatusArgs { org: string; subject?: string; 'hat-id'?: string; chain?: number; rpc?: string }
 
 export const paymasterStatusHandler = {
-  builder: (yargs: Argv) => yargs
-    .option('subject', { type: 'string', alias: 'hat-id', describe: 'Authority role or group subject ID to check budget for (decimal or hex)' }),
-
+  builder: (yargs: Argv) => yargs.option('subject', { type: 'string', alias: 'hat-id', describe: 'Authority subject ID to check sponsorship budget for' }),
   handler: async (argv: ArgumentsCamelCase<PaymasterStatusArgs>) => {
-    const spin = output.spinner('Checking paymaster status...');
-    spin.start();
-
+    const spin = output.spinner('Checking paymaster status...'); spin.start();
     try {
-      const modules = await resolveOrgModules(argv.org, argv.chain);
-      const orgId = modules.orgId as `0x${string}`;
-      const rpcUrl = (argv.rpc as string) || 'https://rpc.gnosischain.com';
-      const client = createPublicClient({ chain: gnosis, transport: http(rpcUrl) });
-      const pmAbi = require('@poa-box/cli/abi/PaymasterHub.json');
-
-      // Org config
-      const config = await client.readContract({
-        address: PAYMASTER_HUB, abi: pmAbi,
-        functionName: 'getOrgConfig', args: [orgId],
-      }) as any;
-
-      // Org financials
-      const financials = await client.readContract({
-        address: PAYMASTER_HUB, abi: pmAbi,
-        functionName: 'getOrgFinancials', args: [orgId],
-      }) as any;
-
-      // Fee caps
-      const caps = await client.readContract({
-        address: PAYMASTER_HUB, abi: pmAbi,
-        functionName: 'getFeeCaps', args: [orgId],
-      }) as any;
-
-      // EntryPoint deposit
-      const entryPointDeposit = await client.readContract({
-        address: entryPoint07Address,
-        abi: [{ name: 'balanceOf', type: 'function', inputs: [{ name: 'account', type: 'address' }], outputs: [{ type: 'uint256' }], stateMutability: 'view' }],
-        functionName: 'balanceOf',
-        args: [PAYMASTER_HUB],
-      }) as bigint;
-
-      // Hat budget (if specified or from env)
-      const hatIdStr = (argv.subject as string) || (argv.hatId as string) || process.env.POP_SUBJECT_ID || process.env.POP_HAT_ID;
-      let budgetInfo: any = null;
-      if (hatIdStr) {
-        const hatId = BigInt(hatIdStr);
-        const subjectKey = pad(toHex(hatId), { size: 32 });
-        const budget = await client.readContract({
-          address: PAYMASTER_HUB, abi: pmAbi,
-          functionName: 'getBudget', args: [orgId, subjectKey],
-        }) as any;
-        const cap = BigInt(budget.capPerEpoch);
-        const used = BigInt(budget.usedInEpoch);
-        budgetInfo = {
-          capPerEpoch: formatEther(cap),
-          usedInEpoch: formatEther(used),
-          remaining: formatEther(cap - used),
-          epochLength: `${budget.epochLen}s (${(Number(budget.epochLen) / 3600).toFixed(1)}h)`,
-          utilizationPct: cap > 0n
-            ? ((Number(used) * 100 / Number(cap))).toFixed(1) + '%'
-            : 'N/A',
-        };
+      const network = resolveNetworkConfig(argv.chain);
+      const provider = createProvider({ chainId: network.chainId, rpcUrl: argv.rpc });
+      if ((await provider.getNetwork()).chainId !== network.chainId) throw new Error('RPC_CHAIN_MISMATCH');
+      const [modules, infra, block] = await Promise.all([
+        resolveOrgModules(argv.org, network.chainId), resolvePaymasterInfra(network.chainId), provider.getBlock('latest'),
+      ]);
+      if (!block?.hash) throw new Error('Canonical chain time unavailable');
+      const state = await fetchPaymasterSubgraphState(modules.orgId, network.chainId);
+      const indexed = subgraphMatchesHub(state, infra.paymasterHubAddress);
+      const hub = createReadContract(infra.paymasterHubAddress, 'PaymasterHub', provider);
+      const subject = argv.subject || argv.hatId || process.env.POP_SUBJECT_ID || process.env.POP_HAT_ID;
+      const subjectKey = subject ? hatSubjectKey(subject) : null;
+      const indexedBudget = indexed && subjectKey ? state.budgets?.find(b => b.subjectKey.toLowerCase() === subjectKey.toLowerCase()) : null;
+      const requests = [
+        { method: 'getOrgFinancials', args: [modules.orgId] },
+        ...(!indexed || !state.entryPoint ? [{ method: 'ENTRY_POINT', args: [] }] : []),
+        ...(!indexed || !state.orgConfig ? [{ method: 'getOrgConfig', args: [modules.orgId] }] : []),
+        ...(!indexed || !state.feeCaps ? [{ method: 'getFeeCaps', args: [modules.orgId] }] : []),
+        // Consumable current availability cannot combine a lagging indexed
+        // epoch with a newer RPC timestamp. Observe state and time together.
+        ...(subjectKey ? [{ method: 'getBudget', args: [modules.orgId, subjectKey] }] : []),
+      ];
+      const results = await tryAggregate(provider, requests.map(r => ({ to: hub.address, data: hub.interface.encodeFunctionData(r.method, r.args) })), { blockTag: block.number });
+      const values: Record<string, any> = {};
+      results.forEach((result, i) => {
+        if (!result.success) throw new Error(`Paymaster read unavailable: ${requests[i].method}`);
+        const decoded = hub.interface.decodeFunctionResult(requests[i].method, result.returnData);
+        values[requests[i].method] = decoded.length === 1 ? decoded[0] : decoded;
+      });
+      const config = indexed && state.orgConfig ? state.orgConfig : values.getOrgConfig;
+      const caps = indexed && state.feeCaps ? state.feeCaps : values.getFeeCaps;
+      const financials = values.getOrgFinancials;
+      const entryPoint = indexed && state.entryPoint ? state.entryPoint : values.ENTRY_POINT;
+      const ep = new ethers.Contract(entryPoint, ['function balanceOf(address) view returns(uint256)'], provider);
+      const deposit = await ep.balanceOf(hub.address, { blockTag: block.number });
+      const currency = network.nativeCurrency.symbol;
+      const result: any = { org: argv.org, paused: config.paused,
+        deposited: `${ethers.utils.formatEther(financials.deposited)} ${currency}`,
+        spent: `${ethers.utils.formatEther(financials.spent)} ${currency}`,
+        entryPointDeposit: `${ethers.utils.formatEther(deposit)} ${currency}`,
+        feeCaps: { maxFeePerGas: `${ethers.utils.formatUnits(caps.maxFeePerGas, 9)} gwei`,
+          maxPriorityFeePerGas: `${ethers.utils.formatUnits(caps.maxPriorityFeePerGas, 9)} gwei`,
+          maxCallGas: caps.maxCallGas.toString(), maxVerificationGas: caps.maxVerificationGas.toString(), maxPreVerificationGas: caps.maxPreVerificationGas.toString() },
+        chainId: network.chainId, paymasterHub: hub.address, entryPoint, blockNumber: block.number,
+        budgetKey: subjectKey, configSource: indexed && state.orgConfig ? 'subgraph' : 'rpc',
+        rpcObservation: { blockNumber: block.number, blockHash: block.hash, timestamp: block.timestamp },
+        indexedObservation: indexed ? { snapshot: 'latest', block: null, currentAvailabilityVerified: false } : null };
+      const budget = values.getBudget;
+      if (budget) {
+        const cap = ethers.BigNumber.from(budget.capPerEpoch), used = ethers.BigNumber.from(budget.usedInEpoch);
+        const raw = { capPerEpoch: cap.toString(), usedInEpoch: used.toString(), epochLen: budget.epochLen.toString(), epochStart: budget.epochStart.toString() };
+        const remaining = remainingBudget(raw, String(block.timestamp));
+        const effectiveUsed = cap.sub(remaining);
+        result.hatBudget = { capPerEpoch: ethers.utils.formatEther(cap), usedInEpoch: ethers.utils.formatEther(used),
+          remaining: ethers.utils.formatEther(remaining), remainingWei: remaining,
+          epochLength: `${raw.epochLen}s (${(Number(raw.epochLen) / 3600).toFixed(1)}h)`,
+          utilizationPct: cap.gt(0) ? `${(effectiveUsed.mul(1000).div(cap).toNumber() / 10).toFixed(1)}%` : 'N/A',
+          usedInEpochEffective: ethers.utils.formatEther(effectiveUsed), raw, source: 'rpc',
+          blockNumber: block.number, blockHash: block.hash,
+          ...(indexedBudget ? { indexedRaw: { capPerEpoch: indexedBudget.capPerEpoch.toString(),
+            usedInEpoch: indexedBudget.usedInEpoch.toString(), epochLen: indexedBudget.epochLen.toString(),
+            epochStart: indexedBudget.epochStart.toString() } } : {}) };
       }
-
+      if ((await provider.getBlock(block.number))?.hash !== block.hash
+        || (await provider.getNetwork()).chainId !== network.chainId) throw new Error('PAYMASTER_OBSERVATION_CHANGED');
       spin.stop();
-
-      const result: any = {
-        org: argv.org,
-        paused: config.paused,
-        deposited: formatEther(financials.deposited) + ' xDAI',
-        spent: formatEther(financials.spent) + ' xDAI',
-        entryPointDeposit: formatEther(entryPointDeposit) + ' xDAI',
-        feeCaps: {
-          maxFeePerGas: `${(Number(caps.maxFeePerGas) / 1e9).toFixed(1)} gwei`,
-          maxPriorityFeePerGas: `${(Number(caps.maxPriorityFeePerGas) / 1e9).toFixed(1)} gwei`,
-          maxCallGas: caps.maxCallGas.toLocaleString(),
-          maxVerificationGas: caps.maxVerificationGas.toLocaleString(),
-          maxPreVerificationGas: caps.maxPreVerificationGas.toLocaleString(),
-        },
-      };
-
-      if (budgetInfo) {
-        result.hatBudget = budgetInfo;
-      }
-
-      if (argv.json) {
-        console.log(JSON.stringify(result, null, 2));
-      } else {
-        output.success('Paymaster Status', result);
-      }
-    } catch (err: any) {
-      spin.stop();
-      output.error(err.message);
-      process.exit(1);
-    }
+      if (output.isJsonMode()) output.json(result); else output.success('Paymaster Status', result);
+    } catch (error: any) { spin.stop(); output.error(error.message); process.exit(1); }
   },
 };

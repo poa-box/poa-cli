@@ -55,7 +55,10 @@ export function authorityHandler(spec: AuthorityActionSpec) {
       finishWrite(result, { successMsg: governance ? 'Authority governance proposal created' : `Authority ${spec.method} completed`,
         fields: { authority: address, subjectId, hatId: subjectId, method: spec.method,
           pendingId: pending?.pendingId?.toString() ?? argv.pending, activatesAt: pending?.activatesAt?.toString(),
-          proposalId: result.logs?.find(l => l.name === 'NewProposal')?.args?.id?.toString() } });
+          proposalId: result.logs?.find(l => l.name === 'NewProposal')?.args?.id?.toString(),
+          ...(governance && ['createRole', 'createGroup'].includes(spec.method) ? { phase: 'creation', account: ctx.address,
+            creationCall: { target: address, value: '0', calldata: new ethers.utils.Interface(action.abi).encodeFunctionData(action.method, action.args) },
+            nextStep: 'After execution, use role continuation with --creation-tx, --account and --creation-calldata to resolve the actual subject ID.' } : {}) } });
     },
   };
 }

@@ -4,6 +4,54 @@
 
 User & membership
 
+## pop user prepare
+
+Prepare an enrollment challenge, atomic enrollment calldata, or profile document locally
+
+```text
+pop user prepare <action> [flags]
+```
+
+| Positional | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `<action>` | string | yes | - | Choices: `registration-challenge`, `register-and-join`, `register-and-join-passkey`, `profile` |
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--file` | string | yes | - | JSON public enrollment arguments or explicit profile merge inputs |
+
+## pop user lookup
+
+Read source-qualified identities from explicit registries
+
+```text
+pop user lookup [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--account` | array | no | - | Exact account address(es) |
+| `--max-pages` | number | no | `100` | Maximum pages per registry |
+| `--page-size` | number | no | `100` | Rows per page (1–1000) |
+| `--registry` | array | yes | - | Explicit registry address(es) on the selected chain |
+| `--search` | string | no | - | Username substring; ranking remains host-owned |
+| `--username` | array | no | - | Exact username(s) |
+
+## pop user credentials
+
+Read indexed active and revoked credentials with explicit unknown key facts
+
+```text
+pop user credentials [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--account` | string | no | - | Account whose credentials should be listed (includes revoked rows) |
+| `--credential` | string | no | - | Exact bytes32 credential digest to discover |
+| `--max-pages` | number | no | `100` | Maximum pages |
+| `--page-size` | number | no | `100` | Rows per page (1–1000) |
+
 ## pop user register
 
 Register a username on the account registry

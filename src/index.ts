@@ -29,6 +29,8 @@ import { registerZkEmailCommands } from './commands/zkemail';
 import { registerConfigCommands } from './commands/config';
 import { registerMcpCommands } from './commands/mcp/serve';
 import { initHandler } from './commands/init';
+import { registerCashoutCommands } from './commands/cashout';
+import { registerExecutionCommands } from './commands/execution';
 import { applyDefaultOrgFallback } from './lib/default-org';
 
 /**
@@ -109,6 +111,8 @@ async function main() {
     .command('group <action>', 'Authority groups', registerGroupCommands)
     .command('zkemail <action>', 'ZK Email role invites (allowlists)', registerZkEmailCommands)
     .command('config <action>', 'View and validate configuration', registerConfigCommands)
+    .command('cashout <action>', 'EOA cash-out discovery and explicit recovery', registerCashoutCommands)
+    .command('execution <action>', 'Inspect and recover exact transaction submissions', registerExecutionCommands)
     .command('mcp <action>', 'Serve the CLI as an MCP server for AI integrations', registerMcpCommands)
     .command('agent <action>', agentDesc('Agent operations & monitoring'),
       agentPlugin ? agentPlugin.registerAgentCommands : agentUnavailableBuilder(),

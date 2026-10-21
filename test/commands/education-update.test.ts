@@ -17,6 +17,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  isInteractive: vi.fn(),
+  confirm: vi.fn(),
   executeTx: vi.fn(),
   createSigner: vi.fn(),
   resolveOrgModules: vi.fn(),
@@ -53,8 +55,8 @@ vi.mock('../../src/lib/idempotency', () => ({
   resolveTtlSeconds: vi.fn(() => 900),
 }));
 vi.mock('../../src/lib/prompt', () => ({
-  isInteractive: () => false,
-  confirm: vi.fn(),
+  isInteractive: mocks.isInteractive,
+  confirm: mocks.confirm,
   input: vi.fn(),
   select: vi.fn(),
 }));
@@ -147,6 +149,8 @@ describe('pop education update — read-then-merge', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isInteractive.mockReturnValue(false);
+    mocks.confirm.mockResolvedValue(true);
     _clearWriteContextCacheForTest();
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new ExitError(code ?? 0);
@@ -189,6 +193,41 @@ describe('pop education update — read-then-merge', () => {
 
   afterEach(() => {
     exitSpy.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
+  it('refusing confirmation publishes no module metadata and sends no transaction', async () => {
+    vi.stubEnv('POP_ASSUME_YES', '');
+    mocks.isInteractive.mockReturnValue(true);
+    mocks.confirm.mockResolvedValue(false);
+    await expect(updateModuleHandler.handler(baseArgv({ name: 'Declined title' }))).rejects.toBeInstanceOf(ExitError);
+    expect(exitSpy).toHaveBeenCalledWith(EXIT.ABORTED);
+    expect(mocks.confirm).toHaveBeenCalledTimes(1);
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+    expect(mocks.executeTx).not.toHaveBeenCalled();
+  });
+
+  it('pins the reviewed module document once after confirmation without rebuilding a mutated quiz', async () => {
+    vi.stubEnv('POP_ASSUME_YES', '');
+    mocks.isInteractive.mockReturnValue(true);
+    const metadata = { name: 'Intro', description: 'Old desc', link: 'https://old.example', quiz: ['Q1?'], answers: [['A', 'B']] };
+    mocks.fetchJson.mockResolvedValue(metadata);
+    mocks.confirm.mockImplementation(async () => {
+      expect(mocks.pinJson).not.toHaveBeenCalled();
+      metadata.quiz[0] = 'Changed while prompting';
+      return true;
+    });
+    await updateModuleHandler.handler(baseArgv({ name: 'Reviewed module' }));
+    expect(mocks.pinJson).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(mocks.pinJson.mock.calls[0][0])).toMatchObject({ name: 'Reviewed module', quiz: ['Q1?'] });
+    expect(mocks.confirm.mock.invocationCallOrder[0]).toBeLessThan(mocks.pinJson.mock.invocationCallOrder[0]);
+    expect(mocks.executeTx.mock.calls[0][2][2]).toBe(NEW_HASH);
+  });
+
+  it('dry-run prepares changed metadata without publishing it to IPFS', async () => {
+    await updateModuleHandler.handler(baseArgv({ name: 'Dry run', dryRun: true }));
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+    expect(mocks.executeTx).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.any(Array), { dryRun: true });
   });
 
   it('payout-only edit: NO re-pin — the current contentHash and title ride through unchanged', async () => {
@@ -360,6 +399,8 @@ describe('pop education create — metadata pin parity', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isInteractive.mockReturnValue(false);
+    mocks.confirm.mockResolvedValue(true);
     _clearWriteContextCacheForTest();
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new ExitError(code ?? 0);
@@ -383,6 +424,7 @@ describe('pop education create — metadata pin parity', () => {
 
   afterEach(() => {
     exitSpy.mockRestore();
+    vi.unstubAllEnvs();
   });
 
   it('pins {name, description, link, quiz, answers} — the exact key order education update preserves — and sends createModule', async () => {

@@ -18,6 +18,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  isInteractive: vi.fn(),
+  confirm: vi.fn(),
   executeTx: vi.fn(),
   detectTaskManagerFeatures: vi.fn(),
   pinJson: vi.fn(),
@@ -52,8 +54,8 @@ vi.mock('../../src/lib/subgraph', () => ({
 // Deterministic non-TTY: confirmWrite must auto-pass (non-destructive path)
 // regardless of the terminal vitest happens to run in.
 vi.mock('../../src/lib/prompt', () => ({
-  isInteractive: () => false,
-  confirm: vi.fn(),
+  isInteractive: mocks.isInteractive,
+  confirm: mocks.confirm,
   input: vi.fn(),
   select: vi.fn(),
 }));
@@ -177,6 +179,8 @@ describe('pop task update — read-then-merge', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isInteractive.mockReturnValue(false);
+    mocks.confirm.mockResolvedValue(true);
     _clearWriteContextCacheForTest();
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new ExitError(code ?? 0);
@@ -207,6 +211,35 @@ describe('pop task update — read-then-merge', () => {
 
   afterEach(() => {
     exitSpy.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
+  it('refusing confirmation publishes no metadata and sends no transaction', async () => {
+    vi.stubEnv('POP_ASSUME_YES', '');
+    mocks.isInteractive.mockReturnValue(true);
+    mocks.confirm.mockResolvedValue(false);
+    await expect(updateHandler.handler(baseArgv({ name: 'Declined title' }))).rejects.toBeInstanceOf(ExitError);
+    expect(exitSpy).toHaveBeenCalledWith(EXIT.ABORTED);
+    expect(mocks.confirm).toHaveBeenCalledTimes(1);
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+    expect(mocks.executeTx).not.toHaveBeenCalled();
+  });
+
+  it('pins the prepared metadata once after confirmation and does not rebuild from a mutated merge source', async () => {
+    vi.stubEnv('POP_ASSUME_YES', '');
+    mocks.isInteractive.mockReturnValue(true);
+    const indexed = subgraphWithTask();
+    mocks.query.mockResolvedValue(indexed);
+    mocks.confirm.mockImplementation(async () => {
+      expect(mocks.pinJson).not.toHaveBeenCalled();
+      indexed.organization.taskManager.projects[0].tasks[0].metadata.description = 'Changed while prompting';
+      return true;
+    });
+    await updateHandler.handler(baseArgv({ name: 'Reviewed title' }));
+    expect(mocks.pinJson).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(mocks.pinJson.mock.calls[0][0])).toMatchObject({ name: 'Reviewed title', description: 'Current desc' });
+    expect(mocks.confirm.mock.invocationCallOrder[0]).toBeLessThan(mocks.pinJson.mock.invocationCallOrder[0]);
+    expect(mocks.executeTx.mock.calls[0][2][3]).toBe(ipfsCidToBytes32(NEW_CID));
   });
 
   it('--payout only: merges current bounty/deadlines/metadataHash, does NOT re-pin', async () => {

@@ -1,3 +1,5 @@
+import { prepareHandler } from './prepare';
+import { snapshotHandler } from './snapshot';
 import type { Argv } from 'yargs';
 import { createHandler } from './create';
 import { listHandler } from './list';
@@ -19,6 +21,8 @@ import { registerFoldersCommands } from './folders';
 
 export function registerTaskCommands(yargs: Argv) {
   return yargs
+    .command('prepare <action>', 'Prepare raw task calldata, metadata, or scoped policy decisions locally', prepareHandler.builder, prepareHandler.handler)
+    .command('snapshot', 'Read complete paged domain facts at a proven indexed block with coverage', snapshotHandler.builder, snapshotHandler.handler)
     .command('create', 'Create a new task', createHandler.builder, createHandler.handler)
     .command('create-batch', 'Create tasks from JSONL file', createBatchHandler.builder, createBatchHandler.handler)
     .command('list', 'List tasks', listHandler.builder, listHandler.handler)

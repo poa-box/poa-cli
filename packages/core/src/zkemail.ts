@@ -28,6 +28,7 @@ import { BigNumber, constants as ethersConstants } from 'ethers';
 import type { BigNumber as ethersBN } from 'ethers';
 import { CliError } from './errors';
 import { EXIT } from './exit-codes';
+import { requireRawUint } from './amounts';
 
 export const ALLOWLIST_SCHEMA = 'poa.zkemail.allowlist/1';
 export const LEAF_TYPES = ['uint8', 'bytes32', 'uint256[]'] as const;
@@ -106,9 +107,18 @@ export function isPrintableAscii(s: unknown): boolean {
  * Synchronous, unlike the frontend's — theirs is async only because circomlibjs needs a wasm
  * build step. The value is what has to match, not the signature.
  */
+function identifierBytes(str: string): Uint8Array {
+  const input = new TextEncoder().encode(norm(str));
+  if (input.length > EMAIL_PAD) {
+    throw new CliError('Email proof identifiers must be at most 192 bytes.', EXIT.USAGE);
+  }
+  return input;
+}
+
 export function poseidonCommit(str: string): string {
+  const input = identifierBytes(str);
   const bytes = new Uint8Array(EMAIL_PAD);
-  bytes.set(new TextEncoder().encode(norm(str)).slice(0, EMAIL_PAD));
+  bytes.set(input);
   const chunks: bigint[] = [];
   for (let i = 0; i < CHUNKS; i++) {
     let acc = 0n;
@@ -133,7 +143,12 @@ export function emailHash(address: string): string {
 
 /** Sort hat IDs ascending as bigints (leaf encoding is order-sensitive). */
 function sortHats(hatIds: Array<string | bigint | number>): bigint[] {
-  return hatIds.map((h) => BigInt(h)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return hatIds.map((h) => BigInt(requireAllowlistUint(h))).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/** Protocol IDs historically accept hex as well as decimal; validate after exact conversion. */
+export function requireAllowlistUint(value: string | bigint | number): string {
+  return requireRawUint(typeof value === 'string' && /^0x[\da-f]+$/i.test(value) ? BigInt(value) : value);
 }
 
 /**
@@ -211,11 +226,35 @@ export async function buildAllowlist(args: {
 
 /** Reload the exact tree from a fetched allowlist doc (prefers the dumped tree). */
 export function treeFromDoc(doc: any): any {
-  if (doc?.treeDump) return StandardMerkleTree.load(doc.treeDump);
-  throw new CliError(
-    'Allowlist file is missing its merkle tree dump, so proofs cannot be derived from it.',
-    EXIT.PRECONDITION
+  if (!doc?.treeDump) throw new CliError(
+    'Allowlist file is missing its merkle tree dump, so proofs cannot be derived from it.', EXIT.PRECONDITION
   );
+  if ((doc.schema !== undefined && doc.schema !== ALLOWLIST_SCHEMA)
+    || (doc.leafTypes !== undefined && JSON.stringify(doc.leafTypes) !== JSON.stringify(LEAF_TYPES))
+    || JSON.stringify(doc.treeDump.leafEncoding) !== JSON.stringify(LEAF_TYPES)) {
+    throw new CliError('Allowlist file uses an unsupported email proof format.', EXIT.PRECONDITION);
+  }
+  const dump = doc.treeDump;
+  // OZ validates supplied values, but does not establish that the dump exposes every tree leaf.
+  if (!Array.isArray(dump.values) || !dump.values.length || !Array.isArray(dump.tree)
+    || dump.tree.length !== 2 * dump.values.length - 1
+    || new Set(dump.values.map((v: any) => v.treeIndex)).size !== dump.values.length
+    || dump.values.some((v: any) => !Number.isSafeInteger(v.treeIndex)
+      || v.treeIndex < Math.floor(dump.tree.length / 2) || v.treeIndex >= dump.tree.length)) {
+    throw new CliError('Allowlist tree dump does not expose every committed leaf.', EXIT.PRECONDITION);
+  }
+  const tree = StandardMerkleTree.load(doc.treeDump);
+  for (const [, leaf] of tree.entries()) {
+    if (!Array.isArray(leaf) || leaf.length !== 3 || !['0', '1'].includes(requireAllowlistUint(leaf[0]))
+      || !/^0x[\da-f]{64}$/i.test(leaf[1]) || !Array.isArray(leaf[2]) || leaf[2].length === 0) {
+      throw new CliError('Allowlist file contains an unsupported leaf.', EXIT.PRECONDITION);
+    }
+    leaf[2].forEach((id: string | bigint | number) => requireAllowlistUint(id));
+  }
+  if (doc.root !== undefined && String(doc.root).toLowerCase() !== tree.root.toLowerCase()) {
+    throw new CliError('Allowlist document root does not match its tree dump.', EXIT.PRECONDITION);
+  }
+  return tree;
 }
 
 /**
@@ -297,6 +336,8 @@ export function parseEntriesFile(raw: string, filePath: string): AllowlistInputE
     if (!Array.isArray(hatIds)) {
       throw new CliError(`${filePath} entry ${i} ("${e.identifier}") has no hatIds array.`, EXIT.USAGE);
     }
+    // Parse is also a hashing entry point: never defer an oversized identifier to a later build.
+    identifierBytes(e.identifier);
     return {
       type: e.type,
       identifier: e.identifier,

@@ -4,6 +4,20 @@
 
 Education modules
 
+## pop education snapshot
+
+Read complete paged domain facts at a proven indexed block with coverage
+
+```text
+pop education snapshot [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--learner` | string | no | - | Include this account’s independently paged completion history |
+| `--max-pages` | number | no | `100` | Maximum pages per collection |
+| `--page-size` | number | no | `100` | Rows per page (1–1000) |
+
 ## pop education create
 
 Create a learning module that rewards PT on completion
@@ -21,7 +35,7 @@ pop education create [flags]
 | `--link` | string | no | - | External learning resource URL |
 | `--name` | string | yes | - | Module title |
 | `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit a new module. |
-| `--payout` | number | yes | - | PT reward for completion (must be > 0) |
+| `--payout` | string | yes | - | PT reward for completion (must be > 0) |
 | `--quiz` | string | no | - | JSON array of question strings: '["Q1?", "Q2?"]' |
 
 ## pop education list
@@ -47,7 +61,7 @@ pop education update [flags]
 | `--link` | string | no | - | New external learning resource URL (re-pins metadata) |
 | `--module` | string | yes | - | Module ID |
 | `--name` | string | no | - | New module title (re-pins metadata) |
-| `--payout` | number | no | - | New PT reward for completion (must be > 0) |
+| `--payout` | string | no | - | New PT reward for completion (must be > 0) |
 | `--quiz` | string | no | - | New JSON array of question strings (note: the correct answer is fixed at creation) |
 
 ## pop education remove

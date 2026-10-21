@@ -19,6 +19,8 @@
  */
 
 import { ethers } from 'ethers';
+import { hatSubjectKey as canonicalHatSubjectKey } from '@poa-box/core/reads/paymaster';
+export { remainingBudget, requiredPrefundV07 } from '@poa-box/core/sponsorship/budget';
 import { query, queryWithFieldFallback } from '../../lib/subgraph';
 import { FETCH_INFRASTRUCTURE_ADDRESSES } from '../../queries/infrastructure';
 import type { InfrastructureAddresses } from '../../queries/infrastructure';
@@ -268,5 +270,5 @@ export async function readPaymasterOrgConfigPreferSubgraph(
 
 /** Subject key for a hat-scoped paymaster budget: the hat ID as bytes32. */
 export function hatSubjectKey(hatId: ethers.BigNumberish): string {
-  return ethers.utils.hexZeroPad(ethers.BigNumber.from(hatId).toHexString(), 32);
+  return canonicalHatSubjectKey(hatId);
 }

@@ -1,3 +1,4 @@
+import { buildUnclaimTask } from '@poa-box/core/tx/task';
 /**
  * pop task unclaim — release a CLAIMED task back to the pool (TaskManager v7).
  *
@@ -337,7 +338,8 @@ export const unclaimHandler = {
         const txSpin = output.spinner('Releasing task...');
         txSpin.start();
         const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);
-        const result = await executeTx(contract, 'unclaimTask', [parsedTaskId], { dryRun: argv.dryRun });
+        const intent = buildUnclaimTask({ taskManagerAddress, taskId: parsedTaskId });
+        const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
         txSpin.stop();
 
         const receiptFields = unclaimReceiptFields(result);

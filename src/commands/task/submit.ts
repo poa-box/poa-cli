@@ -1,9 +1,11 @@
+import { buildSubmitTask } from '@poa-box/core/tx/task';
 /**
  * pop task submit — submit work for a claimed task.
  *
  * Order matters (fixed in the v6 migration): pre-flight runs FIRST, so a
  * submission that would revert (wrong status, not the claimer) fails fast
- * without wasting an IPFS pin. Then the pin, then the transaction.
+ * without wasting an IPFS pin. Metadata is prepared and confirmed before
+ * publication, then the transaction is sent.
  *
  * Expiry semantics (v6, verified against contracts origin/main): a lapsed
  * claim deadline NEVER blocks the original claimer's submitTask — it only
@@ -23,7 +25,7 @@ import { ipfsCidToBytes32 } from '../../lib/encoding';
 import { formatCountdown } from '../../lib/format';
 import { getTaskOnChain, deriveClaimState, TASK_STATUS, TaskOnChain } from '../../lib/task-lens';
 import { runPreflight, checkGasBalance, checkTaskStatus } from '../../lib/preflight';
-import { getWriteContext, finishWrite, withIdempotency } from '../../lib/command';
+import { getWriteContext, confirmWrite, finishWrite, withIdempotency } from '../../lib/command';
 import { requireModule } from '../../lib/resolve';
 import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
@@ -150,13 +152,18 @@ export const submitHandler = {
 
         // Use a local nonzero digest for estimation; a dry run never publishes content.
         const serialized = serializeTaskMetadata(submissionMetadata);
+        spin.stop();
+        await confirmWrite(argv, { task: parsedTaskId, title: submissionMetadata.name, submission: argv.submission,
+          metadata: 'publish updated task metadata to IPFS' }, { actionLabel: 'Submit task work' });
+        spin.start();
         spin.text = argv.dryRun ? 'Preparing submission preview...' : 'Pinning submission to IPFS...';
         const cid = argv.dryRun ? undefined : await pinJson(serialized);
         const submissionHash = cid ? ipfsCidToBytes32(cid) : ethers.utils.sha256(ethers.utils.toUtf8Bytes(serialized));
 
         spin.text = 'Sending transaction...';
         const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);
-        const result = await executeTx(contract, 'submitTask', [parsedTaskId, submissionHash], { dryRun: argv.dryRun });
+        const intent = buildSubmitTask({ taskManagerAddress, taskId: parsedTaskId, submissionHash });
+        const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
         spin.stop();
 
         finishWrite(result, {

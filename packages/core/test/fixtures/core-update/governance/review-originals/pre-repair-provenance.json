@@ -1,0 +1,187 @@
+{
+  "kind": "offline inspected contract oracles; not deployed bytecode",
+  "contracts": [
+    {
+      "fixture": "HybridVotingCore.sol.txt",
+      "source": "src/libs/HybridVotingCore.sol",
+      "sha256": "4250049eee8d720a31a5b321607688e9dc4e648dc166b0dcca97f0778d58c075"
+    },
+    {
+      "fixture": "VotingMath.sol.txt",
+      "source": "src/libs/VotingMath.sol",
+      "sha256": "0d5b60d2775240190103f0f80fe79d29cda7694feac67ec8e771206f5273b9cd"
+    },
+    {
+      "fixture": "HybridVotingProposals.sol.txt",
+      "source": "src/libs/HybridVotingProposals.sol",
+      "sha256": "377200d3d4bc3bfb5617a96895f487b62068ccf6abde54f11304415e53356a3a"
+    },
+    {
+      "fixture": "HybridVotingConfig.sol.txt",
+      "source": "src/libs/HybridVotingConfig.sol",
+      "sha256": "92819a9fe59b5cc88203a55c9b051919b03e03aa368a1ca3a669d45b528be8c8"
+    },
+    {
+      "fixture": "HybridVoting.sol.txt",
+      "source": "src/HybridVoting.sol",
+      "sha256": "1310f5f27386cc652ffae1d08e4e8aaddafb7e339101cfb2ad57ab1c7bc303d9"
+    },
+    {
+      "fixture": "DirectDemocracyVoting.sol.txt",
+      "source": "src/DirectDemocracyVoting.sol",
+      "sha256": "fc77454fcafccfe6a386baf577f85af838a2365228571ff39f0ed54a8d57fd67"
+    },
+    {
+      "fixture": "MembershipAuthority.sol.txt",
+      "source": "src/MembershipAuthority.sol",
+      "ranges": [
+        [
+          413,
+          437
+        ],
+        [
+          500,
+          520
+        ]
+      ],
+      "sha256": "076a7f56fe525aef95bed5a6b17453e8dfcd534808a6d09b78791d4d44e2b057"
+    },
+    {
+      "fixture": "MembershipAuthorityLogic.sol.txt",
+      "source": "src/libs/MembershipAuthorityLogic.sol",
+      "ranges": [
+        [
+          244,
+          277
+        ],
+        [
+          405,
+          437
+        ],
+        [
+          504,
+          515
+        ],
+        [
+          905,
+          946
+        ],
+        [
+          1039,
+          1042
+        ]
+      ],
+      "sha256": "5e92fefae9745cd894f8e8cfd634525f07c6769f6e3605f287c78759fa137ecc"
+    },
+    {
+      "fixture": "TaskManager.sol.txt",
+      "source": "src/TaskManager.sol",
+      "ranges": [
+        [
+          80,
+          93
+        ],
+        [
+          1235,
+          1260
+        ]
+      ],
+      "sha256": "ee654e32c3b3ecd841c91cbb7b1e982dbe6e41649c0a9f9bdae06323ceeb71ee"
+    },
+    {
+      "fixture": "PaymasterHub.sol.txt",
+      "source": "src/PaymasterHub.sol",
+      "ranges": [
+        [
+          49,
+          55
+        ],
+        [
+          794,
+          807
+        ],
+        [
+          887,
+          915
+        ]
+      ],
+      "sha256": "c1624646210b45f5ed54820ca29776d399c60ea3f5ffde91fd5de412e67e6cd4"
+    },
+    {
+      "fixture": "Executor.sol.txt",
+      "source": "src/Executor.sol",
+      "ranges": [
+        [
+          38,
+          38
+        ],
+        [
+          77,
+          78
+        ]
+      ],
+      "sha256": "e2ecb5f70469df59ceeccb705e3dab6ca19516a0a6346ee066045751a8427526"
+    }
+  ],
+  "savedWeightedScores": [
+    74.95,
+    25.0499
+  ],
+  "schemaOrigin": "reviewed both-chain Graph Node introspection from wave2-check; no live network in this lane",
+  "schema": {
+    "sha256": "ec81d2a4413ae485ce2334607db262c190f4f9156ab7c8590b4ccb05e8132651",
+    "introspectionSha256": "2fefb5c645d84d3a8c65f1f8522fe016ef6a64cca2441b21bcfabb43c14b3047",
+    "chains": [
+      100,
+      42161
+    ],
+    "derivation": "Selected fields and argument positions projected from independent generated serving introspection; filters restricted to used literal fields, Block_height retained. All documents fully validated."
+  },
+  "abiOracles": [
+    {
+      "fixture": "MembershipAuthority.abi.json",
+      "source": "out-production/MembershipAuthority.sol/MembershipAuthority.abi.json",
+      "sha256": "5527f1e619a5a812be23bc530282971ba9bfd3cdc2c1f26f5fa9877507d69d10"
+    },
+    {
+      "fixture": "HybridVoting.abi.json",
+      "source": "out-production/HybridVoting.sol/HybridVoting.abi.json",
+      "sha256": "2337ecd49a4555428f646f336f88a29dcccbdc8ebacb4f4eee35dbb289f1038a"
+    },
+    {
+      "fixture": "DirectDemocracyVoting.abi.json",
+      "source": "out-production/DirectDemocracyVoting.sol/DirectDemocracyVoting.abi.json",
+      "sha256": "1ab88ffff76551858ec6c9634eb6a8f51c6deb684bfaa9c339d3d83b0e5b93d6"
+    },
+    {
+      "fixture": "TaskManager.abi.json",
+      "source": "out-production/TaskManager.sol/TaskManager.abi.json",
+      "sha256": "5f1b8ac055ee66e9b5629de12dd806e89edbee9ef0fcf69b459ceebd4128058d"
+    },
+    {
+      "fixture": "PaymasterHub.abi.json",
+      "source": "out-production/PaymasterHub.sol/PaymasterHub.abi.json",
+      "sha256": "c88c9dea9a7cb0a6b81a9f3289572520cb0ffa37555b22b64e6beb78aa98019b"
+    },
+    {
+      "fixture": "Executor.abi.json",
+      "source": "out-production/Executor.sol/Executor.abi.json",
+      "sha256": "c5b8bbcb3f0eae242969b46373c5d9af49e9f76e1c34e03509da2b0eccc4a499"
+    },
+    {
+      "fixture": "OrgRegistry.abi.json",
+      "source": "out-production/OrgRegistry.sol/OrgRegistry.abi.json",
+      "sha256": "cddee8dea3a5dc494dffb6dd12c9e53152e066af486f3740346f1f950c948fd3"
+    },
+    {
+      "fixture": "ZkEmailInvites.abi.json",
+      "source": "out-production/ZkEmailInvites.sol/ZkEmailInvites.abi.json",
+      "sha256": "88c348fa4051999346264e8e958c506b973add2506fe78895ba33d1bc9dce521"
+    },
+    {
+      "fixture": "HybridVotingCore.abi.json",
+      "source": "out-production/HybridVotingCore.sol/HybridVotingCore.abi.json",
+      "sha256": "7e52955f273188b8d7916ee40ecf56308cd4a99689fe5540a4acf8f7641b5929"
+    }
+  ]
+}

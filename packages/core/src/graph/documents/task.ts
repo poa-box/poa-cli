@@ -6,7 +6,7 @@
 import type { FieldFallbackTier } from '../client';
 
 export const FETCH_PROJECTS_DATA = `
-  query FetchProjectsDataNew($orgId: Bytes!, $projectCursor: String = "") {
+  query FetchProjectsDataNew($orgId: ID!, $projectCursor: String = "") {
     organization(id: $orgId) {
       id
       taskManager {
@@ -400,6 +400,71 @@ export const FETCH_TASK_SUBMISSION_HISTORY = `
         metadata { rejection }
         submission { id submissionHash submittedAt submittedAtBlock transactionHash metadata { submission } }
       }
+    }
+  }
+`;
+
+/** Complete companion reads use independent ID cursors and same-response block attestation. */
+export const FETCH_PROJECTS_PAGE = `
+  query ProjectsPage($orgId: ID!, $taskManager: String!, $cursor: String!, $first: Int!, $block: Block_height) {
+    _meta(block: $block) { block { number hash timestamp } }
+    organization(id: $orgId, block: $block) { id taskManager { id organization { id } } }
+    projects(where: { taskManager: $taskManager, deleted: false, id_gt: $cursor }, first: $first, orderBy: id, orderDirection: asc, block: $block) {
+      id projectId title metadataHash metadata { description } cap createdAt deleted taskManager { id organization { id } }
+    }
+  }
+`;
+export const FETCH_PROJECT_MANAGERS_PAGE = `
+  query ProjectManagersPage($orgId: ID!, $taskManager: String!, $cursor: String!, $first: Int!, $block: Block_height) {
+    _meta(block: $block) { block { number hash timestamp } }
+    organization(id: $orgId, block: $block) { id taskManager { id organization { id } } }
+    projectManagers(where: { isActive: true, project_: { taskManager: $taskManager, deleted: false }, id_gt: $cursor }, first: $first, orderBy: id, orderDirection: asc, block: $block) {
+      id manager isActive addedAt removedAt lastUpdatedAt project { id projectId deleted taskManager { id organization { id } } }
+    }
+  }
+`;
+export const FETCH_TASKS_PAGE = `
+  query TasksPage($orgId: ID!, $taskManager: Bytes!, $cursor: String!, $first: Int!, $block: Block_height) {
+    _meta(block: $block) { block { number hash timestamp } }
+    organization(id: $orgId, block: $block) { id taskManager { id organization { id } } }
+    tasks(where: { taskManager: $taskManager, project_: { deleted: false }, id_gt: $cursor }, first: $first, orderBy: id, orderDirection: asc, block: $block) {
+      id taskId taskManager project { id projectId deleted taskManager { id organization { id } } }
+      title metadataHash metadata { name description location difficulty estimatedHours submission dueDate }
+      payout bountyToken bountyPayout requiresApplication assignee status createdAt
+      absoluteDeadline completionWindow claimDeadline
+    }
+  }
+`;
+export const FETCH_TASKS_PAGE_LEGACY = FETCH_TASKS_PAGE.replace('      absoluteDeadline completionWindow claimDeadline\n', '');
+/** Optional history is queried independently so an unsupported field cannot blank a current board. */
+export const TASK_CLAIM_EXPIRY_FRAGMENT = `
+  fragment TaskClaimExpiryFields on TaskClaimExpiry {
+    id previousClaimer newClaimer expiredAt expiredAtBlock transactionHash
+  }
+`;
+export const FETCH_TASK_CLAIM_EXPIRIES_PAGE = `
+  query TaskClaimExpiriesPage($taskId: String!, $taskManager: Bytes!, $cursor: Bytes!, $first: Int!, $block: Block_height) {
+    _meta(block: $block) { block { number hash timestamp } }
+    taskClaimExpiries(where: { task: $taskId, task_: { taskManager: $taskManager }, id_gt: $cursor }, first: $first, orderBy: id, orderDirection: asc, block: $block) {
+      ...TaskClaimExpiryFields task { id taskManager }
+    }
+  }
+  ${TASK_CLAIM_EXPIRY_FRAGMENT}
+`;
+
+/** Complete single-task application stream. Tree/detail applications remain previews.
+ * The parent and org/module binding are observed again on every page, even empty. */
+export const FETCH_TASK_APPLICATIONS_PAGE = `
+  query TaskApplicationsPage($orgId: ID!, $taskId: String!, $taskManager: Bytes!, $cursor: String!, $first: Int!, $block: Block_height) {
+    _meta(block: $block) { block { number hash timestamp } }
+    organization(id: $orgId, block: $block) { id taskManager { id organization { id } } }
+    tasks(where: { id: $taskId, taskManager: $taskManager }, first: 2, block: $block) {
+      id taskId taskManager project { id projectId deleted taskManager { id organization { id } } }
+    }
+    taskApplications(where: { task: $taskId, task_: { taskManager: $taskManager }, id_gt: $cursor }, first: $first, orderBy: id, orderDirection: asc, block: $block) {
+      id applicant applicantUsername applicationHash metadata { id notes experience indexedAt }
+      approved approver approverUsername appliedAt appliedAtBlock approvedAt
+      task { id taskId taskManager project { id projectId deleted taskManager { id organization { id } } } }
     }
   }
 `;

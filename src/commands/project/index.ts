@@ -1,3 +1,5 @@
+import { prepareHandler } from './prepare';
+import { snapshotHandler } from './snapshot';
 import type { Argv } from 'yargs';
 import { createHandler } from './create';
 import { listHandler } from './list';
@@ -6,6 +8,8 @@ import { proposeHandler } from './propose';
 
 export function registerProjectCommands(yargs: Argv) {
   return yargs
+    .command('prepare [action]', 'Prepare raw project creation or source-qualified creator evidence locally', prepareHandler.builder, prepareHandler.handler)
+    .command('snapshot', 'Read complete paged domain facts at a proven indexed block with coverage', snapshotHandler.builder, snapshotHandler.handler)
     .command('create', 'Create a new project (direct tx; creator-hat/executor)', createHandler.builder, createHandler.handler)
     .command('propose', 'Propose a new project via governance vote', proposeHandler.builder, proposeHandler.handler)
     .command('list', 'List projects', listHandler.builder, listHandler.handler)

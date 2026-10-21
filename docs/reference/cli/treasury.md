@@ -4,6 +4,77 @@
 
 Treasury & distributions
 
+## pop treasury claims
+
+Verify a stored claims document against pinned distribution state
+
+```text
+pop treasury claims [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--address` | string | no | - | Observe this claimant without a signing key |
+| `--cid` | string | no | - | Stored claims CIDv0; otherwise discover from complete executed proposals |
+| `--distribution` | string | yes | - | Exact distribution ID |
+| `--max-pages` | number | no | `20` | Finite executed-proposal discovery bound |
+
+## pop treasury claim-stored
+
+Claim an exact verified stored leaf without reallocating holders
+
+```text
+pop treasury claim-stored [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--cid` | string | no | - | Stored claims CIDv0; otherwise discover from complete executed proposals |
+| `--distribution` | string | yes | - | Exact distribution ID |
+| `--max-pages` | number | no | `20` | Finite executed-proposal discovery bound |
+
+## pop treasury history
+
+Read complete paginated financial/work history with explicit coverage
+
+```text
+pop treasury history [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--distribution` | string | no | - | Exact distribution ID for claims |
+| `--kind` | string | no | `distributions` | Financial history stream (choices: `distributions`, `payments`, `claims`, `references`, `completed`, `promised`) |
+| `--max-pages` | number | no | `20` | Finite page cap; a capped result remains incomplete |
+| `--page-size` | number | no | `100` | Indexed page size (1–1000) |
+
+## pop treasury inflows
+
+Inspect recorded native inflows and historical fee pots
+
+```text
+pop treasury inflows [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--from-block` | string | yes | - | Inclusive first block for recorded native events |
+| `--max-pages` | number | no | `20` | Finite page cap for each independent stream |
+| `--page-size` | number | no | `100` | Indexed page size (1–1000) |
+
+## pop treasury availability
+
+Show pinned PaymentManager balance, reservations and spendable funds
+
+```text
+pop treasury availability [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--max-rounds` | number | no | `1000` | Maximum complete RPC distribution enumeration |
+| `--token` | string | no | `native` | Payout token address or native |
+
 ## pop treasury view
 
 View treasury overview
@@ -30,7 +101,7 @@ pop treasury deposit [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--amount` | number | yes | - | Amount to deposit (human token units) |
+| `--amount` | string | yes | - | Amount to deposit (human token units) |
 | `--token` | string | yes | - | ERC20 token address |
 
 ## pop treasury propose-swap
@@ -106,9 +177,12 @@ pop treasury compute-merkle [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--amount` | string | yes | - | Total distribution amount (in token units, e.g. "40" for 40 BREAD) |
-| `--output` | string | no | `merkle-distribution.json` | Output file for proofs |
-| `--token` | string | yes | - | Payout token address |
+| `--amount` | string | yes | - | Exact total payout amount in token units |
+| `--max-pages` | number | no | `100` | Finite holder page cap; incomplete snapshots cannot allocate |
+| `--output` | string | no | `merkle-distribution.json` | Local proofs artifact output path |
+| `--page-size` | number | no | `100` | Holder page size (1–1000) |
+| `--policy` | string | no | `cli-first-holder` | Explicit allocator policy for this new round (choices: `cli-first-holder`, `sorted-last-omit-zero`) |
+| `--token` | string | yes | - | Payout token address, or native |
 
 ## pop treasury propose-distribution
 
@@ -121,6 +195,7 @@ pop treasury propose-distribution [flags]
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `--duration` | number | no | `1440` | Vote duration in minutes |
+| `--max-rounds` | number | no | `1000` | Maximum complete distribution enumeration for reservations |
 | `--merkle-file` | string | yes | - | Path to merkle-distribution.json from compute-merkle |
 
 ## pop treasury claim-mine
@@ -141,9 +216,11 @@ pop treasury send [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--amount` | number | no | - | Amount to send (single recipient) |
+| `--amount` | string | no | - | Amount to send (single recipient) |
 | `--duration` | number | no | `60` | Vote duration in minutes |
+| `--max-rounds` | number | no | `1000` | Maximum distribution enumeration for PaymentManager solvency |
 | `--recipients` | string | no | - | JSON array for batch: [{"to":"0x...","amount":5},...] (max 8) |
+| `--source` | string | no | `executor` | Explicit treasury source; PaymentManager reservations are enforced (choices: `executor`, `payment-manager`) |
 | `--to` | string | no | - | Recipient address (single recipient) |
 | `--token` | string | no | `native` | Token address or "native" for the chain's gas token |
 

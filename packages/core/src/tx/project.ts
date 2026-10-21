@@ -9,6 +9,8 @@
  */
 
 import { ethers } from 'ethers';
+import { requireRawUint, type RawUintInput } from '../amounts';
+import { metadataPointerToBytes32 } from '../encoding/cid';
 import type { TxIntent } from './intent';
 import { buildGovernanceProposal, encodeExecutorCall, type ExecutionCall } from './governance';
 import { getAbi } from '../contracts';
@@ -329,4 +331,33 @@ export async function proposeProjectIntent(ctx: PopContext, p: ProposeProjectPar
   });
   intent.meta.ipfs = { cid: proposalCid, metadata: proposalMeta };
   return intent;
+}
+
+/** Exact raw cap boundary; zero and uint128 max retain their distinct contract semantics. */
+export function requireProjectCapRaw(value: RawUintInput): string {
+  const raw = requireRawUint(value, 128);
+  if (BigInt(raw) > 10n ** 24n && BigInt(raw) !== (1n << 128n) - 1n) throw new Error('Cap exceeds 1e24 or uint128 unlimited sentinel');
+  return raw;
+}
+export interface CreateProjectRawArgs extends Omit<CreateProjectArgs, 'cap' | 'bountyCaps'> {
+  capRaw?: RawUintInput;
+  bountyCapsRaw?: RawUintInput[];
+}
+export function encodeProjectStructRaw(a: CreateProjectRawArgs): unknown[] {
+  // Reuse title/address/retired-array checks without passing raw cap through human scaling.
+  const tuple = encodeProjectStruct({ ...a, cap: 0, bountyCaps: [] , bountyTokens: [] });
+  const tokens = a.bountyTokens ?? [];
+  const caps = (a.bountyCapsRaw ?? []).map(requireProjectCapRaw);
+  if (tokens.length !== caps.length) throw new Error('Bounty tokens and caps must have equal lengths');
+  for (const token of tokens) if (!ethers.utils.isAddress(token) || token.toLowerCase() === ethers.constants.AddressZero) throw new Error('Bounty token must be nonzero');
+  if (!ethers.utils.isAddress(a.taskManagerAddress) || a.taskManagerAddress.toLowerCase() === ethers.constants.AddressZero) throw new Error('TaskManager must be nonzero');
+  tuple[1] = a.metadataHash ? metadataPointerToBytes32(a.metadataHash) : ethers.constants.HashZero;
+  tuple[2] = requireProjectCapRaw(a.capRaw ?? '0');
+  tuple[8] = tokens;
+  tuple[9] = caps;
+  return tuple;
+}
+export function buildCreateProjectRaw(a: CreateProjectRawArgs): TxIntent {
+  return { to: a.taskManagerAddress, abi: getAbi('TaskManagerNew'), method: 'createProject', args: [encodeProjectStructRaw(a)],
+    meta: { domain: 'project', action: 'create', orgId: a.orgId, summary: { name: a.name, capRaw: requireProjectCapRaw(a.capRaw ?? '0') } } };
 }

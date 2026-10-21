@@ -1,0 +1,49 @@
+// Original src/MembershipAuthority.sol:413-437
+    function getStatus(uint256 subject, address user)
+        external
+        view
+        returns (bool accepted, bool eligible_, uint64 acceptedAt, AccessV2Types.RuleKind ruleKind)
+    {
+        Lib.Layout storage l = Lib.layout();
+        Lib.SubjectRec storage s = l.subjects[subject];
+        if (s.kind == AccessV2Types.SubjectKind.Group) {
+            return (false, Lib._memberOfGroup(l, subject, user), 0, AccessV2Types.RuleKind.None);
+        }
+        Lib.MembershipRec storage m = l.membership[subject][user];
+        return (m.accepted, Lib._eligibleRole(l, subject, user), m.acceptedAt, l.ruleOf[subject][user].kind);
+    }
+
+    /// @inheritdoc IMembershipAuthority
+    function memberCount(uint256 subject) external view returns (uint256) {
+        return Lib.layout().subjects[subject].memberCount;
+    }
+
+    /*═══════════════════════════════ Views: permissions (§3 inverted fold) ═══════════════════════════════*/
+
+    /// @inheritdoc IMembershipAuthority
+    function hasPerm(address user, bytes32 permKey, bytes32 ctx) external view returns (uint256) {
+        return Lib._hasPerm(Lib.layout(), user, permKey, ctx);
+    }
+
+// Original src/MembershipAuthority.sol:500-520
+    function canRemove(uint256 subject, address user, bool ban)
+        external
+        view
+        returns (AccessV2Types.ActionReason reason, uint8 sourceSet)
+    {
+        Lib.Layout storage l = Lib.layout();
+        Lib.SubjectRec storage s = l.subjects[subject];
+        if (!s.exists || s.kind != AccessV2Types.SubjectKind.Role) {
+            return (AccessV2Types.ActionReason.UnknownSubject, 0);
+        }
+        if (!l.membership[subject][user].accepted) return (AccessV2Types.ActionReason.NotMember, 0);
+        if (ban) return (AccessV2Types.ActionReason.Ok, 0);
+        uint8 srcs;
+        if (l.emailVerified[subject][user]) srcs |= Lib.SRC_EMAIL_VERIFIED;
+        if (Lib._vouchMet(l, subject, user)) srcs |= Lib.SRC_VOUCH_QUORUM;
+        if (s.defaultAllow) srcs |= Lib.SRC_DEFAULT_ALLOW;
+        if (srcs != 0) return (AccessV2Types.ActionReason.RemovalIneffective, srcs);
+        return (AccessV2Types.ActionReason.Ok, 0);
+    }
+
+    /// @inheritdoc IMembershipAuthority

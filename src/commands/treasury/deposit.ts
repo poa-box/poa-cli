@@ -13,6 +13,7 @@
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
+import { parseDecimalAmountToRaw } from '@poa-box/core/amounts';
 import { createReadContract, createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { requireAddress } from '../../lib/validation';
@@ -28,7 +29,7 @@ import * as output from '../../lib/output';
 interface DepositArgs {
   org?: string;
   token: string;
-  amount: number;
+  amount: number | string;
   chain?: number;
   rpc?: string;
   'private-key'?: string;
@@ -40,7 +41,7 @@ interface DepositArgs {
 export const depositHandler = {
   builder: (yargs: Argv) => yargs
     .option('token', { type: 'string', demandOption: true, describe: 'ERC20 token address' })
-    .option('amount', { type: 'number', demandOption: true, describe: 'Amount to deposit (human token units)' })
+    .option('amount', { type: 'string', demandOption: true, describe: 'Amount to deposit (human token units)' })
     .example('pop treasury deposit --token 0xToken... --amount 40', 'Approve + deposit 40 tokens into the PaymentManager')
     .epilogue(
       'Sends two transactions: approve, then payERC20. Deposited funds belong to the org — '
@@ -53,7 +54,7 @@ export const depositHandler = {
 
     try {
       const tokenAddr = requireAddress(argv.token, 'token');
-      if (!Number.isFinite(argv.amount) || argv.amount <= 0) {
+      if (!/^\d+(?:\.\d+)?$/.test(String(argv.amount)) || !/[1-9]/.test(String(argv.amount))) {
         throw new CliError(`--amount must be a positive number, got "${argv.amount}".`, EXIT.USAGE);
       }
 
@@ -73,7 +74,7 @@ export const depositHandler = {
       } catch {
         // Live read failed — fall back to the known-token table / 18.
       }
-      const amountWei = ethers.utils.parseUnits(argv.amount.toString(), decimals);
+      const amountWei = ethers.BigNumber.from(parseDecimalAmountToRaw(String(argv.amount), decimals));
 
       // ── Pre-flight (skippable with --no-preflight) ────────────────────
       if (argv.preflight !== false) {

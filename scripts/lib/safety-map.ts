@@ -38,6 +38,12 @@ export interface CommandSafety {
 
 /** Every command that can broadcast a transaction. */
 export const WRITE_COMMANDS: Record<string, CommandSafety> = {
+  'role propose': { broadcasts: true, destructive: true, file: 'src/commands/role/plan.ts' },
+  'group propose': { broadcasts: true, destructive: true, file: 'src/commands/role/plan.ts' },
+  'paymaster donate': { broadcasts: true, destructive: true },
+  'treasury claim-stored': { broadcasts: true, file: 'src/commands/treasury/claims.ts' },
+  'cashout recover-failed': { broadcasts: true, destructive: true, file: 'src/commands/cashout/index.ts' },
+  'cashout withdraw-deposit': { broadcasts: true, destructive: true, file: 'src/commands/cashout/index.ts' },
   'role set-perm': { broadcasts: true, file: 'src/commands/role/authority.ts' },
   'role clear-perm': { broadcasts: true, file: 'src/commands/role/authority.ts' },
   'role create': { broadcasts: true, file: 'src/commands/role/authority.ts' },
@@ -115,7 +121,9 @@ export const WRITE_COMMANDS: Record<string, CommandSafety> = {
   // ── user ──
   'user register': { broadcasts: true },
   'user join': { broadcasts: true },
-  'user update-profile': { broadcasts: true, sideEffects: ['ipfs-pin'] },
+  // This command can irreversibly release the previous username. Capability
+  // consumers must opt into that tier even when a particular patch is benign.
+  'user update-profile': { broadcasts: true, destructive: true, sideEffects: ['ipfs-pin'] },
   // ── education ──
   'education create': { broadcasts: true, sideEffects: ['ipfs-pin'], file: 'src/commands/education/create-module.ts' },
   'education update': { broadcasts: true, sideEffects: ['ipfs-pin'] },
@@ -152,6 +160,7 @@ export const WRITE_COMMANDS: Record<string, CommandSafety> = {
  * whatsoever" must check sideEffects too.
  */
 export const SIDE_EFFECT_READS: Record<string, CommandSafety> = {
+  'execution recover': { broadcasts: false, sideEffects: ['local-file'], file: 'src/commands/execution/index.ts' },
   'org publish': { broadcasts: false, sideEffects: ['ipfs-pin'] }, // publishing IS the command
   'org audit-external': { broadcasts: false, sideEffects: ['ipfs-pin(--pin)'] },
   'org audit-all': { broadcasts: false, sideEffects: ['ipfs-pin(--pin)'] },
@@ -162,7 +171,7 @@ export const SIDE_EFFECT_READS: Record<string, CommandSafety> = {
   'org audit-request': { broadcasts: false, sideEffects: ['ipfs-pin(--pin)'] },
   'org leaderboard': { broadcasts: false, sideEffects: ['ipfs-pin(--pin)'] },
   'org portfolio': { broadcasts: false, sideEffects: ['ipfs-pin(--pin)'] },
-  'zkemail build-allowlist': { broadcasts: false, sideEffects: ['ipfs-pin(--pin)'] },
+  'zkemail build-allowlist': { broadcasts: false, sideEffects: ['ipfs-pin(--pin)', 'local-file(--out)'] },
   'org deploy-config': { broadcasts: false, destructive: true, sideEffects: ['local-file'] },
   'treasury compute-merkle': { broadcasts: false, sideEffects: ['local-file'] },
   'init': { broadcasts: false, sideEffects: ['local-file'] },

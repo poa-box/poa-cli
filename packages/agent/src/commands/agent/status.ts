@@ -1,6 +1,7 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { query } from '@poa-box/cli/lib/subgraph';
+import { resolveIdentityAddress } from '@poa-box/cli/lib/signer';
+import { observeAgentProtocol } from '../../lib/protocol-observation';
 import { resolveOrgModules } from '@poa-box/cli/lib/resolve';
 import { resolveNetworkConfig } from '@poa-box/cli/config/networks';
 import * as output from '@poa-box/cli/lib/output';
@@ -10,41 +11,8 @@ interface StatusArgs {
   chain?: number;
   rpc?: string;
   'private-key'?: string;
+  address?: string;
 }
-
-const FETCH_AGENT_DATA = `
-  query FetchAgentData($orgId: Bytes!) {
-    organization(id: $orgId) {
-      name
-      participationToken { totalSupply }
-      users(first: 100) {
-        address
-        participationTokenBalance
-        membershipStatus
-        totalTasksCompleted
-        totalVotes
-        account { username }
-      }
-      hybridVoting {
-        proposals(where: { status: "Active" }, first: 50) {
-          proposalId
-          title
-          status
-          votes { voter }
-        }
-      }
-      taskManager {
-        projects(where: { deleted: false }, first: 100) {
-          tasks(first: 1000) {
-            id
-            status
-            assignee
-          }
-        }
-      }
-    }
-  }
-`;
 
 export const agentStatusHandler = {
   builder: (yargs: Argv) => yargs,
@@ -54,33 +22,27 @@ export const agentStatusHandler = {
     spin.start();
 
     try {
-      // Get wallet address
-      const key = argv.privateKey as string || process.env.POP_PRIVATE_KEY;
-      if (!key) throw new Error('No private key configured');
-      const wallet = new ethers.Wallet(key);
-      const myAddr = wallet.address.toLowerCase();
-
-      // Get gas balance
+      const address = resolveIdentityAddress(argv, { required: true, purpose: 'Agent status' })!;
+      const myAddr = address.toLowerCase();
       const networkConfig = resolveNetworkConfig(argv.chain);
-      const provider = new ethers.providers.JsonRpcProvider(networkConfig.resolvedRpc);
-      const gasBalance = await provider.getBalance(wallet.address);
-
-      // Get org data
+      const provider = new ethers.providers.JsonRpcProvider(argv.rpc || networkConfig.resolvedRpc, networkConfig.chainId);
       const modules = await resolveOrgModules(argv.org, argv.chain);
-      const result = await query<any>(FETCH_AGENT_DATA, { orgId: modules.orgId }, argv.chain);
-      const org = result.organization;
-      if (!org) throw new Error('Organization not found');
+      const [gasBalance, observation] = await Promise.all([
+        provider.getBalance(address), observeAgentProtocol(modules, networkConfig.chainId),
+      ]);
+      const { org, coverage, sources, memberTotal } = observation;
 
       // Find my user
       const me = org.users.find((u: any) => u.address?.toLowerCase() === myAddr);
-      const totalSupply = ethers.BigNumber.from(org.participationToken?.totalSupply || '0');
-      const myPT = ethers.BigNumber.from(me?.participationTokenBalance || '0');
-      const sharePercent = totalSupply.gt(0) ? myPT.mul(10000).div(totalSupply).toNumber() / 100 : 0;
+      const totalSupply = org.participationToken?.totalSupply == null ? null : ethers.BigNumber.from(org.participationToken.totalSupply);
+      const myPT = me?.participationTokenBalance == null ? null : ethers.BigNumber.from(me.participationTokenBalance);
+      const sharePercent = myPT === null || totalSupply === null ? null : totalSupply.gt(0) ? myPT.mul(10000).div(totalSupply).toNumber() / 100 : 0;
 
       // Count active proposals I haven't voted on
-      const activeProposals = org.hybridVoting?.proposals || [];
+      const activeProposals = [...(org.hybridVoting?.proposals || []), ...(org.directDemocracyVoting?.ddvProposals || [])]
+        .filter((p: any) => p.status === 'Active' && p.winningOption == null);
       const unvoted = activeProposals.filter((p: any) =>
-        !(p.votes || []).some((v: any) => v.voter?.toLowerCase() === myAddr)
+        p.ballotCoverage?.status === 'complete' && !(p.votes || []).some((v: any) => v.voter?.toLowerCase() === myAddr)
       );
 
       // Count my tasks
@@ -92,20 +54,23 @@ export const agentStatusHandler = {
       );
 
       const data = {
-        wallet: wallet.address,
-        username: me?.account?.username || 'unregistered',
+        wallet: address,
+        username: me?.account?.username ?? null,
         org: org.name,
         gas: ethers.utils.formatEther(gasBalance),
         gasCurrency: networkConfig.nativeCurrency.symbol,
-        pt: ethers.utils.formatEther(myPT),
-        ptShare: `${sharePercent.toFixed(1)}%`,
-        tasksCompleted: parseInt(me?.totalTasksCompleted || '0'),
-        votesCast: parseInt(me?.totalVotes || '0'),
-        memberStatus: me?.membershipStatus || 'Not a member',
-        unvotedProposals: unvoted.length,
-        myAssigned: myAssigned.length,
-        mySubmitted: mySubmitted.length,
-        awaitingMyReview: awaitingMyReview.length,
+        pt: myPT === null ? null : ethers.utils.formatEther(myPT),
+        ptShare: sharePercent === null ? null : `${sharePercent.toFixed(1)}%`,
+        tasksCompleted: me?.totalTasksCompleted == null ? null : parseInt(me.totalTasksCompleted),
+        votesCast: me?.totalVotes == null ? null : parseInt(me.totalVotes),
+        memberStatus: coverage.members.status === 'complete' ? me?.membershipStatus || 'Not a member' : 'Unknown',
+        historyIndexed: me?.historyIndexed ?? null,
+        members: memberTotal, coverage, sources,
+        unvotedProposals: coverage.hybrid.status === 'complete' && coverage.dd.status === 'complete' && activeProposals.every((p: any) => p.ballotCoverage?.status === 'complete') ? unvoted.length : null,
+        observedUnvotedProposals: unvoted.length,
+        myAssigned: coverage.tasks.status === 'complete' ? myAssigned.length : null,
+        mySubmitted: coverage.tasks.status === 'complete' ? mySubmitted.length : null,
+        awaitingMyReview: coverage.tasks.status === 'complete' ? awaitingMyReview.length : null,
       };
 
       spin.stop();
@@ -128,17 +93,17 @@ export const agentStatusHandler = {
 
         // Action items
         const actions: string[] = [];
-        if (data.unvotedProposals > 0) actions.push(`${data.unvotedProposals} proposal(s) need your vote`);
-        if (data.awaitingMyReview > 0) actions.push(`${data.awaitingMyReview} task(s) await your review`);
-        if (data.myAssigned > 0) actions.push(`${data.myAssigned} task(s) assigned to you`);
-        if (data.mySubmitted > 0) actions.push(`${data.mySubmitted} task(s) submitted, awaiting review`);
+        if (data.unvotedProposals !== null && data.unvotedProposals > 0) actions.push(`${data.unvotedProposals} proposal(s) need your vote`);
+        if (data.awaitingMyReview !== null && data.awaitingMyReview > 0) actions.push(`${data.awaitingMyReview} task(s) await your review`);
+        if (data.myAssigned !== null && data.myAssigned > 0) actions.push(`${data.myAssigned} task(s) assigned to you`);
+        if (data.mySubmitted !== null && data.mySubmitted > 0) actions.push(`${data.mySubmitted} task(s) submitted, awaiting review`);
         if (parseFloat(data.gas) < 0.01) actions.push('LOW GAS — fund wallet');
 
         if (actions.length > 0) {
           console.log('  Action items:');
           actions.forEach(a => console.log(`    - ${a}`));
         } else {
-          console.log('  No pending actions.');
+          console.log(Object.values(coverage).some(c => c.status !== 'complete') ? '  Some observations are unavailable; inspect coverage before acting.' : '  No pending actions.');
         }
         console.log('');
       }

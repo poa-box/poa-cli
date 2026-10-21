@@ -20,3 +20,12 @@ export * as votingClassesDocuments from './voting-classes';
 export * as votingDocuments from './voting';
 export * as vouchDocuments from './vouch';
 export * as zkemailDocuments from './zkemail';
+
+export * as accountsDocuments from './accounts';
+export * as authorityDocuments from './authority';
+export * as educationDocuments from './education';
+export * as financialhistoryDocuments from './financial-history';
+export * as identityDocuments from './identity';
+export * as inflowsDocuments from './inflows';
+export * as protocolDocuments from './protocol';
+export * as indexedCompletenessDocuments from './indexed-completeness';

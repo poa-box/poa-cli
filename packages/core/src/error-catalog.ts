@@ -9,6 +9,7 @@
 
 import { ethers } from 'ethers';
 import { ALL_ABIS } from './abis';
+import { extractRevertEvidence } from './errors/envelope';
 
 export interface DecodedContractError {
   name: string;
@@ -69,37 +70,6 @@ function getErrorRegistry(): Map<string, ErrorRegistryEntry> {
   return errorRegistry;
 }
 
-/** Accept a hex revert-data string, or an object carrying one in a .data field. */
-function normalizeHexData(value: any): string | null {
-  if (typeof value === 'string' && value.startsWith('0x') && value.length >= 10) {
-    return value;
-  }
-  if (
-    value &&
-    typeof value === 'object' &&
-    typeof value.data === 'string' &&
-    value.data.startsWith('0x') &&
-    value.data.length >= 10
-  ) {
-    return value.data;
-  }
-  return null;
-}
-
-/**
- * Walk the nesting shapes ethers v5 providers produce for revert data:
- * error.data, error.error.data, error.error.error.data — where any .data
- * may itself be an object carrying a .data hex field.
- */
-function extractRevertData(error: any): string | null {
-  const candidates = [error?.data, error?.error?.data, error?.error?.error?.data];
-  for (const candidate of candidates) {
-    const hex = normalizeHexData(candidate);
-    if (hex) return hex;
-  }
-  return null;
-}
-
 function withHint(name: string, args: any[]): DecodedContractError {
   const hint = getErrorHint(name);
   return {
@@ -123,7 +93,8 @@ export function decodeContractError(
   error: any,
   iface?: ethers.utils.Interface
 ): DecodedContractError | null {
-  const data = extractRevertData(error);
+  const data = extractRevertEvidence(error).data;
+  if (data && data.length < 10) return null;
   if (!data) return null;
 
   const selector = data.slice(0, 10).toLowerCase();
@@ -303,7 +274,7 @@ export const ERROR_MESSAGES: Record<string, { human: string; suggestion?: string
     human: 'Only the address that claimed this task may perform this action.',
   },
   NotCreator: {
-    human: 'Only the creator of this task/module may perform this action.',
+    human: 'Your account lacks the creator permission required for this action.',
   },
   NotFound: {
     human: 'No task exists with that ID.',
@@ -1096,6 +1067,7 @@ export const ERROR_MESSAGES: Record<string, { human: string; suggestion?: string
 /**
  * Look up the human message + suggestion for a custom error name.
  */
-export function getErrorHint(name: string): { human: string; suggestion?: string } | undefined {
+export function getErrorHint(name: string, context?: { domain?: string; action?: string }): { human: string; suggestion?: string } | undefined {
+  if (name === 'NotCreator' && context?.domain === 'education') return { human: 'Your account lacks the EDU_CREATE permission required to create an education module.' };
   return ERROR_MESSAGES[name];
 }

@@ -1,3 +1,4 @@
+import { buildProposalMetadata, serializeProposalMetadata } from '@poa-box/core/metadata/proposal';
 /**
  * pop zkemail propose-allowlist — commit an allowlist root + CID via governance.
  *
@@ -194,18 +195,18 @@ export const proposeAllowlistHandler = {
       const call = readModule.interface.encodeFunctionData('setActiveAllowlist', [root, cidDigest]);
       const batches = [[[moduleAddr, ethers.BigNumber.from(0), call]], []];
 
-      const metadata = {
+      const metadata = buildProposalMetadata({
         description:
           `Set the ZK Email invite allowlist to root ${root} (IPFS ${cidV0 ?? argv.cid}). `
           + `${entrySummary}. Replaces ${currentRoot === ethers.constants.HashZero ? 'no active allowlist' : currentRoot}. `
           + 'Anyone who can prove a DKIM-signed email from an allowlisted domain or address may then claim the listed role hats.',
         optionNames: ['Set this allowlist', 'Keep the current allowlist'],
         createdAt: Date.now(),
-      };
+      });
 
       spin.text = 'Pinning proposal metadata...';
-      const metaCid = await pinJson(JSON.stringify(metadata));
-      const descriptionHash = ipfsCidToBytes32(metaCid);
+      const metaCid = argv.dryRun ? undefined : await pinJson(serializeProposalMetadata(metadata));
+      const descriptionHash = metaCid ? ipfsCidToBytes32(metaCid) : ethers.constants.HashZero;
       const titleBytes = stringToBytes('Set ZK Email invite allowlist');
 
       spin.text = 'Sending transaction...';

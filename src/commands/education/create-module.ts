@@ -1,3 +1,5 @@
+import { buildCreateModule } from '@poa-box/core/tx/education';
+import { buildEducationModuleMetadata, serializeEducationModuleMetadata } from '@poa-box/core/metadata/education';
 /**
  * pop education create — create a learning module that rewards PT.
  *
@@ -29,7 +31,7 @@ interface CreateModuleArgs {
   name: string;
   description?: string;
   link?: string;
-  payout: number;
+  payout: string | number;
   quiz?: string;
   answers?: string;
   'correct-answer': number;
@@ -48,7 +50,7 @@ export const createModuleHandler = {
     .option('name', { type: 'string', demandOption: true, describe: 'Module title' })
     .option('description', { type: 'string', describe: 'Module description' })
     .option('link', { type: 'string', describe: 'External learning resource URL' })
-    .option('payout', { type: 'number', demandOption: true, describe: 'PT reward for completion (must be > 0)' })
+    .option('payout', { type: 'string', demandOption: true, describe: 'PT reward for completion (must be > 0)' })
     .option('quiz', { type: 'string', describe: 'JSON array of question strings: \'["Q1?", "Q2?"]\'' })
     .option('answers', { type: 'string', describe: 'JSON array of option arrays: \'[["A","B"],["C","D"]]\'' })
     .option('correct-answer', { type: 'number', demandOption: true, describe: 'Index of correct answer (0-based; PERMANENT — updateModule cannot change it)' })
@@ -70,7 +72,7 @@ export const createModuleHandler = {
 
     try {
       // ── 0. Fail fast on input problems before any network work ─────────
-      if (!(argv.payout > 0) || !isFinite(argv.payout)) {
+      if (!(Number(argv.payout) > 0) || !Number.isFinite(Number(argv.payout))) {
         throw new CliError(
           `--payout must be a positive number (the contract reverts InvalidPayout for 0), got: ${argv.payout}`,
           EXIT.USAGE
@@ -93,6 +95,8 @@ export const createModuleHandler = {
         throw new CliError(`Quiz has ${quiz.length} questions but ${answers.length} answer sets. They must match.`, EXIT.USAGE);
       }
 
+      // Reject invalid exact amount encodings before any public metadata upload.
+      ethers.utils.parseUnits(String(argv.payout), 18);
       const ctx = await getWriteContext(argv);
       const educationHubAddress = requireModule(ctx.modules, 'educationHubAddress');
 
@@ -111,28 +115,29 @@ export const createModuleHandler = {
 
       const run = async (): Promise<Record<string, any>> => {
         // Key order MUST match the frontend (and education/update.ts).
-        const metadata = {
+        const metadata = buildEducationModuleMetadata({
           name: argv.name,
           description: argv.description || '',
           link: argv.link || '',
           quiz,
           answers,
-        };
+        });
 
         const txSpin = output.spinner('Pinning module metadata to IPFS...');
         txSpin.start();
-        const cid = await pinJson(JSON.stringify(metadata));
-        const contentHash = ipfsCidToBytes32(cid);
+        const cid = argv.dryRun ? undefined : await pinJson(serializeEducationModuleMetadata(metadata));
+        const contentHash = cid ? ipfsCidToBytes32(cid) : ethers.constants.HashZero;
 
         const titleBytes = stringToBytes(argv.name);
         const payoutWei = ethers.utils.parseUnits(argv.payout.toString(), 18);
 
         txSpin.text = 'Sending transaction...';
         const contract = createWriteContract(educationHubAddress, 'EducationHubNew', ctx.signer);
+        const intent = buildCreateModule({ educationHubAddress, name: argv.name, contentHash, payout: argv.payout, correctAnswer });
         const result = await executeTx(
           contract,
-          'createModule',
-          [titleBytes, contentHash, payoutWei, correctAnswer],
+          intent.method,
+          intent.args,
           { dryRun: argv.dryRun }
         );
         txSpin.stop();
