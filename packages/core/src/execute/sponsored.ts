@@ -85,7 +85,16 @@ export async function isDelegated(address: Address, rpcUrl?: string): Promise<bo
  * Sign EIP-7702 authorization to delegate EOA to EOADelegation contract.
  * This is a one-time setup — after delegation, the EOA can receive UserOps.
  */
-export async function delegateEOA(privateKey: Hex, rpcUrl?: string): Promise<Hex> {
+export interface DelegationPrepared {
+  chainId: number; account: Address; nonce: string; fromBlock: string;
+  authorizationList: readonly { chainId: number; address: Address; nonce: number; yParity: number; r: Hex; s: Hex }[];
+}
+export interface DelegationSendOptions {
+  /** Awaited before dispatch. A persistence failure prevents sending. */
+  onPrepared?: (prepared: DelegationPrepared) => void | Promise<void>;
+  onSubmitted?: (hash: Hex) => void | Promise<void>;
+}
+export async function delegateEOA(privateKey: Hex, rpcUrl?: string, options?: DelegationSendOptions): Promise<Hex> {
   const account = privateKeyToAccount(privateKey);
   const walletClient = createWalletClient({
     account,
@@ -93,16 +102,23 @@ export async function delegateEOA(privateKey: Hex, rpcUrl?: string): Promise<Hex
     transport: http(rpcUrl || 'https://rpc.gnosischain.com'),
   });
 
+  const publicClient = createPublicClient({ chain: gnosis, transport: http(rpcUrl || 'https://rpc.gnosischain.com') });
+  const [chainId, nonce, fromBlock] = await Promise.all([
+    publicClient.getChainId(), publicClient.getTransactionCount({ address: account.address, blockTag: 'pending' }), publicClient.getBlockNumber(),
+  ]);
+  if (chainId !== gnosis.id) throw new Error('Delegation RPC chain mismatch');
+  if (!Number.isSafeInteger(nonce) || nonce < 0 || !Number.isSafeInteger(nonce + 1)) throw new Error('Exact delegation nonce is unavailable');
   const authorization = await walletClient.signAuthorization({
-    contractAddress: EOA_DELEGATION,
-    executor: 'self',
+    contractAddress: EOA_DELEGATION, executor: 'self', chainId, nonce: nonce + 1,
   });
-
+  if (authorization.chainId !== chainId || authorization.nonce !== nonce + 1 || authorization.address.toLowerCase() !== EOA_DELEGATION.toLowerCase()) throw new Error('Delegation authorization does not match the selected chain, delegate and nonce');
+  const normalizedAuthorization = { address: authorization.address, chainId: authorization.chainId, nonce: authorization.nonce,
+    r: authorization.r, s: authorization.s, yParity: authorization.yParity ?? Number(authorization.v - 27n) };
+  await options?.onPrepared?.({ chainId, account: account.address, nonce: String(nonce), fromBlock: fromBlock.toString(), authorizationList: [normalizedAuthorization] });
   const hash = await walletClient.sendTransaction({
-    authorizationList: [authorization],
-    to: account.address,
-    data: '0x' as Hex,
+    authorizationList: [authorization], nonce, to: account.address, data: '0x' as Hex, value: 0n,
   });
+  await options?.onSubmitted?.(hash);
 
   return hash;
 }
@@ -281,7 +297,11 @@ export async function sendSponsored(
   userOp.signature = signature;
 
   // Mark ambiguity BEFORE dispatch, including an RPC error with no returned hash.
-  submission = { ...submission, phase: 'submitting', computedHash };
+  submission = { ...submission, phase: 'submitting', computedHash, nonce: nonce.toString() };
+  // Persistence belongs to the host. A callback failure is deliberately
+  // non-fallback even though dispatch has not occurred: sending directly would
+  // bypass the host's durable account fence.
+  await options?.onPrepared?.({ ...submission, nonce: nonce.toString(), computedHash });
   const submittedHash = await pimlicoClient.sendUserOperation({ ...userOp, entryPointAddress: ENTRY_POINT } as any);
   if (typeof submittedHash !== 'string' || !/^0x[\da-fA-F]{64}$/.test(submittedHash)) throw new Error('Bundler returned no valid operation hash');
   submission = { ...submission, phase: 'submitted', userOpHash: submittedHash };

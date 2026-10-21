@@ -372,6 +372,31 @@ function electionInput(): ElectionPlanningInput {
         {subjectId:'8',kind:'Role',maxMembers:'2',memberCount:'0',statuses:[status(A,false),status(B,false)],rulesRevision:'r1'}],
       accounts:[{account:A,acceptedAnywhere:knownFact(true),acceptedSubjectIds:knownFact(['7'])},{account:B,acceptedAnywhere:knownFact(false),acceptedSubjectIds:knownFact([])}]})};
 }
+describe('election review fingerprint observation independence', () => {
+  it('accepts fresh identical protocol values but rejects changed values, foreign scope and stale evidence', () => {
+    const input = electionInput();
+    input.context.data.executorAuthorized = knownFact(true, liveSource());
+    input.context.data.accounts[0].acceptedAnywhere = knownFact(true, { ...liveSource(), account: A });
+    const fingerprint = electionPlanningFingerprint(input.context.data, input.preflights.data);
+    const next = structuredClone(input);
+    const block = { number: '101', hash: HASH2 };
+    next.freshness = { now: 1002, maxAgeSeconds: 30, block };
+    next.context.source = { ...next.context.source, block, observedAt: 1002 };
+    next.preflights.source = { ...next.preflights.source, block, observedAt: 1002 };
+    next.context.data.executorAuthorized = knownFact(true, { ...liveSource(), block, observedAt: 1002 });
+    next.context.data.accounts[0].acceptedAnywhere = knownFact(true, { ...liveSource(), account: A, block, observedAt: 1002 });
+    next.expectedFingerprint = fingerprint;
+    expect(electionPlanningFingerprint(next.context.data, next.preflights.data)).toBe(fingerprint);
+    expect(planElection(next).status).toBe('ready');
+    const changed = structuredClone(next);
+    changed.context.data.subjects[0].rulesRevision = 'changed';
+    code(planElection(changed), 'STALE_ELECTION_PLAN');
+    const foreign = structuredClone(next);
+    foreign.context.data.executorAuthorized = knownFact(true, { ...liveSource(HV), block, observedAt: 1002 });
+    expect(planElection(foreign).status).toBe('blocked');
+    code(planElection({ ...next, freshness: { ...next.freshness, now: 2000 } }), 'LIVE_EVIDENCE_STALE');
+  });
+});
 describe('staged role/group creation without irrelevant history', () => {
   it.each(['creation', 'configuration'])('accepts the same %s values at a fresh attributed block while still rejecting changed values and invalid evidence', mode => {
     const input = roleInput();

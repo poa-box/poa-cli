@@ -12,6 +12,25 @@ description: >
 
 Each heartbeat: **PERCEIVE → DECIDE → ACT → ENCODE**
 
+## Core 2 evidence and recovery
+
+Once per session, run `pop agent capabilities --json` and read
+`docs/guides/core2-workflows.md`. Observe with `POP_READONLY=1` and your
+`--address`/`POP_ADDRESS`; observation does not need a signing key.
+
+- Inspect triage `context.coverage` and `observation-incomplete` actions.
+  Unknown facts cannot establish an empty board, an absent ballot, zero
+  historical activity, available treasury funds or current authorization.
+- Retain the proposal's `lane`; Hybrid and DD can share numeric IDs.
+- `apply-task` requires an application; it is not a direct claim suggestion.
+- Creation plans do not predict role/group IDs. Confirm exact continuation,
+  then review a separate configuration plan for the confirmed subject.
+- Prepared intents/policy files are unsigned calculations, not verified
+  authorization. Recheck sources, scope, current permissions and consequences.
+- An uncertain submission blocks further sends. Inspect `execution status`
+  and reconcile with `execution recover`; never automatically resend or
+  abandon an unknown send. Respect execution mode before explicit writes.
+
 ## File Reads (lean — read only what you need)
 
 **Always read (every HB):**
@@ -98,7 +117,10 @@ committed record and the brain layer is a parallel experiment.
 
 These if-then rules fire automatically:
 - **IF** triage shows same proposal 2+ HBs → **THEN** stop checking it, move on
-- **IF** gas warning AND sponsorship env vars set → **THEN** ignore the warning
+- **IF** gas warning AND sponsorship is configured → **THEN** inspect current
+  paymaster status and budget/deposit evidence. Environment variables alone do
+  not prove sponsorship is available; treat the native-gas warning as advisory
+  only when the selected route has verified available funds.
 - **IF** triage shows a review → **THEN** review it, then CONTINUE to next action
 - **IF** voting on a proposal → **THEN** first run `pop vote discuss --proposal N`
   to read existing discussion. If no discussion exists and the proposal is
@@ -298,7 +320,11 @@ Fix the issue and re-submit before any new work.
 **vote** (CRITICAL/HIGH/MEDIUM): Consult **philosophy.md first**, then heuristics.
 Vote with conviction. Only escalate when genuinely unable to form a position.
 
-**claim** (HIGH): Run `pop treasury claim-mine --json` to claim distributions.
+**claim** (HIGH): An absent recorded claim is an inspection candidate, not proof
+of entitlement. Inspect `pop treasury claims --distribution <id> --json`; use
+`claim-stored` only for a verified positive leaf that is still claimable. Use
+`claim-mine` for historical rounds without a stored claims artifact. An unavailable
+artifact or incomplete history must not be treated as a verified zero allocation.
 
 **review** (HIGH): Invoke `/task-review` skill — it walks you through
 read → verify → decide → feedback. Produces thorough reviews instead of
@@ -740,7 +766,9 @@ Write a **single log entry** to `~/.pop-agent/brain/Memory/heartbeat-log.md`:
 **Txns**: [count] | **Lesson**: [optional — only if something surprising happened]
 ```
 
-Overwrite `~/.pop-agent/brain/Memory/org-state.md` with current snapshot.
+Update `~/.pop-agent/brain/Memory/org-state.md` with observed state and coverage.
+Keep unknown values explicit and retain the previous known baseline when the
+relevant member, task or proposal reads are incomplete.
 
 Update `~/.pop-agent/brain/Identity/capabilities.md` if you learned something new.
 
@@ -799,6 +827,8 @@ deliverable verification is real work, not a no-op.
 
 - **Health check fails**: Log, exit. Next heartbeat retries.
 - **Activity query fails**: Fall back to individual commands. Fix if it's a code bug.
-- **Transaction fails**: Log error. Do NOT retry same heartbeat.
+- **Transaction fails**: Log error. Do NOT retry same heartbeat. If submission
+  is uncertain, retain the account barrier across heartbeats and restarts; use
+  `execution status` and `execution recover` before considering any new send.
 - **Brain file missing**: Create with empty scaffold. Log warning.
 - **Always write heartbeat-log.md** — even on failure. Silent failures erode trust.

@@ -1,3 +1,4 @@
+import { buildRegisterAccount, buildQuickJoinWithUser } from '@poa-box/core/tx/user';
 /**
  * pop user join — join an org via QuickJoin, registering a username first
  * when needed.
@@ -215,7 +216,8 @@ export const joinHandler = {
           const txSpin = output.spinner(`Registering username "${username}"...`);
           txSpin.start();
           const registry = createWriteContract(registryAddr, 'UniversalAccountRegistry', ctx.signer);
-          const regResult = await executeTx(registry, 'registerAccount', [username], { dryRun: argv.dryRun });
+          const registration = buildRegisterAccount({ registryAddress: registryAddr, username: username! });
+          const regResult = await executeTx(registry, registration.method, registration.args, { dryRun: argv.dryRun });
           txSpin.stop();
           finishWrite(regResult, {
             successMsg: `Username "${username}" registered (tx 1/2)`,
@@ -234,7 +236,8 @@ export const joinHandler = {
         const txSpin = output.spinner('Joining organization...');
         txSpin.start();
         const contract = createWriteContract(quickJoinAddr, 'QuickJoinNew', ctx.signer);
-        const result = await executeTx(contract, 'quickJoinWithUser', [], { dryRun: argv.dryRun });
+        const join = buildQuickJoinWithUser({ quickJoinAddress: quickJoinAddr });
+        const result = await executeTx(contract, join.method, join.args, { dryRun: argv.dryRun });
         txSpin.stop();
 
         finishWrite(result, {

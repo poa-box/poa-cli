@@ -6,6 +6,7 @@
  */
 
 import { ethers } from 'ethers';
+import { isolateUserOperationReceiptLogs } from '../reads/provenance';
 import { getNetworkByChainId } from '../chains';
 import { decodeContractError } from '../error-catalog';
 import { SponsoredSubmissionError } from '../sponsorship-config';
@@ -53,8 +54,11 @@ export interface TxResult {
   userOpHash?: string;
   outcome?: UserOperationOutcome;
   submission?: SponsoredSubmission;
-  /** Raw receipt is additive; existing parsed logs and CLI keys are preserved. */
+  /** Direct receipt, or sponsored operation-scoped receipt for domain decoding. */
   receipt?: ethers.providers.TransactionReceipt;
+  /** Full bundler receipt, kept separately from operation-scoped domain logs. */
+  outerReceipt?: ethers.providers.TransactionReceipt;
+  logScope?: 'operation' | 'unknown';
   /** Dry-run fields (set when options.dryRun is true; no tx is sent) */
   dryRun?: boolean;
   gasEstimate?: string;
@@ -98,10 +102,12 @@ function buildExplorerUrl(txHash: string, chainId: number): string | undefined {
 
 export function parseEventLogs(
   receipt: ethers.providers.TransactionReceipt,
-  contractInterface: ethers.utils.Interface
+  contractInterface: ethers.utils.Interface,
+  emitter?: string
 ): ethers.utils.LogDescription[] {
   const parsed: ethers.utils.LogDescription[] = [];
   for (const log of receipt.logs) {
+    if (emitter && log.address?.toLowerCase() !== emitter.toLowerCase()) continue;
     try {
       parsed.push(contractInterface.parseLog(log));
     } catch {
@@ -322,14 +328,25 @@ async function trySponsoredTx(
     submission = { ...submission, phase: 'receipt', userOpHash: result.userOpHash, txHash: result.txHash };
     if (submission.computedHash && submission.computedHash.toLowerCase() !== result.userOpHash.toLowerCase()) throw new Error('Bundler operation hash does not match computed hash');
     const receipt = await contract.provider.getTransactionReceipt(result.txHash);
-    const outcome = decodeUserOperationOutcome(receipt, { userOpHash: result.userOpHash, entryPoint: adapter.entryPoint });
+    const expected = { userOpHash: result.userOpHash, entryPoint: adapter.entryPoint, sender: await contract.signer.getAddress(), nonce: submission.nonce };
+    const outcome = decodeUserOperationOutcome(receipt, expected);
     if (outcome.status !== 'succeeded') {
-      if (receipt) return { ...detectUserOpFailure(receipt, result.txHash, chainId, contract.interface, { userOpHash: result.userOpHash, entryPoint: adapter.entryPoint })!, submission };
+      if (receipt) return { ...detectUserOpFailure(receipt, result.txHash, chainId, contract.interface, expected)!, submission };
       return { success: false, txHash: result.txHash, userOpHash: result.userOpHash, sponsored: true, submission, outcome, errorCode: 'UNKNOWN_ERROR', error: 'Sponsored operation outcome is unknown; reconcile by hash.' };
     }
+    let scopedReceipt: ethers.providers.TransactionReceipt = { ...receipt!, logs: [] };
+    let logScope: 'operation' | 'unknown' = 'unknown';
+    try {
+      const transaction = await contract.provider.getTransaction(result.txHash);
+      if (!transaction) throw new Error('OPERATION_TRANSACTION_UNAVAILABLE');
+      const logs = isolateUserOperationReceiptLogs({ transaction, receipt: receipt!, chainId,
+        expected: { userOpHash: result.userOpHash, entryPoint: adapter.entryPoint,
+          sender: await contract.signer.getAddress(), nonce: submission.nonce, target: contract.address, data: calldata } });
+      scopedReceipt = { ...receipt!, logs: [...logs] }; logScope = 'operation';
+    } catch { /* Success is known; unproven event scope must not invent domain IDs. */ }
     return { success: true, txHash: result.txHash, userOpHash: result.userOpHash, submission, outcome,
       blockNumber: receipt!.blockNumber, gasUsed: receipt!.gasUsed?.toString(), explorerUrl: buildExplorerUrl(result.txHash, chainId),
-      logs: parseEventLogs(receipt!, contract.interface), receipt: receipt!, sponsored: true };
+      logs: parseEventLogs(scopedReceipt, contract.interface, contract.address), receipt: scopedReceipt, outerReceipt: receipt!, logScope, sponsored: true };
   } catch (error) {
     if (error instanceof SponsoredSubmissionError) {
       if (!acceptanceObserved && error.submission.phase === 'pre-submit') return null;
@@ -384,6 +401,12 @@ export async function executeContractTx(
       ? options.sponsored()
       : options.sponsored;
     if (sponsoredConfig) {
+      // The signer is the account the host authorized. A transport-configured
+      // wallet must never silently substitute a different sending account.
+      if (new ethers.Wallet(sponsoredConfig.privateKey).address.toLowerCase() !== (await contract.signer.getAddress()).toLowerCase()) {
+        return { success: false, errorCode: 'USER_REJECTED', error: 'Sponsored signing key does not match the authorized transaction signer.',
+          suggestion: 'Use a sponsorship key for the authorized signer or disable sponsorship for this action.' };
+      }
       const sponsoredResult = await trySponsoredTx(contract, method, args, sponsoredConfig, options);
       if (sponsoredResult) {
         return sponsoredResult;
@@ -407,7 +430,7 @@ export async function executeContractTx(
       blockNumber: receipt.blockNumber,
       gasUsed: receipt.gasUsed.toString(),
       explorerUrl: buildExplorerUrl(receipt.transactionHash, chainId),
-      logs: parseEventLogs(receipt, contract.interface),
+      logs: parseEventLogs(receipt, contract.interface, contract.address),
       receipt,
     };
   } catch (error: any) {

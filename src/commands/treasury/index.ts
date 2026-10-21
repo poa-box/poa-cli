@@ -1,4 +1,8 @@
 import type { Argv } from 'yargs';
+import { claimsHandler, claimStoredHandler } from './claims';
+import { historyHandler } from './history';
+import { inflowsHandler } from './inflows';
+import { availabilityHandler } from './availability';
 import { viewHandler } from './view';
 import { balanceHandler } from './balance';
 import { depositHandler } from './deposit';
@@ -15,6 +19,11 @@ import { proposeFinalizeHandler } from './propose-finalize';
 
 export function registerTreasuryCommands(yargs: Argv) {
   return yargs
+    .command('claims', 'Verify a stored claims document against pinned distribution state', claimsHandler.builder, claimsHandler.handler)
+    .command('claim-stored', 'Claim an exact verified stored leaf without reallocating holders', claimStoredHandler.builder, claimStoredHandler.handler)
+    .command('history', 'Read complete paginated financial/work history with explicit coverage', historyHandler.builder, historyHandler.handler)
+    .command('inflows', 'Inspect recorded native inflows and historical fee pots', inflowsHandler.builder, inflowsHandler.handler)
+    .command('availability', 'Show pinned PaymentManager balance, reservations and spendable funds', availabilityHandler.builder, availabilityHandler.handler)
     .command('view', 'View treasury overview', viewHandler.builder, viewHandler.handler)
     .command('balance', 'Show token holdings', balanceHandler.builder, balanceHandler.handler)
     .command('deposit', 'Deposit ERC20 tokens to treasury', depositHandler.builder, depositHandler.handler)

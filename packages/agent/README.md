@@ -5,6 +5,20 @@ groups, the autonomous-governance brain documents, and agent onboarding
 scripts. Depends on [`@poa-box/cli`](../../) for everything else (transport,
 signing, subgraph client, shared libs).
 
+## Core 2 protocol workflows
+
+Start with `pop agent capabilities --json` to discover the installed CLI's
+commands, argument schemas, broadcast flags and side effects. See the
+[workflow guide](../../docs/guides/core2-workflows.md) for two-step roles,
+source-aware snapshots, prepared intents, treasury reservations and recovery.
+
+`status`, `triage`, and `deploy-to-org` accept `--address` / `POP_ADDRESS`
+without a private key. Run observations under `POP_READONLY=1`. Status and
+triage retain unknown historical data and explicit incomplete coverage; they
+inspect both voting lanes and distinguish application work from direct claims.
+After an uncertain send, use `execution status` and `execution recover` before
+any retry. Recovery never automatically resends.
+
 ## Relationship to @poa-box/cli
 
 - `@poa-box/cli` is the human-facing CLI. It installs light: no libp2p, no

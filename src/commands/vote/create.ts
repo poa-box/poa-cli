@@ -25,6 +25,8 @@ import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 import { describeExecutionCalls, ExecutionCallInput } from './helpers';
 import { buildGovernanceProposal } from '@poa-box/core/tx/governance';
+import { validateGovernanceBatches, votingLaneForBatches } from '@poa-box/core/governance/capabilities';
+import { buildProposalMetadata, serializeProposalMetadata } from '@poa-box/core/metadata/proposal';
 
 interface CreateArgs {
   org: string;
@@ -149,10 +151,15 @@ export const createHandler = {
       }
 
       const abiName = isHybrid ? 'HybridVotingNew' : 'DirectDemocracyVotingNew';
+      const executionBatches = batches.map(batch => batch.map(([target, value, calldata]) => ({ target, value, calldata })));
+      validateGovernanceBatches(executionBatches, numOptions);
+      if (votingLaneForBatches(executionBatches, argv.type as 'hybrid' | 'dd') !== argv.type) {
+        throw new CliError('Execution calls require --type hybrid. Direct democracy proposals are nonbinding polls.', EXIT.USAGE);
+      }
       const intent = buildGovernanceProposal({
         votingAddress: contractAddr, votingAbiName: abiName, title: argv.name,
         descriptionHash: ethers.constants.HashZero, durationMinutes: argv.duration, numOptions,
-        batches: batches.map(batch => batch.map(([target, value, calldata]) => ({ target, value, calldata }))),
+        batches: executionBatches,
         subjectIds: hatIds, quorumOverride: argv.quorumOverride, equalWeight: argv.equalWeight,
       });
       await runPreflight(ctx.provider, [checkGasBalance(ctx.address)], { skip: !argv.preflight });
@@ -182,12 +189,12 @@ export const createHandler = {
         txSpin.start();
 
         // Upload proposal metadata to IPFS (key order matches the frontend).
-        const proposalMetadata = {
+        const proposalMetadata = buildProposalMetadata({
           description: argv.description,
           optionNames,
           createdAt: Date.now(),
-        };
-        const cid = argv.dryRun ? undefined : await pinJson(JSON.stringify(proposalMetadata));
+        });
+        const cid = argv.dryRun ? undefined : await pinJson(serializeProposalMetadata(proposalMetadata));
         intent.args[1] = cid ? ipfsCidToBytes32(cid) : ethers.constants.HashZero;
 
         txSpin.text = 'Sending transaction...';

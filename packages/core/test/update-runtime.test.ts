@@ -112,7 +112,7 @@ describe('ROOT-RUNTIME-RECEIPT-STATUS outer evidence cannot manufacture inner su
     expect(decodeUserOperationOutcome({ logs: [] }, { userOpHash: H2, entryPoint: EP }).status).toBe('unknown');
   });
   for (const status of ['0', 'garbage', '2']) it(`sponsored executor status ${status} cannot fall back or report success`, async () => {
-    const { contract, direct } = mockContract(async () => ({ ...receipt([event(H2, true)]), status }));
+    const { contract, direct } = mockContract(async () => ({ ...receipt([event(H2, true, EP, 9, new ethers.Wallet(H1).address)]), status }));
     const send = vi.fn(async () => ({ txHash: TX, userOpHash: H2 }));
     const result = await executeContractTx(contract, 'action', [], { sponsored: config, sponsoredAdapter: adapter(send) });
     expect(result.success).toBe(false); expect(result.outcome?.status).toBe(status === '0' ? 'failed' : 'unknown');
@@ -120,9 +120,9 @@ describe('ROOT-RUNTIME-RECEIPT-STATUS outer evidence cannot manufacture inner su
   });
 });
 
-function mockContract(readReceipt: () => Promise<any> = async () => receipt([event(H2, true)])) {
+function mockContract(readReceipt: () => Promise<any> = async () => receipt([event(H2, true, EP, 9, new ethers.Wallet(H1).address)])) {
   const direct = vi.fn(async () => ({ wait: async () => receipt([]) }));
-  return { contract: { address: A, interface: new ethers.utils.Interface(['function action()']), signer: { getAddress: async () => A }, provider: { getNetwork: async () => ({ chainId: 100 }), getTransactionReceipt: readReceipt }, estimateGas: { action: async () => ethers.BigNumber.from(100) }, action: direct } as unknown as ethers.Contract, direct };
+  return { contract: { address: A, interface: new ethers.utils.Interface(['function action()']), signer: { getAddress: async () => new ethers.Wallet(H1).address }, provider: { getNetwork: async () => ({ chainId: 100 }), getTransactionReceipt: readReceipt }, estimateGas: { action: async () => ethers.BigNumber.from(100) }, action: direct } as unknown as ethers.Contract, direct };
 }
 const config = { privateKey: H1 as `0x${string}`, orgId: ORG as `0x${string}`, hatId: 1n };
 function adapter(send: (options?: any) => Promise<any>, delegated = true) {
@@ -154,7 +154,7 @@ describe('EXEC-UNCERTAIN-RETRY zero duplicate sends', () => {
     const { contract, direct } = mockContract(async () => {
       if (mode === 'receipt-rpc-failure') throw new Error('receipt RPC');
       if (mode === 'missing-receipt') return null;
-      return receipt(mode === 'missing-event' ? [] : [event(H2, mode !== 'mined-failure')]);
+      return receipt(mode === 'missing-event' ? [] : [event(H2, mode !== 'mined-failure', EP, 9, new ethers.Wallet(H1).address)]);
     });
     const send = vi.fn(async () => {
       if (mode === 'accepted-timeout') throw new SponsoredSubmissionError('timeout', { phase: 'receipt', userOpHash: H2 as any, entryPoint: EP, chainId: 100 });
@@ -172,9 +172,9 @@ describe('EXEC-UNCERTAIN-RETRY zero duplicate sends', () => {
     expect(direct).toHaveBeenCalledTimes(1); expect(result.success).toBe(true); expect(send.mock.calls.length).toBe(mode === 'not-delegated' ? 0 : 1);
   });
   it('mined success preserves raw receipt and one operation identity', async () => {
-    const r = receipt([event(H1, false), event(H2, true)]); const { contract, direct } = mockContract(async () => r);
+    const r = receipt([event(H1, false, EP, 9, new ethers.Wallet(H1).address), event(H2, true, EP, 9, new ethers.Wallet(H1).address)]); const { contract, direct } = mockContract(async () => r);
     const result = await executeContractTx(contract, 'action', [], { sponsored: config, sponsoredAdapter: adapter(async () => ({ txHash: TX, userOpHash: H2 })) });
-    expect(result.success).toBe(true); expect(result.receipt).toBe(r); expect(result.userOpHash).toBe(H2); expect(direct).not.toHaveBeenCalled();
+    expect(result.success).toBe(true); expect(result.outerReceipt).toBe(r); expect(result.receipt?.logs).toEqual([]); expect(result.logScope).toBe('unknown'); expect(result.userOpHash).toBe(H2); expect(direct).not.toHaveBeenCalled();
   });
   it('recovery uses computed hash, later succeeds and never sends', async () => {
     const submission: SponsoredSubmission = { phase: 'submitting', computedHash: H2, entryPoint: EP, chainId: 100 };
@@ -244,7 +244,7 @@ describe('ROOT-RUNTIME-HASH-MISMATCH canonical intended identity survives recove
     expect(result.submission.phase).toBe('submitted'); expect(transport.sendCount).toBe(0); expect(transport.signCount).toBe(0);
   });
   it('executor rejects a mismatched adapter response without reading unrelated success or direct fallback', async () => {
-    const readReceipt = vi.fn(async () => receipt([event(H2, true)])); const { contract, direct } = mockContract(readReceipt);
+    const readReceipt = vi.fn(async () => receipt([event(H2, true, EP, 9, new ethers.Wallet(H1).address)])); const { contract, direct } = mockContract(readReceipt);
     const send = vi.fn(async opts => { await opts.onSubmitted({ phase: 'submitted', computedHash: H1, userOpHash: H2, entryPoint: EP, chainId: 100 }); return { txHash: TX, userOpHash: H2 }; });
     const result = await executeContractTx(contract, 'action', [], { sponsored: config, sponsoredAdapter: adapter(send) });
     expect(result.success).toBe(false); expect(result.outcome).toMatchObject({ status: 'unknown', userOpHash: H1 });
@@ -705,4 +705,25 @@ it('pure account/sponsorship/error/protocol/intent leaves have no optional execu
   }
   for (const leaf of ['accounts/codecs', 'accounts/userop-v07', 'sponsorship/codec', 'sponsorship/budget', 'errors/envelope', 'errors/compat', 'execute/outcome', 'reads/protocol', 'tx/intent']) scan(resolve(__dirname, '../src', leaf + '.ts'));
   expect(seen.size).toBeGreaterThan(9);
+});
+
+
+describe('durable operation pre-dispatch hook', () => {
+  it('persists the exact computed operation hash and nonce before bundler dispatch', async () => {
+    const prepared: SponsoredSubmission[] = [];
+    await sendSponsored(H1, A, '0x1234', ORG as any, 1n, { bundlerUrl: 'https://fixture.invalid',
+      onPrepared: submission => {
+        expect(transport.sendCount).toBe(0); expect(submission.nonce).toBe('9');
+        expect(submission.phase).toBe('submitting'); expect(submission.computedHash).toMatch(/^0x[0-9a-f]{64}$/);
+        prepared.push(submission);
+      } });
+    expect(prepared).toHaveLength(1);
+    expect(prepared[0].computedHash).toBe(hashUserOperationV07(transport.operation, EP, 100));
+  });
+  it('a failed persistence callback prevents send and remains non-fallback', async () => {
+    await expect(sendSponsored(H1, A, '0x1234', ORG as any, 1n, { bundlerUrl: 'https://fixture.invalid',
+      onPrepared: () => { throw new Error('journal persistence failed'); } }))
+      .rejects.toMatchObject({ submission: { phase: 'submitting', nonce: '9' } });
+    expect(transport.sendCount).toBe(0); expect(transport.waitCount).toBe(0);
+  });
 });

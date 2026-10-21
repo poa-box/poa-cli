@@ -386,6 +386,14 @@ describe('pop task list — v6 deadline enrichment + filters', () => {
     expect(rows.map((r: string[]) => r[0])).toEqual(['1', '4']);
   });
 
+  it('--expiring uses the earlier absolute cutoff when the claim window ends later', async () => {
+    const lens = lensFixture();
+    lens.tasks.set('3', onChainTask(1, NOW + HOUR, 30 * DAY, NOW + 30 * DAY));
+    mocks.enrichTasksWithDeadlines.mockResolvedValue(lens);
+    await listHandler.handler(baseArgv({ expiring: '24h' }));
+    expect(renderedRows().rows.map((row: string[]) => row[0])).toEqual(['1', '3', '4']);
+  });
+
   it('unparseable --expiring fails before any network work', async () => {
     await expect(listHandler.handler(baseArgv({ expiring: 'soonish' }))).rejects.toBeInstanceOf(ExitError);
 

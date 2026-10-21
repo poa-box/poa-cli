@@ -91,6 +91,7 @@ pop org deploy [flags]
 | --- | --- | --- | --- | --- |
 | `--config` | string | yes | - | Path to native authority org deploy config JSON file |
 | `--deployer` | string | no | - | Public deployer address for an unsigned dry run (no private key needed) |
+| `--zk-email-config` | string | no | - | Prepared email deployment JSON: enabled, initialRoot, initialCid (bytes32). Zero root/CID leaves enabled email dormant. |
 
 ## pop org deploy-config
 
@@ -102,6 +103,7 @@ pop org deploy-config [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
+| `--bootstrap` | string | no | - | BootstrapConfigInput JSON file with authority role indices and explicit raw/decimal amounts |
 | `--description` | string | no | `""` | Organization description |
 | `--name` | string | yes | - | Organization name |
 | `--output` | string | no | `org-deploy-config.json` | Output file path |

@@ -1,3 +1,7 @@
+import { buildCreateTaskRaw, buildCreateAndAssignTaskRaw } from '@poa-box/core/tx/task';
+import { buildTaskMetadata, serializeTaskMetadata } from '@poa-box/core/metadata/task';
+import { parseTaskCreatedReceipt } from '@poa-box/core/tasks/receipts';
+import { requireAddress } from '@poa-box/core/validation';
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { createSigner } from '../../lib/signer';
@@ -44,12 +48,13 @@ interface CreateArgs {
   project: string;
   name: string;
   description: string;
-  payout?: number;
+  payout?: string | number;
+  assignee?: string;
   difficulty?: string;
   'est-hours'?: number;
   location?: string;
   'bounty-token'?: string;
-  'bounty-amount'?: number;
+  'bounty-amount'?: string | number;
   'requires-application'?: boolean;
   deadline?: string;
   'completion-window'?: string;
@@ -70,15 +75,16 @@ export const createHandler = {
     .option('name', { type: 'string', demandOption: true, describe: 'Task name' })
     .option('description', { type: 'string', demandOption: true, describe: 'Task description' })
     .option('payout', {
-      type: 'number',
+      type: 'string',
       describe: 'Payout amount. Omit to price the task the way the web app would, from the org\'s '
         + 'payout convention plus --difficulty/--est-hours',
     })
+    .option('assignee', { type: 'string', describe: 'Assign immediately in the same transaction to this address (requires CREATE and ASSIGN)' })
     .option('difficulty', { type: 'string', default: 'medium', describe: 'Difficulty (easy/medium/hard)' })
     .option('est-hours', { type: 'number', default: 0, describe: 'Estimated hours' })
     .option('location', { type: 'string', default: '', describe: 'Location' })
     .option('bounty-token', { type: 'string', describe: 'Bounty ERC20 token address' })
-    .option('bounty-amount', { type: 'number', describe: 'Bounty payout amount' })
+    .option('bounty-amount', { type: 'string', describe: 'Bounty payout amount' })
     .option('requires-application', { type: 'boolean', default: false, describe: 'Require applications' })
     .option('deadline', { type: 'string', describe: 'Absolute claim deadline — no claims after this time (v6 orgs only)' })
     .option('completion-window', { type: 'string', describe: 'Time a claimer has to submit after claiming (v6 orgs only)' })
@@ -255,7 +261,7 @@ export const createHandler = {
 
       const bountyToken = argv.bountyToken || ethers.constants.AddressZero;
       let bountyPayoutWei: ethers.BigNumber | number = 0;
-      if (argv.bountyAmount && argv.bountyAmount > 0 && bountyToken !== ethers.constants.AddressZero) {
+      if (argv.bountyAmount && Number(argv.bountyAmount) > 0 && bountyToken !== ethers.constants.AddressZero) {
         const decimals = getTokenDecimals(bountyToken);
         bountyPayoutWei = ethers.utils.parseUnits(argv.bountyAmount.toString(), decimals);
       }
@@ -268,6 +274,7 @@ export const createHandler = {
       await confirmWrite(argv, {
         project: String(argv.project),
         name: argv.name,
+        assignee: argv.assignee,
         payout: formatToken(payoutWei, 18, tokenLabel)
           + (derivedPayout !== null
             ? payoutConfig.hoursOnly
@@ -284,31 +291,42 @@ export const createHandler = {
       spin.start();
 
       // Build metadata JSON (key order must match frontend exactly)
-      const metadata = {
+      const metadata = buildTaskMetadata({
         name: argv.name,
         description: argv.description,
         location: argv.location || '',
         difficulty: argv.difficulty || 'medium',
         estHours: argv.estHours || 0,
         submission: '',
-      };
+      });
 
+      // Validate exact contract inputs before publishing metadata.
+      const draft = { taskManagerAddress, projectId: pid, payoutRaw: payoutWei.toString(), title: argv.name,
+        metadataHash: ethers.constants.HashZero, bountyToken, bountyPayoutRaw: bountyPayoutWei.toString(),
+        requiresApplication: requiresApp, absoluteDeadline, completionWindow, features, orgId };
+      if (argv.assignee) buildCreateAndAssignTaskRaw({ ...draft, assignee: requireAddress(argv.assignee, 'assignee') });
+      else buildCreateTaskRaw(draft);
       spin.text = 'Pinning metadata to IPFS...';
-      const cid = argv.dryRun ? undefined : await pinJson(JSON.stringify(metadata));
+      const cid = argv.dryRun ? undefined : await pinJson(serializeTaskMetadata(metadata));
       const metadataHash = cid ? ipfsCidToBytes32(cid) : ethers.constants.HashZero;
 
-      const titleBytes = stringToBytes(argv.name);
+      const creation = { taskManagerAddress, projectId: pid, payoutRaw: payoutWei.toString(), title: argv.name,
+        metadataHash, bountyToken, bountyPayoutRaw: bountyPayoutWei.toString(), requiresApplication: requiresApp,
+        absoluteDeadline, completionWindow, features, orgId };
+      const intent = argv.assignee
+        ? buildCreateAndAssignTaskRaw({ ...creation, assignee: requireAddress(argv.assignee, 'assignee') })
+        : buildCreateTaskRaw(creation);
 
       spin.text = 'Sending transaction...';
       const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', signer);
-      const txArgs = [payoutWei, titleBytes, metadataHash, pid, bountyToken, bountyPayoutWei, requiresApp, absoluteDeadline, completionWindow];
-      const result = await executeTx(contract, 'createTask', txArgs, { dryRun: argv.dryRun });
+      const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
 
       spin.stop();
 
       // Extract taskId from TaskCreated event (absent on dry runs/failures)
-      const taskCreatedEvent = result.logs?.find(l => l.name === 'TaskCreated');
-      const taskId = taskCreatedEvent?.args?.id?.toString();
+      const created = parseTaskCreatedReceipt({ taskManagerAddress, status: result.success && result.receipt?.status === 1,
+        logs: result.receipt?.logs ?? [], creations: [creation] });
+      const taskId = created.state === 'known' ? created.value[0] : undefined;
 
       // v6 with deadlines set: surface what the contract actually recorded
       // (TaskDeadlinesSet log), falling back to the parsed flag values on
@@ -327,6 +345,7 @@ export const createHandler = {
           taskId,
           ipfsCid: cid,
           ...deadlineFields,
+          creationEvidence: created,
         },
         onSuccess: () => {
           // Task #369: record idempotent result so retries hit the cache

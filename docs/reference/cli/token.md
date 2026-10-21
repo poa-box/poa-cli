@@ -14,7 +14,7 @@ pop token request [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--amount` | number | yes | - | Amount of PT to request |
+| `--amount` | string | yes | - | Amount of PT to request |
 | `--reason` | string | yes | - | Reason for the request (pinned to IPFS) |
 
 ## pop token approve
@@ -52,6 +52,19 @@ pop token requests [flags]
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `--status` | string | no | `pending` | Filter by status (choices: `pending`, `all`) |
+
+## pop token holders
+
+Enumerate token holders and reconcile totals against indexed supply
+
+```text
+pop token holders [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--max-pages` | number | no | `20` | Finite enumeration cap; totals remain unknown until supply reconciles |
+| `--page-size` | number | no | `100` | Holder page size (1–1000) |
 
 ## pop token balance
 

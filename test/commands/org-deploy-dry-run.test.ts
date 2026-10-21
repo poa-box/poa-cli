@@ -231,6 +231,30 @@ describe('pop org deploy — destructive confirm + dry-run zero-tx', () => {
     expect(mocks.pinJson).not.toHaveBeenCalled();
     expect(mocks.executeTx).not.toHaveBeenCalled();
   });
+  it('previews the prepared email entrypoint, bootstrap and metadata preferences without signing or publication', async () => {
+    writeConfig(validConfig({ metadata: { hideTreasury: true, useTokenSymbol: true, extensions: { launch: 'preserved' } },
+      bootstrap: { projects: [{ title: 'Genesis work', cap: { raw: '1000' }, createRoleIndices: [0] }],
+        tasks: [{ projectIndex: 0, title: 'First task', payout: { raw: '1' } }] } }));
+    const emailPath = path.join(tmpDir, 'email.json');
+    fs.writeFileSync(emailPath, JSON.stringify({ enabled: true, initialRoot: ethers.constants.HashZero, initialCid: ethers.constants.HashZero }));
+    await deployHandler.handler(baseArgv({ deployer: wallet.address, zkEmailConfig: emailPath }));
+    const fields = vi.mocked(output.success).mock.calls[0][1] as any;
+    expect(fields.method).toBe('deployFullOrgWithZkEmail');
+    expect(fields.bootstrap.projects).toHaveLength(1); expect(fields.metadata).toMatchObject({ hideTreasury: true, useTokenSymbol: true, launch: 'preserved' });
+    const { getAbi } = await import('../../src/lib/contracts');
+    const decoded = new ethers.utils.Interface(getAbi('OrgDeployerNew')).decodeFunctionData('deployFullOrgWithZkEmail', fields.calldata);
+    expect(Array.from(decoded[1])).toEqual([true, ethers.constants.HashZero, ethers.constants.HashZero]);
+    expect(mocks.createSigner).not.toHaveBeenCalled(); expect(mocks.pinJson).not.toHaveBeenCalled(); expect(mocks.executeTx).not.toHaveBeenCalled();
+  });
+  it('rejects malformed prepared email configuration and non-SemVer v2 strings before publication', async () => {
+    writeConfig(validConfig());
+    const emailPath = path.join(tmpDir, 'email.json'); fs.writeFileSync(emailPath, 'null');
+    await expect(deployHandler.handler(baseArgv({ zkEmailConfig: emailPath }))).rejects.toBeInstanceOf(ExitError);
+    expect(mocks.query).not.toHaveBeenCalled();
+    mocks.createReadContract.mockReturnValue({ VERSION: vi.fn().mockResolvedValue('2.invalid') });
+    await expect(deployHandler.handler(baseArgv({ dryRun: false }))).rejects.toBeInstanceOf(ExitError);
+    expect(mocks.pinJson).not.toHaveBeenCalled(); expect(mocks.executeTx).not.toHaveBeenCalled();
+  });
 
   it('rejects a serving V1 deployer before metadata publication or signing', async () => {
     writeConfig(validConfig());

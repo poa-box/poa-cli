@@ -21,6 +21,8 @@ export function createSigner(opts: {
   privateKey?: string;
   chainId?: number;
   rpcUrl?: string;
+  /** Explicit third-party integrations only; ordinary POP resolution is unchanged. */
+  allowCustomChain?: boolean;
 }): SignerContext {
   // POP_READONLY=1 makes "this process cannot sign" STRUCTURAL: even with a
   // key in the environment, nothing downstream of here can broadcast. This is
@@ -39,7 +41,8 @@ export function createSigner(opts: {
     );
   }
 
-  const config = resolveNetworkConfig(opts.chainId);
+  if (opts.allowCustomChain && (!opts.rpcUrl || !Number.isSafeInteger(opts.chainId) || opts.chainId! <= 0)) throw new Error('Custom signing requires an explicit positive chain ID and RPC endpoint.');
+  const config = opts.allowCustomChain ? { chainId: opts.chainId!, resolvedRpc: opts.rpcUrl! } : resolveNetworkConfig(opts.chainId);
   const rpcUrl = opts.rpcUrl || config.resolvedRpc;
   const provider = new ethers.providers.JsonRpcProvider(rpcUrl, config.chainId);
   const signer = new ethers.Wallet(key, provider);

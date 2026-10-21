@@ -33,7 +33,15 @@ function account(value: string): string {
   return value.toLowerCase();
 }
 export function electionPlanningFingerprint(context: ElectionContext, preflights: readonly RemovalPreflight[]): string {
-  return ethers.utils.id(JSON.stringify([context, preflights]));
+  // Source scope/freshness is validated independently on every plan. Observation
+  // clocks and block identity must not invalidate unchanged reviewed values.
+  const values = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(values);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value)
+      .filter(([key]) => key !== 'source').map(([key, nested]) => [key, values(nested)]));
+    return value;
+  };
+  return ethers.utils.id(JSON.stringify(values([context, preflights])));
 }
 export interface RemovalReadRequest { contract: string; subjectId: string; account: string; source: SourceRef }
 export interface RemovalPreflightReader {

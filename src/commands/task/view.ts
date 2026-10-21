@@ -1,3 +1,4 @@
+import { effectiveTaskDeadlineSeconds } from '@poa-box/core/task-lens';
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
 import { queryWithFieldFallback } from '../../lib/subgraph';
@@ -43,7 +44,7 @@ function humanizeDuration(seconds: number | undefined): string {
  */
 function deadlineSentence(onChain: TaskOnChain, claimState: ClaimState): string | null {
   if (onChain.status === TASK_STATUS.CLAIMED) {
-    const governing = onChain.claimDeadline || onChain.absoluteDeadline;
+    const governing = effectiveTaskDeadlineSeconds(onChain);
     if (claimState === 'expired-claimable') {
       return 'claim expired — anyone with CLAIM permission can take over';
     }

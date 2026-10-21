@@ -60,6 +60,8 @@ import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 import { resolveProposalId } from './helpers';
 import { tryAggregate } from '../../lib/multicall';
+import { buildGovernanceProposal } from '@poa-box/core/tx/governance';
+import { buildProposalMetadata, serializeProposalMetadata } from '@poa-box/core/metadata/proposal';
 
 // One parser validates native subject IDs and ABI-compatible legacy hatIds in both hosts.
 import { CLASS_STRATEGY, MAX_CLASSES, parseClassConfigs, describeClass } from '@poa-box/core/tx/vote';
@@ -408,13 +410,16 @@ const classesProposeHandler = {
 
       const classLines = classes.map(describeClass);
       const title = `Update hybrid voting classes (${classes.length} class${classes.length === 1 ? '' : 'es'})`;
-      const metadata = {
+      const intent = buildGovernanceProposal({ votingAddress: hybridVotingAddress, votingAbiName: 'HybridVotingNew',
+        title, descriptionHash: ethers.constants.HashZero, durationMinutes: argv.duration, numOptions: 2,
+        batches: batches.map(batch => batch.map(([target, value, calldata]) => ({ target: String(target), value, calldata: String(calldata) }))), subjectIds: [] });
+      const metadata = buildProposalMetadata({
         description:
           `Replace the hybrid voting class configuration via HybridVoting.setClasses (executor-gated). ` +
           `New classes: ${classLines.map((line, i) => `[${i}] ${line}`).join('; ')}.`,
         optionNames: [title, 'Keep current classes'],
         createdAt: Date.now(),
-      };
+      });
 
       await runPreflight(ctx.provider, [checkGasBalance(ctx.address)], { skip: !argv.preflight });
       spin.stop();
@@ -430,15 +435,15 @@ const classesProposeHandler = {
       const run = async (): Promise<Record<string, any>> => {
         const txSpin = output.spinner('Pinning metadata + creating proposal...');
         txSpin.start();
-        const cid = argv.dryRun ? undefined : await pinJson(JSON.stringify(metadata));
+        const cid = argv.dryRun ? undefined : await pinJson(serializeProposalMetadata(metadata));
         const descriptionHash = cid ? ipfsCidToBytes32(cid) : ethers.constants.HashZero;
-        const titleBytes = stringToBytes(title);
+        intent.args[1] = descriptionHash;
 
         const voting = createWriteContract(hybridVotingAddress, 'HybridVotingNew', ctx.signer);
         const result = await executeTx(
           voting,
-          'createProposal',
-          [titleBytes, descriptionHash, argv.duration, 2, batches, []],
+          intent.method,
+          intent.args,
           { dryRun: argv.dryRun }
         );
         txSpin.stop();

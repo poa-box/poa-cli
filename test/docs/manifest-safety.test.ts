@@ -21,7 +21,7 @@ import { WRITE_COMMANDS, SIDE_EFFECT_READS, safetyFor } from '../../scripts/lib/
 const ROOT = path.resolve(__dirname, '..', '..');
 const CMD_DIR = path.join(ROOT, 'src', 'commands');
 
-const BROADCAST_TOKENS = /executeTx|createWriteContract|sendSponsored/;
+const BROADCAST_TOKENS = /executeTx|executeIntent|createWriteContract|sendSponsored/;
 const PIN_TOKENS = /option\('pin'|pinJson|pinFile/;
 const DESTRUCTIVE_TOKEN = /destructive:\s*true/;
 

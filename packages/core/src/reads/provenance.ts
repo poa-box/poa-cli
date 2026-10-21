@@ -110,9 +110,9 @@ function operationHash(op: ethers.utils.Result, chainId: number): string {
     [op.sender, op.nonce, ethers.utils.keccak256(op.initCode), ethers.utils.keccak256(op.callData), op.accountGasLimits, op.preVerificationGas, op.gasFees, ethers.utils.keccak256(op.paymasterAndData)]));
   return ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode(['bytes32', 'address', 'uint256'], [digest, ENTRY_POINT, chainId]));
 }
-function accountCall(op: ethers.utils.Result, userOpHash: string, operationStatus: 'succeeded' | 'failed'): ExactTransactionCall {
+function accountCall(op: ethers.utils.Result, userOpHash: string, operationStatus: 'succeeded' | 'failed', allowValue = false): ExactTransactionCall {
   const parsed = decodeCanonicalCall(new ethers.utils.Interface(getAbi('PasskeyAccount')), op.callData);
-  if (parsed.name !== 'execute' || !parsed.args.value.isZero()) throw new Error('EXACT_ACCOUNT_CALL_REQUIRED');
+  if (parsed.name !== 'execute' || (!allowValue && !parsed.args.value.isZero())) throw new Error('EXACT_ACCOUNT_CALL_REQUIRED');
   return { target: parsed.args.target, caller: op.sender, data: parsed.args.data, operationStatus, userOpHash };
 }
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -123,8 +123,13 @@ const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 export function exactTransactionCall(tx: CanonicalTransaction, chainId: number): ExactTransactionCall;
 export function exactTransactionCall(tx: CanonicalTransaction, chainId: number, selector: ExactTransactionCallSelector): ExactTransactionExecution;
 export function exactTransactionCall(tx: CanonicalTransaction, chainId: number, selector?: ExactTransactionCallSelector): ExactTransactionCall | ExactTransactionExecution {
-  if (tx.value !== '0') throw new Error('UNSUPPORTED_PROVENANCE_VALUE');
   if (selector !== undefined && transactionChains.get(tx) !== chainId) throw new Error('CANONICAL_TRANSACTION_CHAIN_PROOF_REQUIRED');
+  return selectTransactionCall(tx, chainId, selector);
+}
+/** Shared complete-bundle interval policy. Canonical observation branding stays
+ * on exactTransactionCall; execution may separately isolate an observed receipt. */
+function selectTransactionCall(tx: CanonicalTransaction, chainId: number, selector?: ExactTransactionCallSelector, allowValue = false): ExactTransactionCall | ExactTransactionExecution {
+  if (tx.value !== '0') throw new Error('UNSUPPORTED_PROVENANCE_VALUE');
   const expectedHash = selector?.userOpHash === undefined ? undefined : hash(selector.userOpHash);
   const sender = selector?.sender === undefined ? undefined : ethers.utils.getAddress(selector.sender);
   const nonce = selector?.nonce === undefined ? undefined : requireRawUint(selector.nonce);
@@ -176,11 +181,34 @@ export function exactTransactionCall(tx: CanonicalTransaction, chainId: number, 
     if ((expectedHash !== undefined && hashes[i] !== expectedHash) || (sender !== undefined && !same(op.sender, sender))
       || (nonce !== undefined && op.nonce.toString() !== nonce)) continue;
     let call: ExactTransactionCall;
-    try { call = accountCall(op, hashes[i], outcomes[i]); }
+    try { call = accountCall(op, hashes[i], outcomes[i], allowValue); }
     catch { continue; } // Other accounts/methods may co-bundle; never infer their inner call.
     if (matches(call)) candidates.push({ call, index: i });
   }
   if (candidates.length !== 1) throw new Error(candidates.length ? 'EXACT_OPERATION_IDENTITY_REQUIRED' : 'EXACT_OPERATION_IDENTITY_MISMATCH');
   const { call, index } = candidates[0];
   return { ...call, logs: Object.freeze(tx.logs.slice((index === 0 ? before[0] : eventIndices[index - 1]) + 1, eventIndices[index])) };
+}
+
+
+/** Pure event isolation, not canonical-inclusion proof. The host must obtain
+ * matching transaction/receipt observations from its trusted chain provider.
+ * Uses the same full-calldata, operation-order and boundary checks as canonical
+ * provenance. Nonzero inner call value is valid on this execution-only path. */
+export function isolateUserOperationReceiptLogs(input: {
+  transaction: Pick<ethers.providers.TransactionResponse, 'hash' | 'from' | 'to' | 'data' | 'value' | 'chainId'>;
+  receipt: ethers.providers.TransactionReceipt;
+  chainId: number;
+  expected: ExactTransactionCallSelector & { userOpHash: string; entryPoint: string };
+}): readonly ethers.providers.Log[] {
+  const { transaction: tx, receipt, chainId, expected } = input;
+  if (!Number.isSafeInteger(chainId) || chainId <= 0 || tx.chainId !== chainId || !tx.to
+    || !same(tx.to, expected.entryPoint) || hash(tx.hash) !== hash(receipt.transactionHash) || receipt.status !== 1) throw new Error('OPERATION_RECEIPT_IDENTITY_MISMATCH');
+  const observed: CanonicalTransaction = { transactionHash: hash(tx.hash), inclusion: { number: String(receipt.blockNumber), hash: receipt.blockHash },
+    from: tx.from, to: tx.to, data: tx.data, value: requireRawUint(tx.value.toString()), logs: receipt.logs };
+  const execution = selectTransactionCall(observed, chainId, expected, true) as ExactTransactionExecution;
+  if (execution.operationStatus !== 'succeeded') throw new Error('OPERATION_EXECUTION_FAILED');
+  // selectTransactionCall returns slices of the supplied log objects, preserving
+  // the full provider Log fields needed by domain receipt decoders.
+  return execution.logs as readonly ethers.providers.Log[];
 }

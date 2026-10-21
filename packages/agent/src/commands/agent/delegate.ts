@@ -2,6 +2,9 @@ import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { type Hex, type Address } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { isDelegated, delegateEOA, EOA_DELEGATION } from '@poa-box/cli/lib/sponsored';
+import { resolveNetworkConfig } from '@poa-box/cli/config/networks';
+import { createProvider } from '@poa-box/cli/lib/signer';
+import { confirmWrite } from '@poa-box/cli/lib/command';
 import * as output from '@poa-box/cli/lib/output';
 
 interface DelegateArgs {
@@ -19,11 +22,14 @@ export const delegateHandler = {
     spin.start();
 
     try {
+      const network = resolveNetworkConfig(argv.chain);
+      if (network.chainId !== 100) throw new Error('Agent EIP-7702 delegation currently supports Gnosis only.');
+      if (process.env.POP_READONLY === '1' && !argv.dryRun) throw new Error('POP_READONLY=1 — delegation cannot sign or broadcast.');
       const key = (argv.privateKey as string) || process.env.POP_PRIVATE_KEY;
       if (!key) throw new Error('No private key configured');
 
       const account = privateKeyToAccount(key as Hex);
-      const rpcUrl = argv.rpc as string || 'https://rpc.gnosischain.com';
+      const rpcUrl = argv.rpc as string || network.resolvedRpc;
 
       // Check if already delegated
       spin.text = 'Checking delegation status...';
@@ -49,6 +55,8 @@ export const delegateHandler = {
         return;
       }
 
+      if ((await createProvider({ chainId: network.chainId, rpcUrl }).getNetwork()).chainId !== network.chainId) throw new Error('RPC_CHAIN_MISMATCH');
+      await confirmWrite(argv, { account: account.address, delegate: EOA_DELEGATION, chain: network.chainId }, { destructive: true });
       // Delegate
       spin.text = 'Signing EIP-7702 authorization...';
       const txHash = await delegateEOA(key as Hex, rpcUrl);
@@ -63,7 +71,7 @@ export const delegateHandler = {
       });
     } catch (err: any) {
       spin.stop();
-      output.error(err.message);
+      output.error(err.message, err.result ? { code: err.result.errorCode, txHash: err.result.txHash, recovery: err.result.recovery, suggestion: err.result.suggestion } : undefined);
       process.exit(1);
     }
   },

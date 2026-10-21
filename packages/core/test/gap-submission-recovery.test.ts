@@ -184,3 +184,35 @@ describe('receipt-only recovery, with bounded exact nonce evidence', () => {
     expect((await reconcileSubmissionRecovery(pending('user-operation'), r)).outcome.status).toBe('unknown');
   });
 });
+
+
+describe('canonical UserOperation recovery inclusion', () => {
+  it.each(['missing-block-reader', 'missing-number', 'missing-hash', 'orphan', 'wrong-block-number', 'reorg', 'receipt-changed', 'receipt-hash-changed', 'receipt-block-changed', 'chain-changed'])(
+    'retains the unresolved barrier on %s despite an exact success event', async variant => {
+      const initial = receipt(1, [event(true)]);
+      const r = readers({ getTransactionReceipt: vi.fn(async () => initial) });
+      if (variant === 'missing-block-reader') delete r.getBlock;
+      if (variant === 'missing-number') delete (initial as any).blockNumber;
+      if (variant === 'missing-hash') delete (initial as any).blockHash;
+      if (variant === 'orphan') r.getBlock = async () => ({ number: 11, hash: OTHER });
+      if (variant === 'wrong-block-number') r.getBlock = async () => ({ number: 12, hash: H });
+      if (variant === 'reorg') r.getBlock = vi.fn().mockResolvedValueOnce({ number: 11, hash: H }).mockResolvedValueOnce({ number: 11, hash: OTHER });
+      if (variant === 'receipt-changed') r.getTransactionReceipt = vi.fn().mockResolvedValueOnce(initial).mockResolvedValueOnce(receipt(1, [event(false)]));
+      if (variant === 'receipt-hash-changed') r.getTransactionReceipt = vi.fn().mockResolvedValueOnce(initial).mockResolvedValueOnce({ ...initial, transactionHash: OTHER });
+      if (variant === 'receipt-block-changed') r.getTransactionReceipt = vi.fn().mockResolvedValueOnce(initial).mockResolvedValueOnce({ ...initial, blockNumber: 12 });
+      if (variant === 'chain-changed') r.getChainId = vi.fn().mockResolvedValueOnce(100).mockResolvedValueOnce(42161);
+      const record = pending('user-operation'), saved = JSON.stringify(record);
+      expect((await reconcileSubmissionRecovery(record, r)).outcome.status).toBe('unknown');
+      expect(JSON.stringify(record)).toBe(saved);
+    });
+  it.each([true, false])('settles only stable canonical inclusion and exact inner outcome, success %s', async success => {
+    const r = readers({ getTransactionReceipt: vi.fn(async () => receipt(1, [event(success)])) });
+    const result = await reconcileSubmissionRecovery(pending('user-operation'), r);
+    expect(result.outcome.status).toBe(success ? 'succeeded' : 'failed');
+    expect(r.getBlock).toHaveBeenNthCalledWith(1, '11');
+    expect(r.getBlock).toHaveBeenNthCalledWith(2, '11');
+    expect(r.getTransactionReceipt).toHaveBeenCalledTimes(2);
+    expect(r.getChainId).toHaveBeenCalledTimes(2);
+    expect(r.getBlockTransactions).not.toHaveBeenCalled();
+  });
+});

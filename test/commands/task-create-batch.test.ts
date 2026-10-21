@@ -124,6 +124,7 @@ describe('pop task create-batch — v6 batch vs legacy loop', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(output.isJsonMode).mockReturnValue(false);
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pop-batch-'));
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new ExitError(code ?? 0);
@@ -167,12 +168,12 @@ describe('pop task create-batch — v6 batch vs legacy loop', () => {
 
   it('v6 org: 3-row JSONL → single createTasksBatch call with ABI-ordered tuples; per-row deadline beats batch default', async () => {
     mocks.detectTaskManagerFeatures.mockResolvedValue(V6_FEATURES);
-    mocks.executeTx.mockResolvedValue({
-      success: true,
-      txHash: '0xbatch',
-      explorerUrl: 'https://explorer/tx/0xbatch',
-      logs: [10, 11, 12].map(id => ({ name: 'TaskCreated', args: { id: ethers.BigNumber.from(id) } })),
-    });
+    mocks.executeTx.mockImplementation(async (contract, _method, [pid, inputs]) => ({
+      success: true, txHash: '0xbatch', explorerUrl: 'https://explorer/tx/0xbatch',
+      receipt: { status: 1, logs: inputs.map((row: any[], i: number) => ({ address: TM_ADDR,
+        ...contract.interface.encodeEventLog(contract.interface.getEvent('TaskCreated'),
+          [10 + i, pid, row[0], row[3], row[4], row[5], row[1], row[2]]) })).reverse() },
+    }));
     const file = writeJsonl(ROWS);
 
     await createBatchHandler.handler(batchArgv({ file, deadline: String(DEADLINE_TS), completionWindow: '48h' }));
@@ -193,17 +194,17 @@ describe('pop task create-batch — v6 batch vs legacy loop', () => {
     expect(ethers.utils.toUtf8String(inputs[0][1])).toBe('Alpha task'); // title
     expect(inputs[0][2]).toBe(ipfsCidToBytes32(CID)); // metadataHash
     expect(inputs[0][3]).toBe(ethers.constants.AddressZero); // bountyToken
-    expect(inputs[0][4]).toBe(0); // bountyPayout
+    expect(inputs[0][4].toString()).toBe(String(0)); // bountyPayout
     expect(inputs[0][5]).toBe(false); // requiresApplication
 
     // Rows 1 and 3 use the batch-wide defaults
-    expect(inputs[0][6]).toBe(DEADLINE_TS);
-    expect(inputs[0][7]).toBe(48 * 3600);
-    expect(inputs[2][6]).toBe(DEADLINE_TS);
-    expect(inputs[2][7]).toBe(48 * 3600);
+    expect(inputs[0][6].toString()).toBe(String(DEADLINE_TS));
+    expect(inputs[0][7].toString()).toBe(String(48 * 3600));
+    expect(inputs[2][6].toString()).toBe(String(DEADLINE_TS));
+    expect(inputs[2][7].toString()).toBe(String(48 * 3600));
     // Row 2's own deadline/completionWindow win over the batch default
-    expect(inputs[1][6]).toBe(OVERRIDE_TS);
-    expect(inputs[1][7]).toBe(24 * 3600);
+    expect(inputs[1][6].toString()).toBe(String(OVERRIDE_TS));
+    expect(inputs[1][7].toString()).toBe(String(24 * 3600));
 
     // The real v6 ABI encodes the [pid, tuples] shape as passed
     expect(() => contract.interface.encodeFunctionData('createTasksBatch', args)).not.toThrow();
@@ -214,6 +215,31 @@ describe('pop task create-batch — v6 batch vs legacy loop', () => {
       expect.stringContaining('3 tasks'),
       expect.objectContaining({ taskIds: '10, 11, 12', txHash: '0xbatch' })
     );
+  });
+
+  it.each(['direct', 'isolated-sponsored', 'ambiguous-bundle', 'unbound-direct'] as const)('%s: identical drafts consume emitted IDs only with an attested operation scope', async mode => {
+    mocks.detectTaskManagerFeatures.mockResolvedValue(V6_FEATURES);
+    const txHash = '0x' + 'ab'.repeat(32), opHash = '0x' + 'cd'.repeat(32);
+    mocks.executeTx.mockImplementation(async (contract, _method, [pid, inputs]) => {
+      const logs = inputs.map((row: any[], i: number) => ({ address: TM_ADDR,
+        ...contract.interface.encodeEventLog(contract.interface.getEvent('TaskCreated'),
+          [9007199254740993n + BigInt(i), pid, row[0], row[3], row[4], row[5], row[1], row[2]]) }));
+      const receipt = { status: 1, transactionHash: txHash, to: mode === 'unbound-direct' ? WALLET : TM_ADDR, from: WALLET, logs };
+      return { success: true, txHash, receipt, ...(['direct', 'unbound-direct'].includes(mode) ? {} : {
+        sponsored: true, userOpHash: opHash, outcome: { status: 'succeeded', userOpHash: opHash },
+        logScope: mode === 'isolated-sponsored' ? 'operation' : 'unknown',
+        outerReceipt: { ...receipt, logs: [...logs, ...logs] },
+      }) };
+    });
+    vi.mocked(output.isJsonMode).mockReturnValue(true);
+    const repeated = { name: 'Identical task', description: 'Same draft', payout: '0.000000000000000001' };
+    const file = writeJsonl([repeated, { ...repeated }]);
+    await createBatchHandler.handler(batchArgv({ file }));
+    const result = vi.mocked(output.json).mock.calls[0][0];
+    const unknownScope = mode === 'ambiguous-bundle' || mode === 'unbound-direct';
+    expect(result.creationEvidence.state).toBe(unknownScope ? 'unknown' : 'known');
+    expect(result.results.map((row: any) => row.taskId)).toEqual(unknownScope
+      ? [undefined, undefined] : ['9007199254740993', '9007199254740994']);
   });
 
   it('dry-run prepares the native batch without publishing task metadata', async () => {
@@ -344,6 +370,7 @@ describe('pop task create-batch — payout derivation for rows omitting payout',
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(output.isJsonMode).mockReturnValue(false);
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pop-batch-payout-'));
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new ExitError(code ?? 0);

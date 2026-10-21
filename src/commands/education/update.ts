@@ -1,3 +1,5 @@
+import { buildUpdateModule } from '@poa-box/core/tx/education';
+import { buildEducationModuleMetadata, serializeEducationModuleMetadata } from '@poa-box/core/metadata/education';
 /**
  * pop education update — edit a module's metadata and/or payout.
  *
@@ -39,7 +41,7 @@ import * as output from '../../lib/output';
 interface UpdateModuleArgs {
   org: string;
   module: string;
-  payout?: number;
+  payout?: string | number;
   name?: string;
   description?: string;
   link?: string;
@@ -98,7 +100,7 @@ function parseJsonArrayFlag(value: string, flag: string): any[] {
 export const updateModuleHandler = {
   builder: (yargs: Argv) => yargs
     .option('module', { type: 'string', demandOption: true, describe: 'Module ID' })
-    .option('payout', { type: 'number', describe: 'New PT reward for completion (must be > 0)' })
+    .option('payout', { type: 'string', describe: 'New PT reward for completion (must be > 0)' })
     .option('name', { type: 'string', describe: 'New module title (re-pins metadata)' })
     .option('description', { type: 'string', describe: 'New module description (re-pins metadata)' })
     .option('link', { type: 'string', describe: 'New external learning resource URL (re-pins metadata)' })
@@ -122,7 +124,7 @@ export const updateModuleHandler = {
           'Available: --payout, --name, --description, --link, --quiz, --answers'
         );
       }
-      if (payoutChanging && (!(argv.payout! > 0) || !isFinite(argv.payout!))) {
+      if (payoutChanging && (!(Number(argv.payout!) > 0) || !Number.isFinite(Number(argv.payout!)))) {
         throw new CliError(
           `--payout must be a positive number (the contract reverts InvalidPayout for 0), got: ${argv.payout}`,
           EXIT.USAGE
@@ -231,6 +233,7 @@ export const updateModuleHandler = {
         ? currentContentHash
         : ethers.constants.HashZero;
       let newCid: string | undefined;
+      let preparedMetadata: string | undefined;
       const metadataActuallyChanged = metadataChanging && (
         finalName !== currentName
         || finalDescription !== (currentDescription ?? '')
@@ -244,16 +247,16 @@ export const updateModuleHandler = {
         }
         // Key order MUST match src/commands/education/create-module.ts
         // (frontend/subgraph parity).
-        const metadataJson = {
+        const metadataJson = buildEducationModuleMetadata({
           name: finalName,
           description: finalDescription,
           link: finalLink,
           quiz: finalQuiz,
           answers: finalAnswers,
-        };
-        spin.text = 'Pinning updated metadata to IPFS...';
-        newCid = await pinJson(JSON.stringify(metadataJson));
-        finalContentHash = ipfsCidToBytes32(newCid);
+        });
+        // Serialize once: confirmation reviews these exact bytes before publication.
+        preparedMetadata = serializeEducationModuleMetadata(metadataJson);
+        if (argv.dryRun) finalContentHash = ethers.constants.HashZero;
       }
 
       // ── 4. Pre-flight (skippable with --no-preflight) ──────────────────
@@ -277,15 +280,16 @@ export const updateModuleHandler = {
         metadata: metadataActuallyChanged ? 're-pinned to IPFS' : 'unchanged (no re-pin)',
       }, { actionLabel: `Update education module ${moduleId} (full overwrite)` });
 
-      const txSpin = output.spinner('Sending updateModule...');
+      const txSpin = output.spinner(preparedMetadata && !argv.dryRun ? 'Pinning updated metadata to IPFS...' : 'Sending updateModule...');
       txSpin.start();
+      if (preparedMetadata !== undefined && !argv.dryRun) {
+        newCid = await pinJson(preparedMetadata);
+        finalContentHash = ipfsCidToBytes32(newCid);
+      }
+      txSpin.text = 'Sending updateModule...';
       const contract = createWriteContract(educationHubAddress, 'EducationHubNew', ctx.signer);
-      const result = await executeTx(contract, 'updateModule', [
-        moduleId,
-        stringToBytes(finalName),
-        finalContentHash,
-        finalPayout,
-      ], { dryRun: argv.dryRun });
+      const intent = buildUpdateModule({ educationHubAddress, moduleId, name: finalName, contentHash: finalContentHash, payoutWei: finalPayout });
+      const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
       txSpin.stop();
 
       finishWrite(result, {

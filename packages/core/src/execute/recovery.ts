@@ -27,6 +27,8 @@ export interface SubmissionRecoveryRecord {
   txHash?: string;
   /** Exact EOA call digest, separate from the full logical/batch intent. */
   callKey?: string;
+  /** Digest of the exact EIP-7702 signed authorization list; signatures never persist. */
+  authorizationKey?: string;
   /** A bounded search begins at the block observed before send, never at genesis. */
   fromBlock?: string;
 }
@@ -70,10 +72,11 @@ export function normalizeSubmissionRecovery(record: SubmissionRecoveryRecord): S
   }
   if (record.nonce !== undefined) result.nonce = requireRawUint(record.nonce);
   if (record.fromBlock !== undefined) result.fromBlock = requireRawUint(record.fromBlock);
-  for (const key of ['computedHash', 'txHash', 'callKey'] as const) {
+  for (const key of ['computedHash', 'txHash', 'callKey', 'authorizationKey'] as const) {
     if (record[key] !== undefined) { if (!hash(record[key])) throw new Error('Invalid submission hash'); result[key] = record[key]!.toLowerCase(); }
   }
   if (record.entryPoint !== undefined) { if (!addr(record.entryPoint)) throw new Error('Invalid EntryPoint'); result.entryPoint = record.entryPoint.toLowerCase(); }
+  if (result.authorizationKey && result.kind !== 'transaction') throw new Error('Authorization identity requires a transaction');
   if (!['intent', 'signing', 'aborted'].includes(result.phase)) {
     if (result.nonce === undefined || !result.kind) throw new Error('Missing submission identity');
     if (result.kind === 'user-operation' && (!result.computedHash || !result.entryPoint)) throw new Error('Missing operation identity');
@@ -91,7 +94,7 @@ export function assertSubmissionFence(record: SubmissionRecoveryRecord, fence: S
 }
 export type SubmissionRecoveryEvent =
   | { type: 'signing' }
-  | { type: 'prepare'; kind: 'transaction' | 'user-operation'; nonce: string; entryPoint?: string; computedHash?: string; callKey?: string; fromBlock?: string }
+  | { type: 'prepare'; kind: 'transaction' | 'user-operation'; nonce: string; entryPoint?: string; computedHash?: string; callKey?: string; authorizationKey?: string; fromBlock?: string }
   | { type: 'broadcast' }
   | { type: 'acknowledge'; txHash?: string }
   | { type: 'unresolved' }
@@ -134,11 +137,38 @@ export function canAbandonSubmissionRecovery(record: SubmissionRecoveryRecord): 
   normalizeSubmissionRecovery(record);
   return ['intent', 'signing', 'prepared'].includes(record.phase);
 }
+export interface RecoveryAuthorization {
+  chainId: RawUintInput; address: string; nonce: RawUintInput;
+  yParity: RawUintInput; r: string; s: string;
+}
+/** Exact signed authorization identity, including destination/nonce/chain and
+ * signature. Only this digest is journaled; no authorization/signature is saved. */
+export function submissionAuthorizationKey(authorizations: readonly RecoveryAuthorization[]): string {
+  if (!Array.isArray(authorizations) || !authorizations.length) throw new Error('Authorization list is unavailable');
+  const uint = (value: RawUintInput) => requireRawUint(typeof value === 'string' && /^0x[\da-f]+$/i.test(value) ? BigInt(value) : value);
+  const scalar = (value: string): string => {
+    if (typeof value !== 'string' || !/^0x[\da-f]{1,64}$/i.test(value)) throw new Error('Invalid authorization signature scalar');
+    const raw = BigInt(value);
+    const order = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+    if (raw === 0n || raw >= order) throw new Error('Invalid authorization signature scalar');
+    // Signers commonly expose bytes32, while JSON-RPC may expose quantities.
+    // Leading zeroes are representation only, never a different authorization.
+    return '0x' + raw.toString(16).padStart(64, '0');
+  };
+  return keccak256(toUtf8Bytes(JSON.stringify(authorizations.map(authorization => {
+    if (!addr(authorization.address)) throw new Error('Invalid authorization identity');
+    const yParity = uint(authorization.yParity);
+    if (!['0', '1'].includes(yParity)) throw new Error('Invalid authorization parity');
+    return [uint(authorization.chainId), authorization.address.toLowerCase(), uint(authorization.nonce), yParity, scalar(authorization.r), scalar(authorization.s)];
+  }))));
+}
+
 export interface RecoveryTransaction {
   hash: string; from: string; nonce: RawUintInput; to?: string | null; input?: string; data?: string; value: RawUintInput;
   chainId?: RawUintInput;
   blockNumber?: RawUintInput | null;
   blockHash?: string | null;
+  authorizationList?: readonly RecoveryAuthorization[];
 }
 export interface RecoveryReceipt extends OperationReceipt {
   blockNumber?: RawUintInput | null;
@@ -193,7 +223,11 @@ export function evaluateEoaRecoveryCandidate(record: SubmissionRecoveryRecord, t
       || (transaction.input !== undefined && transaction.data !== undefined && transaction.input.toLowerCase() !== transaction.data.toLowerCase())) return { status: 'unknown', code: 'TRANSACTION_CALL_UNAVAILABLE' };
     if ((transaction.to !== null && !addr(transaction.to)) || !/^0x(?:[\da-f]{2})*$/i.test((transaction.input ?? transaction.data)!)) return { status: 'unknown', code: 'TRANSACTION_CALL_UNAVAILABLE' };
     requireRawUint(transaction.value);
-    const sameCall = !!transaction.to && submissionIntentKey([{ to: transaction.to, data: (transaction.input ?? transaction.data)!, value: transaction.value }]) === record.callKey;
+    let sameCall = !!transaction.to && submissionIntentKey([{ to: transaction.to, data: (transaction.input ?? transaction.data)!, value: transaction.value }]) === record.callKey;
+    if (record.authorizationKey) {
+      if (!Array.isArray(transaction.authorizationList)) return { status: 'unknown', code: 'TRANSACTION_AUTHORIZATION_UNAVAILABLE' };
+      sameCall = sameCall && transaction.authorizationList.length > 0 && submissionAuthorizationKey(transaction.authorizationList) === record.authorizationKey;
+    } else if (transaction.authorizationList?.length) sameCall = false;
     return { status: sameCall ? succeeded ? 'succeeded' : 'failed' : 'replaced', txHash: transaction.hash };
   } catch { return { status: 'unknown', code: 'TRANSACTION_IDENTITY_MISMATCH' }; }
 }
@@ -247,8 +281,24 @@ export async function reconcileSubmissionRecovery(record: SubmissionRecoveryReco
     receipt = receipt ?? await readers.getTransactionReceipt(txHash);
     if (!receipt || receipt.transactionHash?.toLowerCase() !== txHash.toLowerCase() || receipt.status === undefined) return unknown('RECEIPT_UNAVAILABLE');
     if (record.kind === 'user-operation') {
-      const outcome = decodeReceiptBoundUserOperationOutcome(receipt, { userOpHash: record.computedHash!, entryPoint: record.entryPoint!, sender: record.scope.accountAddress, nonce: record.nonce });
-      return { record, receipt, outcome: { ...outcome, txHash } };
+      const expected = { userOpHash: record.computedHash!, entryPoint: record.entryPoint!, sender: record.scope.accountAddress, nonce: record.nonce };
+      const outcome = decodeReceiptBoundUserOperationOutcome(receipt, expected);
+      if (outcome.status === 'unknown') return { record, receipt, outcome: { ...outcome, txHash } };
+      // The exact inner event proves operation identity, but an orphaned receipt
+      // cannot establish canonical execution or release a durable send barrier.
+      if (!readers.getBlock) return unknown('TRANSACTION_READERS_UNAVAILABLE');
+      if (receipt.blockNumber == null || !hash(receipt.blockHash)) return unknown('TRANSACTION_INCLUSION_MISMATCH');
+      const number = requireRawUint(receipt.blockNumber);
+      const canonical = (block: RecoveryBlock | null) => !!block && requireRawUint(block.number) === number
+        && hash(block.hash) && block.hash.toLowerCase() === receipt!.blockHash!.toLowerCase();
+      if (!canonical(await readers.getBlock(number))) return unknown('NONCANONICAL_TRANSACTION_INCLUSION');
+      const closingReceipt = await readers.getTransactionReceipt(txHash);
+      if (!closingReceipt || closingReceipt.transactionHash?.toLowerCase() !== txHash.toLowerCase()
+        || closingReceipt.blockNumber == null || requireRawUint(closingReceipt.blockNumber) !== number
+        || closingReceipt.blockHash?.toLowerCase() !== receipt.blockHash.toLowerCase()
+        || JSON.stringify(decodeReceiptBoundUserOperationOutcome(closingReceipt, expected)) !== JSON.stringify(outcome)
+        || !canonical(await readers.getBlock(number)) || await readers.getChainId() !== record.scope.chainId) return unknown('RECOVERY_EVIDENCE_CHANGED');
+      return { record, receipt: closingReceipt, outcome: { ...outcome, txHash } };
     }
     if (!readers.getTransaction || !readers.getBlock) return unknown('TRANSACTION_READERS_UNAVAILABLE');
     const transaction = await readers.getTransaction(txHash);

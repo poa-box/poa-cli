@@ -156,6 +156,59 @@ pop vote results [flags]
 | --- | --- | --- | --- | --- |
 | `--proposal` | string | yes | - | Proposal ID (number) or fuzzy title query |
 
+## pop vote ballots
+
+Read bounded paginated indexed ballots with explicit coverage
+
+```text
+pop vote ballots [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--max-pages` | number | no | `100` | - |
+| `--page-size` | number | no | `1000` | - |
+| `--proposal` | string | yes | - | Exact decimal proposal ID |
+| `--type` | string | no | `hybrid` | Choices: `hybrid`, `dd` |
+
+## pop vote capabilities
+
+Show shared governance limits and supported configuration keys
+
+```text
+pop vote capabilities [flags]
+```
+
+## pop vote authorization
+
+Inspect DD permission and activation policy for an account
+
+```text
+pop vote authorization [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--account` | string | yes | - | Observed account; no signing key required |
+| `--proposal` | string | yes | - | Exact DD proposal ID |
+
+## pop vote power
+
+Inspect frozen hybrid classes, current account power, indexed tally matrix and quorum
+
+```text
+pop vote power [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--account` | string | yes | - | Observed wallet address; no signing key required |
+| `--max-pages` | number | no | `100` | - |
+| `--options` | string | no | - | Optional comma-separated option indices for a contribution preview |
+| `--page-size` | number | no | `1000` | - |
+| `--proposal` | string | yes | - | Exact hybrid proposal ID; uses its frozen classes and immutable bindings |
+| `--weights` | string | no | - | Optional integer percentage weights, paired with --options and totaling 100 |
+
 ## pop vote classes
 
 Show or propose the hybrid voting class configuration (show / propose)

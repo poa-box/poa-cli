@@ -23,6 +23,7 @@ import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 import { resolveProposalId, announceWinnerProbe, parseAnnounceReceipt } from './helpers';
+import { parseProposalReceiptOutcome } from '@poa-box/core/tx/vote';
 
 interface AnnounceArgs {
   org: string;
@@ -127,12 +128,16 @@ export const announceHandler = {
         // proposal that actually failed to execute.
         if (result.success && !result.dryRun) {
           const receipt = parseAnnounceReceipt(result);
-          if (receipt.innerFailure) {
+          const receiptOutcome = result.receipt && ctx.modules?.executorAddress ? parseProposalReceiptOutcome(result.receipt.logs, {
+            votingAddress: contractAddr, executorAddress: ctx.modules.executorAddress, proposalId: String(proposalId),
+          }) : undefined;
+          if (receipt.innerFailure || (receiptOutcome?.execution.state === 'known' && receiptOutcome.execution.value === 'failed')) {
             output.error(`Proposal #${proposalId} ANNOUNCED but EXECUTION FAILED`, {
               txHash: result.txHash,
               explorerUrl: result.explorerUrl,
               winningOption: receipt.winningOption,
               failedCalls: receipt.failedCalls,
+              receiptOutcome,
               note: 'The proposal was finalized but inner execution reverted. ' +
                 'Gas was burned. Diagnose by inspecting the CallFailed events in the tx, ' +
                 'fix the issue, and create a new proposal. The old one cannot be re-executed.',
@@ -146,6 +151,7 @@ export const announceHandler = {
               winningOption: receipt.winningOption,
               valid: receipt.valid,
               executed: receipt.executed,
+              receiptOutcome,
             },
           });
           return { proposal: proposalId, txHash: result.txHash, winningOption: receipt.winningOption };

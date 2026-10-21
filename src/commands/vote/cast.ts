@@ -24,6 +24,7 @@ import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 import { resolveProposalId } from './helpers';
 import { query } from '../../lib/subgraph';
+import { requireValidVoteWeights } from '@poa-box/core/governance/validation';
 
 interface CastArgs {
   org: string;
@@ -60,8 +61,10 @@ export const castHandler = {
     .example('pop vote cast --type hybrid --proposal "bridge retry" --options 0,1 --weights 60,40', 'Fuzzy title query + split weights'),
 
   handler: async (argv: ArgumentsCamelCase<CastArgs>) => {
-    const optionIndices = (argv.options as string).split(',').map(s => parseInt(s.trim(), 10));
-    const weights = (argv.weights as string).split(',').map(s => parseInt(s.trim(), 10));
+    const optionIndices = (argv.options as string).split(',').map(s => s.trim() === '' ? NaN : Number(s.trim()));
+    const weights = (argv.weights as string).split(',').map(s => s.trim() === '' ? NaN : Number(s.trim()));
+    try { requireValidVoteWeights(weights, optionIndices); }
+    catch (error: any) { output.error(error.message); process.exit(EXIT.USAGE); return; }
 
     if (optionIndices.length !== weights.length) {
       output.error('Number of options must match number of weights');

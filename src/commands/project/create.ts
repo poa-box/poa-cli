@@ -21,12 +21,13 @@ import { requireModule } from '../../lib/resolve';
 import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
-import { encodeProjectStruct } from '@poa-box/core/tx/project';
+import { encodeProjectStructRaw } from '@poa-box/core/tx/project';
+import { buildProjectMetadata, serializeProjectMetadata } from '@poa-box/core/metadata/task';
 
 interface CreateArgs {
   org: string;
   name: string;
-  cap: number;
+  cap: string | number;
   managers?: string;
   description?: string;
   'bounty-tokens'?: string;
@@ -52,7 +53,7 @@ function parseBigNumberList(val?: string): ethers.BigNumber[] {
 export const createHandler = {
   builder: (yargs: Argv) => yargs
     .option('name', { type: 'string', demandOption: true, describe: 'Project name' })
-    .option('cap', { type: 'number', default: 0, describe: 'PT cap (0 = unlimited)' })
+    .option('cap', { type: 'string', default: '0', describe: 'PT cap (0 = unlimited)' })
     .option('managers', { type: 'string', describe: 'Comma-separated project manager addresses' })
     .option('description', { type: 'string', describe: 'Project description' })
     .option('bounty-tokens', { type: 'string', describe: 'Comma-separated bounty token addresses' })
@@ -69,9 +70,10 @@ export const createHandler = {
       const taskManagerAddress = requireModule(ctx.modules, 'taskManagerAddress');
 
       const managers = parseCommaList(argv.managers);
-      const projectStruct = encodeProjectStruct({ taskManagerAddress, name: argv.name, cap: argv.cap,
-        managers, bountyTokens: parseCommaList(argv.bountyTokens as string),
-        bountyCaps: parseBigNumberList(argv.bountyCaps as string) });
+      const projectStruct = encodeProjectStructRaw({ taskManagerAddress, name: argv.name,
+        capRaw: ethers.utils.parseUnits(String(argv.cap), 18).toString(), managers,
+        bountyTokens: parseCommaList(argv.bountyTokens as string),
+        bountyCapsRaw: parseBigNumberList(argv.bountyCaps as string).map(cap => cap.toString()) });
       let metaCid: string | undefined;
 
       // ── Pre-flight (skippable with --no-preflight) ────────────────────
@@ -80,14 +82,14 @@ export const createHandler = {
 
       await confirmWrite(argv, {
         project: argv.name,
-        cap: argv.cap ? `${argv.cap} PT` : 'unlimited',
+        cap: Number(argv.cap) ? `${argv.cap} PT` : 'unlimited',
         managers: managers.length ? managers.join(', ') : undefined,
         org: argv.org,
         chain: ctx.networkName,
       }, { actionLabel: 'About to create project' });
 
       if (argv.description && !argv.dryRun) {
-        metaCid = await pinJson(JSON.stringify({ description: argv.description }));
+        metaCid = await pinJson(serializeProjectMetadata(buildProjectMetadata(argv.description)));
         projectStruct[1] = ipfsCidToBytes32(metaCid);
       }
       const txSpin = output.spinner('Creating project...');
@@ -103,7 +105,7 @@ export const createHandler = {
         fields: {
           projectId,
           project: argv.name,
-          cap: argv.cap ? `${argv.cap} PT` : 'unlimited',
+          cap: Number(argv.cap) ? `${argv.cap} PT` : 'unlimited',
           ipfsCid: metaCid,
         },
       });

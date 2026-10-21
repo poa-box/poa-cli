@@ -15,6 +15,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createSigner, resolveIdentityAddress } from '../../src/lib/signer';
 import { resolveSponsoredConfig } from '../../src/lib/sponsorship-config';
 import { pinJson, pinFile } from '../../src/lib/ipfs';
+import { delegateEOA, sendSponsored } from '../../src/lib/sponsored';
 
 const KEY = '0x' + '11'.repeat(32);
 const KEY_ADDR = '0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A'; // Wallet(0x11…11).address
@@ -54,6 +55,11 @@ describe('POP_READONLY=1 — the three capability choke points', () => {
   it('IPFS pinning refuses — pinning publishes publicly and irreversibly', async () => {
     await expect(pinJson('{"a":1}')).rejects.toThrow(/POP_READONLY/);
     await expect(pinFile(Buffer.from('x'))).rejects.toThrow(/POP_READONLY/);
+  });
+
+  it('direct agent delegation and sponsored helpers cannot bypass read-only mode', async () => {
+    await expect(delegateEOA(KEY as `0x${string}`, 'http://unit.invalid')).rejects.toThrow(/POP_READONLY/);
+    await expect(sendSponsored(KEY as `0x${string}`, OTHER as `0x${string}`, '0x', ('0x' + '22'.repeat(32)) as `0x${string}`, 1n)).rejects.toThrow(/POP_READONLY/);
   });
 
   it('other POP_READONLY values do not activate it', () => {

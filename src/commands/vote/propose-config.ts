@@ -11,6 +11,9 @@ import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 import { resolveVotingContracts } from './helpers';
+import { requireLiveGovernanceConfigKey } from '@poa-box/core/governance/capabilities';
+import { buildGovernanceProposal } from '@poa-box/core/tx/governance';
+import { buildProposalMetadata, serializeProposalMetadata } from '@poa-box/core/metadata/proposal';
 
 /**
  * ConfigKey mapping for HybridVoting (contracts origin/main, v6):
@@ -154,12 +157,14 @@ export const proposeConfigHandler = {
 
       // Add Hybrid call if applicable
       if (param.hybridKey >= 0) {
+        requireLiveGovernanceConfigKey('hybrid', param.hybridKey);
         const hybridCall = iface.encodeFunctionData('setConfig', [param.hybridKey, encodedValue]);
         option0Batch.push([contracts.hybridVotingAddress, ethers.BigNumber.from(0), hybridCall]);
       }
 
       // Add DD call if applicable and contract exists
       if (param.ddKey !== null && contracts.ddVotingAddress) {
+        requireLiveGovernanceConfigKey('dd', param.ddKey);
         const ddCall = iface.encodeFunctionData('setConfig', [param.ddKey, encodedValue]);
         option0Batch.push([contracts.ddVotingAddress, ethers.BigNumber.from(0), ddCall]);
       }
@@ -177,14 +182,17 @@ export const proposeConfigHandler = {
       }
 
       const batches = [option0Batch, []]; // option 0 = change, option 1 = keep current
+      const intent = buildGovernanceProposal({ votingAddress: contracts.hybridVotingAddress, votingAbiName: 'HybridVotingNew',
+        title: `Set ${paramName} to ${argv.value}`, descriptionHash: ethers.constants.HashZero, durationMinutes: argv.duration, numOptions: 2,
+        batches: batches.map(batch => batch.map(([target, value, calldata]) => ({ target, value, calldata }))), subjectIds: [] });
 
       // Pin metadata
       const contractList = option0Batch.length > 1 ? 'Hybrid + DD' : (param.hybridKey >= 0 ? 'Hybrid' : 'DD');
-      const metadata = {
+      const metadata = buildProposalMetadata({
         description: `Change ${paramName} to ${argv.value}. Updates ${contractList} voting contract(s) via setConfig execution calls.`,
         optionNames: [`Set ${paramName} to ${argv.value}`, 'Keep current value'],
         createdAt: Date.now(),
-      };
+      });
 
       const hybridVotingAddress = contracts.hybridVotingAddress;
       const resolvedOrgId = await resolveOrgId(argv.org, argv.chain);
@@ -193,16 +201,16 @@ export const proposeConfigHandler = {
       const run = async (): Promise<Record<string, any>> => {
         const txSpin = output.spinner('Pinning metadata...');
         txSpin.start();
-        const cid = argv.dryRun ? undefined : await pinJson(JSON.stringify(metadata));
+        const cid = argv.dryRun ? undefined : await pinJson(serializeProposalMetadata(metadata));
         const descriptionHash = cid ? ipfsCidToBytes32(cid) : ethers.constants.HashZero;
-        const titleBytes = stringToBytes(`Set ${paramName} to ${argv.value}`);
+        intent.args[1] = descriptionHash;
 
         txSpin.text = 'Sending transaction...';
         const contract = createWriteContract(hybridVotingAddress, 'HybridVotingNew', signer);
         const result = await executeTx(
           contract,
-          'createProposal',
-          [titleBytes, descriptionHash, argv.duration, 2, batches, []],
+          intent.method,
+          intent.args,
           { dryRun: argv.dryRun }
         );
         txSpin.stop();

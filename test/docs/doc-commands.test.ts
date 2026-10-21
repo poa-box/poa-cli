@@ -317,10 +317,12 @@ describe('doc-commands: documented CLI invocations match the command tree', () =
   const topLevelNames = new Set(topLevel.keys());
 
   it('buildCliTree() produces the expected shape', () => {
-    // 14 human domains — agent and brain moved to @poa-box/agent and are no
+    // 16 human domains — agent and brain moved to @poa-box/agent and are no
     // longer part of this package's documented surface; mcp is the MCP
     // server surface for integrators.
-    expect(tree).toHaveLength(15);
+    expect(tree).toHaveLength(17);
+    expect(domains.get('cashout')?.commands.has('recover-failed')).toBe(true);
+    expect(domains.get('execution')?.commands.has('recover')).toBe(true);
     expect(domains.has('mcp')).toBe(true);
     expect(domains.get('task')?.commands.has('create')).toBe(true);
     expect(domains.get('zkemail')?.commands.has('build-allowlist')).toBe(true);
@@ -329,6 +331,8 @@ describe('doc-commands: documented CLI invocations match the command tree', () =
     expect(domains.has('brain')).toBe(false);
     // Top-level commands are modeled too (pop init).
     expect(topLevel.has('init')).toBe(true);
+    expect(domains.get('zkemail')?.commands.get('build-allowlist')?.options.domain.type).toBe('array');
+    expect(domains.get('zkemail')?.commands.get('build-allowlist')?.options.hat.type).toBe('array');
   });
 
   const docFiles = listDocFiles();

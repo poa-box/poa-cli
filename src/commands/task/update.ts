@@ -1,3 +1,5 @@
+import { buildUpdateTask } from '@poa-box/core/tx/task';
+import { buildTaskMetadata, serializeTaskMetadata } from '@poa-box/core/metadata/task';
 /**
  * pop task update — edit any updatable task field via TaskManager.updateTask.
  *
@@ -263,6 +265,7 @@ export const updateHandler = {
         ? ipfsCidToBytes32(currentMetadataHash)
         : ethers.constants.HashZero;
       let newCid: string | undefined;
+      let preparedMetadata: string | undefined;
       const metadataActuallyChanged = metadataChanging
         && (finalName !== currentName || finalDescription !== currentDescription);
       if (metadataActuallyChanged) {
@@ -270,7 +273,7 @@ export const updateHandler = {
           output.warn('Current metadata could not be fetched — location/difficulty/estHours will reset to defaults in the re-pinned metadata.');
         }
         // Key order MUST match src/commands/task/create.ts (frontend parity).
-        const metadataJson = {
+        const metadataJson = buildTaskMetadata({
           name: finalName,
           description: finalDescription,
           location: metadata?.location || '',
@@ -279,12 +282,11 @@ export const updateHandler = {
           submission: metadata?.submission || '',
           // Soft due date is metadata-borne; a re-pin that drops it deletes it.
           // Frontend appends this key last and only when set.
-          ...(metadata?.dueDate ? { dueDate: Math.floor(Number(metadata.dueDate)) } : {}),
-        };
-        spin.text = 'Pinning updated metadata to IPFS...';
-        const serialized = JSON.stringify(metadataJson);
-        newCid = argv.dryRun ? undefined : await pinJson(serialized);
-        finalMetadataHash = newCid ? ipfsCidToBytes32(newCid) : ethers.utils.sha256(ethers.utils.toUtf8Bytes(serialized));
+          dueDate: metadata?.dueDate,
+        });
+        // Freeze the reviewed document bytes before any asynchronous confirmation.
+        preparedMetadata = serializeTaskMetadata(metadataJson);
+        if (argv.dryRun) finalMetadataHash = ethers.utils.sha256(ethers.utils.toUtf8Bytes(preparedMetadata));
       }
 
       // ── 5. Pre-flight (skippable with --no-preflight) ──────────────────
@@ -325,7 +327,7 @@ export const updateHandler = {
           finalWindow ? `${finalWindow}s` : 'none'
         ),
         metadataHash: metadataActuallyChanged
-          ? delta(finalMetadataHash === ethers.constants.HashZero ? 'none' : '(current)', finalMetadataHash)
+          ? delta(currentMetadataHash || 'none', argv.dryRun ? `${finalMetadataHash} (local preview)` : '(new IPFS pointer after confirmation)')
           : undefined,
       };
 
@@ -336,19 +338,18 @@ export const updateHandler = {
         output.keyValueBlock('Final task fields (merged)', finalFields);
       }
 
-      const txSpin = output.spinner('Sending updateTask...');
+      const txSpin = output.spinner(preparedMetadata && !argv.dryRun ? 'Pinning updated metadata to IPFS...' : 'Sending updateTask...');
       txSpin.start();
+      if (preparedMetadata !== undefined && !argv.dryRun) {
+        newCid = await pinJson(preparedMetadata);
+        finalMetadataHash = ipfsCidToBytes32(newCid);
+      }
+      txSpin.text = 'Sending updateTask...';
       const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);
-      const result = await executeTx(contract, 'updateTask', [
-        taskId,
-        finalPayout,
-        stringToBytes(finalName),
-        finalMetadataHash,
-        finalBountyToken,
-        finalBountyPayout,
-        finalDeadline,
-        finalWindow,
-      ], { dryRun: argv.dryRun });
+      const intent = buildUpdateTask({ taskManagerAddress, taskId, payoutWei: finalPayout, title: finalName,
+        metadataHash: finalMetadataHash, bountyToken: finalBountyToken, bountyPayoutWei: finalBountyPayout,
+        absoluteDeadline: finalDeadline, completionWindow: finalWindow });
+      const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
       txSpin.stop();
 
       finishWrite(result, {

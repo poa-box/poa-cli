@@ -1,3 +1,4 @@
+import { buildUpdateTaskMetadata } from '@poa-box/core/tx/task';
 import { ethers } from 'ethers';
 /**
  * pop task edit-meta — metadata-only editing via TaskManager.updateTaskMetadata.
@@ -180,10 +181,11 @@ export const editMetaHandler = {
 
       pinSpin.text = 'Sending updateTaskMetadata...';
       const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);
+      const intent = buildUpdateTaskMetadata({ taskManagerAddress, taskId, title: finalName, metadataHash });
       const result = await executeTx(
         contract,
-        'updateTaskMetadata',
-        [taskId, stringToBytes(finalName), metadataHash],
+        intent.method,
+        intent.args,
         { dryRun: argv.dryRun }
       );
       pinSpin.stop();

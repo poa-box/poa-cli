@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { requireRawUint } from '../amounts';
-import { assertPlanScope, assertSourceBlock, assertSourceRef, Fact, knownFact, PlanScope, requireCompleteSnapshot, SourceSnapshot, unknownFact } from '../data/facts';
+import { assertPlanScope, assertSourceBlock, assertSourceRef, Fact, knownFact, PlanScope, requireCompleteSnapshot, SourceRef, SourceSnapshot, unknownFact } from '../data/facts';
 import { electorateActivationFacts, ActivationMembership } from '../authority/activation';
 import { AuthorityPermissionData } from '../authority/permissions';
 import { normalizeSubjectId } from '../authority/ids';
@@ -209,4 +209,33 @@ export function rankAllocationWeights(totals: readonly string[]): readonly { opt
   return values.map((allocationWeight, optionIndex) => ({ optionIndex, allocationWeight,
     tied: values.filter(v => v === allocationWeight).length > 1 }))
     .sort((a, b) => BigInt(a.allocationWeight) > BigInt(b.allocationWeight) ? -1 : BigInt(a.allocationWeight) < BigInt(b.allocationWeight) ? 1 : a.optionIndex - b.optionIndex);
+}
+
+/** HybridVotingCore._effectiveQuorum: zero override uses the current global
+ * voter count; executable batches can only raise it; signal polls replace it.
+ * Existence, ballot coverage, voting time and announcement validity are separate.
+ */
+export function deriveProposalQuorum(input: {
+  globalQuorum: Fact<string>; override: Fact<string>; executable: Fact<boolean>;
+}): Fact<string> {
+  const source = input.override.source ?? input.globalQuorum.source;
+  try {
+    const sources = [input.globalQuorum.source, input.override.source, input.executable.source].filter((s): s is SourceRef => !!s);
+    for (const candidate of sources) {
+      assertSourceRef(candidate);
+      if (source) {
+        assertPlanScope(candidate, { chainId: source.chainId, orgId: source.orgId, contract: source.contract });
+        if (source.block) assertSourceBlock(candidate.block, source.block);
+      }
+    }
+    const global = input.globalQuorum.state === 'known' ? requireRawUint(input.globalQuorum.value, 32) : undefined;
+    if (input.override.state === 'unknown') return unknownFact(input.override.code, source);
+    const override = requireRawUint(input.override.value, 32);
+    if (input.executable.state === 'known' && typeof input.executable.value !== 'boolean') throw new Error('INVALID_EXECUTABLE_POLICY');
+    if (override === '0') return global === undefined ? unknownFact('GLOBAL_QUORUM_UNAVAILABLE', source) : knownFact(global, source);
+    if (input.executable.state === 'unknown') return unknownFact(input.executable.code, source);
+    if (!input.executable.value) return knownFact(override, source);
+    return global === undefined ? unknownFact('GLOBAL_QUORUM_UNAVAILABLE', source)
+      : knownFact(BigInt(global) > BigInt(override) ? global : override, source);
+  } catch { return unknownFact('QUORUM_POLICY_UNAVAILABLE', source); }
 }

@@ -359,6 +359,7 @@
     "decodeUserOperationOutcome"
   ],
   "execute/recovery": [
+    "RecoveryAuthorization",
     "RecoveryBlock",
     "RecoveryPhase",
     "RecoveryReceipt",
@@ -380,10 +381,13 @@
     "normalizeSubmissionScope",
     "reconcileSubmissionRecovery",
     "sameSubmissionScope",
+    "submissionAuthorizationKey",
     "submissionIntentKey",
     "transitionSubmissionRecovery"
   ],
   "execute/sponsored": [
+    "DelegationPrepared",
+    "DelegationSendOptions",
     "ENTRY_POINT",
     "EOA_DELEGATION",
     "PAYMASTER_HUB",
@@ -459,6 +463,7 @@
     "calculateOptionContribution",
     "deriveClassEligibility",
     "derivePersonalVotingShare",
+    "deriveProposalQuorum",
     "deriveWeightedTally",
     "integerSquareRoot",
     "projectProposalPowerSnapshot",
@@ -1169,6 +1174,7 @@
     "ProvenanceProvider",
     "decodeCanonicalCall",
     "exactTransactionCall",
+    "isolateUserOperationReceiptLogs",
     "readCanonicalTransaction",
     "requireCanonicalTransaction",
     "requireProvenanceFreshness"

@@ -1,3 +1,5 @@
+import { prepareHandler } from './prepare';
+import { lookupHandler, credentialsHandler } from './lookup';
 import type { Argv } from 'yargs';
 import { registerHandler } from './register';
 import { joinHandler } from './join';
@@ -7,6 +9,9 @@ import { whoamiHandler } from './whoami';
 
 export function registerUserCommands(yargs: Argv) {
   return yargs
+    .command('prepare <action>', 'Prepare an enrollment challenge, atomic enrollment calldata, or profile document locally', prepareHandler.builder, prepareHandler.handler)
+    .command('lookup', 'Read source-qualified identities from explicit registries', lookupHandler.builder, lookupHandler.handler)
+    .command('credentials', 'Read indexed active and revoked credentials with explicit unknown key facts', credentialsHandler.builder, credentialsHandler.handler)
     .command('register', 'Register a username on the account registry', registerHandler.builder, registerHandler.handler)
     .command('join', 'Join an organization (registers your username first if needed)', joinHandler.builder, joinHandler.handler)
     .command('whoami', 'Show signer identity: address, username, gas balance, and org standing', whoamiHandler.builder, whoamiHandler.handler)
