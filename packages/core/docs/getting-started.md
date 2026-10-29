@@ -1,26 +1,31 @@
 # Start with the task you need
 
-Core 2.1 supplies protocol reads, unsigned builders and reviewed role operations.
-Your application keeps its UI, account, cache, approval, storage and wallet.
-These follow-up recipes work with the published `@poa-box/core@2.1.0`; the new
-recipe files are repository documentation, not a change to that immutable release.
-
-Copy [`examples/role-consumer`](https://github.com/poa-box/poa-cli/tree/main/examples/role-consumer)
-into a separate directory, with Node 18 or newer:
+The `@poa-box/core@2.2.0` candidate includes protocol APIs and optional browser
+runtime modules in one installation. Your application keeps its UI, provider
+selection, account hydration and visible approval. Use the reviewed core `.tgz`
+until 2.2.0 is published; after publication:
 
 ```sh
-npm install --ignore-scripts
-npm test
-npm start
-npm start -- --workflow-fixture
+npm install @poa-box/core@2.2.0 ethers@5.7.2
 ```
 
-Its dependencies are exact registry `@poa-box/core@2.1.0` and `ethers@5.7.2`.
-Both demos are explicitly synthetic: no real signing, sending or publication.
-The workflow demo exercises the actual host controller with explicit approval,
-unsigned persistence, lost-acknowledgment recovery and separate configuration.
-For a blank application, use `npm install @poa-box/core@2.1.0 ethers@5.7.2`.
-Prefer public subpath imports; you do not need frontend source or the POP CLI.
+For a browser application, start with the [browser guide](browser.md) and
+[integration guide](browser-integration.md). `@poa-box/core/browser/observations`
+assembles pinned evidence through injected indexed/RPC clients;
+`@poa-box/core/workflows` provides review, preparation, explicit approvals,
+submission and recovery for supported operations. Wallet, passkey, storage,
+session and setup adapters use `@poa-box/core/browser/*`. Choose the leaves you
+need; there is no second runtime package or version pin.
+
+The [independent consumer](https://github.com/poa-box/poa-cli/tree/main/examples/role-consumer)
+contains synthetic, network-free demonstrations. Verify it against the reviewed
+archive before integrating a deployment. The protocol and browser consumer
+verifiers must receive the same archive:
+
+```sh
+node packages/core/scripts/verify-packed-consumer.mjs PATH_TO_CORE_TGZ
+node packages/core/scripts/verify-browser-consumer.mjs PATH_TO_CORE_TGZ
+```
 
 | Your task | Start here | Result and boundary |
 |---|---|---|
@@ -28,13 +33,16 @@ Prefer public subpath imports; you do not need frontend source or the POP CLI.
 | Prepare a funded task | `tx/task.buildCreateTaskRaw` | Unsigned intent; explicit raw reward and deployed feature support |
 | Prepare an informational poll | `tx/governance.buildGovernanceProposal` | Empty-batch DD intent; executing batches require Hybrid |
 | Prepare a ballot | `governance/validation.requireValidVoteWeights`, then `tx/vote.buildVote` | Unsigned intent; current eligibility remains a separate read/gate |
-| Create/configure a role | [Reviewed role recipe](role-operations.md) | Review → approval → prepare → approved host send → exact actual-ID proof → separate configuration |
-| Resume an uncertain send | `execute/recovery.reconcileSubmissionRecovery` | Read-only original outcome; unknown keeps the barrier, never resend |
+| Run supported browser operations | `workflows`, with `browser/observations` | Reviewed evidence, explicit approval, wallet/journal boundaries and exact recovery |
+| Create/configure a role | [Reviewed role recipe](role-operations.md) | Actual-ID proof and separate configuration approval |
+| Resume an uncertain send | `execute/recovery.reconcileSubmissionRecovery` or workflow `recover()` | Read-only original outcome; unknown keeps the barrier |
 
-The [structured recipes](workflow-recipes.v1.json) and [schema](workflow-recipes.schema.json)
-record the exact imports, input units, effects, result branches and executable
-snippet names. They are instructions for a consumer, not a workflow engine.
-The existing [role-operation catalog](operation-manifest.v1.json) remains unchanged.
+The [structured unsigned recipes](workflow-recipes.v1.json) and
+[schema](workflow-recipes.schema.json) remain compatible with published core
+2.1.0. Their minimum version describes those protocol functions, not the new
+2.2.0 runtime. The [role-operation catalog](operation-manifest.v1.json) retains its
+version-1 shape; the [browser feature catalog](browser-features.v1.json) describes
+the optional runtime in the 2.2.0 candidate.
 
 ## Copy the unsigned preparation boundary
 

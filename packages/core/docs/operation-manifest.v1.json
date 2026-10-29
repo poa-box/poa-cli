@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "package": "@poa-box/core",
-  "packageVersion": "2.1.0",
+  "packageVersion": "2.2.0",
   "module": "@poa-box/core/governance/role-operations",
   "units": {
     "subjectId": "uint256 decimal string; never Number or a name",

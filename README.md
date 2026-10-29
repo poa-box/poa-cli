@@ -186,11 +186,12 @@ anything created via the CLI renders correctly in the UI.
 
 ## Browser application integration
 
-`@poa-box/core@2.1.0` provides the shared protocol API. The optional
-[`@poa-box/browser`](packages/browser/README.md) companion adds reusable wallet
-and passkey handling, durable operation recovery, setup diagnostics and complete
-workflow readers/controllers without imposing React or an application's UI.
-Its `0.1.0` candidate is verified as a packed artifact in this repository and the
-reference frontend; it is not yet a published npm version. Start with the
-[integration guide](packages/browser/docs/integration.md) and
-[structured feature catalog](packages/browser/docs/features.v1.json).
+The `@poa-box/core@2.2.0` candidate includes protocol APIs and optional browser
+modules in one package and one version. Applications can import reusable wallet
+and passkey handling, durable recovery, setup diagnostics and complete workflow
+readers/controllers without adopting another application's UI or provider tree.
+Core 2.1.0 remains the published historical protocol release; 2.2.0 must use the
+reviewed core archive until publication. Start with the
+[browser guide](packages/core/docs/browser.md),
+[integration guide](packages/core/docs/browser-integration.md) and
+[structured feature catalog](packages/core/docs/browser-features.v1.json).

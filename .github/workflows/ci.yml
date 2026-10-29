@@ -33,7 +33,6 @@ jobs:
           cache-dependency-path: |
             yarn.lock
             packages/core/yarn.lock
-            packages/browser/yarn.lock
             examples/role-consumer/yarn.lock
             packages/agent/yarn.lock
 
@@ -56,26 +55,10 @@ jobs:
       - name: Core package — API surface (no exports removed)
         run: yarn --cwd packages/core api:check
 
-      - name: Browser package — install
-        run: yarn --cwd packages/browser install --frozen-lockfile
-
-      - name: Browser package — build, test and API surface
-        run: yarn --cwd packages/browser build && yarn --cwd packages/browser test && yarn --cwd packages/browser api:check
-
-      - name: Browser package — independent archive consumer
-        shell: bash
-        run: |
-          set -euo pipefail
-          browser_dir="$RUNNER_TEMP/browser-consumer"
-          mkdir -p "$browser_dir"
-          npm pack ./packages/browser --ignore-scripts --pack-destination "$browser_dir"
-          browser_version=$(node -p "require('./packages/browser/package.json').version")
-          node packages/browser/scripts/verify-packed-consumer.mjs "$browser_dir/poa-box-browser-$browser_version.tgz"
-
       - name: Independent consumer — registry installation
         run: yarn --cwd examples/role-consumer install --frozen-lockfile
 
-      - name: Independent consumer — exact built archive
+      - name: Independent consumers — same core archive
         shell: bash
         run: |
           set -euo pipefail
@@ -83,7 +66,9 @@ jobs:
           mkdir -p "$consumer_dir"
           npm pack ./packages/core --ignore-scripts --pack-destination "$consumer_dir"
           core_version=$(node -p "require('./packages/core/package.json').version")
-          node packages/core/scripts/verify-packed-consumer.mjs "$consumer_dir/poa-box-core-$core_version.tgz"
+          CORE_TGZ="$consumer_dir/poa-box-core-$core_version.tgz"
+          node packages/core/scripts/verify-packed-consumer.mjs "$CORE_TGZ"
+          node packages/core/scripts/verify-browser-consumer.mjs "$CORE_TGZ"
 
       # The agent package must exist BEFORE the root suite runs:
       # cli-agent-surface.test.ts spawns packages/agent/dist/pop-agent.js.

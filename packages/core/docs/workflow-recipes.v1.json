@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "package": "@poa-box/core",
   "minimumPackageVersion": "2.1.0",
-  "evidence": "Repository follow-up recipes executed against an isolated distributed SDK. Not a new runtime, consent token, deployed-data guarantee or modification of published 2.1.0.",
+  "evidence": "Unsigned protocol recipes are compatible with published @poa-box/core 2.1.0 and the 2.2.0 candidate. Complete browser runtime workflows are described separately in browser-features.v1.json; these recipes do not grant consent or deployed-data guarantees.",
   "defaults": {
     "signs": false,
     "broadcasts": false,

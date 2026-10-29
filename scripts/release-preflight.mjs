@@ -47,9 +47,8 @@ const allowEmpty = process.argv.includes('--allow-empty');
  * version this package's prepack pins as `^<version>` (see
  * scripts/prepack-core-range.mjs and packages/agent/scripts/prepack-cli-range.mjs).
  */
-const PACKAGES = [
+export const RELEASE_PACKAGES = [
   { dir: 'packages/core', dependsOn: null },
-  { dir: 'packages/browser', dependsOn: '@poa-box/core', dependencyRange: 'manifest' },
   { dir: '.', dependsOn: '@poa-box/core' },
   { dir: 'packages/agent', dependsOn: '@poa-box/cli' },
 ];
@@ -196,7 +195,7 @@ export function buildPlan(packages, readPkg, lookup, options = {}) {
   const willPublish = new Map(); // name -> version (only packages clear to publish)
   const blocked = new Set();     // names whose own publish is refused
 
-  for (const { dir, dependsOn, dependencyRange } of packages) {
+  for (const { dir, dependsOn } of packages) {
     const pkg = readPkg(dir);
     const { name, version } = pkg;
 
@@ -239,14 +238,10 @@ export function buildPlan(packages, readPkg, lookup, options = {}) {
     // resolve to a version that exists after this run. `dependsOn` is pinned
     // as ^<sibling's local version> (scripts/lib/link-swap.mjs), so the check
     // is: will that exact version be on the registry when this publishes?
-    const manifestPin = dependencyRange === 'manifest' ? pkg.dependencies?.[dependsOn] : undefined;
-    const pinnedRange = dependsOn ? dependencyRange === 'manifest' ? manifestPin : `^${plan.find(p => p.name === dependsOn)?.version ?? '?'}` : null;
-    if (dependencyRange === 'manifest' && !parseVersion(manifestPin)) {
-      errors.push(`${name}: ${dependsOn} must be pinned to an exact published version in its manifest`);
-    }
+    const pinnedRange = dependsOn ? `^${plan.find(p => p.name === dependsOn)?.version ?? '?'}` : null;
     if (dependsOn && action === 'publish') {
       const depEntry = plan.find(p => p.name === dependsOn);
-      const depVersion = dependencyRange === 'manifest' ? manifestPin : depEntry?.version;
+      const depVersion = depEntry?.version;
       const depInfo = lookup(dependsOn);
       if (!depVersion) {
         errors.push(`${name}: depends on ${dependsOn}, which is not part of the release plan — cannot derive a range`);
@@ -320,8 +315,8 @@ async function prefetchRegistry(packages) {
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   let result;
   try {
-    await prefetchRegistry(PACKAGES);
-    result = buildPlan(PACKAGES, readPkg, lookup, { distTag, allowEmpty });
+    await prefetchRegistry(RELEASE_PACKAGES);
+    result = buildPlan(RELEASE_PACKAGES, readPkg, lookup, { distTag, allowEmpty });
   } catch (err) {
     console.error(`release-preflight: ${err.message}`);
     process.exit(1);

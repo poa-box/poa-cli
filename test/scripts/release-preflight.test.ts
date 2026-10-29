@@ -9,13 +9,9 @@
 
 import { describe, it, expect } from 'vitest';
 // @ts-expect-error — plain .mjs script, no type declarations
-import { buildPlan, compareVersions, parseVersion } from '../../scripts/release-preflight.mjs';
+import { buildPlan, compareVersions, parseVersion, RELEASE_PACKAGES } from '../../scripts/release-preflight.mjs';
 
-const PACKAGES = [
-  { dir: 'packages/core', dependsOn: null },
-  { dir: '.', dependsOn: '@poa-box/core' },
-  { dir: 'packages/agent', dependsOn: '@poa-box/cli' },
-];
+const PACKAGES = RELEASE_PACKAGES;
 
 const NAME_BY_DIR: Record<string, string> = {
   'packages/core': '@poa-box/core',
@@ -92,30 +88,19 @@ describe('the happy path (today\'s actual release)', () => {
   });
 });
 
-describe('independently pinned browser dependency', () => {
-  const packages = [
-    { dir: 'packages/core', dependsOn: null },
-    { dir: 'packages/browser', dependsOn: '@poa-box/core', dependencyRange: 'manifest' },
-  ];
-  const read = (pin = '2.1.0') => (dir: string) => dir === 'packages/core'
-    ? { name: '@poa-box/core', version: '2.2.0' }
-    : { name: '@poa-box/browser', version: '0.1.0', dependencies: { '@poa-box/core': pin } };
-  it('retains the exact tested release instead of silently upgrading with the core repo', () => {
-    const result = buildPlan(packages, read(), registry({ '@poa-box/core': { versions: ['2.1.0'], latest: '2.1.0' } }));
+describe('one core release includes the optional browser modules', () => {
+  it('plans core 2.2.0 without creating a fourth package release or a second version pin', () => {
+    const result = buildPlan(PACKAGES,
+      pkgs({ 'packages/core': '2.2.0', '.': '1.0.0', 'packages/agent': '1.0.0' }),
+      registry({ '@poa-box/core': { versions: ['2.1.0'], latest: '2.1.0' },
+        '@poa-box/cli': { versions: ['1.0.0'], latest: '1.0.0' },
+        '@poa-box/agent': { versions: ['1.0.0'], latest: '1.0.0' } }));
     expect(result.errors).toEqual([]);
-    expect(result.plan[1].pinnedRange).toBe('2.1.0');
-    expect(result.plan[1].action).toBe('publish');
-  });
-  it('refuses an absent exact release even when a different core version will publish', () => {
-    const result = buildPlan(packages, read('2.0.9'), registry({}));
-    expect(result.errors.join(' ')).toContain('@poa-box/core@2.0.9');
-    expect(result.errors.join(' ')).toContain('neither on the registry nor being published');
-  });
-  it('accepts the same exact core release scheduled earlier in this plan', () => {
-    expect(buildPlan(packages, read('2.2.0'), registry({})).errors).toEqual([]);
-  });
-  it.each(['link:../core', '^2.1.0', 'file:core.tgz', ''])('refuses a non-exact browser pin %s', pin => {
-    expect(buildPlan(packages, read(pin), registry({})).errors.join(' ')).toContain('exact published version');
+    expect(result.plan.map((entry: any) => [entry.name, entry.action])).toEqual([
+      ['@poa-box/core', 'publish'], ['@poa-box/cli', 'skip'], ['@poa-box/agent', 'skip'],
+    ]);
+    expect(result.plan[1].pinnedRange).toBe('^2.2.0');
+    expect(PACKAGES.map((entry: any) => entry.dir)).toEqual(['packages/core', '.', 'packages/agent']);
   });
 });
 

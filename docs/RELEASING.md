@@ -7,6 +7,32 @@ org brains, and agents parse its `--json` output so that protocol and
 subgraph churn stays absorbed HERE. A release is therefore a contract event,
 not just a version bump.
 
+## Core 2.2.0 candidate — one protocol and browser package
+
+The 2.2.0 candidate distributes protocol APIs, optional `browser/*` adapters and
+`workflows` from **one `@poa-box/core` package and version**. Core 2.1.0 remains
+published and immutable. CLI and agent versions are independent; only explicitly
+bumped packages enter the normal release plan.
+
+Build core and run its tests and API checks, then pack it once with lifecycle
+scripts disabled. Run both consumer gates against that exact archive:
+
+```bash
+npm pack ./packages/core --ignore-scripts --pack-destination /tmp
+node packages/core/scripts/verify-packed-consumer.mjs /tmp/poa-box-core-2.2.0.tgz
+node packages/core/scripts/verify-browser-consumer.mjs /tmp/poa-box-core-2.2.0.tgz
+```
+
+CI and release use the same `CORE_TGZ` for these gates. The browser verifier checks
+public declarations, distributed runtime behavior, independent host integration
+and browser bundling without source aliases. Record the archive hash and use that
+same reviewed artifact for frontend acceptance. Until 2.2.0 is published, consuming
+applications use the candidate archive; after publication they can pin
+`@poa-box/core@2.2.0`. See the [browser guide](../packages/core/docs/browser.md).
+There is no separate browser publish, dependency pin or release tag. The existing
+`core-v<version>` tag records the entire SDK. Packing and verification do not
+publish; merging a version bump to main follows the release workflow below.
+
 ## Published core 2.1.0
 
 Core 2.1.0 adds the five reviewed role-operation functions, their public types,
@@ -33,7 +59,7 @@ vote creation. Frontend acceptance must exercise those host boundaries separatel
 
 Core 2.1.0 is published. Do not republish that version. The release wrapper
 derives core `^2.1.0` for a later CLI release while restoring local links after
-its check; browser instead retains its explicitly tested exact core pin.
+its check. The 2.2.0 candidate follows this same core → CLI → agent release order.
 
 ## Historical core 2.0.0 candidate
 
@@ -112,8 +138,6 @@ npx -y @poa-box/agent@1.0.0 --version
 yarn build && yarn --cwd packages/agent build
 yarn test
 yarn --cwd packages/core test      # purity gate + calldata parity
-yarn --cwd packages/browser build && yarn --cwd packages/browser test
-yarn --cwd packages/browser api:check
 yarn --cwd packages/agent test
 yarn docs:check                    # generated reference + manifest + links
 
@@ -265,27 +289,3 @@ Consumers should pin the MINOR line — `@poa-box/cli@~0.1.1`, which resolves
 accepts every breaking release the policy allows — the exact opposite of a
 pin.) Docker should pin an exact version. `pop --version` reports the real
 installed version when debugging.
-
-
-## Optional browser integration
-
-`@poa-box/browser` is a separate package. Its first candidate is `0.1.0` and
-it depends on the **published exact `@poa-box/core@2.1.0`**, not the repository's
-local linked core. Changing core alone must not silently change that dependency.
-The release preflight checks this exact version exists in the registry or is
-included in the same release, and publishes browser after core. Browser releases
-use `browser-v<version>` tags and the same metadata, artifact, tests and API gates.
-
-Before the first publication, use a packed archive in consuming applications;
-record its hash and run `packages/browser/scripts/verify-packed-consumer.mjs`
-against that exact archive. This validates public imports and declarations,
-executes the distributed runtime and independent role host, and bundles browser
-code without Node globals. The reference frontend commits its candidate archive
-for reproducible CI; switch it to the exact registry version after publication.
-The package README explicitly labels this pre-publication state.
-
-A new npm package name needs the one-time token-based publication described
-above before trusted publishing can be configured for it. Do not merge or dispatch
-a publishing workflow until the intended package/version plan has been reviewed.
-Merging this package on main can trigger its first publication through the normal
-release workflow; packing, CI and `dry_run=true` never publish.

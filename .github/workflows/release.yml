@@ -1,7 +1,7 @@
 name: Release
 
 # Publishes packages in dependency order:
-#   @poa-box/core → @poa-box/browser and @poa-box/cli → @poa-box/agent
+#   @poa-box/core → @poa-box/cli → @poa-box/agent
 #
 # MERGING TO MAIN IS THE RELEASE. Versions come from the checked-in
 # package.json files: bump the ones you are releasing in a PR
@@ -86,9 +86,6 @@ jobs:
       has_work: ${{ steps.preflight.outputs.has_work }}
       core_action: ${{ steps.preflight.outputs.core_action }}
       core_version: ${{ steps.preflight.outputs.core_version }}
-      browser_action: ${{ steps.preflight.outputs.browser_action }}
-      browser_version: ${{ steps.preflight.outputs.browser_version }}
-      browser_core_range: ${{ steps.preflight.outputs.browser_core_range }}
       cli_action: ${{ steps.preflight.outputs.cli_action }}
       cli_version: ${{ steps.preflight.outputs.cli_version }}
       agent_action: ${{ steps.preflight.outputs.agent_action }}
@@ -127,17 +124,15 @@ jobs:
           node scripts/release-preflight.mjs --tag '${{ inputs.dist_tag || 'latest' }}' $empty --json > plan.json
           has_work=$(node -p "JSON.parse(require('fs').readFileSync('plan.json','utf8')).hasWork")
           echo "has_work=$has_work" >> "$GITHUB_OUTPUT"
-          for pkg in core browser cli agent; do
+          for pkg in core cli agent; do
             case "$pkg" in
               core)  name='@poa-box/core' ;;
-              browser) name='@poa-box/browser' ;;
               cli)   name='@poa-box/cli' ;;
               agent) name='@poa-box/agent' ;;
             esac
             echo "${pkg}_action=$(node -p "JSON.parse(require('fs').readFileSync('plan.json','utf8')).plan.find(p=>p.name==='$name').action")"   >> "$GITHUB_OUTPUT"
             echo "${pkg}_version=$(node -p "JSON.parse(require('fs').readFileSync('plan.json','utf8')).plan.find(p=>p.name==='$name').version")" >> "$GITHUB_OUTPUT"
           done
-          echo "browser_core_range=$(node -p "JSON.parse(require('fs').readFileSync('plan.json','utf8')).plan.find(p=>p.name==='@poa-box/browser').pinnedRange")" >> "$GITHUB_OUTPUT"
           {
             echo '## Release plan'
             echo '```'
@@ -175,7 +170,6 @@ jobs:
           cache-dependency-path: |
             yarn.lock
             packages/core/yarn.lock
-            packages/browser/yarn.lock
             examples/role-consumer/yarn.lock
             packages/agent/yarn.lock
 
@@ -220,7 +214,6 @@ jobs:
       - name: Show the plan this job will execute
         run: |
           echo "core  ${{ needs.plan.outputs.core_action }}  ${{ needs.plan.outputs.core_version }}"
-          echo "browser ${{ needs.plan.outputs.browser_action }} ${{ needs.plan.outputs.browser_version }}"
           echo "cli   ${{ needs.plan.outputs.cli_action }}  ${{ needs.plan.outputs.cli_version }}"
           echo "agent ${{ needs.plan.outputs.agent_action }}  ${{ needs.plan.outputs.agent_version }}"
 
@@ -253,26 +246,10 @@ jobs:
       - name: Core API surface (no exports removed)
         run: yarn --cwd packages/core api:check
 
-      - name: Browser package — install
-        run: yarn --cwd packages/browser install --frozen-lockfile
-
-      - name: Browser package — build, test and API surface
-        run: yarn --cwd packages/browser build && yarn --cwd packages/browser test && yarn --cwd packages/browser api:check
-
-      - name: Browser package — independent archive consumer
-        shell: bash
-        run: |
-          set -euo pipefail
-          browser_dir="$RUNNER_TEMP/browser-consumer"
-          mkdir -p "$browser_dir"
-          npm pack ./packages/browser --ignore-scripts --pack-destination "$browser_dir"
-          browser_version=$(node -p "require('./packages/browser/package.json').version")
-          node packages/browser/scripts/verify-packed-consumer.mjs "$browser_dir/poa-box-browser-$browser_version.tgz"
-
       - name: Independent consumer — registry installation
         run: yarn --cwd examples/role-consumer install --frozen-lockfile
 
-      - name: Independent consumer — exact built archive
+      - name: Independent consumers — same core archive
         shell: bash
         run: |
           set -euo pipefail
@@ -280,7 +257,9 @@ jobs:
           mkdir -p "$consumer_dir"
           npm pack ./packages/core --ignore-scripts --pack-destination "$consumer_dir"
           core_version=$(node -p "require('./packages/core/package.json').version")
-          node packages/core/scripts/verify-packed-consumer.mjs "$consumer_dir/poa-box-core-$core_version.tgz"
+          CORE_TGZ="$consumer_dir/poa-box-core-$core_version.tgz"
+          node packages/core/scripts/verify-packed-consumer.mjs "$CORE_TGZ"
+          node packages/core/scripts/verify-browser-consumer.mjs "$CORE_TGZ"
 
       - name: Docs (generated reference + link check)
         run: yarn docs:check
@@ -289,7 +268,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          strays=$(find src packages/core/src packages/browser/src packages/agent/src \
+          strays=$(find src packages/core/src packages/agent/src \
             \( -name '*.js' -o -name '*.d.ts' \) ! -path '*/abis/*' -print)
           if [ -n "$strays" ]; then
             echo "::error::compiled artifacts leaked into a src/ tree — they shadow .ts at resolve time:"
@@ -316,9 +295,9 @@ jobs:
       - name: Guard — the working tree survived packing unchanged
         shell: bash
         run: |
-          if ! git diff --quiet -- package.json packages/agent/package.json packages/core/package.json packages/browser/package.json; then
+          if ! git diff --quiet -- package.json packages/agent/package.json packages/core/package.json; then
             echo "::error::a pack/publish step left package.json modified — the link: restore did not run"
-            git --no-pager diff -- package.json packages/agent/package.json packages/core/package.json packages/browser/package.json
+            git --no-pager diff -- package.json packages/agent/package.json packages/core/package.json
             exit 1
           fi
 
@@ -344,11 +323,6 @@ jobs:
         id: publish_core
         if: ${{ !inputs.dry_run && needs.plan.outputs.core_action == 'publish' }}
         run: node scripts/publish-package.mjs packages/core --access public --provenance --tag '${{ inputs.dist_tag || 'latest' }}'
-
-      - name: Publish @poa-box/browser
-        id: publish_browser
-        if: ${{ !inputs.dry_run && needs.plan.outputs.browser_action == 'publish' }}
-        run: node scripts/publish-package.mjs packages/browser --access public --provenance --tag '${{ inputs.dist_tag || 'latest' }}'
 
       - name: Publish @poa-box/cli
         id: publish_cli
@@ -379,7 +353,6 @@ jobs:
           }
           failed=0
           tag_it core  '${{ needs.plan.outputs.core_version }}'  '${{ steps.publish_core.outcome }}'  || failed=1
-          tag_it browser '${{ needs.plan.outputs.browser_version }}' '${{ steps.publish_browser.outcome }}' || failed=1
           tag_it cli   '${{ needs.plan.outputs.cli_version }}'   '${{ steps.publish_cli.outcome }}'   || failed=1
           tag_it agent '${{ needs.plan.outputs.agent_version }}' '${{ steps.publish_agent.outcome }}' || failed=1
           if [ "$failed" = 1 ]; then
@@ -397,12 +370,9 @@ jobs:
         run: |
           set -uo pipefail
           core='${{ needs.plan.outputs.core_version }}'
-          browser='${{ needs.plan.outputs.browser_version }}'
-          browser_core_range='${{ needs.plan.outputs.browser_core_range }}'
           cli='${{ needs.plan.outputs.cli_version }}'
           agent='${{ needs.plan.outputs.agent_version }}'
           core_act='${{ steps.publish_core.outcome }}'
-          browser_act='${{ steps.publish_browser.outcome }}'
           cli_act='${{ steps.publish_cli.outcome }}'
           agent_act='${{ steps.publish_agent.outcome }}'
           fail=0
@@ -431,11 +401,6 @@ jobs:
           if [ "$core_act" = 'success' ]; then
             await "@poa-box/core@$core" || fail=1
             summary="$summary"$'\n'"- \`@poa-box/core@$core\`"
-          fi
-          if [ "$browser_act" = 'success' ]; then
-            await "@poa-box/browser@$browser" || fail=1
-            check_range "@poa-box/browser@$browser" '@poa-box/core' "$browser_core_range" || fail=1
-            summary="$summary"$'\n'"- \`@poa-box/browser@$browser\`"
           fi
           if [ "$cli_act" = 'success' ]; then
             await "@poa-box/cli@$cli" || fail=1

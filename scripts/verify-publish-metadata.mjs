@@ -25,7 +25,7 @@ import { join } from 'node:path';
 import { ROOT, LINKED_PACKAGES, withPublishRanges } from './lib/link-swap.mjs';
 
 /** Packages to check: everything publishable, linked or not. */
-const PACKAGES = ['packages/core', 'packages/browser', '.', 'packages/agent'];
+const PACKAGES = ['packages/core', '.', 'packages/agent'];
 
 const BAD_RANGE = /^(link:|file:|portal:|workspace:|\^?$)/;
 

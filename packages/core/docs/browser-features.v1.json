@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 1,
+  "package": "@poa-box/core",
+  "packageVersion": "2.2.0",
+  "releaseStatus": "candidate",
+  "authorization": false,
+  "workflowStates": [
+    "ready",
+    "blocked",
+    "unknown",
+    "pending",
+    "confirmed"
+  ],
+  "retryPolicy": "After uncertainty, recover the exact persisted operation; never automatically resend.",
+  "units": {
+    "nativeValue": "decimal wei",
+    "assetAmounts": "decimal raw base units",
+    "nonce": "decimal uint",
+    "subjectTaskProposalId": "decimal uint256",
+    "projectOrgId": "bytes32",
+    "voteWeights": "integer percentages summing to 100",
+    "optionIndices": "zero-based safe integers",
+    "freshnessDeadline": "Unix seconds",
+    "metadataCreatedAt": "Unix milliseconds",
+    "pollDuration": "integer minutes"
+  },
+  "features": [
+    {
+      "id": "wallet",
+      "importPath": "@poa-box/core/browser/wallet",
+      "export": "createEip1193WalletAdapter",
+      "support": "supported",
+      "requires": [
+        "selected EIP-1193 provider",
+        "resolved account and chain",
+        "durable journal"
+      ],
+      "sideEffects": [
+        "wallet prompt",
+        "transaction broadcast"
+      ]
+    },
+    {
+      "id": "passkey",
+      "importPath": "@poa-box/core/browser/passkeys",
+      "export": "createPasskeyClient",
+      "support": "supported",
+      "requires": [
+        "explicit RP ID and origin",
+        "browser credentials",
+        "registered key and account lookup"
+      ],
+      "sideEffects": [
+        "credential ceremony"
+      ]
+    },
+    {
+      "id": "sponsored",
+      "importPath": "@poa-box/core/browser/wallet",
+      "export": "createSponsoredExecutionAdapter",
+      "support": "supported-with-ports",
+      "requires": [
+        "EntryPoint v0.7",
+        "account encoder",
+        "sponsor/preparation service",
+        "signing port",
+        "bundler and recovery readers"
+      ],
+      "sideEffects": [
+        "signature request",
+        "UserOperation broadcast"
+      ]
+    },
+    {
+      "id": "role",
+      "importPath": "@poa-box/core/workflows",
+      "export": "createRoleWorkflow",
+      "support": "supported",
+      "requires": [
+        "current core role evidence",
+        "publisher",
+        "explicit approval",
+        "wallet",
+        "journal"
+      ],
+      "sideEffects": [
+        "metadata publication",
+        "creation proposal",
+        "separate configuration proposal"
+      ]
+    },
+    {
+      "id": "poll",
+      "importPath": "@poa-box/core/workflows",
+      "export": "createPollWorkflow",
+      "support": "supported",
+      "requires": [
+        "complete current governance evidence",
+        "publisher",
+        "explicit approval",
+        "wallet",
+        "journal",
+        "exact simulation"
+      ],
+      "sideEffects": [
+        "metadata publication",
+        "informational proposal"
+      ]
+    },
+    {
+      "id": "ballot",
+      "importPath": "@poa-box/core/workflows",
+      "export": "createBallotWorkflow",
+      "support": "supported",
+      "requires": [
+        "current DD or Hybrid evidence",
+        "explicit approval",
+        "wallet",
+        "journal",
+        "exact simulation"
+      ],
+      "sideEffects": [
+        "vote broadcast"
+      ]
+    },
+    {
+      "id": "task",
+      "importPath": "@poa-box/core/workflows",
+      "export": "createTaskWorkflow",
+      "support": "supported",
+      "requires": [
+        "current task/project and authority evidence",
+        "publisher for creation",
+        "explicit approval",
+        "wallet",
+        "journal",
+        "exact simulation"
+      ],
+      "sideEffects": [
+        "metadata publication for creation",
+        "create/claim/complete broadcast"
+      ]
+    },
+    {
+      "id": "enrollment",
+      "importPath": "@poa-box/core/workflows",
+      "export": "createEnrollmentWorkflow",
+      "support": "supported-atomic-only",
+      "requires": [
+        "registry/QuickJoin/factory evidence",
+        "registration signing port",
+        "separate approvals",
+        "wallet",
+        "journal",
+        "exact simulation"
+      ],
+      "sideEffects": [
+        "registration signature",
+        "atomic registration and joining"
+      ]
+    },
+    {
+      "id": "setup",
+      "importPath": "@poa-box/core/browser/config",
+      "export": "diagnoseBrowserConfiguration",
+      "support": "supported-read-only",
+      "requires": [
+        "explicit configuration",
+        "optional bounded read-only probes"
+      ],
+      "sideEffects": [
+        "network reads"
+      ]
+    },
+    {
+      "id": "observations",
+      "importPath": "@poa-box/core/browser/observations",
+      "export": "createWorkflowReaders",
+      "support": "supported-read-only",
+      "requires": [
+        "authority-v2 deployment",
+        "bound RPC and indexed client",
+        "resolved organization and modules"
+      ],
+      "sideEffects": [
+        "network reads"
+      ]
+    },
+    {
+      "id": "email-proof-service",
+      "importPath": null,
+      "export": null,
+      "support": "external-service",
+      "requires": [
+        "proof backend",
+        "deployed verifier and DKIM configuration"
+      ],
+      "sideEffects": []
+    },
+    {
+      "id": "cashout-initiation",
+      "importPath": null,
+      "export": null,
+      "support": "unsupported",
+      "requires": [],
+      "sideEffects": []
+    },
+    {
+      "id": "eventless-native-history",
+      "importPath": null,
+      "export": null,
+      "support": "unsupported",
+      "requires": [],
+      "sideEffects": []
+    }
+  ],
+  "$schema": "./browser-features.schema.json"
+}
