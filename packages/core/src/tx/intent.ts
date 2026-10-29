@@ -10,8 +10,11 @@
  *
  *   CLI / agent:     executeIntent(signer, intent)            (execute/ethers)
  *   wagmi/viem:      writeContract({ address: intent.to, abi: intent.abi,
- *                                    functionName: intent.method, args: intent.args })
- *   4337 / 7702:     sendSponsored(key, intent.to, encodeIntent(intent).data, ...)
+ *                     functionName: intent.method, args: intent.args,
+ *                     value: BigInt(encodeIntent(intent).value) })
+ *   4337 / 7702:     const { to, data, value } = encodeIntent(intent);
+ *                   sendSponsored(key, to, data, orgId, subjectId,
+ *                     { ...options, value: BigInt(value) })
  *   anything else:   encodeIntent(intent) → { to, data, value }
  *
  * Domain builders (tx/<domain>.ts) return intents; they never sign or send.

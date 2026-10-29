@@ -66,7 +66,8 @@ export interface RolePlanningContext {
   /** _isInOrg is acceptance ANYWHERE, including an accepted but ineligible role. */
   accounts: readonly { account: string; acceptedAnywhere: Fact<boolean>; acceptedInSubject?: Fact<boolean>; acceptedSubjectId?: string }[];
   taskManager?: { address: string; executorAuthorized: Fact<boolean> };
-  hybrid?: { address: string; executorAuthorized: Fact<boolean>; classes: readonly { classIndex: number }[] };
+  hybrid?: { address: string; executorAuthorized: Fact<boolean>; classes: readonly { classIndex: number; strategy?: number; slicePct?: number;
+    quadratic?: boolean; minBalance?: string; asset?: string; hatIds?: readonly string[] }[] };
   registry?: { address: string; executorAuthorized: Fact<boolean>; currentAdminSubject: Fact<string> };
   sponsorship?: { address: string; operatorAuthorized: Fact<boolean>; claimBudgetExists: Fact<boolean> };
   email?: { address: string; enabled: Fact<boolean>; authorityMatches: Fact<boolean>; minterAuthorized: Fact<boolean>;

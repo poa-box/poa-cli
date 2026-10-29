@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "synthetic": true,
+  "label": "SYNTHETIC OFFLINE FIXTURE — no real organization, publication or transaction",
+  "chainId": 100,
+  "orgId": "0x5555555555555555555555555555555555555555555555555555555555555555",
+  "account": "0x4444444444444444444444444444444444444444",
+  "contracts": {
+    "membershipAuthority": "0x1111111111111111111111111111111111111111",
+    "hybridVoting": "0x2222222222222222222222222222222222222222",
+    "executor": "0x3333333333333333333333333333333333333333"
+  },
+  "indexedEndpoint": "https://index.invalid/fixture",
+  "rpcEndpoint": "https://rpc.invalid/fixture",
+  "block": { "number": 100, "hash": "0x8888888888888888888888888888888888888888888888888888888888888888", "timestamp": 1000 },
+  "now": 1001,
+  "initialSequence": "1",
+  "groupSequence": "2",
+  "actualSequence": "15",
+  "sameNameSequence": "9",
+  "name": "Builders",
+  "maxMembers": "2",
+  "cid": "QmYwAPJzv5CZsnAzt8auVZRnGiRA4GRZQev5bfaWXXcJjq",
+  "creationProposalId": "7",
+  "configurationProposalId": "8"
+}

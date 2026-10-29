@@ -689,3 +689,40 @@ Exhaustive native inflows/causal revenue and absent original historical enrollme
 provenance remain unavailable until real approved source evidence exists. An
 indexer implementation without production deployment and demonstrated population
 cannot close those gaps.
+
+## Reviewed role operations
+
+Use `@poa-box/core/governance/role-operations` for the supported staged role path:
+`readRoleOperationEvidence`, `reviewRoleOperation`, `prepareRoleOperation`,
+`readRoleOperationStatus`, and `revalidatePreparedRoleOperation`.
+See [role-operations.md](role-operations.md) for the request, publication and
+recovery boundaries and [agents.md](agents.md) for safe operation selection.
+
+Frontend maps forms and display units, controls consent and lifecycle, schedules
+bounded indexed/RPC reads, and stores versioned unsigned journals. It must not
+recreate core's field-demand table, allowlist merger, role plan or actual-ID proof.
+Unresolved auth is unknown identity. Cache entries must match restored account,
+chain, organization, modules, endpoints and canonical block. Scope changes cancel
+pending work; stale results never reach a transaction manager.
+
+Prepare returns a role batch. After awaiting the enclosing proposal's metadata
+publication, call `revalidatePreparedRoleOperation` immediately before manager
+handoff; a changed/expired observation means zero manager calls. Neither review
+nor prepared handles survive JSON serialization as authority. Reload the saved
+unsigned journal and exact creation/configuration references, recover read-only,
+and renew review. Keep the original form separate from opaque handles.
+
+Staged create neither predicts an ID nor enumerates allocation/proposal history.
+Only a proven actual subject ID permits the configuration stage; configuration
+has its own proposal reference and independently proven outcome. Unknown, pending,
+failed and rejected remain distinct. No automatic resend follows a timeout.
+
+Status proves a separate configuration proposal and binds every supported call to
+the actual created subject. For email allowlist configuration, pass the optional
+read-only `fetchDocument(cid, { signal })` callback; core verifies at most one
+document against its committed root/org and actual-subject leaf. Unavailable
+association remains unknown with the creation proof retained in observations.
+
+The independent consumer exercises this same public path with synthetic transport
+fixtures. Its success is not evidence of frontend adoption, deployed counters,
+serving completeness or Test6 behavior; those need the assigned acceptance owner.

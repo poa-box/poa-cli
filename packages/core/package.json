@@ -1,13 +1,17 @@
 {
   "name": "@poa-box/core",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Browser-and-Node core for the POP (Proof of Participation) protocol: transaction intent builders, subgraph reads, canonical metadata, ABIs, and chain config. The stable layer the CLI, frontends, and integrators share.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
     "dist",
     "README.md",
-    "docs/frontend-adoption.md"
+    "docs/frontend-adoption.md",
+    "docs/role-operations.md",
+    "docs/agents.md",
+    "docs/operation-manifest.v1.json",
+    "docs/operation-manifest.schema.json"
   ],
   "exports": {
     ".": {
@@ -164,7 +168,8 @@
     "test:watch": "vitest",
     "lint": "node scripts/gen-abis.mjs && tsc --noEmit",
     "api:check": "node scripts/check-api-surface.mjs",
-    "api:update": "node scripts/check-api-surface.mjs --update"
+    "api:update": "node scripts/check-api-surface.mjs --update",
+    "test:consumer": "node scripts/verify-packed-consumer.mjs"
   },
   "dependencies": {
     "@ethersproject/bytes": "^5.8.0",

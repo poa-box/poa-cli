@@ -1,0 +1,263 @@
+{
+  "schemaVersion": 1,
+  "package": "@poa-box/core",
+  "packageVersion": "2.1.0",
+  "module": "@poa-box/core/governance/role-operations",
+  "units": {
+    "subjectId": "uint256 decimal string; never Number or a name",
+    "proposalId": "uint256 decimal string; exact reference",
+    "projectId": "uint256 decimal string",
+    "value": "native wei decimal string",
+    "permissionKey": "bytes32",
+    "ctx": "bytes32",
+    "now": "integer Unix seconds",
+    "createdAt": "integer Unix milliseconds",
+    "durationMinutes": "integer minutes",
+    "digest": "keccak256 of exact UTF-8 document json"
+  },
+  "scope": [
+    "chainId",
+    "orgId",
+    "account",
+    "contract",
+    "contracts.membershipAuthority",
+    "contracts.hybridVoting",
+    "contracts.executor"
+  ],
+  "trust": [
+    "Separate indexed/RPC endpoints and canonical source blocks; missing proof remains unknown.",
+    "Review/prepared handles are immutable opaque memory authority, not JSON-replayable.",
+    "Publisher receives exact reviewed UTF-8 json and keccak256 digest; valid CIDv0 is adapter attestation, not raw-JSON-to-IPFS integrity proof.",
+    "Host owns scheduling, cancellation, consent, locks, versioned unsigned journals and wallet transport.",
+    "Ready is current evidence, never authorization or executed outcome.",
+    "Only readRoleOperationEvidence accepts purpose: operation (default) or capabilities. Capabilities derives available bound module reads even for blank forms, records its purpose and preserves absent/false/unknown facts; no subject prediction, holder grants, email registration or history. Review omits purpose and forces strict operation evidence at runtime; prepare/revalidate renew strict review and status independently proves exact outcomes."
+  ],
+  "operations": [
+    {
+      "id": "readRoleOperationEvidence",
+      "import": "@poa-box/core/governance/role-operations",
+      "async": true,
+      "requiredInputs": [
+        "scope",
+        "request",
+        "sources"
+      ],
+      "optionalInputs": [
+        "purpose",
+        "authoritySnapshot",
+        "bounds",
+        "signal"
+      ],
+      "ready": "RoleOperationEvidence",
+      "states": [
+        "ready",
+        "blocked",
+        "unknown"
+      ],
+      "sideEffects": {
+        "indexedReads": true,
+        "rpcReads": true,
+        "fetchCurrentDocument": false,
+        "publishes": false,
+        "signs": false,
+        "broadcasts": false,
+        "persists": false
+      },
+      "retry": "Retry bounded reads with current scope; preserve unknown coverage. Capabilities readiness describes options only, never authorization or an executable review. Never sign, publish or send."
+    },
+    {
+      "id": "reviewRoleOperation",
+      "import": "@poa-box/core/governance/role-operations",
+      "async": true,
+      "requiredInputs": [
+        "scope",
+        "request",
+        "sources"
+      ],
+      "optionalInputs": [
+        "authoritySnapshot",
+        "bounds",
+        "signal",
+        "fetchDocument"
+      ],
+      "ready": "RoleOperationReview",
+      "states": [
+        "ready",
+        "blocked",
+        "unknown"
+      ],
+      "sideEffects": {
+        "indexedReads": true,
+        "rpcReads": true,
+        "fetchCurrentDocument": true,
+        "publishes": false,
+        "signs": false,
+        "broadcasts": false,
+        "persists": false
+      },
+      "retry": "Renew review on changed request/facts or reload; never upload."
+    },
+    {
+      "id": "prepareRoleOperation",
+      "import": "@poa-box/core/governance/role-operations",
+      "async": true,
+      "requiredInputs": [
+        "scope",
+        "sources",
+        "review",
+        "currentRequest"
+      ],
+      "optionalInputs": [
+        "fetchDocument",
+        "publishDocument",
+        "signal"
+      ],
+      "ready": "PreparedRoleOperation",
+      "states": [
+        "ready",
+        "blocked",
+        "unknown"
+      ],
+      "sideEffects": {
+        "indexedReads": true,
+        "rpcReads": true,
+        "fetchCurrentDocument": true,
+        "publishes": true,
+        "signs": false,
+        "broadcasts": false,
+        "persists": false
+      },
+      "retry": "Never automatically retry publication; retain successful/uncertain receipts and renew review."
+    },
+    {
+      "id": "readRoleOperationStatus",
+      "import": "@poa-box/core/governance/role-operations",
+      "async": true,
+      "requiredInputs": [
+        "scope",
+        "sources",
+        "creation"
+      ],
+      "optionalInputs": [
+        "configuration",
+        "authoritySnapshot",
+        "bounds",
+        "signal",
+        "fetchDocument"
+      ],
+      "ready": "RoleOperationStatus",
+      "states": [
+        "ready",
+        "blocked",
+        "unknown"
+      ],
+      "sideEffects": {
+        "indexedReads": true,
+        "rpcReads": true,
+        "fetchCurrentDocument": true,
+        "publishes": false,
+        "signs": false,
+        "broadcasts": false,
+        "persists": false
+      },
+      "retry": "Recover missing transaction identity with the unsigned journal first; never send or history-scan. Retain the original review requiresConfiguration as host intent: exact created proof completes create-only work; review-configuration permits a separate requested stage, never an empty second vote. Configuration must use a different proven proposal and every call must bind to the actual created subject. Allowlist configuration requires at most one explicit root-verified document read; unsupported/unbound calls remain unknown with creation observations retained."
+    },
+    {
+      "id": "revalidatePreparedRoleOperation",
+      "import": "@poa-box/core/governance/role-operations",
+      "async": true,
+      "requiredInputs": [
+        "scope",
+        "sources",
+        "review",
+        "currentRequest",
+        "prepared"
+      ],
+      "optionalInputs": [
+        "fetchDocument",
+        "publishDocument",
+        "signal"
+      ],
+      "ready": "PreparedRoleOperation",
+      "states": [
+        "ready",
+        "blocked",
+        "unknown"
+      ],
+      "sideEffects": {
+        "indexedReads": true,
+        "rpcReads": true,
+        "fetchCurrentDocument": true,
+        "publishes": false,
+        "signs": false,
+        "broadcasts": false,
+        "persists": false
+      },
+      "retry": "Read again or renew review; never republish or silently change the batch."
+    }
+  ],
+  "references": [
+    {
+      "import": "@poa-box/core/tx/intent",
+      "exports": [
+        "encodeIntent",
+        "executeIntentWithHost"
+      ]
+    },
+    {
+      "import": "@poa-box/core/tx/governance",
+      "exports": [
+        "buildGovernanceProposal"
+      ]
+    },
+    {
+      "import": "@poa-box/core/metadata/proposal",
+      "exports": [
+        "buildProposalMetadata",
+        "serializeProposalMetadata"
+      ]
+    },
+    {
+      "import": "@poa-box/core/execute/recovery",
+      "exports": [
+        "createSubmissionRecovery",
+        "transitionSubmissionRecovery",
+        "normalizeSubmissionRecovery",
+        "reconcileSubmissionRecovery",
+        "submissionIntentKey"
+      ]
+    },
+    {
+      "import": "@poa-box/core/reads/authority",
+      "exports": [
+        "readAuthoritySnapshot"
+      ]
+    },
+    {
+      "import": "@poa-box/core/authority/permissions",
+      "exports": [
+        "projectUserPermissions",
+        "resolvePermissionContext"
+      ]
+    }
+  ],
+  "recipe": [
+    "readRoleOperationEvidence",
+    "reviewRoleOperation",
+    "prepareRoleOperation",
+    "buildGovernanceProposal",
+    "revalidatePreparedRoleOperation",
+    "host journal and approved dispatch",
+    "reconcileSubmissionRecovery",
+    "readRoleOperationStatus",
+    "review actual-ID configuration separately"
+  ],
+  "limits": {
+    "initialHeadAgeSeconds": 60,
+    "completedEvidenceAgeSeconds": 30,
+    "maxAccounts": 50,
+    "maxCompoundSubjects": 256,
+    "bounded": true
+  },
+  "evidence": "Synthetic fixture success does not prove deployed data, packed installation, frontend or live parity."
+}

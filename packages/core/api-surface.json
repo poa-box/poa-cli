@@ -450,6 +450,7 @@
     "* (./power)",
     "* (./provenance)",
     "* (./role-continuation)",
+    "* (./role-operations)",
     "* (./role-planning)",
     "* (./validation)"
   ],
@@ -481,6 +482,49 @@
     "RoleContinuationResult",
     "readRoleConfigurationOutcome",
     "readRoleContinuation"
+  ],
+  "governance/role-operation-observer": [
+    "active",
+    "blockFresh",
+    "capabilityDemand",
+    "clock",
+    "failure",
+    "finishObservation",
+    "finite",
+    "observe",
+    "readBase",
+    "roleDemand",
+    "same",
+    "transport",
+    "validateScope"
+  ],
+  "governance/role-operation-types": [
+    "PrepareRoleOperationInput",
+    "PreparedRoleOperation",
+    "ReadRoleOperationEvidenceInput",
+    "ReadRoleOperationStatusInput",
+    "ReviewRoleOperationInput",
+    "RoleConfigurationReference",
+    "RoleCreationReference",
+    "RoleOperationDocument",
+    "RoleOperationEffect",
+    "RoleOperationEvidence",
+    "RoleOperationObservationSet",
+    "RoleOperationReadBounds",
+    "RoleOperationRequest",
+    "RoleOperationResult",
+    "RoleOperationReview",
+    "RoleOperationRole",
+    "RoleOperationScope",
+    "RoleOperationSources",
+    "RoleOperationStatus"
+  ],
+  "governance/role-operations": [
+    "prepareRoleOperation",
+    "readRoleOperationEvidence",
+    "readRoleOperationStatus",
+    "revalidatePreparedRoleOperation",
+    "reviewRoleOperation"
   ],
   "governance/role-planning": [
     "ExistingRoleConfigurationPlan",
@@ -915,6 +959,7 @@
     "* as folders (./folders)",
     "* as org (./org)",
     "* as proposal (./proposal)",
+    "* as role (./role)",
     "* as task (./task)",
     "* as token (./token)",
     "* as user (./user)"
@@ -946,6 +991,9 @@
     "prepareProposalMetadata",
     "serializeProposalMetadata",
     "validateProposalMetadata"
+  ],
+  "metadata/role": [
+    "buildRoleMetadata"
   ],
   "metadata/task": [
     "PreparedTaskMetadata",
