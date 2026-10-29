@@ -68,7 +68,7 @@ describe('release workflow contract', () => {
   });
 
   it('gates the expensive job on a cheap plan job', () => {
-    // Without this, every merge would install, build and test three packages
+    // Without this, every merge would install, build and test four packages
     // just to discover no version changed.
     expect(src).toMatch(/needs: plan/);
     expect(src).toMatch(/if: \$\{\{ needs\.plan\.outputs\.has_work == 'true' \}\}/);
@@ -79,16 +79,16 @@ describe('release workflow contract', () => {
     expect(src).toMatch(/github\.event_name \}\}" = 'push' \] && empty='--allow-empty'/);
   });
 
-  it('publishes in dependency order: core → cli → agent', () => {
+  it('publishes in dependency order: core → browser → cli → agent', () => {
     const order = [...src.matchAll(/Publish (@poa-box\/\w+)/g)].map(m => m[1]);
-    expect(order).toEqual(['@poa-box/core', '@poa-box/cli', '@poa-box/agent']);
+    expect(order).toEqual(['@poa-box/core', '@poa-box/browser', '@poa-box/cli', '@poa-box/agent']);
   });
 
   it('publishes only through publish-package.mjs, never `npm publish` directly', () => {
     // Direct `npm publish` cannot be used: the link:→semver swap has to happen
     // before npm reads the manifest, which publish-package.mjs guarantees.
     const publishSteps = src.split('\n').filter(l => /run:.*publish-package\.mjs/.test(l));
-    expect(publishSteps.length).toBe(3);
+    expect(publishSteps.length).toBe(4);
     const direct = src.split('\n').filter(l => /^\s*run: .*npm publish/.test(l));
     expect(direct).toEqual([]);
   });

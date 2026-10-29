@@ -182,3 +182,15 @@ anything created via the CLI renders correctly in the UI.
 - **[Agent work products](reports/README.md)** — audits, research, and session
   logs produced by live agents.
 - **[LICENSE](LICENSE)** — licensing terms.
+
+
+## Browser application integration
+
+`@poa-box/core@2.1.0` provides the shared protocol API. The optional
+[`@poa-box/browser`](packages/browser/README.md) companion adds reusable wallet
+and passkey handling, durable operation recovery, setup diagnostics and complete
+workflow readers/controllers without imposing React or an application's UI.
+Its `0.1.0` candidate is verified as a packed artifact in this repository and the
+reference frontend; it is not yet a published npm version. Start with the
+[integration guide](packages/browser/docs/integration.md) and
+[structured feature catalog](packages/browser/docs/features.v1.json).

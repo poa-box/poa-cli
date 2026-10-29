@@ -32,6 +32,9 @@ jobs:
           cache: yarn
           cache-dependency-path: |
             yarn.lock
+            packages/core/yarn.lock
+            packages/browser/yarn.lock
+            examples/role-consumer/yarn.lock
             packages/agent/yarn.lock
 
       - name: Install dependencies
@@ -52,6 +55,22 @@ jobs:
 
       - name: Core package — API surface (no exports removed)
         run: yarn --cwd packages/core api:check
+
+      - name: Browser package — install
+        run: yarn --cwd packages/browser install --frozen-lockfile
+
+      - name: Browser package — build, test and API surface
+        run: yarn --cwd packages/browser build && yarn --cwd packages/browser test && yarn --cwd packages/browser api:check
+
+      - name: Browser package — independent archive consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_dir="$RUNNER_TEMP/browser-consumer"
+          mkdir -p "$browser_dir"
+          npm pack ./packages/browser --ignore-scripts --pack-destination "$browser_dir"
+          browser_version=$(node -p "require('./packages/browser/package.json').version")
+          node packages/browser/scripts/verify-packed-consumer.mjs "$browser_dir/poa-box-browser-$browser_version.tgz"
 
       - name: Independent consumer — registry installation
         run: yarn --cwd examples/role-consumer install --frozen-lockfile

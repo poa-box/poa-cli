@@ -37,11 +37,12 @@ function fixture(outcomes: string[], failPush = '') {
   writeFileSync(log, '');
   writeFileSync(join(bin, 'git'), '#!/bin/sh\n[ "$1" = rev-parse ] && exit 1\nprintf "%s\\n" "$*" >> "$RELEASE_TEST_CALLS"\n[ "$*" = "$RELEASE_TEST_FAIL_PUSH" ] && exit 2\nexit 0\n', { mode: 0o755 });
   writeFileSync(join(bin, 'npm'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$RELEASE_TEST_CALLS"\nexit 99\n', { mode: 0o755 });
-  const outputs = Object.fromEntries(['core', 'cli', 'agent'].flatMap(pkg => [
+  const outputs = Object.fromEntries(['core', 'cli', 'agent', 'browser'].flatMap(pkg => [
     [`${pkg}_action`, 'publish'], [`${pkg}_version`, '1.0.0'],
   ]));
+  outputs.browser_core_range = '1.0.0';
   const context = { needs: { plan: { outputs } }, steps: Object.fromEntries(
-    ['core', 'cli', 'agent'].map((pkg, index) => [`publish_${pkg}`, { outcome: outcomes[index] }]),
+    ['core', 'cli', 'agent', 'browser'].map((pkg, index) => [`publish_${pkg}`, { outcome: outcomes[index] ?? 'skipped' }]),
   ) };
   const run = (name: string) => execFileSync('bash', ['-e', '-c', resolveExpressions(stepScript(name), context)], {
     cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`,
@@ -55,7 +56,8 @@ afterEach(() => { for (const dir of temporary.splice(0)) rmSync(dir, { recursive
 describe('release workflow output and partial-publish guards', () => {
   it('exports the producing preflight step so a nonempty plan can start publishing', () => {
     const preflight = { has_work: 'true', core_action: 'publish', cli_action: 'publish', agent_action: 'publish',
-      core_version: '1.0.0', cli_version: '1.0.0', agent_version: '1.0.0' };
+      core_version: '1.0.0', cli_version: '1.0.0', agent_version: '1.0.0',
+      browser_action: 'publish', browser_version: '1.0.0', browser_core_range: '1.0.0' };
     const block = workflow.split('    outputs:\n')[1].split('    steps:\n')[0];
     const rendered = resolveExpressions(block, { steps: { preflight: { outputs: preflight } }, needs: {} });
     for (const [key, value] of Object.entries(preflight)) expect(rendered).toContain(`${key}: ${value}`);
@@ -67,6 +69,8 @@ describe('release workflow output and partial-publish guards', () => {
     [['failure', 'skipped', 'skipped'], []],
     [['success', 'success', 'success'], ['core', 'cli', 'agent']],
     [['skipped', 'success', 'success'], ['cli', 'agent']],
+    [['success', 'success', 'success', 'success'], ['core', 'browser', 'cli', 'agent']],
+    [['skipped', 'skipped', 'skipped', 'success'], ['browser']],
   ])('tags only successful uploads after outcomes %j', (outcomes, expected) => {
     const f = fixture(outcomes);
     f.run('Tag the published versions');

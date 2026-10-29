@@ -1,4 +1,4 @@
-# Releasing @poa-box/core, @poa-box/cli and @poa-box/agent
+# Releasing the Poa packages
 
 The authority-only 1.0 release has intentional access API removals. Read the [Wave G migration and upgrade order](WAVE-G-1.0.md) before publishing.
 
@@ -7,7 +7,7 @@ org brains, and agents parse its `--json` output so that protocol and
 subgraph churn stays absorbed HERE. A release is therefore a contract event,
 not just a version bump.
 
-## Local core 2.1.0 candidate
+## Published core 2.1.0
 
 Core 2.1.0 adds the five reviewed role-operation functions, their public types,
 canonical role metadata, and packaged operation documentation/catalog. It retains
@@ -31,9 +31,9 @@ Its evidence lives under `.context/registry-integration/`. Fixture success does 
 prove deployed endpoint coverage, browser wallet consent, passkey prompts or live
 vote creation. Frontend acceptance must exercise those host boundaries separately.
 
-This is local candidate preparation only. It authorizes no publication, merge or
-deployed change. The future release wrapper derives core `^2.1.0` for CLI metadata
-from this package version while restoring local links after its check.
+Core 2.1.0 is published. Do not republish that version. The release wrapper
+derives core `^2.1.0` for a later CLI release while restoring local links after
+its check; browser instead retains its explicitly tested exact core pin.
 
 ## Historical core 2.0.0 candidate
 
@@ -112,6 +112,8 @@ npx -y @poa-box/agent@1.0.0 --version
 yarn build && yarn --cwd packages/agent build
 yarn test
 yarn --cwd packages/core test      # purity gate + calldata parity
+yarn --cwd packages/browser build && yarn --cwd packages/browser test
+yarn --cwd packages/browser api:check
 yarn --cwd packages/agent test
 yarn docs:check                    # generated reference + manifest + links
 
@@ -121,21 +123,22 @@ yarn --cwd packages/core api:check # @poa-box/core export surface (run after bui
 #    Intentional shape change? contracts:update / api:update && review the
 #    diff: additions are fine; a REMOVAL means this release is a major bump.
 
-# 3. Version bumps (keep all three packages in lockstep unless truly independent)
+# 3. Version bumps (only packages whose release is intended)
 #    NORMALLY YOU STOP HERE: bump the versions in a PR and merge it. Merging to
 #    main runs the Release workflow, which publishes exactly the bumped
 #    packages and skips the rest. Steps 4-6 below are the manual fallback.
 #    --no-git-tag-version: `npm version` otherwise tries to commit each bump,
 #    and the second call then aborts on the dirty tree left by the first,
-#    leaving the chain half-bumped. Bump all three, then commit once; the
+#    leaving a partially recorded release. Bump intended packages, then commit once; the
 #    Release workflow pushes the per-package tags after publishing.
 (cd packages/core   && npm version patch --no-git-tag-version)
 npm version patch --no-git-tag-version   # or minor / major
 (cd packages/agent  && npm version patch --no-git-tag-version)
 git commit -am "Release: core X.Y.Z, cli X.Y.Z, agent X.Y.Z"
-#    Inter-package ranges need no hand-editing — see step 4.
+#    CLI/agent linked ranges need no hand-editing — see step 4.
+#    Browser has its own version and exact core pin: update only after verification.
 
-# 4. Publish (order matters: core → cli → agent)
+# 4. Publish ONLY the preflight PUBLISH entries (core → browser → cli → agent)
 #    NEVER run `npm publish` directly here. npm reads the manifest it uploads
 #    BEFORE running prepack, so a direct publish ships the local
 #    "@poa-box/core": "link:./packages/core" range as REGISTRY METADATA and
@@ -262,3 +265,27 @@ Consumers should pin the MINOR line — `@poa-box/cli@~0.1.1`, which resolves
 accepts every breaking release the policy allows — the exact opposite of a
 pin.) Docker should pin an exact version. `pop --version` reports the real
 installed version when debugging.
+
+
+## Optional browser integration
+
+`@poa-box/browser` is a separate package. Its first candidate is `0.1.0` and
+it depends on the **published exact `@poa-box/core@2.1.0`**, not the repository's
+local linked core. Changing core alone must not silently change that dependency.
+The release preflight checks this exact version exists in the registry or is
+included in the same release, and publishes browser after core. Browser releases
+use `browser-v<version>` tags and the same metadata, artifact, tests and API gates.
+
+Before the first publication, use a packed archive in consuming applications;
+record its hash and run `packages/browser/scripts/verify-packed-consumer.mjs`
+against that exact archive. This validates public imports and declarations,
+executes the distributed runtime and independent role host, and bundles browser
+code without Node globals. The reference frontend commits its candidate archive
+for reproducible CI; switch it to the exact registry version after publication.
+The package README explicitly labels this pre-publication state.
+
+A new npm package name needs the one-time token-based publication described
+above before trusted publishing can be configured for it. Do not merge or dispatch
+a publishing workflow until the intended package/version plan has been reviewed.
+Merging this package on main can trigger its first publication through the normal
+release workflow; packing, CI and `dry_run=true` never publish.

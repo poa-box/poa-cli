@@ -49,6 +49,7 @@ const allowEmpty = process.argv.includes('--allow-empty');
  */
 const PACKAGES = [
   { dir: 'packages/core', dependsOn: null },
+  { dir: 'packages/browser', dependsOn: '@poa-box/core', dependencyRange: 'manifest' },
   { dir: '.', dependsOn: '@poa-box/core' },
   { dir: 'packages/agent', dependsOn: '@poa-box/cli' },
 ];
@@ -195,7 +196,7 @@ export function buildPlan(packages, readPkg, lookup, options = {}) {
   const willPublish = new Map(); // name -> version (only packages clear to publish)
   const blocked = new Set();     // names whose own publish is refused
 
-  for (const { dir, dependsOn } of packages) {
+  for (const { dir, dependsOn, dependencyRange } of packages) {
     const pkg = readPkg(dir);
     const { name, version } = pkg;
 
@@ -238,9 +239,14 @@ export function buildPlan(packages, readPkg, lookup, options = {}) {
     // resolve to a version that exists after this run. `dependsOn` is pinned
     // as ^<sibling's local version> (scripts/lib/link-swap.mjs), so the check
     // is: will that exact version be on the registry when this publishes?
+    const manifestPin = dependencyRange === 'manifest' ? pkg.dependencies?.[dependsOn] : undefined;
+    const pinnedRange = dependsOn ? dependencyRange === 'manifest' ? manifestPin : `^${plan.find(p => p.name === dependsOn)?.version ?? '?'}` : null;
+    if (dependencyRange === 'manifest' && !parseVersion(manifestPin)) {
+      errors.push(`${name}: ${dependsOn} must be pinned to an exact published version in its manifest`);
+    }
     if (dependsOn && action === 'publish') {
       const depEntry = plan.find(p => p.name === dependsOn);
-      const depVersion = depEntry?.version;
+      const depVersion = dependencyRange === 'manifest' ? manifestPin : depEntry?.version;
       const depInfo = lookup(dependsOn);
       if (!depVersion) {
         errors.push(`${name}: depends on ${dependsOn}, which is not part of the release plan — cannot derive a range`);
@@ -255,7 +261,7 @@ export function buildPlan(packages, readPkg, lookup, options = {}) {
             ? `${dependsOn}@${depVersion} is itself blocked above`
             : `that version is neither on the registry nor being published in this run (${dependsOn} is ${depEntry.action})`;
           errors.push(
-            `${name}: would publish a dependency on ${dependsOn}@^${depVersion}, but ${why} — `
+            `${name}: would publish a dependency on ${dependsOn}@${pinnedRange}, but ${why} — `
             + `consumers could not install ${name}@${version}`
           );
         }
@@ -270,7 +276,7 @@ export function buildPlan(packages, readPkg, lookup, options = {}) {
       registryLatest: info.latest,
       dependsOn,
       distTag,
-      pinnedRange: dependsOn ? `^${plan.find(p => p.name === dependsOn)?.version ?? '?'}` : null,
+      pinnedRange,
     });
   }
 
