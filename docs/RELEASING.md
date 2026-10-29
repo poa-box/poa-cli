@@ -195,6 +195,11 @@ any tag failures. Rerunning does **not** repair missing tags or repeat checks fo
 already-published versions; if all versions exist, there is no remaining publish
 work. Verify those exact versions manually with the commands above.
 
+If registry propagation alone caused verification to time out, confirm the exact
+published version and integrity before retrying. Re-run **all jobs**, so the plan
+is recomputed and already-published versions are skipped. Do not re-run only the
+failed publish job: its saved plan still requests the original publication.
+
 Recover each missing tag from the **exact commit used by the successful publish**,
 as shown in the failed workflow run, rather than the current tip of `main`. For
 example, if only the core `1.0.0` tag is missing, replace `RELEASE_COMMIT` below:

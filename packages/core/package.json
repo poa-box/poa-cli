@@ -11,7 +11,10 @@
     "docs/role-operations.md",
     "docs/agents.md",
     "docs/operation-manifest.v1.json",
-    "docs/operation-manifest.schema.json"
+    "docs/operation-manifest.schema.json",
+    "docs/getting-started.md",
+    "docs/workflow-recipes.v1.json",
+    "docs/workflow-recipes.schema.json"
   ],
   "exports": {
     ".": {

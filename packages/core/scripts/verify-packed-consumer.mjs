@@ -2,11 +2,12 @@
 // Explicit candidate verification only: this script never builds or packs core.
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import vm from 'node:vm';
+import { executableSnippet, validateWorkflowRecipes, verifyUnsignedRecipes } from './workflow-recipe-checks.mjs';
 
 const script = fileURLToPath(import.meta.url), coreRoot = resolve(dirname(script), '..'), repoRoot = resolve(coreRoot, '../..');
 export function parseArguments(args, cwd = process.cwd()) {
@@ -24,6 +25,11 @@ export function validatePackage(pkg) {
   for (const [name, version] of Object.entries({ ...pkg.dependencies, ...pkg.optionalDependencies })) {
     if (/^(?:link:|workspace:|file:)/.test(version)) throw new Error('NONARCHIVE_DEPENDENCY:' + name);
   }
+}
+/** The normal starter uses npm. A release check must select only its explicit archive. */
+export function archiveConsumerPackage(app) {
+  return { ...app, dependencies: { ...app.dependencies, '@poa-box/core': 'file:./core.tgz' },
+    devDependencies: { ...app.devDependencies, '@types/node': '^18.19.0', typescript: '^5.6.0', esbuild: '^0.21.3' } };
 }
 export async function verifyBrowserBundle(code) {
   if (/\brequire\s*\(\s*['"](?:node:|fs|crypto|http|https)/.test(code)) throw new Error('BROWSER_NODE_IMPORT_REQUIRED');
@@ -61,8 +67,7 @@ export async function verify(archive) {
     const pkg = JSON.parse(run('archive-metadata', 'tar', ['-xOf', archive, 'package/package.json'])); validatePackage(pkg); evidence.packageVersion = pkg.version;
     cpSync(join(repoRoot, 'examples/role-consumer'), stage, { recursive: true, filter: file => !file.split(sep).includes('node_modules') });
     cpSync(archive, join(stage, 'core.tgz'));
-    const app = JSON.parse(readFileSync(join(stage, 'package.json'), 'utf8'));
-    app.devDependencies = { '@types/node': '^18.19.0', typescript: '^5.6.0', esbuild: '^0.21.3' };
+    const app = archiveConsumerPackage(JSON.parse(readFileSync(join(stage, 'package.json'), 'utf8')));
     writeFileSync(join(stage, 'package.json'), JSON.stringify(app, null, 2) + '\n');
     // Resolve only the supplied archive; every registry dependency stays pinned to
     // the committed existing lock and must already be in the Yarn offline cache.
@@ -102,8 +107,10 @@ for (const name of ['node:http','node:https','node:net','node:tls','node:dgram']
   for (const method of ['request','get','connect','createConnection','createSocket']) if (typeof transport[method] === 'function') transport[method] = () => { throw new Error('REAL_NETWORK_FORBIDDEN'); };
 }`;
     writeFileSync(join(stage, 'offline-guard.cjs'), guard);
-    run('fixtures', process.execPath, ['--require', './offline-guard.cjs', '--test', 'test/adapters.test.mjs', 'test/consumer.test.mjs']);
+    const tests = readdirSync(join(stage, 'test')).filter(name => name.endsWith('.test.mjs')).sort().map(name => 'test/' + name);
+    run('fixtures', process.execPath, ['--require', './offline-guard.cjs', '--test', ...tests]);
     run('default-story', process.execPath, ['--require', './offline-guard.cjs', 'src/main.mjs']);
+    run('workflow-story', process.execPath, ['--require', './offline-guard.cjs', 'src/main.mjs', '--workflow-fixture']);
     const ts = requireInstalled('typescript');
     const declarationFile = join(stage, 'public-api.ts');
     writeFileSync(declarationFile, `import { readRoleOperationEvidence, reviewRoleOperation, prepareRoleOperation, revalidatePreparedRoleOperation, readRoleOperationStatus,
@@ -164,6 +171,22 @@ void [buildGovernanceProposal,encodeIntent,executeIntentWithHost,reconcileSubmis
       catch (error) { if (error.message !== 'NATIVE_VALUE_TRANSPORT_UNSUPPORTED' || sent) throw error; }
     }
     evidence.checks.push({ name: 'packaged-payable-docs', passed: true }); save();
+    // These follow-up documents did not ship in immutable 2.1.0. Execute the
+    // repository recipes against this distributed install without relabeling
+    // them as already-packaged documentation or falling back to core source.
+    const workflowRecipes = JSON.parse(readFileSync(join(coreRoot, 'docs/workflow-recipes.v1.json'), 'utf8'));
+    const workflowSchema = JSON.parse(readFileSync(join(coreRoot, 'docs/workflow-recipes.schema.json'), 'utf8'));
+    validateWorkflowRecipes(workflowRecipes, workflowSchema, requireInstalled);
+    const snippets = new Map();
+    for (const entry of workflowRecipes.recipes) {
+      const key = entry.example.document + ':' + entry.example.marker;
+      const document = resolve(coreRoot, entry.example.document);
+      assertInside(document, coreRoot);
+      if (!snippets.has(key)) snippets.set(key, executableSnippet(readFileSync(document, 'utf8'), entry.example.marker, ts, requireInstalled));
+      if (typeof snippets.get(key)[entry.example.export] !== 'function') throw new Error('MISSING_WORKFLOW_EXAMPLE:' + entry.id);
+    }
+    verifyUnsignedRecipes(snippets.get('docs/getting-started.md:task-recipes'), requireInstalled);
+    evidence.checks.push({ name: 'repository-task-recipes-against-distributed-sdk', passed: true }); save();
     const recipe = readFileSync(join(installedRoot, 'docs/role-operations.md'), 'utf8').match(/<!-- sdk-test:role-envelope -->\s*```js\n([\s\S]*?)```/);
     if (!recipe) throw new Error('MISSING_PACKAGED_ROLE_RECIPE');
     const recipeSandbox = { exports: {}, require: requireInstalled };

@@ -8,8 +8,10 @@
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
-    "@poa-box/core": "file:./core.tgz",
+    "@poa-box/core": "2.1.0",
     "ethers": "5.7.2"
   },
-  "engines": { "node": ">=18.0.0" }
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }

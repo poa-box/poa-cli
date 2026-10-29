@@ -1,0 +1,818 @@
+{
+  "schemaVersion": 1,
+  "package": "@poa-box/core",
+  "minimumPackageVersion": "2.1.0",
+  "evidence": "Repository follow-up recipes executed against an isolated distributed SDK. Not a new runtime, consent token, deployed-data guarantee or modification of published 2.1.0.",
+  "defaults": {
+    "signs": false,
+    "broadcasts": false,
+    "requiresExplicitHostCapabilities": true
+  },
+  "recipes": [
+    {
+      "id": "read-organization",
+      "title": "Resolve supported organization modules",
+      "inputs": [
+        {
+          "name": "client",
+          "type": "GraphClient",
+          "unit": "injected transport",
+          "required": true,
+          "description": "Host-configured public indexed reader; no signer or environment lookup."
+        },
+        {
+          "name": "orgIdOrName",
+          "type": "string",
+          "unit": "bytes32 org ID or exact name",
+          "required": true,
+          "description": "An explicit organization on the selected chain."
+        },
+        {
+          "name": "chainId",
+          "type": "number",
+          "unit": "positive safe integer chain ID",
+          "required": true,
+          "description": "Keep endpoint and organization scope on this chain."
+        }
+      ],
+      "apis": [
+        {
+          "module": "@poa-box/core/reads/resolve",
+          "exports": [
+            "resolveOrgModules"
+          ]
+        },
+        {
+          "module": "@poa-box/core/reads/authority",
+          "exports": [
+            "readAuthoritySnapshot"
+          ]
+        }
+      ],
+      "effects": {
+        "indexedReads": true,
+        "rpcReads": false,
+        "mayPublish": false,
+        "signs": false,
+        "broadcasts": false,
+        "persists": false
+      },
+      "steps": [
+        {
+          "id": "step-1",
+          "calls": [
+            {
+              "module": "@poa-box/core/reads/resolve",
+              "export": "resolveOrgModules"
+            }
+          ],
+          "instruction": "Resolve the supported organization with resolveOrgModules(client, orgIdOrName, chainId)."
+        },
+        {
+          "id": "step-2",
+          "calls": [
+            {
+              "module": "@poa-box/core/reads/authority",
+              "export": "readAuthoritySnapshot"
+            }
+          ],
+          "instruction": "Treat nullable optional module addresses as absent. For current authority/permissions obtain complete pinned authority evidence separately."
+        }
+      ],
+      "outputs": [
+        {
+          "path": "return",
+          "type": "Promise<OrgModules>",
+          "description": "Promise<OrgModules>; optional modules are nullable; errors reject rather than produce an empty organization."
+        }
+      ],
+      "branches": [
+        {
+          "when": "read rejects or organization is retired/unready",
+          "action": "Surface unavailable; do not substitute another org or invent module addresses."
+        },
+        {
+          "when": "modules resolve",
+          "action": "Use addresses to prepare inputs; this does not prove write authorization."
+        }
+      ],
+      "example": {
+        "document": "docs/getting-started.md",
+        "marker": "task-recipes",
+        "export": "resolveOrgModules"
+      },
+      "hostActions": [
+        "No signing, publication or dispatch; host owns read scheduling and cancellation."
+      ],
+      "retry": {
+        "safeToRepeat": "Repeat current scoped bounded reads; retain incomplete/unknown evidence.",
+        "afterUncertainty": "Keep the original unsigned recovery barrier. No automatic resend."
+      }
+    },
+    {
+      "id": "prepare-task",
+      "title": "Prepare an unsigned task with explicit raw reward",
+      "inputs": [
+        {
+          "name": "taskManagerAddress",
+          "type": "string",
+          "unit": "nonzero EVM address",
+          "required": true,
+          "description": "Resolved deployed current TaskManager."
+        },
+        {
+          "name": "projectId",
+          "type": "string",
+          "unit": "bytes32",
+          "required": true,
+          "description": "Exact TaskManager project ID; not a subject ID."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "unit": "1..256 UTF-8 bytes",
+          "required": true,
+          "description": "Reviewed task title."
+        },
+        {
+          "name": "payoutRaw",
+          "type": "string",
+          "unit": "positive raw participation-asset base units, uint96 and <=1e24",
+          "required": true,
+          "description": "Never human Shares or native value; no automatic amount derivation."
+        },
+        {
+          "name": "metadataHash",
+          "type": "string",
+          "unit": "zero bytes32, nonzero bytes32 or CIDv0",
+          "required": true,
+          "description": "Explicit zero means no metadata; otherwise store canonical bytes separately."
+        },
+        {
+          "name": "features",
+          "type": "TaskManagerFeatures",
+          "unit": "deployed capability facts",
+          "required": true,
+          "description": "Current signature requires deadlines:true; a caller flag is not deployment proof."
+        },
+        {
+          "name": "absoluteDeadline",
+          "type": "string",
+          "unit": "uint48 Unix seconds",
+          "required": false,
+          "description": "Zero disables absolute cutoff."
+        },
+        {
+          "name": "completionWindow",
+          "type": "string",
+          "unit": "uint32 seconds",
+          "required": false,
+          "description": "Zero disables completion window."
+        },
+        {
+          "name": "bountyToken / bountyPayoutRaw",
+          "type": "string / string",
+          "unit": "EVM address / raw selected-asset base units",
+          "required": false,
+          "description": "Supply the nonzero token and positive raw amount together; not native intent.value."
+        }
+      ],
+      "apis": [
+        {
+          "module": "@poa-box/core/tx/task",
+          "exports": [
+            "buildCreateTaskRaw"
+          ]
+        },
+        {
+          "module": "@poa-box/core/metadata/task",
+          "exports": [
+            "buildTaskMetadata",
+            "serializeTaskMetadata"
+          ]
+        },
+        {
+          "module": "@poa-box/core/tx/intent",
+          "exports": [
+            "intentToExecutionRequest"
+          ]
+        }
+      ],
+      "effects": {
+        "indexedReads": false,
+        "rpcReads": false,
+        "mayPublish": false,
+        "signs": false,
+        "broadcasts": false,
+        "persists": false
+      },
+      "steps": [
+        {
+          "id": "step-1",
+          "calls": [
+            {
+              "module": "@poa-box/core/metadata/task",
+              "export": "buildTaskMetadata"
+            },
+            {
+              "module": "@poa-box/core/metadata/task",
+              "export": "serializeTaskMetadata"
+            }
+          ],
+          "instruction": "Build canonical metadata if needed; publishing it is an explicit host-approved step outside this pure recipe."
+        },
+        {
+          "id": "step-2",
+          "calls": [
+            {
+              "module": "@poa-box/core/tx/task",
+              "export": "buildCreateTaskRaw"
+            }
+          ],
+          "instruction": "Call buildCreateTaskRaw with exact deployed features and reviewed raw inputs."
+        },
+        {
+          "id": "step-3",
+          "calls": [],
+          "instruction": "Preview the returned intent. Hand off only after current permission/funding checks and host approval."
+        }
+      ],
+      "outputs": [
+        {
+          "path": "return",
+          "type": "TxIntent",
+          "description": "TxIntent, not a status wrapper; no metadata publication, signing or sending occurs."
+        }
+      ],
+      "branches": [
+        {
+          "when": "builder throws",
+          "action": "Keep the form and correct invalid amounts/IDs/features; no dispatch occurred."
+        },
+        {
+          "when": "intent returned",
+          "action": "Unsigned preparation only; unknown authorization cannot be treated as approval."
+        }
+      ],
+      "example": {
+        "document": "docs/getting-started.md",
+        "marker": "task-recipes",
+        "export": "prepareTask"
+      },
+      "hostActions": [
+        "Host must obtain approval and persist exact unsigned identity under an account lock before any real wallet dispatch; this pure preparation never sends.",
+        "If content must be published, obtain separate publication approval and retain successful/uncertain receipts before retrying."
+      ],
+      "retry": {
+        "safeToRepeat": "Pure unsigned preparation may be repeated after correcting input; it never republishes content or sends a transaction.",
+        "afterUncertainty": "Keep the original unsigned recovery barrier. No automatic resend."
+      }
+    },
+    {
+      "id": "prepare-poll",
+      "title": "Prepare an informational DirectDemocracy poll",
+      "inputs": [
+        {
+          "name": "votingAddress",
+          "type": "string",
+          "unit": "nonzero EVM address",
+          "required": true,
+          "description": "Resolved DirectDemocracy voting module."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "unit": "UTF-8 text",
+          "required": true,
+          "description": "Reviewed title."
+        },
+        {
+          "name": "descriptionHash",
+          "type": "string",
+          "unit": "bytes32",
+          "required": true,
+          "description": "Canonical proposal document pointer from an explicitly approved publisher, or explicit empty pointer."
+        },
+        {
+          "name": "durationMinutes",
+          "type": "string",
+          "unit": "integer minutes within deployed contract limits",
+          "required": true,
+          "description": "Do not pass hours or seconds."
+        },
+        {
+          "name": "numOptions",
+          "type": "number",
+          "unit": "safe integer option count",
+          "required": true,
+          "description": "Must match the reviewed canonical metadata options."
+        },
+        {
+          "name": "subjectIds",
+          "type": "string[]",
+          "unit": "exact uint256 decimal strings",
+          "required": false,
+          "description": "Optional restricted electorate, never Number-converted IDs."
+        }
+      ],
+      "apis": [
+        {
+          "module": "@poa-box/core/tx/governance",
+          "exports": [
+            "buildGovernanceProposal"
+          ]
+        },
+        {
+          "module": "@poa-box/core/metadata/proposal",
+          "exports": [
+            "buildProposalMetadata",
+            "serializeProposalMetadata"
+          ]
+        }
+      ],
+      "effects": {
+        "indexedReads": false,
+        "rpcReads": false,
+        "mayPublish": false,
+        "signs": false,
+        "broadcasts": false,
+        "persists": false
+      },
+      "steps": [
+        {
+          "id": "step-1",
+          "calls": [
+            {
+              "module": "@poa-box/core/metadata/proposal",
+              "export": "buildProposalMetadata"
+            },
+            {
+              "module": "@poa-box/core/metadata/proposal",
+              "export": "serializeProposalMetadata"
+            }
+          ],
+          "instruction": "Use canonical proposal metadata and keep content publication separate."
+        },
+        {
+          "id": "step-2",
+          "calls": [
+            {
+              "module": "@poa-box/core/tx/governance",
+              "export": "buildGovernanceProposal"
+            }
+          ],
+          "instruction": "Call buildGovernanceProposal with DirectDemocracyVotingNew and batches:[]."
+        },
+        {
+          "id": "step-3",
+          "calls": [],
+          "instruction": "For executing option calls choose HybridVotingNew instead; never place executing batches on DD."
+        }
+      ],
+      "outputs": [
+        {
+          "path": "return",
+          "type": "TxIntent",
+          "description": "TxIntent with batches:[]; no network effects from this builder."
+        }
+      ],
+      "branches": [
+        {
+          "when": "executing batch targets DD or arguments are invalid",
+          "action": "Builder throws; correct the requested lane without sending."
+        },
+        {
+          "when": "poll intent returned",
+          "action": "Check creator authorization and obtain host approval before any wallet handoff."
+        }
+      ],
+      "example": {
+        "document": "docs/getting-started.md",
+        "marker": "task-recipes",
+        "export": "preparePoll"
+      },
+      "hostActions": [
+        "Host must obtain approval and persist exact unsigned identity under an account lock before any real wallet dispatch; this pure preparation never sends.",
+        "If content must be published, obtain separate publication approval and retain successful/uncertain receipts before retrying."
+      ],
+      "retry": {
+        "safeToRepeat": "Pure unsigned preparation may be repeated after correcting input; it never republishes content or sends a transaction.",
+        "afterUncertainty": "Keep the original unsigned recovery barrier. No automatic resend."
+      }
+    },
+    {
+      "id": "prepare-vote",
+      "title": "Validate and prepare an unsigned ballot",
+      "inputs": [
+        {
+          "name": "votingAddress",
+          "type": "string",
+          "unit": "nonzero EVM address",
+          "required": true,
+          "description": "Exact proposal voting module."
+        },
+        {
+          "name": "votingAbiName",
+          "type": "string",
+          "unit": "HybridVotingNew | DirectDemocracyVotingNew",
+          "required": true,
+          "description": "Match the proposal lane."
+        },
+        {
+          "name": "proposalId",
+          "type": "string",
+          "unit": "exact uint256 decimal string",
+          "required": true,
+          "description": "Exact proposal reference."
+        },
+        {
+          "name": "optionIndices",
+          "type": "number[]",
+          "unit": "zero-based unique nonnegative safe integers",
+          "required": true,
+          "description": "Pair with weights and check bounds against actual proposal options."
+        },
+        {
+          "name": "weights",
+          "type": "number[]",
+          "unit": "integer percentages in 0..100 totaling exactly 100",
+          "required": true,
+          "description": "One pair per chosen option; validated copy retained."
+        }
+      ],
+      "apis": [
+        {
+          "module": "@poa-box/core/governance/validation",
+          "exports": [
+            "requireValidVoteWeights"
+          ]
+        },
+        {
+          "module": "@poa-box/core/tx/vote",
+          "exports": [
+            "buildVote"
+          ]
+        },
+        {
+          "module": "@poa-box/core/governance/dd-authorization",
+          "exports": [
+            "deriveDirectDemocracyAuthorization"
+          ]
+        }
+      ],
+      "effects": {
+        "indexedReads": false,
+        "rpcReads": false,
+        "mayPublish": false,
+        "signs": false,
+        "broadcasts": false,
+        "persists": false
+      },
+      "steps": [
+        {
+          "id": "step-1",
+          "calls": [
+            {
+              "module": "@poa-box/core/governance/validation",
+              "export": "requireValidVoteWeights"
+            },
+            {
+              "module": "@poa-box/core/tx/vote",
+              "export": "buildVote"
+            }
+          ],
+          "instruction": "Validate paired indices/weights with requireValidVoteWeights before buildVote."
+        },
+        {
+          "id": "step-2",
+          "calls": [
+            {
+              "module": "@poa-box/core/governance/dd-authorization",
+              "export": "deriveDirectDemocracyAuthorization"
+            }
+          ],
+          "instruction": "Check proposal option bounds, live window and current qualified power/eligibility in the host."
+        },
+        {
+          "id": "step-3",
+          "calls": [],
+          "instruction": "Preview the exact ballot and use the existing approved/journaled wallet boundary."
+        }
+      ],
+      "outputs": [
+        {
+          "path": "return",
+          "type": "TxIntent",
+          "description": "TxIntent; successful vector validation proves structure, not member eligibility or a cast vote."
+        }
+      ],
+      "branches": [
+        {
+          "when": "vector validation throws",
+          "action": "Correct the ballot; do not submit malformed weights."
+        },
+        {
+          "when": "eligibility or current scope is unknown",
+          "action": "Refuse dispatch and refresh evidence."
+        },
+        {
+          "when": "intent returned",
+          "action": "Only an approved host can sign/send; ambiguous submission is recovered, never automatically recast."
+        }
+      ],
+      "example": {
+        "document": "docs/getting-started.md",
+        "marker": "task-recipes",
+        "export": "prepareVote"
+      },
+      "hostActions": [
+        "Host must obtain approval and persist exact unsigned identity under an account lock before any real wallet dispatch; this pure preparation never sends."
+      ],
+      "retry": {
+        "safeToRepeat": "Pure unsigned preparation may be repeated after correcting input; it never republishes content or sends a transaction.",
+        "afterUncertainty": "Keep the original unsigned recovery barrier. No automatic resend."
+      }
+    },
+    {
+      "id": "review-role",
+      "title": "Create a role, prove its actual ID, then separately configure it",
+      "inputs": [
+        {
+          "name": "scope",
+          "type": "RoleOperationScope",
+          "unit": "chain/org/account/module identity",
+          "required": true,
+          "description": "Bind authority, executor and HybridVoting plus every referenced optional module."
+        },
+        {
+          "name": "sources",
+          "type": "RoleOperationSources",
+          "unit": "trusted indexed/RPC readers and Unix-second clock",
+          "required": true,
+          "description": "Separate endpoint identities; preserve source blocks, finite budgets and abort signal."
+        },
+        {
+          "name": "request",
+          "type": "RoleOperationRequest",
+          "unit": "create | existing | compound with typed role fields",
+          "required": true,
+          "description": "Default staged create has full desired settings and no guessed subject ID."
+        },
+        {
+          "name": "publishDocument",
+          "type": "function",
+          "unit": "exact UTF-8 json + keccak256 digest -> CIDv0",
+          "required": false,
+          "description": "Trusted optional publisher; requires separate visible approval when documents exist."
+        }
+      ],
+      "apis": [
+        {
+          "module": "@poa-box/core/governance/role-operations",
+          "exports": [
+            "readRoleOperationEvidence",
+            "reviewRoleOperation",
+            "prepareRoleOperation",
+            "revalidatePreparedRoleOperation",
+            "readRoleOperationStatus"
+          ]
+        },
+        {
+          "module": "@poa-box/core/tx/governance",
+          "exports": [
+            "buildGovernanceProposal"
+          ]
+        },
+        {
+          "module": "@poa-box/core/metadata/proposal",
+          "exports": [
+            "buildProposalMetadata",
+            "serializeProposalMetadata"
+          ]
+        },
+        {
+          "module": "@poa-box/core/encoding",
+          "exports": [
+            "ipfsCidToBytes32"
+          ]
+        }
+      ],
+      "effects": {
+        "indexedReads": true,
+        "rpcReads": true,
+        "mayPublish": true,
+        "signs": false,
+        "broadcasts": false,
+        "persists": false
+      },
+      "steps": [
+        {
+          "id": "step-1",
+          "calls": [
+            {
+              "module": "@poa-box/core/governance/role-operations",
+              "export": "readRoleOperationEvidence"
+            },
+            {
+              "module": "@poa-box/core/governance/role-operations",
+              "export": "reviewRoleOperation"
+            }
+          ],
+          "instruction": "Read capabilities for options only; strict review provides current/deferred effects and consequences."
+        },
+        {
+          "id": "step-2",
+          "calls": [
+            {
+              "module": "@poa-box/core/governance/role-operations",
+              "export": "prepareRoleOperation"
+            },
+            {
+              "module": "@poa-box/core/tx/governance",
+              "export": "buildGovernanceProposal"
+            },
+            {
+              "module": "@poa-box/core/governance/role-operations",
+              "export": "revalidatePreparedRoleOperation"
+            }
+          ],
+          "instruction": "Approve publication, prepare, build the enclosing proposal and revalidate after awaited setup before approved host dispatch."
+        },
+        {
+          "id": "step-3",
+          "calls": [],
+          "instruction": "Persist the unsigned original send identity and recover it read-only if uncertain."
+        },
+        {
+          "id": "step-4",
+          "calls": [
+            {
+              "module": "@poa-box/core/governance/role-operations",
+              "export": "readRoleOperationStatus"
+            },
+            {
+              "module": "@poa-box/core/governance/role-operations",
+              "export": "reviewRoleOperation"
+            }
+          ],
+          "instruction": "Prove actual created subject through status; retain original requiresConfiguration. Only requested deferred settings receive a separately reviewed configuration stage."
+        }
+      ],
+      "outputs": [
+        {
+          "path": "return",
+          "type": "RoleOperationResult<T>",
+          "description": "RoleOperationResult<T>: ready has data/consequences; blocked/unknown have codes/prerequisites/observations and may retain publication receipts."
+        },
+        {
+          "path": "data.next",
+          "type": "RoleOperationStatus.next",
+          "description": "RoleOperationStatus.next is wait | review-creation | review-configuration | complete."
+        }
+      ],
+      "branches": [
+        {
+          "when": "blocked or unknown",
+          "action": "No executable batch; retain evidence and successful/uncertain publication records."
+        },
+        {
+          "when": "creation created, original requiresConfiguration:false",
+          "action": "Complete create-only workflow; do not submit an empty configuration vote."
+        },
+        {
+          "when": "creation created with requested deferred settings",
+          "action": "Use actual subjectId and exact continuation in a separate existing-mode review."
+        },
+        {
+          "when": "configuration outcome unknown or pending",
+          "action": "Wait/read again; outer success or a matching name is not completion."
+        }
+      ],
+      "example": {
+        "document": "docs/role-operations.md",
+        "marker": "role-envelope",
+        "export": "submitReviewedRole"
+      },
+      "hostActions": [
+        "Explicitly approve each publication and send independently. The envelope example invokes the approved host execute callback; it may sign and broadcast.",
+        "Host persists unsigned journals under an exclusive account lock; uncertain publication or send is recovered without automatically repeating it."
+      ],
+      "retry": {
+        "safeToRepeat": "Review and final revalidation may repeat reads with current scope; renew opaque handles after reload.",
+        "afterUncertainty": "Never repeat publication or send automatically; preserve exact bytes/digest/receipt and unsigned original call identity, then recover read-only."
+      }
+    },
+    {
+      "id": "recover-submission",
+      "title": "Recover the exact original unsigned journal without resending",
+      "inputs": [
+        {
+          "name": "record",
+          "type": "SubmissionRecoveryRecord",
+          "unit": "normalized version-2 unsigned record",
+          "required": true,
+          "description": "Persisted original account/chain/nonce/call/hash with ownership fence; no key or signature."
+        },
+        {
+          "name": "readers",
+          "type": "SubmissionRecoveryReaders",
+          "unit": "read-only canonical RPC/bundler capabilities",
+          "required": true,
+          "description": "Adapt the actual provider methods without fabricating missing chain/block/transaction fields."
+        },
+        {
+          "name": "candidateTxHash",
+          "type": "string",
+          "unit": "bytes32 transaction hash",
+          "required": false,
+          "description": "Optional exact EOA candidate outside bounded discovery; never guessed from broad history."
+        }
+      ],
+      "apis": [
+        {
+          "module": "@poa-box/core/execute/recovery",
+          "exports": [
+            "normalizeSubmissionRecovery",
+            "reconcileSubmissionRecovery",
+            "assertSubmissionFence"
+          ]
+        }
+      ],
+      "effects": {
+        "indexedReads": false,
+        "rpcReads": true,
+        "mayPublish": false,
+        "signs": false,
+        "broadcasts": false,
+        "persists": false
+      },
+      "steps": [
+        {
+          "id": "step-1",
+          "calls": [
+            {
+              "module": "@poa-box/core/execute/recovery",
+              "export": "normalizeSubmissionRecovery"
+            }
+          ],
+          "instruction": "Under an exclusive account lock, load and normalize the original unsigned record."
+        },
+        {
+          "id": "step-2",
+          "calls": [
+            {
+              "module": "@poa-box/core/execute/recovery",
+              "export": "reconcileSubmissionRecovery"
+            }
+          ],
+          "instruction": "Call reconcileSubmissionRecovery(record, readers, options) without a signer or send capability."
+        },
+        {
+          "id": "step-3",
+          "calls": [
+            {
+              "module": "@poa-box/core/execute/recovery",
+              "export": "assertSubmissionFence"
+            }
+          ],
+          "instruction": "Recheck full scope/owner/attempt/revision after awaits and compare-and-clear only the exact settled record."
+        },
+        {
+          "id": "step-4",
+          "calls": [],
+          "instruction": "For governance, additionally prove the selected inner operation; a mined outer send is not configuration success."
+        }
+      ],
+      "outputs": [
+        {
+          "path": "return",
+          "type": "Promise<SubmissionRecoveryResult>",
+          "description": "SubmissionRecoveryResult with outcome.status: succeeded | failed | replaced | unknown. Pending/unavailable evidence remains unknown; retain original identity and recovery evidence."
+        }
+      ],
+      "branches": [
+        {
+          "when": "unknown, including pending/unavailable proof",
+          "action": "Keep the recovery barrier; wait or provide the exact candidate. No timeout authorizes resend."
+        },
+        {
+          "when": "succeeded, failed or replaced",
+          "action": "Settle only the matching record under the original fence; expose the proven outcome, never reinterpret replacement as original success."
+        }
+      ],
+      "example": {
+        "document": "docs/getting-started.md",
+        "marker": "task-recipes",
+        "export": "reconcileSubmissionRecovery"
+      },
+      "hostActions": [
+        "Read-only reconciliation never signs or sends. Host may update or clear only the exact matching unsigned record under its scope/owner/revision fence."
+      ],
+      "retry": {
+        "safeToRepeat": "Read-only reconciliation may repeat with current canonical evidence and the original exact record/fence.",
+        "afterUncertainty": "Keep the original unsigned recovery barrier. No automatic resend."
+      }
+    }
+  ],
+  "effectsDescribe": "Effects describe referenced SDK calls. Host publication, unsigned persistence, approval and wallet dispatch are separate injected capabilities; the default starter never performs real writes."
+}

@@ -53,6 +53,19 @@ jobs:
       - name: Core package — API surface (no exports removed)
         run: yarn --cwd packages/core api:check
 
+      - name: Independent consumer — registry installation
+        run: yarn --cwd examples/role-consumer install --frozen-lockfile
+
+      - name: Independent consumer — exact built archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          consumer_dir="$RUNNER_TEMP/core-consumer"
+          mkdir -p "$consumer_dir"
+          npm pack ./packages/core --ignore-scripts --pack-destination "$consumer_dir"
+          core_version=$(node -p "require('./packages/core/package.json').version")
+          node packages/core/scripts/verify-packed-consumer.mjs "$consumer_dir/poa-box-core-$core_version.tgz"
+
       # The agent package must exist BEFORE the root suite runs:
       # cli-agent-surface.test.ts spawns packages/agent/dist/pop-agent.js.
       - name: Agent package — install (links @poa-box/cli)

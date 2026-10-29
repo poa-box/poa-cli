@@ -1,5 +1,13 @@
 # Coding-agent integration recipe
 
+Choose a task in [getting started](getting-started.md) or the companion
+[workflow recipes](workflow-recipes.v1.json) ([schema](workflow-recipes.schema.json)).
+These specify public imports, input units, effects, result branches and example
+checks for reads, unsigned task/poll/vote preparation, staged roles and recovery.
+The [role-operation catalog](operation-manifest.v1.json) retains its version-1
+shape and describes only the five role-operation functions.
+
+
 Use the public packed SDK, not frontend internals or CLI subprocesses, for a JS
 host. Read [role-operations.md](role-operations.md) and the static
 [version-1 catalog](operation-manifest.v1.json) against its

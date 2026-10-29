@@ -1,9 +1,12 @@
-# Adopting @poa-box/core 2.0 in a frontend
+# Adopting @poa-box/core 2.1 in a frontend
 
 Core owns protocol encodings, canonical metadata, typed documents, exact
 amounts and evidence-bearing planning. The host retains wallet UI, rendering,
 identity hydration, caching and lifecycle state. Adoption is a separate product
 change; a package test never closes a host or backend finding.
+
+For a first integration, use [getting started](getting-started.md) and the
+[task recipes](workflow-recipes.v1.json). This guide is the detailed host checklist.
 
 ## Preserve the service boundary
 
