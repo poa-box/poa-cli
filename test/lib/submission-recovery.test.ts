@@ -102,8 +102,10 @@ describe('durable CLI submission host', () => {
     expect((await executeTx(f.contract, 'action', [])).success).toBe(false); expect(f.send).not.toHaveBeenCalled();
   });
   it('dry runs and structural read-only mode never create a send journal', async () => {
+    process.env.POP_READONLY = '1';
     const f = fixture(); expect((await executeTx(f.contract, 'action', [], { dryRun: true })).dryRun).toBe(true);
-    process.env.POP_READONLY = '1'; expect((await executeTx(f.contract, 'action', [])).success).toBe(false);
+    expect(await executeTx(f.contract, 'action', [])).toMatchObject({ success: false, errorCode: 'USER_REJECTED' });
+    expect(f.provider.estimateGas).toHaveBeenCalledTimes(1);
     expect(f.send).not.toHaveBeenCalled(); expect(loadSubmission(100, ACCOUNT)).toBeUndefined();
   });
   it('serializes concurrent processes without a lease expiry', () => {

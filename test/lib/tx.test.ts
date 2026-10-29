@@ -225,6 +225,7 @@ describe('detectUserOpFailure (ERC-4337 inner revert)', () => {
 
 describe('executeTx failure propagates decoded custom errors', () => {
   const saved = {
+    POP_READONLY: process.env.POP_READONLY,
     POP_PRIVATE_KEY: process.env.POP_PRIVATE_KEY,
     POP_ORG_ID: process.env.POP_ORG_ID,
     POP_HAT_ID: process.env.POP_HAT_ID,
@@ -237,8 +238,9 @@ describe('executeTx failure propagates decoded custom errors', () => {
     }
   });
 
-  it('surfaces errorName + suggestion when gas estimation reverts with a known custom error', async () => {
-    // No sponsored config so the direct path runs; estimateGas rejects first.
+  it.each(['0', '1'])('surfaces errorName + suggestion from dry-run estimation (POP_READONLY=%s)', async readOnly => {
+    process.env.POP_READONLY = readOnly;
+    // Estimation-only calls use dry-run even when structural read-only mode is enabled.
     delete process.env.POP_PRIVATE_KEY;
     delete process.env.PIMLICO_API_KEY;
 
@@ -257,7 +259,7 @@ describe('executeTx failure propagates decoded custom errors', () => {
       },
     } as unknown as ethers.Contract;
 
-    const result = await executeTx(contract, 'doThing', []);
+    const result = await executeTx(contract, 'doThing', [], { dryRun: true });
     expect(result.success).toBe(false);
     expect(result.errorCode).toBe('GAS_ESTIMATION_FAILED');
     expect(result.errorName).toBe('BadStatus');
