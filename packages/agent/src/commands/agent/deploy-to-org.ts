@@ -1,6 +1,6 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { createSigner } from '@poa-box/cli/lib/signer';
+import { resolveIdentityAddress } from '@poa-box/cli/lib/signer';
 import { resolveNetworkConfig } from '@poa-box/cli/config/networks';
 import { resolveOrgId } from '@poa-box/cli/lib/resolve';
 import { refreshAuthorityUsers } from '@poa-box/cli/lib/authority';
@@ -29,14 +29,14 @@ export const deployToOrgHandler = {
 
     try {
       const networkConfig = resolveNetworkConfig(argv.chain);
-      const { signer } = createSigner({ privateKey: argv.privateKey as string, chainId: argv.chain, rpcUrl: argv.rpc as string });
-      const provider = new ethers.providers.JsonRpcProvider(networkConfig.resolvedRpc);
+      const address = resolveIdentityAddress(argv, { required: true, purpose: 'Agent deployment readiness' })!;
+      const provider = new ethers.providers.JsonRpcProvider(argv.rpc || networkConfig.resolvedRpc, networkConfig.chainId);
 
       const steps: Array<{ step: string; status: string; detail?: string }> = [];
 
       // Step 1: Check wallet balance on target chain
       spin.text = 'Checking wallet balance...';
-      const balance = await provider.getBalance(signer.address);
+      const balance = await provider.getBalance(address);
       const balanceEth = ethers.utils.formatEther(balance);
       const hasGas = balance.gt(ethers.utils.parseEther('0.001'));
       steps.push({
@@ -51,7 +51,7 @@ export const deployToOrgHandler = {
       const registry = new ethers.Contract(IDENTITY_REGISTRY, registryAbi, provider);
       let hasIdentity = false;
       try {
-        const idBalance = await registry.balanceOf(signer.address);
+        const idBalance = await registry.balanceOf(address);
         hasIdentity = idBalance.gt(0);
       } catch { /* registry might not exist on this chain */ }
       steps.push({
@@ -64,7 +64,7 @@ export const deployToOrgHandler = {
       spin.text = 'Checking EIP-7702 delegation...';
       let isDelegated = false;
       try {
-        const code = await provider.getCode(signer.address);
+        const code = await provider.getCode(address);
         isDelegated = code.length > 2 && code.startsWith('0xef0100');
       } catch { /* not delegated */ }
       steps.push({
@@ -83,7 +83,7 @@ export const deployToOrgHandler = {
       const members = org.users.filter(user => user.membershipStatus === 'Active');
       const orgFound = true;
       const orgMembers = members.length;
-      const isMember = members.some(user => user.address.toLowerCase() === signer.address.toLowerCase());
+      const isMember = members.some(user => user.address.toLowerCase() === address.toLowerCase());
       steps.push({
         step: 'Target org',
         status: orgFound ? (isMember ? 'MEMBER' : 'FOUND') : 'NOT_FOUND',
@@ -97,10 +97,10 @@ export const deployToOrgHandler = {
       const needsAction = steps.filter(s => !['OK', 'REGISTERED', 'DELEGATED', 'MEMBER', 'FOUND'].includes(s.status));
 
       if (output.isJsonMode()) {
-        output.json({ targetOrg: argv.targetOrg, chain: argv.chain, address: signer.address, steps, ready, needsAction: needsAction.length });
+        output.json({ targetOrg: argv.targetOrg, chain: argv.chain, address: address, steps, ready, needsAction: needsAction.length });
       } else {
         console.log('');
-        console.log(`  Cross-Org Deployment: ${signer.address.slice(0, 10)}... → ${argv.targetOrg}`);
+        console.log(`  Cross-Org Deployment: ${address.slice(0, 10)}... → ${argv.targetOrg}`);
         console.log('  ' + '═'.repeat(50));
         for (const s of steps) {
           const icon = ['OK', 'REGISTERED', 'DELEGATED', 'MEMBER'].includes(s.status) ? '✓' : s.status === 'FOUND' ? '○' : '✗';

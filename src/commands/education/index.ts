@@ -1,3 +1,4 @@
+import { snapshotHandler } from './snapshot';
 import type { Argv } from 'yargs';
 import { createModuleHandler } from './create-module';
 import { listHandler } from './list';
@@ -7,6 +8,7 @@ import { removeModuleHandler } from './remove';
 
 export function registerEducationCommands(yargs: Argv) {
   return yargs
+    .command('snapshot', 'Read complete paged domain facts at a proven indexed block with coverage', snapshotHandler.builder, snapshotHandler.handler)
     .command('create', 'Create a learning module that rewards PT on completion', createModuleHandler.builder, createModuleHandler.handler)
     .command('list', 'List education modules', listHandler.builder, listHandler.handler)
     .command('update', 'Update a module\'s payout/metadata — read-then-merge full edit', updateModuleHandler.builder, updateModuleHandler.handler)

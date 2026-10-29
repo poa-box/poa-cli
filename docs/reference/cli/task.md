@@ -4,6 +4,37 @@
 
 Task management
 
+## pop task prepare
+
+Prepare raw task calldata, metadata, or scoped policy decisions locally
+
+```text
+pop task prepare <action> [flags]
+```
+
+| Positional | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `<action>` | string | yes | - | Choices: `create`, `create-and-assign`, `create-batch`, `config`, `metadata`, `policy` |
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--file` | string | yes | - | JSON raw-unit task arguments, explicit metadata merge, or scoped policy facts |
+
+## pop task snapshot
+
+Read complete paged domain facts at a proven indexed block with coverage
+
+```text
+pop task snapshot [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--account` | string | no | - | With --task, project this account’s exact indexed applicant presence/absence; incomplete evidence stays unknown |
+| `--max-pages` | number | no | `100` | Maximum pages per independent collection; reaching the cap remains incomplete |
+| `--page-size` | number | no | `100` | Rows per page (1–1000) |
+| `--task` | string | no | - | Include independently paged applications and claim-expiry history for this task |
+
 ## pop task create
 
 Create a new task
@@ -14,7 +45,8 @@ pop task create [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--bounty-amount` | number | no | - | Bounty payout amount |
+| `--assignee` | string | no | - | Assign immediately in the same transaction to this address (requires CREATE and ASSIGN) |
+| `--bounty-amount` | string | no | - | Bounty payout amount |
 | `--bounty-token` | string | no | - | Bounty ERC20 token address |
 | `--completion-window` | string | no | - | Time a claimer has to submit after claiming (v6 orgs only) |
 | `--deadline` | string | no | - | Absolute claim deadline — no claims after this time (v6 orgs only) |
@@ -26,7 +58,7 @@ pop task create [flags]
 | `--location` | string | no | `""` | Location |
 | `--name` | string | yes | - | Task name |
 | `--no-idempotency` | boolean | no | `false` | Bypass the idempotency cache and always submit a new task. |
-| `--payout` | number | no | - | Payout amount. Omit to price the task the way the web app would, from the org's payout convention plus --difficulty/--est-hours |
+| `--payout` | string | no | - | Payout amount. Omit to price the task the way the web app would, from the org's payout convention plus --difficulty/--est-hours |
 | `--project` | string | yes | - | Project ID |
 | `--requires-application` | boolean | no | `false` | Require applications |
 

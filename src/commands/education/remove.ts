@@ -1,3 +1,4 @@
+import { buildRemoveModule } from '@poa-box/core/tx/education';
 /**
  * pop education remove — permanently delete a learning module.
  *
@@ -87,7 +88,8 @@ export const removeModuleHandler = {
       const txSpin = output.spinner('Sending removeModule...');
       txSpin.start();
       const contract = createWriteContract(educationHubAddress, 'EducationHubNew', ctx.signer);
-      const result = await executeTx(contract, 'removeModule', [moduleId], { dryRun: argv.dryRun });
+      const intent = buildRemoveModule({ educationHubAddress, moduleId });
+      const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
       txSpin.stop();
 
       finishWrite(result, {

@@ -1,0 +1,132 @@
+# Narrow immutable projection of the retained both-chain serving introspection.
+# Actual exercised fields, input fields, argument types/defaults and enum values only.
+
+type Query {
+  payments(first: Int = 100, orderBy: Payment_orderBy, orderDirection: OrderDirection, where: Payment_filter, block: Block_height): [Payment!]!
+  paymasterHubContracts(first: Int = 100, orderBy: PaymasterHubContract_orderBy, orderDirection: OrderDirection, where: PaymasterHubContract_filter, block: Block_height): [PaymasterHubContract!]!
+  paymasterDepositEvents(first: Int = 100, orderBy: PaymasterDepositEvent_orderBy, orderDirection: OrderDirection, where: PaymasterDepositEvent_filter, block: Block_height): [PaymasterDepositEvent!]!
+  solidarityEvents(first: Int = 100, orderBy: SolidarityEvent_orderBy, orderDirection: OrderDirection, where: SolidarityEvent_filter, block: Block_height): [SolidarityEvent!]!
+  _meta(block: Block_height): _Meta_
+}
+
+type Payment {
+  id: Bytes!
+  payer: Bytes!
+  amount: BigInt!
+  token: Bytes!
+  receivedAtBlock: BigInt!
+  transactionHash: Bytes!
+  paymentManager: PaymentManagerContract!
+}
+
+type PaymentManagerContract {
+  id: Bytes!
+  organization: Organization!
+}
+
+type Organization {
+  id: Bytes!
+}
+
+type PaymasterHubContract {
+  id: Bytes!
+  createdAtBlock: BigInt!
+}
+
+type PaymasterDepositEvent {
+  id: Bytes!
+  from: Bytes
+  amount: BigInt!
+  eventType: DepositEventType!
+  eventAtBlock: BigInt!
+  transactionHash: Bytes!
+  paymasterHub: PaymasterHubContract!
+}
+
+type SolidarityEvent {
+  id: Bytes!
+  from: Bytes
+  amount: BigInt
+  eventType: SolidarityEventType!
+  eventAtBlock: BigInt!
+  transactionHash: Bytes!
+  paymasterHub: PaymasterHubContract!
+}
+
+type _Meta_ {
+  block: _Block_!
+}
+
+type _Block_ {
+  number: Int!
+  hash: Bytes
+  timestamp: Int
+}
+
+input Payment_filter {
+  id_gt: Bytes
+  token: Bytes
+  receivedAtBlock_gte: BigInt
+  receivedAtBlock_lte: BigInt
+}
+
+input PaymasterHubContract_filter {
+  id_gt: Bytes
+}
+
+input PaymasterDepositEvent_filter {
+  id_gt: Bytes
+  eventType: DepositEventType
+  eventAtBlock_gte: BigInt
+  eventAtBlock_lte: BigInt
+}
+
+input SolidarityEvent_filter {
+  id_gt: Bytes
+  eventType: SolidarityEventType
+  eventAtBlock_gte: BigInt
+  eventAtBlock_lte: BigInt
+}
+
+scalar BigInt
+
+input Block_height {
+  hash: Bytes
+  number: Int
+  number_gte: Int
+}
+
+scalar Bytes
+
+enum DepositEventType {
+  HubDeposit
+  OrgDeposit
+}
+
+enum OrderDirection {
+  asc
+  desc
+}
+
+enum PaymasterDepositEvent_orderBy {
+  id
+}
+
+enum PaymasterHubContract_orderBy {
+  id
+}
+
+enum Payment_orderBy {
+  id
+}
+
+enum SolidarityEventType {
+  FeeCollected
+  DonationReceived
+  OrgBanned
+  OrgUnbanned
+}
+
+enum SolidarityEvent_orderBy {
+  id
+}

@@ -18,9 +18,11 @@ import { AUTHORITY_KEYS } from '@poa-box/core/tx/authority';
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
+import { parseDecimalAmountToRaw } from '@poa-box/core/amounts';
+import { buildTokenRequestMetadata } from '@poa-box/core/metadata/token';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
-import { pinJson } from '../../lib/ipfs';
+import { pinWriteMetadata } from '../../lib/write-metadata';
 import { getWriteContext, confirmWrite, finishWrite } from '../../lib/command';
 import { runPreflight, checkGasBalance, PreflightCheck } from '../../lib/preflight';
 import { requireModule } from '../../lib/resolve';
@@ -31,7 +33,7 @@ import * as output from '../../lib/output';
 
 interface RequestArgs {
   org?: string;
-  amount: number;
+  amount: number | string;
   reason: string;
   chain?: number;
   rpc?: string;
@@ -47,7 +49,7 @@ const UINT96_MAX = ethers.BigNumber.from(2).pow(96).sub(1);
 export function parseRequestAmount(amount: number | string): ethers.BigNumber {
   let wei: ethers.BigNumber;
   try {
-    wei = ethers.utils.parseUnits(String(amount), 18);
+    wei = ethers.BigNumber.from(parseDecimalAmountToRaw(String(amount), 18));
   } catch {
     throw new CliError(`Invalid --amount "${amount}".`, EXIT.USAGE, 'Pass a decimal PT amount, e.g. --amount 12.5');
   }
@@ -62,7 +64,7 @@ export function parseRequestAmount(amount: number | string): ethers.BigNumber {
 
 export const requestHandler = {
   builder: (yargs: Argv) => yargs
-    .option('amount', { type: 'number', demandOption: true, describe: 'Amount of PT to request' })
+    .option('amount', { type: 'string', demandOption: true, describe: 'Amount of PT to request' })
     .option('reason', { type: 'string', demandOption: true, describe: 'Reason for the request (pinned to IPFS)' })
     .example('pop token request --amount 10 --reason "Facilitated the weekly sync"', 'Request 10 PT — mints once an approver approves')
     .epilogue('Members-only on-chain. Track it with pop token requests; an approver mints it via pop token approve.'),
@@ -105,10 +107,10 @@ export const requestHandler = {
       }, { actionLabel: 'About to submit a token request' });
 
       // Upload reason metadata to IPFS (matches frontend pattern — key order matters)
-      const metadata = { reason: argv.reason, submittedAt: Date.now() };
+      const metadata = buildTokenRequestMetadata(argv.reason, Date.now());
       const txSpin = output.spinner('Pinning request metadata to IPFS...');
       txSpin.start();
-      const cid = await pinJson(JSON.stringify(metadata));
+      const cid = await pinWriteMetadata(JSON.stringify(metadata), argv.dryRun);
 
       // requestTokens expects (uint96 amount, string ipfsHash)
       // Amount in 18 decimals, ipfsHash is the CID string (not bytes32)

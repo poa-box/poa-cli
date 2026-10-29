@@ -10,6 +10,8 @@ import { proposeConfigHandler } from './propose-config';
 import { analyzeHandler } from './analyze';
 import { resultsHandler } from './results';
 import { registerClassesCommands } from './classes';
+import { ballotsHandler, capabilitiesHandler, authorizationHandler } from './facts';
+import { powerHandler } from './power';
 
 export function registerVoteCommands(yargs: Argv) {
   return yargs
@@ -23,6 +25,10 @@ export function registerVoteCommands(yargs: Argv) {
     .command('propose-config', 'Create a proposal to change a governance config parameter', proposeConfigHandler.builder, proposeConfigHandler.handler)
     .command('analyze', 'Analyze a hybrid vote — power breakdown and counterfactuals', analyzeHandler.builder, analyzeHandler.handler)
     .command('results', 'Show vote results with option names and rankings', resultsHandler.builder, resultsHandler.handler)
+    .command('ballots', 'Read bounded paginated indexed ballots with explicit coverage', ballotsHandler.builder, ballotsHandler.handler)
+    .command('capabilities', 'Show shared governance limits and supported configuration keys', capabilitiesHandler.builder, capabilitiesHandler.handler)
+    .command('authorization', 'Inspect DD permission and activation policy for an account', authorizationHandler.builder, authorizationHandler.handler)
+    .command('power', 'Inspect frozen hybrid classes, current account power, indexed tally matrix and quorum', powerHandler.builder, powerHandler.handler)
     .command('classes <sub>', 'Show or propose the hybrid voting class configuration (show / propose)', registerClassesCommands)
     .demandCommand(1, 'Please specify a vote action')
     .epilogue('Guide: see docs/guides/voting.md');

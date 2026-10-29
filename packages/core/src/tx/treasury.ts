@@ -36,6 +36,9 @@ import { getTokenDecimals, resolveNetworkConfig } from '../chains';
 import { formatToken } from '../format';
 import { CliError, PreconditionError } from '../errors';
 import { EXIT } from '../exit-codes';
+import { requireRawUint } from '../amounts';
+import { prepareExactRecipients, validateRawRecipients, treasuryTokenAddress, type ExactRecipient, type RawRecipient } from '../treasury/planning';
+import { distributionClaimsDiscoveryMarker, requireDistributionClaimsReference, verifyDistributionClaimsDocument, type DistributionClaimsReference } from '../metadata/distribution';
 
 // ---------------------------------------------------------------------------
 // Inline ABI fragments — identical to the CLI's, so calldata is byte-for-byte
@@ -509,6 +512,8 @@ export interface DistributionProposalArgs {
   durationMinutes: ethers.BigNumberish;
   orgId?: string;
   ipfs?: { cid: string; metadata: unknown };
+  /** Optional stored immutable claims reference. Existing CLI defaults are unchanged. */
+  claimsReference?: DistributionClaimsReference;
 }
 
 /**
@@ -520,6 +525,7 @@ export interface DistributionProposalArgs {
  * PaymentManager's balance can't cover total committed + this amount.
  */
 export function buildDistributionProposal(a: DistributionProposalArgs): TxIntent {
+  if (a.claimsReference) assertPreparedClaimsBinding(a.claimsReference, a);
   const pmIface = new ethers.utils.Interface(PM_CREATE_DISTRIBUTION_ABI);
   const createDistData = pmIface.encodeFunctionData('createDistribution', [
     a.tokenAddress,
@@ -550,6 +556,7 @@ export function buildDistributionProposal(a: DistributionProposalArgs): TxIntent
       merkleRoot: a.merkleRoot,
       checkpointBlock: String(a.checkpointBlock),
       memberCount: a.memberCount,
+      ...(a.claimsReference ? { claimsCid: a.claimsReference.cid } : {}),
     },
     ipfs: a.ipfs,
   });
@@ -772,6 +779,10 @@ export async function sendProposalIntent(ctx: PopContext, params: SendProposalPa
     : (tokenAddr as string);
   const decimals = isNative ? 18 : getTokenDecimals(tokenAddr as string);
 
+  // Validate the retained numeric path's calldata before publishing metadata.
+  buildSendProposal({ hybridVotingAddress: hybridVotingAddr, recipients: recipientList, tokenAddress: tokenAddr, decimals, tokenLabel,
+    descriptionHash: ethers.constants.HashZero, durationMinutes, orgId: modules.orgId });
+
   const totalAmount = recipientList.reduce((sum, r) => sum + r.amount, 0);
   const recipientSummary = recipientList.map(r => `${r.amount} ${tokenLabel} → ${r.to.slice(0, 10)}...`).join(', ');
   const metadata = buildProposalMetadata({
@@ -810,6 +821,8 @@ export interface ProposeDistributionParams {
   merkle: MerkleDistributionData;
   /** Vote duration in minutes (CLI default 1440). */
   durationMinutes?: number;
+  /** Inject an already uploaded document and its resolved immutable CID; no reallocation/upload here. */
+  preparedClaims?: { document: unknown; loadedCid: string; reference: DistributionClaimsReference };
 }
 
 /**
@@ -846,13 +859,26 @@ export async function proposeDistributionIntent(
   const token = await resolvePayoutTokenInfo(ctx.provider, tokenAddress, ctx.chainId);
   const totalHuman = ethers.utils.formatUnits(amountWei, token.decimals);
 
+  if (params.preparedClaims) {
+    assertPreparedClaimsBinding(params.preparedClaims.reference, { paymentManagerAddress: paymentManagerAddr, orgId: modules.orgId, tokenAddress,
+      totalAmountWei: amountWei, checkpointBlock, merkleRoot });
+    if (params.preparedClaims.reference.chainId !== ctx.chainId) throw new Error('CLAIM_CHAIN_MISMATCH');
+    const verified = verifyDistributionClaimsDocument(params.preparedClaims.document, params.preparedClaims);
+    if (verified.state === 'unknown') throw new Error(verified.code);
+    if (memberCount !== Object.keys(verified.value.document.claims).length) throw new Error('PREPARED_CLAIM_COUNT_MISMATCH');
+  }
+  buildDistributionProposal({ hybridVotingAddress: hybridVotingAddr, paymentManagerAddress: paymentManagerAddr, tokenAddress, totalAmountWei: amountWei,
+    merkleRoot, checkpointBlock, memberCount, totalHuman, descriptionHash: ethers.constants.HashZero, durationMinutes, orgId: modules.orgId,
+    ...(params.preparedClaims ? { claimsReference: params.preparedClaims.reference } : {}) });
+
   // Build allocation summary for proposal description
   const allocationSummary = (allocations ?? [])
     .map((a) => `${a.username || a.address.slice(0, 10) + '...'} (${a.share})`)
     .join(', ');
 
   const metadata = buildProposalMetadata({
-    description: `Create distribution of ${totalHuman} tokens to ${memberCount} members proportional to PT holdings. Allocations: ${allocationSummary}. Merkle root: ${merkleRoot}. Checkpoint block: ${checkpointBlock}.`,
+    description: `Create distribution of ${totalHuman} tokens to ${memberCount} members proportional to PT holdings. Allocations: ${allocationSummary}. Merkle root: ${merkleRoot}. Checkpoint block: ${checkpointBlock}.` +
+      (params.preparedClaims ? ` ${distributionClaimsDiscoveryMarker(params.preparedClaims.reference)}` : ''),
     optionNames: [`Distribute ${totalHuman} tokens`, 'Do not distribute'],
   });
   const { cid, descriptionHash } = await pinProposalMetadata(ctx, metadata);
@@ -870,7 +896,63 @@ export async function proposeDistributionIntent(
     durationMinutes,
     orgId: modules.orgId,
     ipfs: { cid, metadata },
+    ...(params.preparedClaims ? { claimsReference: params.preparedClaims.reference } : {}),
   });
+}
+
+function assertPreparedClaimsBinding(reference: DistributionClaimsReference, input: Pick<DistributionProposalArgs, 'paymentManagerAddress' | 'orgId' | 'tokenAddress' | 'totalAmountWei' | 'checkpointBlock' | 'merkleRoot'>): void {
+  requireDistributionClaimsReference(reference);
+  if (!input.orgId || reference.orgId.toLowerCase() !== input.orgId.toLowerCase()
+    || reference.paymentManager.toLowerCase() !== input.paymentManagerAddress.toLowerCase()
+    || reference.token.toLowerCase() !== input.tokenAddress.toLowerCase()
+    || reference.merkleRoot.toLowerCase() !== input.merkleRoot.toLowerCase()
+    || requireRawUint(reference.totalAmount) !== requireRawUint(ethers.BigNumber.from(input.totalAmountWei).toString())
+    || requireRawUint(reference.checkpointBlock) !== requireRawUint(ethers.BigNumber.from(input.checkpointBlock).toString())) throw new Error('PREPARED_CLAIM_BINDING_MISMATCH');
+}
+
+export interface SendProposalExactArgs extends Omit<SendProposalArgs, 'recipients'> {
+  /** Mutually exclusive exact decimal text or prepared raw recipients. */
+  recipients?: readonly ExactRecipient[];
+  rawRecipients?: readonly RawRecipient[];
+}
+/** Additive exact path; the numeric CLI wrapper remains byte/shape compatible. */
+export function buildSendProposalExact(a: SendProposalExactArgs): TxIntent {
+  if ((a.recipients === undefined) === (a.rawRecipients === undefined)) throw new Error('EXACT_RECIPIENTS_REQUIRED');
+  const recipients = a.rawRecipients ? validateRawRecipients(a.rawRecipients) : prepareExactRecipients(a.recipients!, a.decimals);
+  const token = treasuryTokenAddress(a.tokenAddress);
+  if (token === ethers.constants.AddressZero && a.decimals !== 18) throw new Error('NATIVE_DECIMALS_MISMATCH');
+  const totalRaw = requireRawUint(recipients.reduce((sum, r) => sum + BigInt(r.amountRaw), 0n));
+  const totalHuman = ethers.utils.formatUnits(totalRaw, a.decimals);
+  const iface = new ethers.utils.Interface(ERC20_TRANSFER_ABI);
+  const calls: ExecutionCall[] = recipients.map(r => token === ethers.constants.AddressZero
+    ? { target: r.to, value: r.amountRaw, calldata: '0x' }
+    : { target: token, value: '0', calldata: iface.encodeFunctionData('transfer', [r.to, r.amountRaw]) });
+  return buildGovernanceProposal({ votingAddress: a.hybridVotingAddress, votingAbiName: 'HybridVotingNew',
+    title: `Send ${totalHuman} ${a.tokenLabel} to ${recipients.length} recipient(s)`, descriptionHash: a.descriptionHash,
+    durationMinutes: a.durationMinutes, numOptions: 2, batches: [calls, []], hatIds: [], domain: 'treasury', action: 'send',
+    orgId: a.orgId, summary: { totalAmount: totalHuman, totalAmountRaw: totalRaw, token: a.tokenLabel, recipients: recipients.length }, ipfs: a.ipfs });
+}
+export interface SendProposalExactParams {
+  org: string; tokenAddress: string | null; decimals: number; tokenLabel: string;
+  recipients?: readonly ExactRecipient[]; rawRecipients?: readonly RawRecipient[];
+  durationMinutes?: number;
+  /** Explicit metadata time in milliseconds. */
+  createdAt: number;
+}
+/** Resolution/upload is injected through the existing PopContext. Validate all
+ * calldata and amount boundaries before the first upload callback. */
+export async function sendProposalExactIntent(ctx: PopContext, params: SendProposalExactParams): Promise<TxIntent> {
+  const modules = await resolveOrgModules(ctx.client, params.org, ctx.chainId);
+  const voting = requireModule(modules, 'hybridVotingAddress');
+  if (!Number.isSafeInteger(params.createdAt) || params.createdAt < 0) throw new Error('INVALID_METADATA_TIME');
+  const args = { ...params, hybridVotingAddress: voting, descriptionHash: ethers.constants.HashZero,
+    durationMinutes: params.durationMinutes ?? 60, orgId: modules.orgId };
+  const preview = buildSendProposalExact(args);
+  const totalHuman = String(preview.meta.summary!.totalAmount);
+  const metadata = buildProposalMetadata({ description: `Transfer ${totalHuman} ${params.tokenLabel} from Executor.`,
+    optionNames: [`Send ${totalHuman} ${params.tokenLabel}`, 'Do not send'], createdAt: params.createdAt });
+  const { cid, descriptionHash } = await pinProposalMetadata(ctx, metadata);
+  return buildSendProposalExact({ ...args, descriptionHash, ipfs: { cid, metadata } });
 }
 
 export interface ProposeSwapParams {

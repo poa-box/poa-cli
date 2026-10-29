@@ -3,12 +3,13 @@ import { ethers } from 'ethers';
 import * as fs from 'fs';
 import * as path from 'path';
 import { homedir } from 'os';
-import { queryWithFieldFallback } from '@poa-box/cli/lib/subgraph';
+import { resolveIdentityAddress } from '@poa-box/cli/lib/signer';
+import { observeAgentProtocol } from '../../lib/protocol-observation';
+import { findAuditOpportunities } from '../../lib/audit-opportunities';
 import { resolveOrgModules } from '@poa-box/cli/lib/resolve';
 import { resolveNetworkConfig } from '@poa-box/cli/config/networks';
 import { createReadContract } from '@poa-box/cli/lib/contracts';
 import { resolveVotingContracts } from '@poa-box/cli/commands/vote/helpers';
-import { getNoAllocationSet } from '@poa-box/cli/lib/no-alloc-cache';
 import * as output from '@poa-box/cli/lib/output';
 
 interface TriageArgs {
@@ -16,6 +17,7 @@ interface TriageArgs {
   chain?: number;
   rpc?: string;
   'private-key'?: string;
+  address?: string;
 }
 
 interface Action {
@@ -24,67 +26,6 @@ interface Action {
   detail: string;
   data?: any;
 }
-
-const FETCH_TRIAGE_DATA = `
-  query FetchTriageData($orgId: Bytes!) {
-    organization(id: $orgId) {
-      name
-      participationToken { totalSupply }
-      users(first: 100) {
-        address
-        participationTokenBalance
-        membershipStatus
-        totalTasksCompleted
-        account { username }
-      }
-      hybridVoting {
-        proposals(first: 100) {
-          proposalId
-          title
-          status
-          endTimestamp
-          winningOption
-          votes { voter }
-        }
-      }
-      taskManager {
-        projects(where: { deleted: false }, first: 100) {
-          tasks(first: 1000) {
-            taskId
-            title
-            status
-            assignee
-            assigneeUsername
-            rejectionCount
-          }
-        }
-      }
-      paymentManager {
-        distributions(where: { status: "Active" }, first: 20) {
-          distributionId
-          claims { claimer }
-        }
-      }
-    }
-  }
-`;
-
-/**
- * FETCH_TRIAGE_DATA plus the TaskManager v7 release counter (subgraph #201).
- *
- * Gnosis-only today — poa-arb-v-1 answers ``Type `Task` has no field `releaseCount```,
- * which `isUnknownFieldError` matches, so this has to be a tier: agents run against both
- * chains and a bare query would kill triage outright on Arbitrum.
- */
-const FETCH_TRIAGE_DATA_WITH_RELEASES = FETCH_TRIAGE_DATA.replace(
-  /^(\s*)rejectionCount$/m,
-  '$1rejectionCount\n$1releaseCount',
-);
-
-const TRIAGE_DATA_TIERS = [
-  FETCH_TRIAGE_DATA_WITH_RELEASES, // 0: Gnosis — releases indexed
-  FETCH_TRIAGE_DATA,               // 1: Arbitrum today — no release indexing
-];
 
 export const triageHandler = {
   builder: (yargs: Argv) => yargs,
@@ -95,28 +36,16 @@ export const triageHandler = {
 
     try {
       // --- Gather data ---
-      const key = argv.privateKey as string || process.env.POP_PRIVATE_KEY;
-      if (!key) throw new Error('No private key configured');
-      const wallet = new ethers.Wallet(key);
-      const myAddr = wallet.address.toLowerCase();
-
+      const address = resolveIdentityAddress(argv, { required: true, purpose: 'Agent triage' })!;
+      const myAddr = address.toLowerCase();
       const modules = await resolveOrgModules(argv.org, argv.chain);
       const networkConfig = resolveNetworkConfig(argv.chain);
-      const provider = new ethers.providers.JsonRpcProvider(networkConfig.resolvedRpc);
-
-      const [gasBalance, orgData] = await Promise.all([
-        provider.getBalance(wallet.address),
-        queryWithFieldFallback<any>(
-          TRIAGE_DATA_TIERS.map((q) => ({ query: q, variables: { orgId: modules.orgId } })),
-          { chainId: argv.chain },
-        ),
+      const provider = new ethers.providers.JsonRpcProvider(argv.rpc || networkConfig.resolvedRpc, networkConfig.chainId);
+      const [gasBalance, observation] = await Promise.all([
+        provider.getBalance(address),
+        observeAgentProtocol(modules, networkConfig.chainId),
       ]);
-
-      const org = orgData.data.organization;
-      if (!org) throw new Error('Organization not found');
-      // Gate on the served tier, never on truthiness: releaseCount is 0 on every
-      // live row today, which must stay distinguishable from "not indexed here".
-      const hasReleaseData = orgData.tierIndex === 0;
+      const { org, coverage, sources, hasReleaseData, memberTotal } = observation;
 
       const now = Math.floor(Date.now() / 1000);
       const actions: Action[] = [];
@@ -128,9 +57,14 @@ export const triageHandler = {
       try { lastState = fs.readFileSync(orgStatePath, 'utf8'); } catch {}
 
       const activeMembers = org.users.filter((u: any) => u.membershipStatus === 'Active');
-      const totalSupply = ethers.utils.formatEther(org.participationToken?.totalSupply || '0');
+      const totalSupply = org.participationToken?.totalSupply == null ? null : ethers.utils.formatEther(org.participationToken.totalSupply);
       const allTasks = (org.taskManager?.projects || []).flatMap((p: any) => p.tasks || []);
-      const proposals = org.hybridVoting?.proposals || [];
+      const proposals = [...(org.hybridVoting?.proposals || []), ...(org.directDemocracyVoting?.ddvProposals || [])];
+      for (const [stream, evidence] of Object.entries(coverage)) {
+        if (evidence.status !== 'complete') actions.push({ priority: 'HIGH', type: 'observation-incomplete',
+          detail: `${stream} observation is ${evidence.status}; refresh the corresponding CLI read before acting.`,
+          data: { stream, coverage: evidence } });
+      }
 
       // --- 1. BLOCKERS (CRITICAL) ---
 
@@ -161,26 +95,16 @@ export const triageHandler = {
         p.endTimestamp && parseInt(p.endTimestamp) < now
       );
       if (expiredCandidates.length > 0) {
-        try {
-          const votingContracts = await resolveVotingContracts(argv.org as string, argv.chain);
-          const hybridAddr = votingContracts.hybridVotingAddress;
-          if (hybridAddr) {
-            const votingContract = createReadContract(hybridAddr, 'HybridVotingNew', provider);
-            for (const p of expiredCandidates) {
-              try {
-                await votingContract.callStatic.announceWinner(p.proposalId);
-                // callStatic succeeded — this proposal CAN be announced
-                actions.push({ priority: 'HIGH', type: 'announce', detail: `Proposal #${p.proposalId} "${p.title}" expired — run announce-all.`, data: { proposalId: p.proposalId } });
-              } catch {
-                // callStatic failed — zombie proposal, skip silently
-              }
-            }
-          }
-        } catch {
-          // Voting contract resolution failed — fall back to listing all expired
-          for (const p of expiredCandidates) {
-            actions.push({ priority: 'HIGH', type: 'announce', detail: `Proposal #${p.proposalId} "${p.title}" expired — run announce-all.`, data: { proposalId: p.proposalId } });
-          }
+        const votingContracts = await resolveVotingContracts(argv.org as string, argv.chain);
+        for (const p of expiredCandidates) {
+          const votingAddress = p.lane === 'dd' ? votingContracts.ddVotingAddress : votingContracts.hybridVotingAddress;
+          if (!votingAddress) continue;
+          try {
+            const contract = createReadContract(votingAddress, p.lane === 'dd' ? 'DirectDemocracyVotingNew' : 'HybridVotingNew', provider);
+            await contract.callStatic.announceWinner(p.proposalId);
+            actions.push({ priority: 'HIGH', type: 'announce', detail: `${p.lane} proposal #${p.proposalId} "${p.title}" expired — inspect, then explicitly announce.`,
+              data: { proposalId: p.proposalId, lane: p.lane, broadcasts: true } });
+          } catch { /* A failed preflight is not authorization to suggest a broadcast. */ }
         }
       }
 
@@ -189,11 +113,15 @@ export const triageHandler = {
         p.status === 'Active' && p.winningOption == null && !(parseInt(p.endTimestamp) < now)
       );
       for (const p of activeProposals) {
+        if (p.ballotCoverage?.status !== 'complete') {
+          actions.push({ priority: 'HIGH', type: 'observation-incomplete', detail: `${p.lane} proposal #${p.proposalId}: ballot history unavailable; inspect before voting.`, data: { proposalId: p.proposalId, lane: p.lane } });
+          continue;
+        }
         const hasVoted = (p.votes || []).some((v: any) => v.voter?.toLowerCase() === myAddr);
         if (!hasVoted) {
           const minutesLeft = p.endTimestamp ? Math.floor((parseInt(p.endTimestamp) - now) / 60) : Infinity;
           const urgency = minutesLeft < 60 ? 'CRITICAL' : minutesLeft < 360 ? 'HIGH' : 'MEDIUM';
-          actions.push({ priority: urgency as any, type: 'vote', detail: `Proposal #${p.proposalId} "${p.title}" — unvoted, ${minutesLeft < 60 ? minutesLeft + ' min left!' : Math.floor(minutesLeft / 60) + 'h left'}.`, data: { proposalId: p.proposalId, minutesLeft } });
+          actions.push({ priority: urgency as any, type: 'vote', detail: `Proposal #${p.proposalId} "${p.title}" — unvoted, ${minutesLeft < 60 ? minutesLeft + ' min left!' : Math.floor(minutesLeft / 60) + 'h left'}.`, data: { proposalId: p.proposalId, lane: p.lane, minutesLeft } });
         }
       }
 
@@ -357,19 +285,21 @@ export const triageHandler = {
         // Brainstorm check is best-effort — same isolation as the retro check.
       }
 
-      // Unclaimed distributions — skip ones known to have no allocation for this address
-      const noAllocSet = getNoAllocationSet(myAddr);
-      const orgIdLower = modules.orgId.toLowerCase();
+      // An absent claim is a candidate for inspection, not an entitlement.
+      // Legacy reconstruction caches cannot establish absence in a verified artifact.
       const unclaimedDist = (org.paymentManager?.distributions || []).filter((d: any) => {
+        if (d.claimCoverage?.status !== 'complete') {
+          actions.push({ priority: 'HIGH', type: 'observation-incomplete', detail: `Distribution #${d.distributionId}: claim history unavailable; inspect before claiming.`, data: { distributionId: d.distributionId } });
+          return false;
+        }
         // Skip if I've already claimed it
         if ((d.claims || []).some((c: any) => c.claimer?.toLowerCase() === myAddr)) return false;
-        // Skip if I've verified I have no allocation in this distribution before
-        const cacheKey = `${orgIdLower}-${d.distributionId}`;
-        if (noAllocSet.has(cacheKey)) return false;
         return true;
       });
       if (unclaimedDist.length > 0) {
-        actions.push({ priority: 'HIGH', type: 'claim', detail: `${unclaimedDist.length} unclaimed distribution(s) — run claim-mine.` });
+        actions.push({ priority: 'HIGH', type: 'claim',
+          detail: `${unclaimedDist.length} distribution(s) have no recorded claim from you. Inspect treasury claims; use claim-stored only for a verified positive entitlement. Historical reconstruction is available for rounds without stored claims.`,
+          data: { distributionIds: unclaimedDist.map((d: any) => d.distributionId), entitlementVerified: false } });
       }
 
       // --- 3. WORK (MEDIUM) ---
@@ -394,7 +324,11 @@ export const triageHandler = {
         (hasReleaseData && parseInt(t.releaseCount || '0') > 0)
       );
       const attemptedIds = new Set(previouslyAttempted.map((t: any) => t.taskId));
-      const freshTasks = openTasks.filter((t: any) => !attemptedIds.has(t.taskId));
+      const applicationTasks = openTasks.filter((t: any) => t.requiresApplication === true);
+      const freshTasks = openTasks.filter((t: any) => !attemptedIds.has(t.taskId) && t.requiresApplication === false);
+      if (applicationTasks.length > 0) actions.push({ priority: 'MEDIUM', type: 'apply-task',
+        detail: `${applicationTasks.length} open task(s) require an application — inspect requirements with task view and task applications.`,
+        data: { tasks: applicationTasks.map((t: any) => ({ id: t.taskId, title: t.title })) } });
 
       // PUSHED FIRST, and deliberately so. Both actions are MEDIUM and Array#sort is
       // stable, so push order IS the order the agent reads them in — and the heartbeat
@@ -433,29 +367,17 @@ export const triageHandler = {
       // --- 4. PLAN (LOW) ---
 
       const hasWork = myAssigned.length > 0 || openTasks.length > 0 || pendingReviews.length > 0;
-      if (!hasWork && expiredCandidates.length === 0 && myRejected.length === 0) {
+      if (!hasWork && coverage.tasks.status === 'complete' && coverage.hybrid.status === 'complete' && coverage.dd.status === 'complete' && expiredCandidates.length === 0 && myRejected.length === 0) {
         actions.push({ priority: 'LOW', type: 'plan', detail: 'Board is empty — planning mandatory. Read goals.md, create tasks, explore capabilities.' });
       }
 
       // --- 4b. AUDIT OPPORTUNITIES (when board is empty) ---
-      if (!hasWork) {
+      if (!hasWork && coverage.tasks.status === 'complete') {
         try {
-          const { queryAllChains } = require('@poa-box/cli/lib/subgraph');
-          const exploreQuery = `query($first:Int!){organizations(first:$first){name users(first:100){membershipStatus} taskManager{projects(where:{deleted:false},first:10){tasks(first:200){status}}} hybridVoting{proposals(first:50){status}}}}`;
-          const exploreResults = await queryAllChains(exploreQuery, { first: 10 });
-          for (const cr of exploreResults) {
-            if (!cr.data?.organizations) continue;
-            for (const org of cr.data.organizations) {
-              if (org.name === 'Argus' || /^test/i.test(org.name)) continue;
-              const members = (org.users || []).filter((u: any) => u.membershipStatus === 'Active').length;
-              if (members < 2) continue;
-              const allTasks = (org.taskManager?.projects || []).flatMap((p: any) => p.tasks || []);
-              const completed = allTasks.filter((t: any) => t.status === 'Completed').length;
-              const proposals = org.hybridVoting?.proposals?.length || 0;
-              if (members >= 3 && proposals === 0) {
-                actions.push({ priority: 'MEDIUM', type: 'audit-opportunity', detail: `${org.name} (${cr.name}): ${members} members, 0 proposals — audit opportunity.` });
-              }
-            }
+          for (const opportunity of await findAuditOpportunities()) {
+            actions.push({ priority: 'MEDIUM', type: 'audit-opportunity',
+              detail: `${opportunity.orgName} (${opportunity.chainName}): ${opportunity.currentMembers} current member accounts, 0 Hybrid + DD proposals — audit opportunity.`,
+              data: opportunity });
           }
         } catch { /* non-critical */ }
       }
@@ -471,7 +393,7 @@ export const triageHandler = {
       }
 
       // PT milestones
-      const ptNum = parseFloat(totalSupply);
+      const ptNum = totalSupply === null ? Number.NaN : parseFloat(totalSupply);
       const milestones = [100, 250, 500, 1000, 2000, 5000];
       for (const m of milestones) {
         if (ptNum >= m && lastState && !lastState.includes(`${m}`)) {
@@ -497,15 +419,20 @@ export const triageHandler = {
       const context = {
         gas: `${gasEther.toFixed(3)} ${networkConfig.nativeCurrency.symbol}`,
         gasStatus: gasEther < 0.01 ? 'CRITICAL' : gasEther < 0.1 ? 'LOW' : 'HEALTHY',
-        members: activeMembers.length,
-        ptSupply: Math.round(ptNum),
-        pendingVotes: actions.filter(a => a.type === 'vote').length,
-        pendingReviews: pendingReviews.length,
-        rejectedTasks: myRejected.length,
-        openTasks: openTasks.length,
-        assignedTasks: myAssigned.length,
-        boardState: hasWork ? 'has-work' : 'empty',
-        previouslyAttempted: previouslyAttempted.length,
+        members: memberTotal === null ? null : Number(memberTotal),
+        observedMembers: activeMembers.length,
+        ptSupply: Number.isFinite(ptNum) ? Math.round(ptNum) : null,
+        pendingVotes: coverage.hybrid.status === 'complete' && coverage.dd.status === 'complete'
+          && activeProposals.every((p: any) => p.ballotCoverage?.status === 'complete')
+          ? actions.filter(a => a.type === 'vote').length : null,
+        observedPendingVotes: actions.filter(a => a.type === 'vote').length,
+        pendingReviews: coverage.tasks.status === 'complete' ? pendingReviews.length : null,
+        rejectedTasks: coverage.tasks.status === 'complete' ? myRejected.length : null,
+        openTasks: coverage.tasks.status === 'complete' ? openTasks.length : null,
+        assignedTasks: coverage.tasks.status === 'complete' ? myAssigned.length : null,
+        boardState: hasWork ? 'has-work' : coverage.tasks.status === 'complete' ? 'empty' : 'unknown',
+        coverage, sources,
+        previouslyAttempted: coverage.tasks.status === 'complete' ? previouslyAttempted.length : null,
       };
 
       if (output.isJsonMode()) {
@@ -554,7 +481,10 @@ export const triageHandler = {
       ].join('\n');
 
       try {
-        fs.writeFileSync(orgStatePath, stateSnapshot + '\n');
+        // Keep the previous baseline when a failed read would erase known state.
+        if (['members', 'tasks', 'hybrid', 'dd'].every(stream => coverage[stream].status === 'complete')) {
+          fs.writeFileSync(orgStatePath, stateSnapshot + '\n');
+        }
       } catch {
         // Non-critical — org-state.md write failure shouldn't break triage
       }

@@ -1,3 +1,4 @@
+import { buildApproveApplication } from '@poa-box/core/tx/task';
 /**
  * pop task approve-app — approve a task application (v6 takeover aware).
  *
@@ -119,7 +120,8 @@ export const approveAppHandler = {
         const txSpin = output.spinner('Approving application...');
         txSpin.start();
         const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);
-        const result = await executeTx(contract, 'approveApplication', [parsedTaskId, applicant], { dryRun: argv.dryRun });
+        const intent = buildApproveApplication({ taskManagerAddress, taskId: parsedTaskId, applicant });
+        const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
         txSpin.stop();
 
         const receiptFields = claimReceiptFields(result);

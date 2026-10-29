@@ -6,9 +6,12 @@
  */
 
 import { ethers } from 'ethers';
+import { isolateUserOperationReceiptLogs } from '../reads/provenance';
 import { getNetworkByChainId } from '../chains';
 import { decodeContractError } from '../error-catalog';
-import type { SponsoredConfig, SponsoredSendOptions } from '../sponsorship-config';
+import { SponsoredSubmissionError } from '../sponsorship-config';
+import type { SponsoredConfig, SponsoredSendOptions, SponsoredSubmission } from '../sponsorship-config';
+import { decodeUserOperationOutcome, USER_OPERATION_EVENTS, UserOperationExpectation, UserOperationOutcome } from './outcome';
 import type { TxIntent } from '../tx/intent';
 
 // Local aliases, structurally identical to viem's Hex/Address. This module is
@@ -48,12 +51,26 @@ export interface TxResult {
   /** Original provider/ethers message when the catalog replaced it */
   rawMessage?: string;
   sponsored?: boolean;
+  userOpHash?: string;
+  outcome?: UserOperationOutcome;
+  submission?: SponsoredSubmission;
+  /** Direct receipt, or sponsored operation-scoped receipt for domain decoding. */
+  receipt?: ethers.providers.TransactionReceipt;
+  /** Full bundler receipt, kept separately from operation-scoped domain logs. */
+  outerReceipt?: ethers.providers.TransactionReceipt;
+  logScope?: 'operation' | 'unknown';
   /** Dry-run fields (set when options.dryRun is true; no tx is sent) */
   dryRun?: boolean;
   gasEstimate?: string;
   calldata?: string;
   to?: string;
   method?: string;
+}
+
+export interface SponsoredExecutionAdapter {
+  entryPoint: Hex;
+  isDelegated(address: Address, rpcUrl?: string): Promise<boolean>;
+  sendSponsored(privateKey: Hex, to: Address, data: Hex, orgId: Hex, hatId: bigint, options?: SponsoredSendOptions): Promise<{ txHash: Hex; userOpHash: Hex }>;
 }
 
 export interface TxOptions {
@@ -72,6 +89,9 @@ export interface TxOptions {
   legacyDryRunTxHash?: boolean;
   /** Bundler/RPC routing forwarded to sendSponsored (CLI maps POP_BUNDLER_URL / PIMLICO_API_KEY). */
   sponsoredSend?: SponsoredSendOptions;
+  /** Inject transports for offline hosts/tests. No signer/storage lifecycle policy. */
+  sponsoredAdapter?: SponsoredExecutionAdapter;
+  sponsoredAdapterLoader?: () => Promise<SponsoredExecutionAdapter>;
 }
 
 function buildExplorerUrl(txHash: string, chainId: number): string | undefined {
@@ -82,10 +102,12 @@ function buildExplorerUrl(txHash: string, chainId: number): string | undefined {
 
 export function parseEventLogs(
   receipt: ethers.providers.TransactionReceipt,
-  contractInterface: ethers.utils.Interface
+  contractInterface: ethers.utils.Interface,
+  emitter?: string
 ): ethers.utils.LogDescription[] {
   const parsed: ethers.utils.LogDescription[] = [];
   for (const log of receipt.logs) {
+    if (emitter && log.address?.toLowerCase() !== emitter.toLowerCase()) continue;
     try {
       parsed.push(contractInterface.parseLog(log));
     } catch {
@@ -133,6 +155,7 @@ function withDecodedError(error: any, iface: ethers.utils.Interface | undefined,
  * GAS_ESTIMATION_FAILED paths.
  */
 export function classifyError(error: any, iface?: ethers.utils.Interface): ClassifiedError {
+  error = error ?? {};
   const msg = error.message || 'Transaction failed';
 
   if (error.code === 'INSUFFICIENT_FUNDS' || msg.includes('insufficient funds')) {
@@ -165,10 +188,7 @@ export function classifyError(error: any, iface?: ethers.utils.Interface): Class
  * Topic 0 of UserOperationEvent:
  *   0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f
  */
-const ENTRY_POINT_EVENTS = new ethers.utils.Interface([
-  'event UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster, uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)',
-  'event UserOperationRevertReason(bytes32 indexed userOpHash, address indexed sender, uint256 nonce, bytes revertReason)',
-]);
+const ENTRY_POINT_EVENTS = USER_OPERATION_EVENTS;
 
 /** Error(string) selector — unwrap to the plain revert string */
 const ERROR_STRING_SELECTOR = '0x08c379a0';
@@ -207,8 +227,18 @@ export function detectUserOpFailure(
   receipt: ethers.providers.TransactionReceipt,
   txHash: string,
   chainId: number,
-  iface?: ethers.utils.Interface
+  iface?: ethers.utils.Interface,
+  expected?: UserOperationExpectation
 ): TxResult | null {
+  if (expected) {
+    const outcome = decodeUserOperationOutcome(receipt, expected);
+    if (outcome.status === 'succeeded') return null;
+    const detail = outcome.revertReason ? describeRevertData(outcome.revertReason, iface) : null;
+    return { success: false, txHash, sponsored: true, userOpHash: expected.userOpHash, outcome, receipt,
+      explorerUrl: buildExplorerUrl(txHash, chainId), errorCode: outcome.status === 'failed' ? 'TX_REVERTED' : 'UNKNOWN_ERROR',
+      error: outcome.status === 'failed' ? `Sponsored UserOp inner call reverted.${detail ? ` Reason: ${detail.message}` : ''}` : `Sponsored outcome unknown: ${outcome.code}`,
+      errorName: detail?.name, suggestion: detail?.suggestion };
+  }
   const userOpTopic = ENTRY_POINT_EVENTS.getEventTopic('UserOperationEvent');
   const userOpLog = receipt.logs.find((log) => log.topics[0] === userOpTopic);
   if (!userOpLog) return null;
@@ -256,7 +286,7 @@ export function detectUserOpFailure(
 
 /**
  * Try to send a transaction via EIP-7702 gas sponsorship.
- * Returns null if sponsorship is not available or fails (caller should fall back to direct tx).
+ * Returns null only when no sponsored request was submitted.
  */
 async function trySponsoredTx(
   contract: ethers.Contract,
@@ -265,77 +295,67 @@ async function trySponsoredTx(
   config: SponsoredConfig,
   options: TxOptions
 ): Promise<TxResult | null> {
+  // All checks before calling sendSponsored establish non-submission.
+  let adapter: SponsoredExecutionAdapter;
+  let chainId: number;
+  let calldata: Hex;
   try {
-    // Loaded lazily so this module never top-level-requires viem/permissionless:
-    // they are OPTIONAL peers, and the plain-EOA executor must stay importable
-    // without them. The require only runs when sponsorship is actually
-    // configured — i.e. when the host has the 4337 stack installed.
-    const { isDelegated, sendSponsored } = require('./sponsored') as typeof import('./sponsored');
-
-    const signerAddress = await contract.signer.getAddress();
-
-    // Check if EOA is delegated
-    const delegated = await isDelegated(signerAddress as Address, options.sponsoredSend?.rpcUrl);
-    if (!delegated) {
-      return null;
+    if (options.sponsoredAdapterLoader) adapter = await options.sponsoredAdapterLoader();
+    else if (options.sponsoredAdapter) adapter = options.sponsoredAdapter;
+    else {
+      const loaded = require('./sponsored') as typeof import('./sponsored');
+      adapter = { ...loaded, entryPoint: loaded.ENTRY_POINT };
     }
+    chainId = (await contract.provider.getNetwork()).chainId;
+    if (!options.sponsoredAdapter && !options.sponsoredAdapterLoader && chainId !== 100) return null; // Current 7702 deployment is Gnosis-only.
+    if (!await adapter.isDelegated(await contract.signer.getAddress() as Address, options.sponsoredSend?.rpcUrl)) return null;
+    calldata = contract.interface.encodeFunctionData(method, args) as Hex;
+  } catch { return null; }
 
-    // Encode the calldata
-    const calldata = contract.interface.encodeFunctionData(method, args) as Hex;
-    const to = contract.address as Address;
-
-    const result = await sendSponsored(
-      config.privateKey,
-      to,
-      calldata,
-      config.orgId,
-      config.hatId,
-      {
-        // Bundler/RPC routing comes from options.sponsoredSend; the tx value
-        // still comes from options.value (same as the pre-extraction CLI).
-        ...options.sponsoredSend,
-        value: options.value ? BigInt(options.value.toString()) : options.sponsoredSend?.value,
-      }
-    );
-
-    const chainId = await contract.provider.getNetwork().then(n => n.chainId);
-
-    // Fetch the receipt to get logs and gas used
+  let submission: SponsoredSubmission = { phase: 'submitting', entryPoint: adapter.entryPoint, chainId };
+  let acceptanceObserved = false;
+  try {
+    const result = await adapter.sendSponsored(config.privateKey, contract.address as Address, calldata, config.orgId, config.hatId, {
+      ...options.sponsoredSend,
+      value: options.value ? BigInt(options.value.toString()) : options.sponsoredSend?.value,
+      onSubmitted: async observed => {
+        acceptanceObserved = true;
+        submission = { ...observed };
+        await options.sponsoredSend?.onSubmitted?.(observed);
+      },
+    });
+    if (!/^0x[\da-fA-F]{64}$/.test(result?.userOpHash) || !/^0x[\da-fA-F]{64}$/.test(result?.txHash)) throw new Error('Ambiguous sponsored response');
+    submission = { ...submission, phase: 'receipt', userOpHash: result.userOpHash, txHash: result.txHash };
+    if (submission.computedHash && submission.computedHash.toLowerCase() !== result.userOpHash.toLowerCase()) throw new Error('Bundler operation hash does not match computed hash');
     const receipt = await contract.provider.getTransactionReceipt(result.txHash);
-    const logs = receipt ? parseEventLogs(receipt, contract.interface) : [];
-
-    // Check outer tx status (bundler tx revert — rare but possible)
-    if (receipt && receipt.status === 0) {
-      return {
-        success: false,
-        txHash: result.txHash,
-        error: 'Sponsored transaction reverted on-chain (bundler tx failed).',
-        errorCode: 'TX_REVERTED' as ErrorCode,
-        sponsored: true,
-      };
+    const expected = { userOpHash: result.userOpHash, entryPoint: adapter.entryPoint, sender: await contract.signer.getAddress(), nonce: submission.nonce };
+    const outcome = decodeUserOperationOutcome(receipt, expected);
+    if (outcome.status !== 'succeeded') {
+      if (receipt) return { ...detectUserOpFailure(receipt, result.txHash, chainId, contract.interface, expected)!, submission };
+      return { success: false, txHash: result.txHash, userOpHash: result.userOpHash, sponsored: true, submission, outcome, errorCode: 'UNKNOWN_ERROR', error: 'Sponsored operation outcome is unknown; reconcile by hash.' };
     }
-
-    // ERC-4337: outer bundler tx has status=1 even when the inner UserOp
-    // reverted — inspect the EntryPoint events to detect silent failures.
-    if (receipt) {
-      const userOpFailure = detectUserOpFailure(receipt, result.txHash, chainId, contract.interface);
-      if (userOpFailure) {
-        return userOpFailure;
-      }
+    let scopedReceipt: ethers.providers.TransactionReceipt = { ...receipt!, logs: [] };
+    let logScope: 'operation' | 'unknown' = 'unknown';
+    try {
+      const transaction = await contract.provider.getTransaction(result.txHash);
+      if (!transaction) throw new Error('OPERATION_TRANSACTION_UNAVAILABLE');
+      const logs = isolateUserOperationReceiptLogs({ transaction, receipt: receipt!, chainId,
+        expected: { userOpHash: result.userOpHash, entryPoint: adapter.entryPoint,
+          sender: await contract.signer.getAddress(), nonce: submission.nonce, target: contract.address, data: calldata } });
+      scopedReceipt = { ...receipt!, logs: [...logs] }; logScope = 'operation';
+    } catch { /* Success is known; unproven event scope must not invent domain IDs. */ }
+    return { success: true, txHash: result.txHash, userOpHash: result.userOpHash, submission, outcome,
+      blockNumber: receipt!.blockNumber, gasUsed: receipt!.gasUsed?.toString(), explorerUrl: buildExplorerUrl(result.txHash, chainId),
+      logs: parseEventLogs(scopedReceipt, contract.interface, contract.address), receipt: scopedReceipt, outerReceipt: receipt!, logScope, sponsored: true };
+  } catch (error) {
+    if (error instanceof SponsoredSubmissionError) {
+      if (!acceptanceObserved && error.submission.phase === 'pre-submit') return null;
+      if (error.submission.phase !== 'pre-submit') submission = error.submission;
     }
-
-    return {
-      success: true,
-      txHash: result.txHash,
-      blockNumber: receipt?.blockNumber,
-      gasUsed: receipt?.gasUsed?.toString(),
-      explorerUrl: buildExplorerUrl(result.txHash, chainId),
-      logs,
-      sponsored: true,
-    };
-  } catch {
-    // Sponsorship failed — fall back to direct tx
-    return null;
+    return { success: false, sponsored: true, submission, txHash: submission.txHash,
+      userOpHash: submission.computedHash ?? submission.userOpHash,
+      outcome: { status: 'unknown', code: 'SUBMISSION_UNCERTAIN', userOpHash: submission.computedHash ?? submission.userOpHash ?? '', entryPoint: submission.entryPoint },
+      errorCode: 'UNKNOWN_ERROR', error: error instanceof Error ? error.message : 'Sponsored submission is uncertain; reconcile without resubmitting.' };
   }
 }
 
@@ -344,7 +364,7 @@ async function trySponsoredTx(
  * In dry-run mode: estimates gas and encodes calldata without sending.
  * When sponsored config is provided and the EOA is delegated, routes through
  * the PaymasterHub for gas sponsorship. Falls back to direct EOA tx if
- * sponsorship is unavailable or fails.
+ * sponsorship is established to be unavailable before submission.
  * Returns parsed event logs so callers can extract entity IDs.
  */
 export async function executeContractTx(
@@ -381,6 +401,12 @@ export async function executeContractTx(
       ? options.sponsored()
       : options.sponsored;
     if (sponsoredConfig) {
+      // The signer is the account the host authorized. A transport-configured
+      // wallet must never silently substitute a different sending account.
+      if (new ethers.Wallet(sponsoredConfig.privateKey).address.toLowerCase() !== (await contract.signer.getAddress()).toLowerCase()) {
+        return { success: false, errorCode: 'USER_REJECTED', error: 'Sponsored signing key does not match the authorized transaction signer.',
+          suggestion: 'Use a sponsorship key for the authorized signer or disable sponsorship for this action.' };
+      }
       const sponsoredResult = await trySponsoredTx(contract, method, args, sponsoredConfig, options);
       if (sponsoredResult) {
         return sponsoredResult;
@@ -404,7 +430,8 @@ export async function executeContractTx(
       blockNumber: receipt.blockNumber,
       gasUsed: receipt.gasUsed.toString(),
       explorerUrl: buildExplorerUrl(receipt.transactionHash, chainId),
-      logs: parseEventLogs(receipt, contract.interface),
+      logs: parseEventLogs(receipt, contract.interface, contract.address),
+      receipt,
     };
   } catch (error: any) {
     // Pass the contract interface so custom-error revert data is decoded into a

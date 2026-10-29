@@ -1,0 +1,763 @@
+# Immutable projection of the serving Gnosis/Arbitrum introspection; see provenance.json.
+# Only exercised output fields/arguments and literal input fields are retained.
+# All retained declarations keep the original type/default, enum vocabularies are intact.
+
+type _Block_ {
+  hash: Bytes
+  number: Int!
+  timestamp: Int
+}
+
+type _Meta_ {
+  block: _Block_!
+}
+
+type Account {
+  id: Bytes!
+  isDeleted: Boolean!
+  lastUpdatedAt: BigInt!
+  metadata: AccountMetadata
+  profileMetadataHash: Bytes
+  registeredAt: BigInt!
+  registeredAtBlock: BigInt!
+  registry: UniversalAccountRegistry!
+  user: Bytes!
+  username: String!
+}
+
+input Account_filter {
+  id_gt: Bytes
+  id_in: [Bytes!]
+  isDeleted: Boolean
+  registry: String
+  username_contains_nocase: String
+  username_in: [String!]
+}
+
+enum Account_orderBy {
+  id
+  registry
+  registry__id
+  registry__owner
+  registry__passkeyFactory
+  registry__totalAccounts
+  registry__createdAt
+  registry__createdAtBlock
+  user
+  username
+  isDeleted
+  registeredAt
+  registeredAtBlock
+  lastUpdatedAt
+  deletedAt
+  deletedAtBlock
+  profileMetadataHash
+  metadata
+  metadata__id
+  metadata__bio
+  metadata__avatar
+  metadata__github
+  metadata__twitter
+  metadata__website
+  metadata__indexedAt
+  users
+  usernameChanges
+}
+
+type AccountMetadata {
+  avatar: String
+  bio: String
+  github: String
+  id: String!
+  twitter: String
+  website: String
+}
+
+scalar BigInt
+
+input Block_height {
+  hash: Bytes
+  number: Int
+  number_gte: Int
+}
+
+scalar Bytes
+
+enum EligibilitySource {
+  None
+  ExplicitBan
+  ExplicitGrant
+  EmailVerified
+  VouchQuorum
+  SubjectDefault
+}
+
+type MembershipAuthorityContract {
+  cutoverAt: BigInt
+  id: Bytes!
+  isRouterBound: Boolean!
+}
+
+enum MembershipStatus {
+  Active
+  Inactive
+}
+
+type ModuleCompletion {
+  completedAt: BigInt!
+  moduleId: BigInt!
+}
+
+enum OrderDirection {
+  asc
+  desc
+}
+
+type Organization {
+  deployedAt: BigInt
+  id: Bytes!
+  membershipAuthority: MembershipAuthorityContract
+  metadata: OrgMetadata
+  metadataHash: Bytes
+  name: String
+  participationToken: ParticipationTokenContract
+  taskManager: TaskManager
+}
+
+input Organization_filter {
+  id_gt: Bytes
+}
+
+enum Organization_orderBy {
+  id
+  executorContract
+  executorContract__id
+  executorContract__owner
+  executorContract__allowedCaller
+  executorContract__pendingCaller
+  executorContract__callerChangeEffectiveAt
+  executorContract__hatsContract
+  executorContract__isPaused
+  executorContract__createdAt
+  executorContract__createdAtBlock
+  hybridVoting
+  hybridVoting__id
+  hybridVoting__executor
+  hybridVoting__thresholdPct
+  hybridVoting__quorum
+  hybridVoting__hats
+  hybridVoting__createdAt
+  hybridVoting__createdAtBlock
+  hybridVoting__classVersion
+  directDemocracyVoting
+  directDemocracyVoting__id
+  directDemocracyVoting__executor
+  directDemocracyVoting__thresholdPct
+  directDemocracyVoting__quorum
+  directDemocracyVoting__hats
+  directDemocracyVoting__createdAt
+  directDemocracyVoting__createdAtBlock
+  quickJoin
+  quickJoin__id
+  quickJoin__executor
+  quickJoin__hatsContract
+  quickJoin__accountRegistry
+  quickJoin__masterDeployAddress
+  quickJoin__universalFactory
+  quickJoin__createdAt
+  quickJoin__createdAtBlock
+  participationToken
+  participationToken__id
+  participationToken__name
+  participationToken__symbol
+  participationToken__totalSupply
+  participationToken__executor
+  participationToken__hatsContract
+  participationToken__taskManagerAddress
+  participationToken__educationHubAddress
+  participationToken__createdAt
+  participationToken__createdAtBlock
+  taskManager
+  taskManager__id
+  taskManager__createdAt
+  taskManager__createdAtBlock
+  taskManager__transactionHash
+  educationHub
+  educationHub__id
+  educationHub__token
+  educationHub__hatsContract
+  educationHub__executor
+  educationHub__isPaused
+  educationHub__nextModuleId
+  educationHub__createdAt
+  educationHub__createdAtBlock
+  paymentManager
+  paymentManager__id
+  paymentManager__owner
+  paymentManager__revenueShareToken
+  paymentManager__distributionCounter
+  paymentManager__createdAt
+  paymentManager__createdAtBlock
+  eligibilityModule
+  eligibilityModule__id
+  eligibilityModule__superAdmin
+  eligibilityModule__governanceAdmin
+  eligibilityModule__hatsContract
+  eligibilityModule__toggleModule
+  eligibilityModule__eligibilityModuleAdminHat
+  eligibilityModule__isPaused
+  eligibilityModule__createdAt
+  eligibilityModule__createdAtBlock
+  toggleModuleContract
+  toggleModuleContract__id
+  toggleModuleContract__admin
+  toggleModuleContract__eligibilityModule
+  toggleModuleContract__createdAt
+  toggleModuleContract__createdAtBlock
+  zkEmailInvites
+  zkEmailInvites__id
+  zkEmailInvites__activeRoot
+  zkEmailInvites__activeAllowlistCid
+  zkEmailInvites__executor
+  zkEmailInvites__domainVerifier
+  zkEmailInvites__emailVerifier
+  zkEmailInvites__accountRegistry
+  zkEmailInvites__universalFactory
+  zkEmailInvites__claimCount
+  zkEmailInvites__createdAt
+  zkEmailInvites__lastUpdatedAt
+  membershipAuthority
+  membershipAuthority__id
+  membershipAuthority__executor
+  membershipAuthority__paymasterHub
+  membershipAuthority__orgIdHash
+  membershipAuthority__paused
+  membershipAuthority__initConfigDerived
+  membershipAuthority__maxDailyVouches
+  membershipAuthority__subjectCount
+  membershipAuthority__roleSubjectCount
+  membershipAuthority__groupSubjectCount
+  membershipAuthority__acceptedMembershipCount
+  membershipAuthority__isRouterBound
+  membershipAuthority__registeredAt
+  membershipAuthority__registeredAtBlock
+  membershipAuthority__cutoverAt
+  membershipAuthority__lastUpdatedAt
+  membershipAuthority__transactionHash
+  subjects
+  topHatId
+  roleHatIds
+  deployedAt
+  deployedAtBlock
+  transactionHash
+  users
+  hatPermissions
+  executorChanges
+  pauseEvents
+  name
+  metadataHash
+  metadata
+  metadata__id
+  metadata__description
+  metadata__template
+  metadata__backgroundColor
+  metadata__logo
+  metadata__hideTreasury
+  metadata__useTokenSymbol
+  metadata__taskPayoutHoursOnly
+  metadata__taskPayoutHourlyRate
+  metadata__indexedAt
+  lastUpdatedAt
+  metaUpdates
+  metadataAdminHatId
+  registeredContracts
+  roles
+  foldersRoot
+  foldersUpdatedAt
+  foldersUpdatedBy
+  folderRootChanges
+}
+
+type OrgMetadata {
+  backgroundColor: String
+  description: String
+  id: String!
+  logo: String
+  useTokenSymbol: Boolean
+}
+
+type ParticipationTokenContract {
+  id: Bytes!
+  name: String!
+  symbol: String!
+  totalSupply: BigInt!
+}
+
+type Project {
+  deleted: Boolean!
+  id: String!
+  taskManager: TaskManager!
+}
+
+input Project_filter {
+  deleted: Boolean
+  taskManager_: TaskManager_filter
+}
+
+type Proposal {
+  endTimestamp: BigInt!
+  id: String!
+  proposalId: BigInt!
+  startTimestamp: BigInt!
+  status: ProposalStatus!
+  title: String!
+}
+
+enum ProposalStatus {
+  Active
+  Ended
+  Executed
+}
+
+type Query {
+  _meta(block: Block_height): _Meta_
+  account(id: ID!): Account
+  accounts(first: Int = 100, orderBy: Account_orderBy, orderDirection: OrderDirection, where: Account_filter, block: Block_height): [Account!]!
+  organizations(first: Int = 100, orderBy: Organization_orderBy, orderDirection: OrderDirection, where: Organization_filter, block: Block_height): [Organization!]!
+  subjectMemberships(first: Int = 100, orderBy: SubjectMembership_orderBy, orderDirection: OrderDirection, where: SubjectMembership_filter, block: Block_height): [SubjectMembership!]!
+  tasks(first: Int = 100, orderBy: Task_orderBy, orderDirection: OrderDirection, where: Task_filter, block: Block_height): [Task!]!
+  user(id: ID!): User
+  users(first: Int = 100, orderBy: User_orderBy, orderDirection: OrderDirection, where: User_filter, block: Block_height): [User!]!
+}
+
+enum RuleKind {
+  None
+  Grant
+  Ban
+}
+
+type Subject {
+  defaultAllow: Boolean!
+  kind: SubjectKind!
+  subjectId: BigInt!
+  vouchConfig: SubjectVouchConfig
+}
+
+input Subject_filter {
+  kind: SubjectKind
+}
+
+enum SubjectKind {
+  Role
+  Group
+}
+
+type SubjectMembership {
+  accepted: Boolean!
+  acceptedAt: BigInt
+  claimable: Boolean!
+  eligibilitySource: EligibilitySource!
+  eligible: Boolean!
+  emailVerified: Boolean!
+  id: String!
+  isMember: Boolean!
+  organization: Organization!
+  ruleKind: RuleKind!
+  seededWhilePaused: Boolean!
+  subject: Subject!
+  user: Bytes!
+  userEntity: User
+  vouchCount: Int!
+  vouchEpoch: BigInt!
+  vouchMet: Boolean!
+}
+
+input SubjectMembership_filter {
+  id_gt: String
+  subject_: Subject_filter
+  user: Bytes
+}
+
+enum SubjectMembership_orderBy {
+  id
+  subject
+  subject__id
+  subject__subjectId
+  subject__kind
+  subject__name
+  subject__metadataCID
+  subject__imageURI
+  subject__maxMembers
+  subject__memberCount
+  subject__activeMemberCount
+  subject__defaultAllow
+  subject__isLegacyAdopted
+  subject__createdAt
+  subject__createdAtBlock
+  subject__lastUpdatedAt
+  subject__transactionHash
+  authority
+  authority__id
+  authority__executor
+  authority__paymasterHub
+  authority__orgIdHash
+  authority__paused
+  authority__initConfigDerived
+  authority__maxDailyVouches
+  authority__subjectCount
+  authority__roleSubjectCount
+  authority__groupSubjectCount
+  authority__acceptedMembershipCount
+  authority__isRouterBound
+  authority__registeredAt
+  authority__registeredAtBlock
+  authority__cutoverAt
+  authority__lastUpdatedAt
+  authority__transactionHash
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  user
+  userUsername
+  userEntity
+  userEntity__id
+  userEntity__address
+  userEntity__joinMethod
+  userEntity__membershipStatus
+  userEntity__participationTokenBalance
+  userEntity__totalVotes
+  userEntity__totalTasksCompleted
+  userEntity__totalTasksCancelled
+  userEntity__totalTasksLostToExpiry
+  userEntity__totalTasksReleased
+  userEntity__totalModulesCompleted
+  userEntity__totalClaimsAmount
+  userEntity__totalPaymentsAmount
+  userEntity__totalTokenRequestsAmount
+  userEntity__firstSeenAt
+  userEntity__firstSeenAtBlock
+  userEntity__lastActiveAt
+  userEntity__lastActiveAtBlock
+  accepted
+  acceptedAt
+  seededWhilePaused
+  eligible
+  eligibilitySource
+  isMember
+  claimable
+  rule
+  rule__id
+  rule__user
+  rule__kind
+  rule__author
+  rule__delegable
+  rule__sticky
+  rule__setAt
+  rule__setAtBlock
+  rule__clearedAt
+  rule__lastUpdatedAt
+  rule__transactionHash
+  ruleKind
+  emailVerified
+  vouchCount
+  vouchEpoch
+  vouchMet
+  pendingAction
+  pendingAction__id
+  pendingAction__pendingId
+  pendingAction__action
+  pendingAction__user
+  pendingAction__actor
+  pendingAction__actorUsername
+  pendingAction__activatesAt
+  pendingAction__status
+  pendingAction__createdAt
+  pendingAction__createdAtBlock
+  pendingAction__resolvedAt
+  pendingAction__cancelledBy
+  pendingAction__transactionHash
+  vouches
+  firstSeenAt
+  lastUpdatedAt
+  transactionHash
+}
+
+type SubjectVouchConfig {
+  epoch: BigInt!
+  quorum: Int!
+}
+
+type Task {
+  id: String!
+  payout: BigInt!
+  project: Project!
+  status: TaskStatus!
+  taskId: BigInt!
+  title: String!
+}
+
+input Task_filter {
+  id_gt: String
+  project_: Project_filter
+}
+
+enum Task_orderBy {
+  id
+  taskId
+  taskManager
+  project
+  project__id
+  project__projectId
+  project__title
+  project__metadataHash
+  project__cap
+  project__createdAt
+  project__createdAtBlock
+  project__deleted
+  project__deletedAt
+  payout
+  bountyToken
+  bountyPayout
+  requiresApplication
+  title
+  metadataHash
+  submissionHash
+  metadata
+  metadata__id
+  metadata__name
+  metadata__description
+  metadata__location
+  metadata__difficulty
+  metadata__estimatedHours
+  metadata__submission
+  metadata__rejection
+  metadata__dueDate
+  metadata__indexedAt
+  assignee
+  assigneeUsername
+  assigneeUser
+  assigneeUser__id
+  assigneeUser__address
+  assigneeUser__joinMethod
+  assigneeUser__membershipStatus
+  assigneeUser__participationTokenBalance
+  assigneeUser__totalVotes
+  assigneeUser__totalTasksCompleted
+  assigneeUser__totalTasksCancelled
+  assigneeUser__totalTasksLostToExpiry
+  assigneeUser__totalTasksReleased
+  assigneeUser__totalModulesCompleted
+  assigneeUser__totalClaimsAmount
+  assigneeUser__totalPaymentsAmount
+  assigneeUser__totalTokenRequestsAmount
+  assigneeUser__firstSeenAt
+  assigneeUser__firstSeenAtBlock
+  assigneeUser__lastActiveAt
+  assigneeUser__lastActiveAtBlock
+  completer
+  completerUsername
+  completerUser
+  completerUser__id
+  completerUser__address
+  completerUser__joinMethod
+  completerUser__membershipStatus
+  completerUser__participationTokenBalance
+  completerUser__totalVotes
+  completerUser__totalTasksCompleted
+  completerUser__totalTasksCancelled
+  completerUser__totalTasksLostToExpiry
+  completerUser__totalTasksReleased
+  completerUser__totalModulesCompleted
+  completerUser__totalClaimsAmount
+  completerUser__totalPaymentsAmount
+  completerUser__totalTokenRequestsAmount
+  completerUser__firstSeenAt
+  completerUser__firstSeenAtBlock
+  completerUser__lastActiveAt
+  completerUser__lastActiveAtBlock
+  canceller
+  cancellerUsername
+  cancellerUser
+  cancellerUser__id
+  cancellerUser__address
+  cancellerUser__joinMethod
+  cancellerUser__membershipStatus
+  cancellerUser__participationTokenBalance
+  cancellerUser__totalVotes
+  cancellerUser__totalTasksCompleted
+  cancellerUser__totalTasksCancelled
+  cancellerUser__totalTasksLostToExpiry
+  cancellerUser__totalTasksReleased
+  cancellerUser__totalModulesCompleted
+  cancellerUser__totalClaimsAmount
+  cancellerUser__totalPaymentsAmount
+  cancellerUser__totalTokenRequestsAmount
+  cancellerUser__firstSeenAt
+  cancellerUser__firstSeenAtBlock
+  cancellerUser__lastActiveAt
+  cancellerUser__lastActiveAtBlock
+  status
+  createdAt
+  createdAtBlock
+  assignedAt
+  submittedAt
+  completedAt
+  cancelledAt
+  updatedAt
+  rejectionHash
+  rejectionCount
+  completionWindow
+  absoluteDeadline
+  claimDeadline
+  reclaimCount
+  releaseCount
+  lastReleasedAt
+  latestSubmission
+  latestSubmission__id
+  latestSubmission__submissionHash
+  latestSubmission__submittedAt
+  latestSubmission__submittedAtBlock
+  latestSubmission__transactionHash
+  latestRejection
+  latestRejection__id
+  latestRejection__rejector
+  latestRejection__rejectorUsername
+  latestRejection__rejectionHash
+  latestRejection__rejectedAt
+  latestRejection__rejectedAtBlock
+  latestRejection__transactionHash
+  applications
+  submissions
+  rejections
+  claimExpiries
+  releases
+}
+
+type TaskManager {
+  id: Bytes!
+  organization: Organization!
+}
+
+input TaskManager_filter {
+  organization_in: [String!]
+}
+
+enum TaskStatus {
+  Open
+  Assigned
+  Submitted
+  Completed
+  Cancelled
+}
+
+type UniversalAccountRegistry {
+  id: Bytes!
+}
+
+type User {
+  address: Bytes!
+  assignedTasks(first: Int = 100, where: Task_filter): [Task!]!
+  completedTasks(first: Int = 100): [Task!]!
+  currentHatIds: [BigInt!]!
+  firstSeenAt: BigInt!
+  hybridProposalsCreated(first: Int = 100): [Proposal!]!
+  id: String!
+  joinMethod: String
+  lastActiveAt: BigInt!
+  membershipStatus: MembershipStatus!
+  modulesCompleted(first: Int = 100): [ModuleCompletion!]!
+  organization: Organization
+  participationTokenBalance: BigInt!
+  totalModulesCompleted: BigInt!
+  totalTasksCompleted: BigInt!
+  totalTasksLostToExpiry: BigInt!
+  totalTasksReleased: BigInt!
+  totalVotes: BigInt!
+}
+
+input User_filter {
+  address: Bytes
+  id_gt: String
+}
+
+enum User_orderBy {
+  id
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  address
+  account
+  account__id
+  account__user
+  account__username
+  account__isDeleted
+  account__registeredAt
+  account__registeredAtBlock
+  account__lastUpdatedAt
+  account__deletedAt
+  account__deletedAtBlock
+  account__profileMetadataHash
+  joinMethod
+  currentHatIds
+  membershipStatus
+  hatChanges
+  participationTokenBalance
+  assignedTasks
+  completedTasks
+  cancelledTasks
+  taskApplications
+  approvedApplications
+  taskClaimsLost
+  taskClaimsTakenOver
+  hybridVotes
+  ddvVotes
+  hybridProposalsCreated
+  modulesCompleted
+  tokenRequests
+  approvedTokenRequests
+  claims
+  payments
+  quickJoinEvents
+  hatsCreated
+  wearerEligibilities
+  vouchesGiven
+  vouchesReceived
+  vouchStates
+  hatsMintedEvents
+  vouchingRestrictions
+  hatClaims
+  totalVotes
+  totalTasksCompleted
+  totalTasksCancelled
+  totalTasksLostToExpiry
+  totalTasksReleased
+  totalModulesCompleted
+  totalClaimsAmount
+  totalPaymentsAmount
+  totalTokenRequestsAmount
+  firstSeenAt
+  firstSeenAtBlock
+  lastActiveAt
+  lastActiveAtBlock
+}
+

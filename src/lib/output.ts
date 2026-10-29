@@ -75,6 +75,9 @@ export function error(message: string, details?: any): void {
     if (details?.errorName) payload.errorName = details.errorName;
     if (details?.error) payload.detail = details.error;
     if (details?.suggestion) payload.suggestion = details.suggestion;
+    for (const key of ['txHash', 'userOpHash', 'outcome', 'recovery']) {
+      if (details?.[key] !== undefined) payload[key] = details[key];
+    }
     console.error(JSON.stringify(payload));
   } else {
     console.error(chalk.red('✗') + ' ' + message);

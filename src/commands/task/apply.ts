@@ -1,3 +1,4 @@
+import { buildApplyForTask } from '@poa-box/core/tx/task';
 /**
  * pop task apply — apply for an application-gated task.
  *
@@ -124,7 +125,8 @@ export const applyHandler = {
 
         txSpin.text = 'Sending transaction...';
         const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);
-        const result = await executeTx(contract, 'applyForTask', [parsedTaskId, applicationHash], { dryRun: argv.dryRun });
+        const intent = buildApplyForTask({ taskManagerAddress, taskId: parsedTaskId, applicationHash });
+        const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
         txSpin.stop();
 
         finishWrite(result, {

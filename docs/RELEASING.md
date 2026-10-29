@@ -7,7 +7,24 @@ org brains, and agents parse its `--json` output so that protocol and
 subgraph churn stays absorbed HERE. A release is therefore a contract event,
 not just a version bump.
 
-## Publishing the prepared 1.0.0 release
+## Local core 2.0.0 candidate
+
+This update prepares `@poa-box/core@2.0.0` only. CLI and agent remain 1.0.0 with
+local `link:` dependencies; unchanged published versions are not republished.
+The major bump reflects optional/nullable historical OrgUser arrays and the
+expanded organization metadata ReturnType. Default metadata calls preserve the
+old exact-null contract. Raw metadata extension bookkeeping keys now survive
+merging. See [core migration guidance](../packages/core/README.md#migrating-from-10-to-20).
+
+The candidate is built, tested and packed locally. Integration evidence records
+source/declaration/API/lock/build hashes and the exact tarball. Independent final
+packed and live checks plus root review decide acceptance; this work authorizes
+no npm publication, push, merge or deployed changes. A later CLI/agent adoption
+release is separate. Local capture-only metadata verification must derive
+core ^2.0.0 for a hypothetical CLI manifest and CLI ^1.0.0 for the agent, then
+restore the original links. It is not a publication.
+
+## Historical prepared 1.0.0 release
 
 All three packages are already bumped to `1.0.0`. Do not run the generic version
 bump examples below again for this release. Publish in dependency order:

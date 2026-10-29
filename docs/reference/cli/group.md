@@ -25,6 +25,70 @@ pop group view [flags]
 | `--group` | string | yes | - | Authority subject ID |
 | `--user` | string | no | - | Filter memberships by wallet address |
 
+## pop group snapshot
+
+Read complete pinned authority state and projections
+
+```text
+pop group snapshot [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--block` | string | no | - | Exact indexed block number (otherwise current indexed head) |
+| `--context` | string | no | `0x0000000000000000000000000000000000000000000000000000000000000000` | Permission bytes32 context |
+| `--key` | string | no | - | Semantic permission key or bytes32; defaults to each indexed key |
+| `--max-pages` | number | no | `100` | Maximum pages per collection; reaching the cap stays incomplete |
+| `--page-size` | number | no | `1000` | Rows per indexed page |
+| `--subject` | string | no | - | Optional authority subject ID for permission projection |
+| `--user` | string | no | - | Optional observed account for membership and permission projections |
+
+## pop group plan
+
+Plan group creation alone or existing group configuration
+
+```text
+pop group plan [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--file` | string | yes | - | GroupConfigurationRequest JSON; desired values only, never source evidence |
+| `--subject` | string | no | - | Existing verified subject ID; omit to plan creation alone |
+
+## pop group propose
+
+Submit a reviewed group plan after collecting fresh evidence again
+
+```text
+pop group propose [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--duration` | number | no | `60` | Governance vote duration in minutes |
+| `--expected-fingerprint` | string | yes | - | Fingerprint from a reviewed plan; current evidence is collected again |
+| `--file` | string | yes | - | GroupConfigurationRequest JSON; desired values only, never source evidence |
+| `--subject` | string | no | - | Existing verified subject ID; omit to plan creation alone |
+
+## pop group continuation
+
+Reconcile exact creation or configuration proposal execution
+
+```text
+pop group continuation [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--account` | string | yes | - | Original proposal caller address |
+| `--batch-file` | string | no | - | Exact configuration ExecutionCall[] JSON (configuration outcome) |
+| `--creation-calldata` | string | no | - | Exact MembershipAuthority createRole/createGroup calldata (creation continuation) |
+| `--creation-operation` | string | no | - | Optional ERC-4337 exact operation identity JSON |
+| `--creation-tx` | string | yes | - | Exact transaction that submitted the creation/configuration proposal |
+| `--execution-operation` | string | no | - | Optional independent execution operation identity JSON |
+| `--proposal` | string | no | - | Optional exact proposal ID constraint |
+
 ## pop group create
 
 Propose a group derived from role memberships
@@ -39,7 +103,7 @@ pop group create [flags]
 | `--image` | string | no | `""` | Image URI |
 | `--metadata-hash` | string | no | `0x0000000000000000000000000000000000000000000000000000000000000000` | IPFS SHA-256 digest (bytes32) |
 | `--name` | string | yes | - | Subject name |
-| `--roles` | string | yes | - | Member role subject IDs |
+| `--roles` | array | yes | - | Member role subject IDs |
 
 ## pop group add-role
 

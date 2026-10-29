@@ -1,0 +1,7 @@
+
+  query ProjectManagersPage($orgId: String!, $taskManager: String!, $cursor: String!, $first: Int!, $block: Block_height) {
+    _meta(block: $block) { block { number hash timestamp } }
+    projectManagers(where: { project_: { taskManager: $taskManager, taskManager_: { organization: $orgId } }, id_gt: $cursor }, first: $first, orderBy: id, orderDirection: asc, block: $block) {
+      id manager isActive addedAt removedAt lastUpdatedAt project { id projectId taskManager { id organization { id } } }
+    }
+  }

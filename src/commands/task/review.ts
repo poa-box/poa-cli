@@ -1,3 +1,4 @@
+import { buildCompleteTask, buildRejectTask } from '@poa-box/core/tx/task';
 /**
  * pop task review — approve (completeTask) or reject (rejectTask) a
  * SUBMITTED task.
@@ -110,7 +111,8 @@ export const reviewHandler = {
         let result;
         let cid: string | undefined;
         if (approving) {
-          result = await executeTx(contract, 'completeTask', [parsedTaskId], { dryRun: argv.dryRun });
+          const intent = buildCompleteTask({ taskManagerAddress, taskId: parsedTaskId });
+          result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
         } else {
           // Pin the rejection reason AFTER pre-flight + confirmation so a
           // doomed or declined review never wastes a pin.
@@ -121,7 +123,8 @@ export const reviewHandler = {
           const rejectionHash = cid ? ipfsCidToBytes32(cid) : ethers.utils.sha256(ethers.utils.toUtf8Bytes(serialized));
 
           txSpin.text = 'Sending transaction...';
-          result = await executeTx(contract, 'rejectTask', [parsedTaskId, rejectionHash], { dryRun: argv.dryRun });
+          const intent = buildRejectTask({ taskManagerAddress, taskId: parsedTaskId, rejectionHash });
+          result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
         }
         txSpin.stop();
 

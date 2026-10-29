@@ -145,6 +145,7 @@ export function finishWrite(
       ...opts.fields,
       txHash: result.txHash,
       explorerUrl: result.explorerUrl,
+      ...(result.userOpHash ? { userOpHash: result.userOpHash, outcome: result.outcome } : {}),
     });
     opts.onSuccess?.();
     output.subgraphLagWarning();
@@ -155,6 +156,10 @@ export function finishWrite(
     code: result.errorCode,
     errorName: result.errorName,
     suggestion: result.suggestion,
+    txHash: result.txHash,
+    userOpHash: result.userOpHash,
+    outcome: result.outcome,
+    recovery: result.recovery,
   });
   process.exit(EXIT.TX_FAILED);
 }

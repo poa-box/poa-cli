@@ -9,9 +9,11 @@ import { onboardHandler } from './onboard';
 import { deployToOrgHandler } from './deploy-to-org';
 import { initHandler } from './init';
 import { dailyDigestHandler } from './daily-digest';
+import { capabilitiesHandler } from './capabilities';
 
 export function registerAgentCommands(yargs: Argv) {
   return yargs
+    .command('capabilities', 'Discover installed CLI capabilities and safe protocol workflows', capabilitiesHandler.builder, capabilitiesHandler.handler)
     .command('status', 'Show agent operational status and action items', agentStatusHandler.builder, agentStatusHandler.handler)
     .command('triage', 'Prioritized action plan for current heartbeat', triageHandler.builder, triageHandler.handler)
     .command('daily-digest', 'Summarize cross-agent activity for operator status checks', dailyDigestHandler.builder, dailyDigestHandler.handler)

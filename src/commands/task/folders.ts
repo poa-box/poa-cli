@@ -1,3 +1,4 @@
+import { buildSetFolders } from '@poa-box/core/tx/task';
 /**
  * pop task folders — org folder-tree root (TaskManager v4+).
  *
@@ -337,11 +338,12 @@ const foldersSetHandler = {
       const txSpin = output.spinner('Sending setFolders...');
       txSpin.start();
       const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);
-      let expectedRoot = currentRoot;
-      let result = await executeTx(contract, 'setFolders', [expectedRoot, newRoot], { dryRun: argv.dryRun });
+      const expectedRoot = currentRoot;
+      const intent = buildSetFolders({ taskManagerAddress, expectedCurrentRoot: expectedRoot, newRoot });
+      const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
 
-      // CAS race: someone published between our read and our tx. Re-read the
-      // fresh root and retry exactly once (mirrors the frontend's UX contract).
+      // A changed base requires reviewing the folder document again. Replacing
+      // it against a fresh root would silently discard another organizer's edit.
       const isStale = !result.success && (
         result.errorName === 'FoldersRootStale'
         || /FoldersRootStale/i.test(result.error ?? '')
@@ -358,10 +360,7 @@ const foldersSetHandler = {
           return;
         }
         txSpin.stop();
-        output.warn(`Folders root moved while sending (FoldersRootStale) — retrying once against the fresh root ${freshRoot.slice(0, 10)}…`);
-        txSpin.start();
-        expectedRoot = freshRoot;
-        result = await executeTx(contract, 'setFolders', [expectedRoot, newRoot], { dryRun: argv.dryRun });
+        output.warn(`Folders root changed to ${freshRoot}; review and merge that document before submitting a replacement.`);
       }
       txSpin.stop();
 
@@ -371,7 +370,7 @@ const foldersSetHandler = {
           foldersRoot: newRoot,
           cid: newDesc.cid,
           previousRoot: expectedRoot,
-          retriedAfterStaleRoot: isStale || undefined,
+          retriedAfterStaleRoot: undefined,
         },
       });
     } catch (err: any) {

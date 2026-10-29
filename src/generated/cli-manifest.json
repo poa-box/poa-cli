@@ -70,6 +70,59 @@
   },
   "commands": [
     {
+      "name": "task prepare",
+      "kind": "command",
+      "description": "Prepare raw task calldata, metadata, or scoped policy decisions locally",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [
+        {
+          "name": "action",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "options": {
+        "file": {
+          "type": "string",
+          "description": "JSON raw-unit task arguments, explicit metadata merge, or scoped policy facts",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "task snapshot",
+      "kind": "command",
+      "description": "Read complete paged domain facts at a proven indexed block with coverage",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "account": {
+          "type": "string",
+          "description": "With --task, project this account’s exact indexed applicant presence/absence; incomplete evidence stays unknown"
+        },
+        "max-pages": {
+          "type": "number",
+          "description": "Maximum pages per independent collection; reaching the cap remains incomplete",
+          "default": 100
+        },
+        "page-size": {
+          "type": "number",
+          "description": "Rows per page (1–1000)",
+          "default": 100
+        },
+        "task": {
+          "type": "string",
+          "description": "Include independently paged applications and claim-expiry history for this task"
+        }
+      }
+    },
+    {
       "name": "task create",
       "kind": "command",
       "description": "Create a new task",
@@ -81,8 +134,12 @@
       ],
       "positionals": [],
       "options": {
+        "assignee": {
+          "type": "string",
+          "description": "Assign immediately in the same transaction to this address (requires CREATE and ASSIGN)"
+        },
         "bounty-amount": {
-          "type": "number",
+          "type": "string",
           "description": "Bounty payout amount"
         },
         "bounty-token": {
@@ -137,7 +194,7 @@
           "default": false
         },
         "payout": {
-          "type": "number",
+          "type": "string",
           "description": "Payout amount. Omit to price the task the way the web app would, from the org's payout convention plus --difficulty/--est-hours"
         },
         "project": {
@@ -782,6 +839,51 @@
       }
     },
     {
+      "name": "project prepare",
+      "kind": "command",
+      "description": "Prepare raw project creation or source-qualified creator evidence locally",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [
+        {
+          "name": "action",
+          "type": "string",
+          "description": "Raw creation calldata or supplied creator-evidence projection"
+        }
+      ],
+      "options": {
+        "file": {
+          "type": "string",
+          "description": "JSON raw project arguments, or scoped taskManager/authority/memberships snapshots for creator-authorization",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "project snapshot",
+      "kind": "command",
+      "description": "Read complete paged domain facts at a proven indexed block with coverage",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "max-pages": {
+          "type": "number",
+          "description": "Maximum pages per collection",
+          "default": 100
+        },
+        "page-size": {
+          "type": "number",
+          "description": "Rows per page (1–1000)",
+          "default": 100
+        }
+      }
+    },
+    {
       "name": "project create",
       "kind": "command",
       "description": "Create a new project (direct tx; creator-hat/executor)",
@@ -802,9 +904,9 @@
           "description": "Comma-separated bounty token addresses"
         },
         "cap": {
-          "type": "number",
+          "type": "string",
           "description": "PT cap (0 = unlimited)",
-          "default": 0
+          "default": "0"
         },
         "description": {
           "type": "string",
@@ -834,9 +936,9 @@
       "positionals": [],
       "options": {
         "cap": {
-          "type": "number",
+          "type": "string",
           "description": "PT budget cap (0 = unlimited)",
-          "default": 0
+          "default": "0"
         },
         "description": {
           "type": "string",
@@ -1032,6 +1134,10 @@
         "deployer": {
           "type": "string",
           "description": "Public deployer address for an unsigned dry run (no private key needed)"
+        },
+        "zk-email-config": {
+          "type": "string",
+          "description": "Prepared email deployment JSON: enabled, initialRoot, initialCid (bytes32). Zero root/CID leaves enabled email dormant."
         }
       }
     },
@@ -1047,6 +1153,10 @@
       ],
       "positionals": [],
       "options": {
+        "bootstrap": {
+          "type": "string",
+          "description": "BootstrapConfigInput JSON file with authority role indices and explicit raw/decimal amounts"
+        },
         "description": {
           "type": "string",
           "description": "Organization description",
@@ -2075,6 +2185,110 @@
       }
     },
     {
+      "name": "vote ballots",
+      "kind": "command",
+      "description": "Read bounded paginated indexed ballots with explicit coverage",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "max-pages": {
+          "type": "number",
+          "default": 100
+        },
+        "page-size": {
+          "type": "number",
+          "default": 1000
+        },
+        "proposal": {
+          "type": "string",
+          "description": "Exact decimal proposal ID",
+          "required": true
+        },
+        "type": {
+          "type": "string",
+          "default": "hybrid",
+          "choices": [
+            "hybrid",
+            "dd"
+          ]
+        }
+      }
+    },
+    {
+      "name": "vote capabilities",
+      "kind": "command",
+      "description": "Show shared governance limits and supported configuration keys",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {}
+    },
+    {
+      "name": "vote authorization",
+      "kind": "command",
+      "description": "Inspect DD permission and activation policy for an account",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "account": {
+          "type": "string",
+          "description": "Observed account; no signing key required",
+          "required": true
+        },
+        "proposal": {
+          "type": "string",
+          "description": "Exact DD proposal ID",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "vote power",
+      "kind": "command",
+      "description": "Inspect frozen hybrid classes, current account power, indexed tally matrix and quorum",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "account": {
+          "type": "string",
+          "description": "Observed wallet address; no signing key required",
+          "required": true
+        },
+        "max-pages": {
+          "type": "number",
+          "default": 100
+        },
+        "options": {
+          "type": "string",
+          "description": "Optional comma-separated option indices for a contribution preview"
+        },
+        "page-size": {
+          "type": "number",
+          "default": 1000
+        },
+        "proposal": {
+          "type": "string",
+          "description": "Exact hybrid proposal ID; uses its frozen classes and immutable bindings",
+          "required": true
+        },
+        "weights": {
+          "type": "string",
+          "description": "Optional integer percentage weights, paired with --options and totaling 100"
+        }
+      }
+    },
+    {
       "name": "vote classes",
       "kind": "group",
       "description": "Show or propose the hybrid voting class configuration (show / propose)",
@@ -2137,6 +2351,98 @@
           "type": "boolean",
           "description": "Bypass the idempotency cache and always submit.",
           "default": false
+        }
+      }
+    },
+    {
+      "name": "user prepare",
+      "kind": "command",
+      "description": "Prepare an enrollment challenge, atomic enrollment calldata, or profile document locally",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [
+        {
+          "name": "action",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "options": {
+        "file": {
+          "type": "string",
+          "description": "JSON public enrollment arguments or explicit profile merge inputs",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "user lookup",
+      "kind": "command",
+      "description": "Read source-qualified identities from explicit registries",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "account": {
+          "type": "array",
+          "description": "Exact account address(es)"
+        },
+        "max-pages": {
+          "type": "number",
+          "description": "Maximum pages per registry",
+          "default": 100
+        },
+        "page-size": {
+          "type": "number",
+          "description": "Rows per page (1–1000)",
+          "default": 100
+        },
+        "registry": {
+          "type": "array",
+          "description": "Explicit registry address(es) on the selected chain",
+          "required": true
+        },
+        "search": {
+          "type": "string",
+          "description": "Username substring; ranking remains host-owned"
+        },
+        "username": {
+          "type": "array",
+          "description": "Exact username(s)"
+        }
+      }
+    },
+    {
+      "name": "user credentials",
+      "kind": "command",
+      "description": "Read indexed active and revoked credentials with explicit unknown key facts",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "account": {
+          "type": "string",
+          "description": "Account whose credentials should be listed (includes revoked rows)"
+        },
+        "credential": {
+          "type": "string",
+          "description": "Exact bytes32 credential digest to discover"
+        },
+        "max-pages": {
+          "type": "number",
+          "description": "Maximum pages",
+          "default": 100
+        },
+        "page-size": {
+          "type": "number",
+          "description": "Rows per page (1–1000)",
+          "default": 100
         }
       }
     },
@@ -2215,7 +2521,7 @@
       "description": "Update profile (bio, avatar, links) or change your username",
       "readOnly": false,
       "broadcasts": true,
-      "destructive": false,
+      "destructive": true,
       "sideEffects": [
         "ipfs-pin"
       ],
@@ -2244,6 +2550,32 @@
         "website": {
           "type": "string",
           "description": "Website URL"
+        }
+      }
+    },
+    {
+      "name": "education snapshot",
+      "kind": "command",
+      "description": "Read complete paged domain facts at a proven indexed block with coverage",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "learner": {
+          "type": "string",
+          "description": "Include this account’s independently paged completion history"
+        },
+        "max-pages": {
+          "type": "number",
+          "description": "Maximum pages per collection",
+          "default": 100
+        },
+        "page-size": {
+          "type": "number",
+          "description": "Rows per page (1–1000)",
+          "default": 100
         }
       }
     },
@@ -2291,7 +2623,7 @@
           "default": false
         },
         "payout": {
-          "type": "number",
+          "type": "string",
           "description": "PT reward for completion (must be > 0)",
           "required": true
         },
@@ -2346,7 +2678,7 @@
           "description": "New module title (re-pins metadata)"
         },
         "payout": {
-          "type": "number",
+          "type": "string",
           "description": "New PT reward for completion (must be > 0)"
         },
         "quiz": {
@@ -2614,7 +2946,7 @@
       "positionals": [],
       "options": {
         "amount": {
-          "type": "number",
+          "type": "string",
           "description": "Amount of PT to request",
           "required": true
         },
@@ -2681,6 +3013,28 @@
       }
     },
     {
+      "name": "token holders",
+      "kind": "command",
+      "description": "Enumerate token holders and reconcile totals against indexed supply",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "max-pages": {
+          "type": "number",
+          "description": "Finite enumeration cap; totals remain unknown until supply reconciles",
+          "default": 20
+        },
+        "page-size": {
+          "type": "number",
+          "description": "Holder page size (1–1000)",
+          "default": 100
+        }
+      }
+    },
+    {
       "name": "token balance",
       "kind": "command",
       "description": "Check participation token balance",
@@ -2693,6 +3047,150 @@
         "address": {
           "type": "string",
           "description": "Address to check (defaults to signer)"
+        }
+      }
+    },
+    {
+      "name": "treasury claims",
+      "kind": "command",
+      "description": "Verify a stored claims document against pinned distribution state",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "address": {
+          "type": "string",
+          "description": "Observe this claimant without a signing key"
+        },
+        "cid": {
+          "type": "string",
+          "description": "Stored claims CIDv0; otherwise discover from complete executed proposals"
+        },
+        "distribution": {
+          "type": "string",
+          "description": "Exact distribution ID",
+          "required": true
+        },
+        "max-pages": {
+          "type": "number",
+          "description": "Finite executed-proposal discovery bound",
+          "default": 20
+        }
+      }
+    },
+    {
+      "name": "treasury claim-stored",
+      "kind": "command",
+      "description": "Claim an exact verified stored leaf without reallocating holders",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "cid": {
+          "type": "string",
+          "description": "Stored claims CIDv0; otherwise discover from complete executed proposals"
+        },
+        "distribution": {
+          "type": "string",
+          "description": "Exact distribution ID",
+          "required": true
+        },
+        "max-pages": {
+          "type": "number",
+          "description": "Finite executed-proposal discovery bound",
+          "default": 20
+        }
+      }
+    },
+    {
+      "name": "treasury history",
+      "kind": "command",
+      "description": "Read complete paginated financial/work history with explicit coverage",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "distribution": {
+          "type": "string",
+          "description": "Exact distribution ID for claims"
+        },
+        "kind": {
+          "type": "string",
+          "description": "Financial history stream",
+          "default": "distributions",
+          "choices": [
+            "distributions",
+            "payments",
+            "claims",
+            "references",
+            "completed",
+            "promised"
+          ]
+        },
+        "max-pages": {
+          "type": "number",
+          "description": "Finite page cap; a capped result remains incomplete",
+          "default": 20
+        },
+        "page-size": {
+          "type": "number",
+          "description": "Indexed page size (1–1000)",
+          "default": 100
+        }
+      }
+    },
+    {
+      "name": "treasury inflows",
+      "kind": "command",
+      "description": "Inspect recorded native inflows and historical fee pots",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "from-block": {
+          "type": "string",
+          "description": "Inclusive first block for recorded native events",
+          "required": true
+        },
+        "max-pages": {
+          "type": "number",
+          "description": "Finite page cap for each independent stream",
+          "default": 20
+        },
+        "page-size": {
+          "type": "number",
+          "description": "Indexed page size (1–1000)",
+          "default": 100
+        }
+      }
+    },
+    {
+      "name": "treasury availability",
+      "kind": "command",
+      "description": "Show pinned PaymentManager balance, reservations and spendable funds",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "max-rounds": {
+          "type": "number",
+          "description": "Maximum complete RPC distribution enumeration",
+          "default": 1000
+        },
+        "token": {
+          "type": "string",
+          "description": "Payout token address or native",
+          "default": "native"
         }
       }
     },
@@ -2729,7 +3227,7 @@
       "positionals": [],
       "options": {
         "amount": {
-          "type": "number",
+          "type": "string",
           "description": "Amount to deposit (human token units)",
           "required": true
         },
@@ -2884,17 +3382,36 @@
       "options": {
         "amount": {
           "type": "string",
-          "description": "Total distribution amount (in token units, e.g. \"40\" for 40 BREAD)",
+          "description": "Exact total payout amount in token units",
           "required": true
+        },
+        "max-pages": {
+          "type": "number",
+          "description": "Finite holder page cap; incomplete snapshots cannot allocate",
+          "default": 100
         },
         "output": {
           "type": "string",
-          "description": "Output file for proofs",
+          "description": "Local proofs artifact output path",
           "default": "merkle-distribution.json"
+        },
+        "page-size": {
+          "type": "number",
+          "description": "Holder page size (1–1000)",
+          "default": 100
+        },
+        "policy": {
+          "type": "string",
+          "description": "Explicit allocator policy for this new round",
+          "default": "cli-first-holder",
+          "choices": [
+            "cli-first-holder",
+            "sorted-last-omit-zero"
+          ]
         },
         "token": {
           "type": "string",
-          "description": "Payout token address",
+          "description": "Payout token address, or native",
           "required": true
         }
       }
@@ -2915,6 +3432,11 @@
           "type": "number",
           "description": "Vote duration in minutes",
           "default": 1440
+        },
+        "max-rounds": {
+          "type": "number",
+          "description": "Maximum complete distribution enumeration for reservations",
+          "default": 1000
         },
         "merkle-file": {
           "type": "string",
@@ -2947,7 +3469,7 @@
       "positionals": [],
       "options": {
         "amount": {
-          "type": "number",
+          "type": "string",
           "description": "Amount to send (single recipient)"
         },
         "duration": {
@@ -2955,9 +3477,23 @@
           "description": "Vote duration in minutes",
           "default": 60
         },
+        "max-rounds": {
+          "type": "number",
+          "description": "Maximum distribution enumeration for PaymentManager solvency",
+          "default": 1000
+        },
         "recipients": {
           "type": "string",
           "description": "JSON array for batch: [{\"to\":\"0x...\",\"amount\":5},...] (max 8)"
+        },
+        "source": {
+          "type": "string",
+          "description": "Explicit treasury source; PaymentManager reservations are enforced",
+          "default": "executor",
+          "choices": [
+            "executor",
+            "payment-manager"
+          ]
         },
         "to": {
           "type": "string",
@@ -3024,6 +3560,40 @@
       }
     },
     {
+      "name": "paymaster donate",
+      "kind": "command",
+      "description": "Donate native tokens to the global solidarity fund",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "amount": {
+          "type": "string",
+          "description": "Exact native-token donation in human units",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "paymaster prefund",
+      "kind": "command",
+      "description": "Calculate exact v0.7 prefund from the final estimated operation",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "operation": {
+          "type": "string",
+          "description": "JSON with final v0.7 gas limits and maxFeePerGas, all exact raw strings",
+          "required": true
+        }
+      }
+    },
+    {
       "name": "paymaster status",
       "kind": "command",
       "description": "View paymaster registration, balance, budgets, and solidarity state",
@@ -3034,7 +3604,7 @@
       "positionals": [],
       "options": {
         "hat": {
-          "type": "string",
+          "type": "array",
           "description": "Additional hat ID(s) whose sponsorship budgets to show (admin/operator hats are probed automatically)"
         }
       }
@@ -3139,6 +3709,177 @@
         "user": {
           "type": "string",
           "description": "Filter by target wallet address"
+        }
+      }
+    },
+    {
+      "name": "role snapshot",
+      "kind": "command",
+      "description": "Read complete pinned authority evidence, permissions and membership lifecycle",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "block": {
+          "type": "string",
+          "description": "Exact indexed block number (otherwise current indexed head)"
+        },
+        "context": {
+          "type": "string",
+          "description": "Permission bytes32 context",
+          "default": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "key": {
+          "type": "string",
+          "description": "Semantic permission key or bytes32; defaults to each indexed key"
+        },
+        "max-pages": {
+          "type": "number",
+          "description": "Maximum pages per collection; reaching the cap stays incomplete",
+          "default": 100
+        },
+        "page-size": {
+          "type": "number",
+          "description": "Rows per indexed page",
+          "default": 1000
+        },
+        "subject": {
+          "type": "string",
+          "description": "Optional authority subject ID for permission projection"
+        },
+        "user": {
+          "type": "string",
+          "description": "Optional observed account for membership and permission projections"
+        }
+      }
+    },
+    {
+      "name": "role plan",
+      "kind": "command",
+      "description": "Plan role creation alone or configure an existing subject from fresh evidence",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "file": {
+          "type": "string",
+          "description": "RoleConfigurationRequest JSON; desired values only, never source evidence",
+          "required": true
+        },
+        "subject": {
+          "type": "string",
+          "description": "Existing verified subject ID; omit to plan creation alone"
+        }
+      }
+    },
+    {
+      "name": "role propose",
+      "kind": "command",
+      "description": "Submit a reviewed role plan after collecting fresh evidence again",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "expected-fingerprint": {
+          "type": "string",
+          "description": "Fingerprint from a reviewed plan; current evidence is collected again",
+          "required": true
+        },
+        "file": {
+          "type": "string",
+          "description": "RoleConfigurationRequest JSON; desired values only, never source evidence",
+          "required": true
+        },
+        "subject": {
+          "type": "string",
+          "description": "Existing verified subject ID; omit to plan creation alone"
+        }
+      }
+    },
+    {
+      "name": "role continuation",
+      "kind": "command",
+      "description": "Reconcile exact creation or configuration proposal execution",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "account": {
+          "type": "string",
+          "description": "Original proposal caller address",
+          "required": true
+        },
+        "batch-file": {
+          "type": "string",
+          "description": "Exact configuration ExecutionCall[] JSON (configuration outcome)"
+        },
+        "creation-calldata": {
+          "type": "string",
+          "description": "Exact MembershipAuthority createRole/createGroup calldata (creation continuation)"
+        },
+        "creation-operation": {
+          "type": "string",
+          "description": "Optional ERC-4337 exact operation identity JSON"
+        },
+        "creation-tx": {
+          "type": "string",
+          "description": "Exact transaction that submitted the creation/configuration proposal",
+          "required": true
+        },
+        "execution-operation": {
+          "type": "string",
+          "description": "Optional independent execution operation identity JSON"
+        },
+        "proposal": {
+          "type": "string",
+          "description": "Optional exact proposal ID constraint"
+        }
+      }
+    },
+    {
+      "name": "role election-plan",
+      "kind": "command",
+      "description": "Plan capacity-safe election batches with exact removal and ban consent",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "file": {
+          "type": "string",
+          "description": "JSON choices: subjectId, removals, confirmedBans, candidates, stickyWinner, fallbackSubjectId, includeNoOneOption, expectedFingerprint",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "role removal-plan",
+      "kind": "command",
+      "description": "Plan removals after fresh non-banning preflights",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "file": {
+          "type": "string",
+          "description": "JSON choices: subjectId, removals, confirmedBans, candidates, stickyWinner, fallbackSubjectId, includeNoOneOption, expectedFingerprint",
+          "required": true
         }
       }
     },
@@ -3849,6 +4590,143 @@
       }
     },
     {
+      "name": "group snapshot",
+      "kind": "command",
+      "description": "Read complete pinned authority state and projections",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "block": {
+          "type": "string",
+          "description": "Exact indexed block number (otherwise current indexed head)"
+        },
+        "context": {
+          "type": "string",
+          "description": "Permission bytes32 context",
+          "default": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "key": {
+          "type": "string",
+          "description": "Semantic permission key or bytes32; defaults to each indexed key"
+        },
+        "max-pages": {
+          "type": "number",
+          "description": "Maximum pages per collection; reaching the cap stays incomplete",
+          "default": 100
+        },
+        "page-size": {
+          "type": "number",
+          "description": "Rows per indexed page",
+          "default": 1000
+        },
+        "subject": {
+          "type": "string",
+          "description": "Optional authority subject ID for permission projection"
+        },
+        "user": {
+          "type": "string",
+          "description": "Optional observed account for membership and permission projections"
+        }
+      }
+    },
+    {
+      "name": "group plan",
+      "kind": "command",
+      "description": "Plan group creation alone or existing group configuration",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "file": {
+          "type": "string",
+          "description": "GroupConfigurationRequest JSON; desired values only, never source evidence",
+          "required": true
+        },
+        "subject": {
+          "type": "string",
+          "description": "Existing verified subject ID; omit to plan creation alone"
+        }
+      }
+    },
+    {
+      "name": "group propose",
+      "kind": "command",
+      "description": "Submit a reviewed group plan after collecting fresh evidence again",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "duration": {
+          "type": "number",
+          "description": "Governance vote duration in minutes",
+          "default": 60
+        },
+        "expected-fingerprint": {
+          "type": "string",
+          "description": "Fingerprint from a reviewed plan; current evidence is collected again",
+          "required": true
+        },
+        "file": {
+          "type": "string",
+          "description": "GroupConfigurationRequest JSON; desired values only, never source evidence",
+          "required": true
+        },
+        "subject": {
+          "type": "string",
+          "description": "Existing verified subject ID; omit to plan creation alone"
+        }
+      }
+    },
+    {
+      "name": "group continuation",
+      "kind": "command",
+      "description": "Reconcile exact creation or configuration proposal execution",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "account": {
+          "type": "string",
+          "description": "Original proposal caller address",
+          "required": true
+        },
+        "batch-file": {
+          "type": "string",
+          "description": "Exact configuration ExecutionCall[] JSON (configuration outcome)"
+        },
+        "creation-calldata": {
+          "type": "string",
+          "description": "Exact MembershipAuthority createRole/createGroup calldata (creation continuation)"
+        },
+        "creation-operation": {
+          "type": "string",
+          "description": "Optional ERC-4337 exact operation identity JSON"
+        },
+        "creation-tx": {
+          "type": "string",
+          "description": "Exact transaction that submitted the creation/configuration proposal",
+          "required": true
+        },
+        "execution-operation": {
+          "type": "string",
+          "description": "Optional independent execution operation identity JSON"
+        },
+        "proposal": {
+          "type": "string",
+          "description": "Optional exact proposal ID constraint"
+        }
+      }
+    },
+    {
       "name": "group create",
       "kind": "command",
       "description": "Propose a group derived from role memberships",
@@ -3879,7 +4757,7 @@
           "required": true
         },
         "roles": {
-          "type": "string",
+          "type": "array",
           "description": "Member role subject IDs",
           "required": true
         }
@@ -3931,6 +4809,46 @@
         },
         "role": {
           "type": "string",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "zkemail recover",
+      "kind": "command",
+      "description": "Verify an original email enrollment and prepare recovery-only pointers without activation",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "file": {
+          "type": "string",
+          "description": "JSON original transaction hash, public legacy credential, raw credential bytes and exact chain/org/target/registry/factory/account scope",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "zkemail prepare",
+      "kind": "command",
+      "description": "Prepare a bound proof claim, atomic enrollment, or verified whole-list edit locally",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [
+        {
+          "name": "action",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "options": {
+        "file": {
+          "type": "string",
+          "description": "JSON prepared proof, signed header, verified allowlist edit, or explicit invite-state fact snapshots",
           "required": true
         }
       }
@@ -4012,16 +4930,17 @@
       "broadcasts": false,
       "destructive": false,
       "sideEffects": [
-        "ipfs-pin(--pin)"
+        "ipfs-pin(--pin)",
+        "local-file(--out)"
       ],
       "positionals": [],
       "options": {
         "domain": {
-          "type": "string",
+          "type": "array",
           "description": "Invite a whole domain, e.g. --domain anthropic.com (repeatable)"
         },
         "email": {
-          "type": "string",
+          "type": "array",
           "description": "Invite a specific address, e.g. --email alice@org.com (repeatable)"
         },
         "file": {
@@ -4029,7 +4948,7 @@
           "description": "JSON file of allowlist entries (or an existing allowlist doc to re-publish)"
         },
         "hat": {
-          "type": "string",
+          "type": "array",
           "description": "Hat ID(s) granted to every --domain/--email entry (repeatable)"
         },
         "out": {
@@ -4098,6 +5017,323 @@
       "sideEffects": [],
       "positionals": [],
       "options": {}
+    },
+    {
+      "name": "cashout payload",
+      "kind": "command",
+      "description": "Encode an unsigned opt-in cashout schema payload from explicit quote fields",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "conversion-rate": {
+          "type": "string",
+          "description": "Explicit conversion rate (18 decimals)",
+          "required": true
+        },
+        "depositor": {
+          "type": "string",
+          "description": "EOA depositor address",
+          "required": true
+        },
+        "fiat-currency": {
+          "type": "string",
+          "description": "Fiat currency bytes32",
+          "required": true
+        },
+        "max-amount": {
+          "type": "string",
+          "description": "Maximum intent in 6-decimal token units",
+          "required": true
+        },
+        "min-amount": {
+          "type": "string",
+          "description": "Minimum intent in 6-decimal token units",
+          "required": true
+        },
+        "payee-details-hash": {
+          "type": "string",
+          "description": "Payee details bytes32 digest",
+          "required": true
+        },
+        "payment-method": {
+          "type": "string",
+          "description": "Payment method bytes32",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "cashout deposit-from-receipt",
+      "kind": "command",
+      "description": "Resolve an exact escrow deposit from one chain-checked receipt",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "address": {
+          "type": "string",
+          "description": "Observe as this account without a key"
+        },
+        "deposit": {
+          "type": "string",
+          "description": "Optional known deposit ID to narrow ambiguous logs"
+        },
+        "escrow": {
+          "type": "string",
+          "description": "Explicit escrow address",
+          "required": true
+        },
+        "relay": {
+          "type": "string",
+          "description": "Explicit cashout relay address",
+          "required": true
+        },
+        "rpc": {
+          "type": "string",
+          "description": "RPC endpoint for the explicitly selected external chain",
+          "required": true
+        },
+        "token": {
+          "type": "string",
+          "description": "Explicit USDC token address",
+          "required": true
+        },
+        "transaction": {
+          "type": "string",
+          "description": "Exact cashout deposit transaction hash",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "cashout status",
+      "kind": "command",
+      "description": "Inspect pinned recovery facts for an explicit EOA cashout request/deposit",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "address": {
+          "type": "string",
+          "description": "Observe as this account without a key"
+        },
+        "deposit": {
+          "type": "string",
+          "description": "Escrow deposit ID"
+        },
+        "escrow": {
+          "type": "string",
+          "description": "Explicit escrow address",
+          "required": true
+        },
+        "relay": {
+          "type": "string",
+          "description": "Explicit cashout relay address",
+          "required": true
+        },
+        "request": {
+          "type": "string",
+          "description": "Failed relay request hash"
+        },
+        "rpc": {
+          "type": "string",
+          "description": "RPC endpoint for the explicitly selected external chain",
+          "required": true
+        },
+        "token": {
+          "type": "string",
+          "description": "Explicit USDC token address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "cashout discover",
+      "kind": "command",
+      "description": "Enumerate external cashout candidates; pinned RPC still determines recoverability",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "address": {
+          "type": "string",
+          "description": "Observe as this account without a key"
+        },
+        "escrow": {
+          "type": "string",
+          "description": "Explicit escrow address",
+          "required": true
+        },
+        "max-pages": {
+          "type": "number",
+          "description": "Finite cap per status stream",
+          "default": 20
+        },
+        "page-size": {
+          "type": "number",
+          "description": "Candidate page size (1–1000)",
+          "default": 100
+        },
+        "relay": {
+          "type": "string",
+          "description": "Explicit cashout relay address",
+          "required": true
+        },
+        "rpc": {
+          "type": "string",
+          "description": "RPC endpoint for the explicitly selected external chain",
+          "required": true
+        },
+        "subgraph": {
+          "type": "string",
+          "description": "Explicit single-relay indexed endpoint",
+          "required": true
+        },
+        "token": {
+          "type": "string",
+          "description": "Explicit USDC token address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "cashout recover-failed",
+      "kind": "command",
+      "description": "Return a failed cashout request to its EOA owner",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "address": {
+          "type": "string",
+          "description": "Observe as this account without a key"
+        },
+        "escrow": {
+          "type": "string",
+          "description": "Explicit escrow address",
+          "required": true
+        },
+        "relay": {
+          "type": "string",
+          "description": "Explicit cashout relay address",
+          "required": true
+        },
+        "request": {
+          "type": "string",
+          "description": "Exact failed request hash",
+          "required": true
+        },
+        "rpc": {
+          "type": "string",
+          "description": "RPC endpoint for the explicitly selected external chain",
+          "required": true
+        },
+        "token": {
+          "type": "string",
+          "description": "Explicit USDC token address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "cashout withdraw-deposit",
+      "kind": "command",
+      "description": "Withdraw the remaining escrow deposit owned by your EOA",
+      "readOnly": false,
+      "broadcasts": true,
+      "destructive": true,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "address": {
+          "type": "string",
+          "description": "Observe as this account without a key"
+        },
+        "deposit": {
+          "type": "string",
+          "description": "Exact escrow deposit ID",
+          "required": true
+        },
+        "escrow": {
+          "type": "string",
+          "description": "Explicit escrow address",
+          "required": true
+        },
+        "relay": {
+          "type": "string",
+          "description": "Explicit cashout relay address",
+          "required": true
+        },
+        "rpc": {
+          "type": "string",
+          "description": "RPC endpoint for the explicitly selected external chain",
+          "required": true
+        },
+        "token": {
+          "type": "string",
+          "description": "Explicit USDC token address",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "execution status",
+      "kind": "command",
+      "description": "Inspect the saved submission for an account",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [],
+      "positionals": [],
+      "options": {
+        "address": {
+          "type": "string",
+          "description": "Account address; no signing key is needed"
+        }
+      }
+    },
+    {
+      "name": "execution recover",
+      "kind": "command",
+      "description": "Reconcile a saved submission with bounded read-only RPC; never resends",
+      "readOnly": true,
+      "broadcasts": false,
+      "destructive": false,
+      "sideEffects": [
+        "local-file"
+      ],
+      "positionals": [],
+      "options": {
+        "abandon": {
+          "type": "boolean",
+          "description": "Release only a provably pre-broadcast record; never an uncertain send",
+          "default": false
+        },
+        "address": {
+          "type": "string",
+          "description": "Account address; no signing key is needed"
+        },
+        "candidate-tx": {
+          "type": "string",
+          "description": "Exact mined EOA candidate after the saved prefix window"
+        },
+        "max-blocks": {
+          "type": "number",
+          "description": "Prefix recovery window (1–64 blocks)",
+          "default": 16
+        }
+      }
     },
     {
       "name": "mcp serve",

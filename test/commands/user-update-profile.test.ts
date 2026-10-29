@@ -166,6 +166,13 @@ describe('pop user update-profile — one subgraph round-trip', () => {
     exitSpy.mockRestore();
   });
 
+  it('dry-run prepares changed metadata without publishing it to IPFS', async () => {
+    setIndexed(liveAccount());
+    await updateProfileHandler.handler(baseArgv({ bio: 'Dry run', dryRun: true }));
+    expect(mocks.pinJson).not.toHaveBeenCalled();
+    expect(mocks.executeTx).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.any(Array), { dryRun: true });
+  });
+
   it('metadata-only edit: ONE subgraph query serves the registry AND the existing metadata; other fields survive', async () => {
     await updateProfileHandler.handler(baseArgv({ bio: 'new bio' }));
 

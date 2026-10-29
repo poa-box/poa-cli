@@ -31,6 +31,7 @@
  */
 
 import type { Argv, ArgumentsCamelCase } from 'yargs';
+import { parseProposalReceiptOutcome } from '@poa-box/core/tx/vote';
 import { createWriteContract } from '../../lib/contracts';
 import { executeTx } from '../../lib/tx';
 import { query } from '../../lib/subgraph';
@@ -184,12 +185,16 @@ export const executeHandler = {
         // outer tx can succeed while the proposal's calls reverted.
         if (result.success && !result.dryRun) {
           const receipt = parseAnnounceReceipt(result);
-          if (receipt.innerFailure) {
+          const receiptOutcome = result.receipt && ctx.modules?.executorAddress ? parseProposalReceiptOutcome(result.receipt.logs, {
+            votingAddress: hybridVotingAddress, executorAddress: ctx.modules.executorAddress, proposalId: String(proposalId),
+          }) : undefined;
+          if (receipt.innerFailure || (receiptOutcome?.execution.state === 'known' && receiptOutcome.execution.value === 'failed')) {
             output.error(`Proposal #${proposalId} ANNOUNCED but EXECUTION FAILED`, {
               txHash: result.txHash,
               explorerUrl: result.explorerUrl,
               winningOption: receipt.winningOption,
               failedCalls: receipt.failedCalls,
+              receiptOutcome,
               note: 'The proposal was finalized but inner execution reverted. ' +
                 'Gas was burned. Diagnose by inspecting the CallFailed events in the tx, ' +
                 'fix the issue, and create a new proposal. The old one cannot be re-executed.',
@@ -203,6 +208,7 @@ export const executeHandler = {
               winningOption: receipt.winningOption,
               valid: receipt.valid,
               executed: receipt.executed,
+              receiptOutcome,
             },
           });
           return { proposal: proposalId, txHash: result.txHash };

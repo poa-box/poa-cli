@@ -18,6 +18,7 @@
  */
 
 import { ethers } from 'ethers';
+import { requireRawUint } from '../amounts';
 
 export interface TxIntentMeta {
   /** Command-style domain, e.g. 'task' | 'vote' | 'org' | 'treasury'. */
@@ -74,4 +75,35 @@ export function intentToContractCall(
     method: intent.method,
     args: intent.args,
   };
+}
+
+
+export interface IntentExecutionRequest {
+  to: string; abi: any[]; method: string; args: unknown[]; value: string;
+}
+/** Materialization only: metadata is descriptive and never execution options. */
+export function intentToExecutionRequest(intent: TxIntent): IntentExecutionRequest {
+  const value = intent.value ?? 0;
+  // Normalize the declared BigNumberish domain, including bytes. Validate Number without
+  // an intermediate BigNumber conversion (which rejects the maximum safe integer).
+  const raw = typeof value === 'number' ? value : ethers.BigNumber.from(value).toString();
+  return { to: intent.to, abi: intent.abi, method: intent.method, args: intent.args, value: requireRawUint(raw) };
+}
+
+/** Compiled host bridge. The host owns options, receipts, refreshes and scope. */
+export async function executeIntentWithHost<Options, Result>(
+  intent: TxIntent,
+  options: Options,
+  host: {
+    isCurrent(): boolean;
+    execute(request: IntentExecutionRequest, options: Options): Promise<Result>;
+    onResult?(result: Result): void | Promise<void>;
+  }
+): Promise<{ status: 'current'; result: Result } | { status: 'stale' }> {
+  const request = intentToExecutionRequest(intent);
+  if (!host.isCurrent()) return { status: 'stale' };
+  const result = await host.execute(request, options);
+  if (!host.isCurrent()) return { status: 'stale' };
+  await host.onResult?.(result);
+  return { status: 'current', result };
 }

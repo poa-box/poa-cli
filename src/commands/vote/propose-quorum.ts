@@ -11,6 +11,8 @@ import { CliError } from '../../lib/errors';
 import { EXIT } from '../../lib/exit-codes';
 import * as output from '../../lib/output';
 import { resolveVotingContracts } from './helpers';
+import { buildGovernanceProposal } from '@poa-box/core/tx/governance';
+import { buildProposalMetadata, serializeProposalMetadata } from '@poa-box/core/metadata/proposal';
 
 /**
  * setConfig keys for quorum (contracts origin/main, v6):
@@ -75,13 +77,16 @@ export const proposeQuorumHandler = {
 
       batches.push(option0Batch);
       batches.push([]); // option 1 (keep current) has no calls
+      const intent = buildGovernanceProposal({ votingAddress: contracts.hybridVotingAddress, votingAbiName: 'HybridVotingNew',
+        title: `Set voting quorum to ${newQuorum}`, descriptionHash: ethers.constants.HashZero, durationMinutes: argv.duration, numOptions: 2,
+        batches: batches.map(batch => batch.map(([target, value, calldata]) => ({ target, value, calldata }))), subjectIds: [] });
 
       // Pin metadata
-      const metadata = {
+      const metadata = buildProposalMetadata({
         description: `Change voting quorum to ${newQuorum}. Updates both Hybrid (setConfig key ${HYBRID_QUORUM_KEY}) and DD (setConfig key ${DD_QUORUM_KEY}) voting contracts via execution calls.`,
         optionNames: [`Set quorum to ${newQuorum}`, 'Keep current quorum'],
         createdAt: Date.now(),
-      };
+      });
 
       const hybridVotingAddress = contracts.hybridVotingAddress;
       const contractList = contracts.ddVotingAddress ? 'Hybrid + DD' : 'Hybrid only';
@@ -91,16 +96,16 @@ export const proposeQuorumHandler = {
       const run = async (): Promise<Record<string, any>> => {
         const txSpin = output.spinner('Pinning metadata...');
         txSpin.start();
-        const cid = argv.dryRun ? undefined : await pinJson(JSON.stringify(metadata));
+        const cid = argv.dryRun ? undefined : await pinJson(serializeProposalMetadata(metadata));
         const descriptionHash = cid ? ipfsCidToBytes32(cid) : ethers.constants.HashZero;
-        const titleBytes = stringToBytes(`Set voting quorum to ${newQuorum}`);
+        intent.args[1] = descriptionHash;
 
         txSpin.text = 'Sending transaction...';
         const contract = createWriteContract(hybridVotingAddress, 'HybridVotingNew', signer);
         const result = await executeTx(
           contract,
-          'createProposal',
-          [titleBytes, descriptionHash, argv.duration, 2, batches, []],
+          intent.method,
+          intent.args,
           { dryRun: argv.dryRun }
         );
         txSpin.stop();

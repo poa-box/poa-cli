@@ -1,0 +1,639 @@
+# Offline projection of cached serving introspection; see display-ballots-provenance.json.
+# Selected fields/arguments/input fields retain exact original types/defaults; referenced enums intact.
+type _Block_ {
+  """The hash of the block"""
+  hash: Bytes
+  """The block number"""
+  number: Int!
+  """Integer representation of the timestamp stored in blocks for the chain"""
+  timestamp: Int
+}
+
+"""The type for the top-level _meta field"""
+type _Meta_ {
+  """
+  Information about a specific subgraph block. The hash of the block
+  will be null if the _meta field has a block constraint that asks for
+  a block number. It will be filled if the _meta field has no block constraint
+  and therefore asks for the latest  block
+  """
+  block: _Block_!
+}
+
+scalar BigInt
+
+input Block_height {
+  hash: Bytes
+  number: Int
+  number_gte: Int
+}
+
+scalar Bytes
+
+enum ConfigLintCode {
+  None
+  QuorumNoOp
+  VouchWithMaxMembers
+  DefaultAllowStrongPerms
+  GroupFanout
+  SelfVoucher
+  Unknown
+}
+
+type ConfigLintEvent {
+  id: Bytes!
+  subject: Subject
+  subjectId: BigInt!
+  lintCode: Int!
+  code: ConfigLintCode!
+  emittedAt: BigInt!
+}
+
+input ConfigLintEvent_filter {
+  authority: String
+}
+
+enum ConfigLintEvent_orderBy {
+  id
+  authority
+  authority__id
+  authority__executor
+  authority__paymasterHub
+  authority__orgIdHash
+  authority__paused
+  authority__initConfigDerived
+  authority__maxDailyVouches
+  authority__subjectCount
+  authority__roleSubjectCount
+  authority__groupSubjectCount
+  authority__acceptedMembershipCount
+  authority__isRouterBound
+  authority__registeredAt
+  authority__registeredAtBlock
+  authority__cutoverAt
+  authority__lastUpdatedAt
+  authority__transactionHash
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  subject
+  subject__id
+  subject__subjectId
+  subject__kind
+  subject__name
+  subject__metadataCID
+  subject__imageURI
+  subject__maxMembers
+  subject__memberCount
+  subject__activeMemberCount
+  subject__defaultAllow
+  subject__isLegacyAdopted
+  subject__createdAt
+  subject__createdAtBlock
+  subject__lastUpdatedAt
+  subject__transactionHash
+  subjectId
+  lintCode
+  code
+  emittedAt
+  emittedAtBlock
+  transactionHash
+}
+
+type DDVProposal {
+  id: String!
+  proposalId: BigInt!
+  directDemocracyVoting: DirectDemocracyVotingContract!
+  numOptions: Int!
+  createdAtBlock: BigInt!
+}
+
+input DDVProposal_filter {
+  id: String
+}
+
+enum DDVProposal_orderBy {
+  id
+  proposalId
+  directDemocracyVoting
+  directDemocracyVoting__id
+  directDemocracyVoting__executor
+  directDemocracyVoting__thresholdPct
+  directDemocracyVoting__quorum
+  directDemocracyVoting__hats
+  directDemocracyVoting__createdAt
+  directDemocracyVoting__createdAtBlock
+  proposer
+  proposerUsername
+  proposerUser
+  proposerUser__id
+  proposerUser__address
+  proposerUser__joinMethod
+  proposerUser__membershipStatus
+  proposerUser__participationTokenBalance
+  proposerUser__totalVotes
+  proposerUser__totalTasksCompleted
+  proposerUser__totalTasksCancelled
+  proposerUser__totalTasksLostToExpiry
+  proposerUser__totalTasksReleased
+  proposerUser__totalModulesCompleted
+  proposerUser__totalClaimsAmount
+  proposerUser__totalPaymentsAmount
+  proposerUser__totalTokenRequestsAmount
+  proposerUser__firstSeenAt
+  proposerUser__firstSeenAtBlock
+  proposerUser__lastActiveAt
+  proposerUser__lastActiveAtBlock
+  title
+  descriptionHash
+  metadata
+  metadata__id
+  metadata__description
+  metadata__createdAt
+  metadata__promotedFrom
+  numOptions
+  startTimestamp
+  endTimestamp
+  isHatRestricted
+  restrictedHatIds
+  status
+  votes
+  batchExecutions
+  winningOption
+  isValid
+  winnerAnnouncedAt
+  executionFailed
+  executionError
+  cleanedAt
+  createdAtBlock
+  transactionHash
+}
+
+type DDVVote {
+  id: String!
+  proposal: DDVProposal!
+  voter: Bytes!
+  voterUsername: String
+  optionIndexes: [Int!]!
+  optionWeights: [Int!]!
+  votedAt: BigInt!
+  votedAtBlock: BigInt!
+  transactionHash: Bytes!
+}
+
+input DDVVote_filter {
+  id_gt: String
+  proposal: String
+}
+
+enum DDVVote_orderBy {
+  id
+  proposal
+  proposal__id
+  proposal__proposalId
+  proposal__proposer
+  proposal__proposerUsername
+  proposal__title
+  proposal__descriptionHash
+  proposal__numOptions
+  proposal__startTimestamp
+  proposal__endTimestamp
+  proposal__isHatRestricted
+  proposal__status
+  proposal__winningOption
+  proposal__isValid
+  proposal__winnerAnnouncedAt
+  proposal__executionFailed
+  proposal__executionError
+  proposal__cleanedAt
+  proposal__createdAtBlock
+  proposal__transactionHash
+  voter
+  voterUsername
+  voterUser
+  voterUser__id
+  voterUser__address
+  voterUser__joinMethod
+  voterUser__membershipStatus
+  voterUser__participationTokenBalance
+  voterUser__totalVotes
+  voterUser__totalTasksCompleted
+  voterUser__totalTasksCancelled
+  voterUser__totalTasksLostToExpiry
+  voterUser__totalTasksReleased
+  voterUser__totalModulesCompleted
+  voterUser__totalClaimsAmount
+  voterUser__totalPaymentsAmount
+  voterUser__totalTokenRequestsAmount
+  voterUser__firstSeenAt
+  voterUser__firstSeenAtBlock
+  voterUser__lastActiveAt
+  voterUser__lastActiveAtBlock
+  optionIndexes
+  optionWeights
+  votedAt
+  votedAtBlock
+  transactionHash
+}
+
+type DirectDemocracyVotingContract {
+  id: Bytes!
+  organization: Organization!
+}
+
+type HybridVotingContract {
+  id: Bytes!
+  organization: Organization!
+}
+
+"""Defines the order direction, either ascending or descending"""
+enum OrderDirection {
+  asc
+  desc
+}
+
+type Organization {
+  id: Bytes!
+  hybridVoting: HybridVotingContract
+  directDemocracyVoting: DirectDemocracyVotingContract
+}
+
+type Proposal {
+  id: String!
+  proposalId: BigInt!
+  hybridVoting: HybridVotingContract!
+  numOptions: Int!
+  createdAtBlock: BigInt!
+}
+
+input Proposal_filter {
+  id: String
+}
+
+enum Proposal_orderBy {
+  id
+  proposalId
+  hybridVoting
+  hybridVoting__id
+  hybridVoting__executor
+  hybridVoting__thresholdPct
+  hybridVoting__quorum
+  hybridVoting__hats
+  hybridVoting__createdAt
+  hybridVoting__createdAtBlock
+  hybridVoting__classVersion
+  creator
+  creatorUsername
+  creatorUser
+  creatorUser__id
+  creatorUser__address
+  creatorUser__joinMethod
+  creatorUser__membershipStatus
+  creatorUser__participationTokenBalance
+  creatorUser__totalVotes
+  creatorUser__totalTasksCompleted
+  creatorUser__totalTasksCancelled
+  creatorUser__totalTasksLostToExpiry
+  creatorUser__totalTasksReleased
+  creatorUser__totalModulesCompleted
+  creatorUser__totalClaimsAmount
+  creatorUser__totalPaymentsAmount
+  creatorUser__totalTokenRequestsAmount
+  creatorUser__firstSeenAt
+  creatorUser__firstSeenAtBlock
+  creatorUser__lastActiveAt
+  creatorUser__lastActiveAtBlock
+  proposer
+  proposerUsername
+  classesVersion
+  classesChange
+  classesChange__id
+  classesChange__version
+  classesChange__logIndex
+  classesChange__classesHash
+  classesChange__numClasses
+  classesChange__changedAt
+  classesChange__changedAtBlock
+  classesChange__transactionHash
+  title
+  descriptionHash
+  metadata
+  metadata__id
+  metadata__description
+  metadata__createdAt
+  metadata__promotedFrom
+  numOptions
+  startTimestamp
+  endTimestamp
+  isHatRestricted
+  restrictedHatIds
+  status
+  votes
+  batchExecutions
+  winningOption
+  isValid
+  wasExecuted
+  executionFailed
+  executionError
+  winnerAnnouncedAt
+  executedAt
+  executedCallsCount
+  createdAtBlock
+  transactionHash
+}
+
+type Query {
+  organization(
+    id: ID!
+    """
+    The block at which the query should be executed. Can either be a `{ hash: Bytes }` value containing a block hash, a `{ number: Int }` containing the block number, or a `{ number_gte: Int }` containing the minimum block number. In the case of `number_gte`, the query will be executed on the latest block only if the subgraph has progressed to or past the minimum block number. Defaults to the latest block when omitted.
+    """
+    block: Block_height
+  ): Organization
+  proposals(
+    first: Int = 100
+    orderBy: Proposal_orderBy
+    orderDirection: OrderDirection
+    where: Proposal_filter
+    """
+    The block at which the query should be executed. Can either be a `{ hash: Bytes }` value containing a block hash, a `{ number: Int }` containing the block number, or a `{ number_gte: Int }` containing the minimum block number. In the case of `number_gte`, the query will be executed on the latest block only if the subgraph has progressed to or past the minimum block number. Defaults to the latest block when omitted.
+    """
+    block: Block_height
+  ): [Proposal!]!
+  votes(
+    first: Int = 100
+    orderBy: Vote_orderBy
+    orderDirection: OrderDirection
+    where: Vote_filter
+    """
+    The block at which the query should be executed. Can either be a `{ hash: Bytes }` value containing a block hash, a `{ number: Int }` containing the block number, or a `{ number_gte: Int }` containing the minimum block number. In the case of `number_gte`, the query will be executed on the latest block only if the subgraph has progressed to or past the minimum block number. Defaults to the latest block when omitted.
+    """
+    block: Block_height
+  ): [Vote!]!
+  ddvproposals(
+    first: Int = 100
+    orderBy: DDVProposal_orderBy
+    orderDirection: OrderDirection
+    where: DDVProposal_filter
+    """
+    The block at which the query should be executed. Can either be a `{ hash: Bytes }` value containing a block hash, a `{ number: Int }` containing the block number, or a `{ number_gte: Int }` containing the minimum block number. In the case of `number_gte`, the query will be executed on the latest block only if the subgraph has progressed to or past the minimum block number. Defaults to the latest block when omitted.
+    """
+    block: Block_height
+  ): [DDVProposal!]!
+  ddvvotes(
+    first: Int = 100
+    orderBy: DDVVote_orderBy
+    orderDirection: OrderDirection
+    where: DDVVote_filter
+    """
+    The block at which the query should be executed. Can either be a `{ hash: Bytes }` value containing a block hash, a `{ number: Int }` containing the block number, or a `{ number_gte: Int }` containing the minimum block number. In the case of `number_gte`, the query will be executed on the latest block only if the subgraph has progressed to or past the minimum block number. Defaults to the latest block when omitted.
+    """
+    block: Block_height
+  ): [DDVVote!]!
+  configLintEvents(
+    first: Int = 100
+    orderBy: ConfigLintEvent_orderBy
+    orderDirection: OrderDirection
+    where: ConfigLintEvent_filter
+    """
+    The block at which the query should be executed. Can either be a `{ hash: Bytes }` value containing a block hash, a `{ number: Int }` containing the block number, or a `{ number_gte: Int }` containing the minimum block number. In the case of `number_gte`, the query will be executed on the latest block only if the subgraph has progressed to or past the minimum block number. Defaults to the latest block when omitted.
+    """
+    block: Block_height
+  ): [ConfigLintEvent!]!
+  subjectMembershipEvents(
+    first: Int = 100
+    orderBy: SubjectMembershipEvent_orderBy
+    orderDirection: OrderDirection
+    where: SubjectMembershipEvent_filter
+    """
+    The block at which the query should be executed. Can either be a `{ hash: Bytes }` value containing a block hash, a `{ number: Int }` containing the block number, or a `{ number_gte: Int }` containing the minimum block number. In the case of `number_gte`, the query will be executed on the latest block only if the subgraph has progressed to or past the minimum block number. Defaults to the latest block when omitted.
+    """
+    block: Block_height
+  ): [SubjectMembershipEvent!]!
+  """Access to subgraph metadata"""
+  _meta(block: Block_height): _Meta_
+}
+
+type Subject {
+  id: String!
+  subjectId: BigInt!
+  kind: SubjectKind!
+  name: String
+}
+
+enum SubjectKind {
+  Role
+  Group
+}
+
+enum SubjectMembershipAction {
+  Offered
+  OfferWithdrawn
+  Granted
+  Claimed
+  Removed
+  Renounced
+  Reconciled
+}
+
+type SubjectMembershipEvent {
+  id: Bytes!
+  action: SubjectMembershipAction!
+  subject: Subject!
+  user: Bytes!
+  userUsername: String
+  banned: Boolean
+  actor: Bytes
+  actorUsername: String
+  delegated: Boolean!
+  timestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+input SubjectMembershipEvent_filter {
+  authority: String
+}
+
+enum SubjectMembershipEvent_orderBy {
+  id
+  action
+  authority
+  authority__id
+  authority__executor
+  authority__paymasterHub
+  authority__orgIdHash
+  authority__paused
+  authority__initConfigDerived
+  authority__maxDailyVouches
+  authority__subjectCount
+  authority__roleSubjectCount
+  authority__groupSubjectCount
+  authority__acceptedMembershipCount
+  authority__isRouterBound
+  authority__registeredAt
+  authority__registeredAtBlock
+  authority__cutoverAt
+  authority__lastUpdatedAt
+  authority__transactionHash
+  organization
+  organization__id
+  organization__topHatId
+  organization__deployedAt
+  organization__deployedAtBlock
+  organization__transactionHash
+  organization__name
+  organization__metadataHash
+  organization__lastUpdatedAt
+  organization__metadataAdminHatId
+  organization__foldersRoot
+  organization__foldersUpdatedAt
+  organization__foldersUpdatedBy
+  subject
+  subject__id
+  subject__subjectId
+  subject__kind
+  subject__name
+  subject__metadataCID
+  subject__imageURI
+  subject__maxMembers
+  subject__memberCount
+  subject__activeMemberCount
+  subject__defaultAllow
+  subject__isLegacyAdopted
+  subject__createdAt
+  subject__createdAtBlock
+  subject__lastUpdatedAt
+  subject__transactionHash
+  subjectId
+  membership
+  membership__id
+  membership__user
+  membership__userUsername
+  membership__accepted
+  membership__acceptedAt
+  membership__seededWhilePaused
+  membership__eligible
+  membership__eligibilitySource
+  membership__isMember
+  membership__claimable
+  membership__ruleKind
+  membership__emailVerified
+  membership__vouchCount
+  membership__vouchEpoch
+  membership__vouchMet
+  membership__firstSeenAt
+  membership__lastUpdatedAt
+  membership__transactionHash
+  user
+  userUsername
+  userEntity
+  userEntity__id
+  userEntity__address
+  userEntity__joinMethod
+  userEntity__membershipStatus
+  userEntity__participationTokenBalance
+  userEntity__totalVotes
+  userEntity__totalTasksCompleted
+  userEntity__totalTasksCancelled
+  userEntity__totalTasksLostToExpiry
+  userEntity__totalTasksReleased
+  userEntity__totalModulesCompleted
+  userEntity__totalClaimsAmount
+  userEntity__totalPaymentsAmount
+  userEntity__totalTokenRequestsAmount
+  userEntity__firstSeenAt
+  userEntity__firstSeenAtBlock
+  userEntity__lastActiveAt
+  userEntity__lastActiveAtBlock
+  banned
+  actor
+  actorUsername
+  delegated
+  timestamp
+  block
+  transactionHash
+}
+
+type Vote {
+  id: String!
+  proposal: Proposal!
+  voter: Bytes!
+  voterUsername: String
+  optionIndexes: [Int!]!
+  optionWeights: [Int!]!
+  classRawPowers: [BigInt!]!
+  votedAt: BigInt!
+  votedAtBlock: BigInt!
+  transactionHash: Bytes!
+}
+
+input Vote_filter {
+  id_gt: String
+  proposal: String
+}
+
+enum Vote_orderBy {
+  id
+  proposal
+  proposal__id
+  proposal__proposalId
+  proposal__creator
+  proposal__creatorUsername
+  proposal__proposer
+  proposal__proposerUsername
+  proposal__classesVersion
+  proposal__title
+  proposal__descriptionHash
+  proposal__numOptions
+  proposal__startTimestamp
+  proposal__endTimestamp
+  proposal__isHatRestricted
+  proposal__status
+  proposal__winningOption
+  proposal__isValid
+  proposal__wasExecuted
+  proposal__executionFailed
+  proposal__executionError
+  proposal__winnerAnnouncedAt
+  proposal__executedAt
+  proposal__executedCallsCount
+  proposal__createdAtBlock
+  proposal__transactionHash
+  voter
+  voterUsername
+  voterUser
+  voterUser__id
+  voterUser__address
+  voterUser__joinMethod
+  voterUser__membershipStatus
+  voterUser__participationTokenBalance
+  voterUser__totalVotes
+  voterUser__totalTasksCompleted
+  voterUser__totalTasksCancelled
+  voterUser__totalTasksLostToExpiry
+  voterUser__totalTasksReleased
+  voterUser__totalModulesCompleted
+  voterUser__totalClaimsAmount
+  voterUser__totalPaymentsAmount
+  voterUser__totalTokenRequestsAmount
+  voterUser__firstSeenAt
+  voterUser__firstSeenAtBlock
+  voterUser__lastActiveAt
+  voterUser__lastActiveAtBlock
+  optionIndexes
+  optionWeights
+  classRawPowers
+  votedAt
+  votedAtBlock
+  transactionHash
+}

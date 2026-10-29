@@ -1,0 +1,6 @@
+// Original src/Executor.sol:38-38
+    error CallFailed(uint256 index, bytes lowLevelData);
+
+// Original src/Executor.sol:77-78
+    event BatchExecuted(uint256 indexed proposalId, uint256 calls);
+    event CallExecuted(uint256 indexed proposalId, uint256 indexed index, address target, uint256 value);

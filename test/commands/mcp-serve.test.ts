@@ -24,7 +24,7 @@ interface RpcMsg { jsonrpc: '2.0'; id?: number; result?: any; error?: any }
 function mcpSession(env: Record<string, string>, requests: object[]): Promise<RpcMsg[]> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [CLI, 'mcp', 'serve'], {
-      env: { ...process.env, ...env },
+      env: { ...process.env, POP_MCP_ALLOW_WRITES: '0', POP_MCP_ALLOW_DESTRUCTIVE: '0', POP_READONLY: '0', ...env },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const replies: RpcMsg[] = [];
@@ -85,6 +85,10 @@ describe('pop mcp serve', () => {
     const leaderboard = replies.find((r) => r.id === 2)!.result.tools.find((t: any) => t.name === 'pop_org_leaderboard');
     expect(leaderboard).toBeDefined();
     expect(leaderboard.inputSchema.properties.pin).toBeUndefined();
+    expect(leaderboard.inputSchema.additionalProperties).toBe(false);
+    expect(leaderboard.annotations.readOnlyHint).toBe(true);
+    expect(tools.has('pop_treasury_compute_merkle')).toBe(false);
+    expect(tools.has('pop_execution_recover')).toBe(false);
   }, 60_000);
 
   it('POP_MCP_ALLOW_WRITES=1 adds writes but not destructive ones', async () => {
@@ -97,6 +101,7 @@ describe('pop mcp serve', () => {
     // task unclaim is classified destructive (its force-release route takes a
     // task off another member), so --allow-writes alone must NOT expose it.
     expect(tools.has('pop_task_unclaim')).toBe(false);
+    expect(tools.has('pop_user_update_profile')).toBe(false);
   }, 60_000);
 
   it('POP_MCP_ALLOW_DESTRUCTIVE=1 exposes everything, loudly labelled', async () => {
@@ -127,5 +132,21 @@ describe('pop mcp serve', () => {
     const replies = await mcpSession({}, [INIT, INITIALIZED, BAD]);
     const bad = replies.find((r) => r.id === 9)!;
     expect(bad.error?.code).toBe(-32601);
+  }, 60_000);
+  it('enforces the advertised argument schema over real JSON-RPC, including equals-syntax hidden flags', async () => {
+    // Capabilities never performs network I/O, even if argument validation
+    // regresses. Pinning-tool dispatch is tested with mocked subprocesses.
+    const calls = ['pin', 'pin=true', 'yes', 'allow-writes', 'private-key'].map((key, index) => ({
+      jsonrpc: '2.0', id: index + 10, method: 'tools/call', params: { name: 'pop_vote_capabilities', arguments: { [key]: true } },
+    }));
+    const replies = await mcpSession({ POP_READONLY: '1' }, calls);
+    expect(replies).toHaveLength(calls.length);
+    expect(replies.every(reply => reply.result.isError === true)).toBe(true);
+  }, 60_000);
+  it('POP_READONLY overrides destructive write opt-ins at the tool exposure boundary', async () => {
+    const replies = await mcpSession({ POP_READONLY: '1', POP_MCP_ALLOW_DESTRUCTIVE: '1' }, [INIT, LIST]);
+    expect(names(replies).has('pop_vote_execute')).toBe(false);
+    expect(names(replies).has('pop_user_update_profile')).toBe(false);
+    expect(replies.find(reply => reply.id === 1)!.result.instructions).toContain('read-only');
   }, 60_000);
 });

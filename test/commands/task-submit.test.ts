@@ -4,7 +4,7 @@
  * Previously the command pinned the submission to IPFS before any status
  * check could fail, wasting pins on doomed submissions. The migrated order
  * is: pre-flight (status CLAIMED + claimer==signer via checkTaskStatus, gas
- * balance) → metadata fetch → pin → tx. A lapsed claim deadline never blocks
+ * balance) → metadata fetch → confirmation → pin → tx. A lapsed claim deadline never blocks
  * the ORIGINAL claimer's submitTask — it only warns that the task is
  * takeover-able until the submission lands.
  *
@@ -86,6 +86,7 @@ import { ethers } from 'ethers';
 import { submitHandler } from '../../src/commands/task/submit';
 import { _clearWriteContextCacheForTest } from '../../src/lib/command';
 import { _setStreamsForTest } from '../../src/lib/prompt';
+import * as prompt from '../../src/lib/prompt';
 import { ipfsCidToBytes32 } from '../../src/lib/encoding';
 import { PreconditionError } from '../../src/lib/errors';
 import { EXIT } from '../../src/lib/exit-codes';
@@ -203,6 +204,21 @@ describe('pop task submit — preflight-first ordering', () => {
   afterEach(() => {
     exitSpy.mockRestore();
     _setStreamsForTest();
+  });
+
+  it('declining submission confirmation never pins or sends', async () => {
+    vi.stubEnv('POP_ASSUME_YES', '');
+    const interactive = vi.spyOn(prompt, 'isInteractive').mockReturnValue(true);
+    const confirmation = vi.spyOn(prompt, 'confirm').mockResolvedValue(false);
+    try {
+      await expect(submitHandler.handler(baseArgv())).rejects.toBeInstanceOf(ExitError);
+      expect(exitSpy).toHaveBeenCalledWith(EXIT.ABORTED);
+      expect(confirmation).toHaveBeenCalledTimes(1);
+      expect(mocks.pinJson).not.toHaveBeenCalled();
+      expect(mocks.executeTx).not.toHaveBeenCalled();
+    } finally {
+      interactive.mockRestore(); confirmation.mockRestore(); vi.unstubAllEnvs();
+    }
   });
 
   it('preflight failure (not the claimer): exits EXIT.PRECONDITION and pinJson is NEVER called', async () => {

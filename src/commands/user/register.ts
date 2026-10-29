@@ -1,3 +1,4 @@
+import { buildRegisterAccount } from '@poa-box/core/tx/user';
 /**
  * pop user register — register a username on the UniversalAccountRegistry.
  *
@@ -89,7 +90,8 @@ export const registerHandler = {
       const txSpin = output.spinner('Sending registration transaction...');
       txSpin.start();
       const contract = createWriteContract(registryAddr, 'UniversalAccountRegistry', signer);
-      const result = await executeTx(contract, 'registerAccount', [username], { dryRun: argv.dryRun });
+      const intent = buildRegisterAccount({ registryAddress: registryAddr, username });
+      const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
       txSpin.stop();
 
       finishWrite(result, {

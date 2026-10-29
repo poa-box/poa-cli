@@ -16,7 +16,7 @@
  * issuing this directly.
  */
 export const FETCH_ZKEMAIL_MODULE = `
-  query FetchZkEmailModule($orgId: Bytes!) {
+  query FetchZkEmailModule($orgId: ID!) {
     organization(id: $orgId) {
       id
       name
@@ -113,7 +113,7 @@ export const FETCH_ZKEMAIL_REGISTERED_EMAIL = `
  * "gmail.com -> Member" instead of a raw uint256.
  */
 export const FETCH_ORG_ROLE_NAMES = `
-  query FetchOrgRoleNames($orgId: Bytes!) {
+  query FetchOrgRoleNames($orgId: ID!) {
     organization(id: $orgId) {
       id
       roles {
@@ -173,7 +173,7 @@ export const FETCH_ZKEMAIL_CLAIMS = `
  * indexed" and callers must fall back to the contract.
  */
 export const FETCH_ZKEMAIL_ACTIVE_ROOT = `
-  query FetchZkEmailActiveRoot($orgId: Bytes!) {
+  query FetchZkEmailActiveRoot($orgId: ID!) {
     organization(id: $orgId) {
       id
       zkEmailInvites {

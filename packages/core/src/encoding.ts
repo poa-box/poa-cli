@@ -5,7 +5,7 @@
  */
 
 import { ethers } from 'ethers';
-import bs58 from 'bs58';
+import { cidV0ToBytes32, bytes32ToCidV0 } from './encoding/cid';
 import { CliError } from './errors';
 
 export function stringToBytes(str: string): Uint8Array {
@@ -39,15 +39,10 @@ export function ipfsCidToBytes32(cid: string): string {
   }
 
   try {
-    const decoded = bs58.decode(cid);
-    if (decoded.length !== 34) {
-      console.error(`Invalid CIDv0 length: expected 34 bytes, got ${decoded.length}`);
-      return ethers.constants.HashZero;
-    }
-    const hashBytes = decoded.slice(2);
-    return ethers.utils.hexlify(hashBytes);
+    return cidV0ToBytes32(cid, { strict: false });
   } catch (error) {
-    console.error('Failed to encode IPFS CID to bytes32:', error);
+    if (error instanceof Error && error.message.startsWith('Invalid CIDv0 length:')) console.error(error.message);
+    else console.error('Failed to encode IPFS CID to bytes32:', error);
     return ethers.constants.HashZero;
   }
 }
@@ -60,8 +55,7 @@ export function bytes32ToIpfsCid(bytes32Hash: string): string | null {
 
   try {
     const hashBytes = ethers.utils.arrayify(bytes32Hash);
-    const withPrefix = new Uint8Array([0x12, 0x20, ...hashBytes]);
-    return bs58.encode(withPrefix);
+    return bytes32ToCidV0(ethers.utils.hexlify(hashBytes), { strict: false });
   } catch (error) {
     console.warn('Failed to decode bytes32 to IPFS CID:', error);
     return null;

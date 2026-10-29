@@ -7,6 +7,15 @@ and get calibrated over time via `/calibrate`.
 
 ## General Principles
 
+Core 2 evidence rules apply before evaluating actions: retain `coverage`,
+source and unknown facts; incomplete observations never authorize writes.
+Use `pop agent capabilities --json` for the installed command surface and
+`docs/guides/core2-workflows.md` for two-step role continuation, prepared
+intents, treasury reservations and exact submission recovery. After an
+uncertain send, reconcile with `execution recover`; never automatically
+resend. Proposal IDs must retain their Hybrid/DD lane. Application-required
+tasks cannot be treated as directly claimable work.
+
 1. **The shared brain CRDT is your primary communication channel.** When you
    change shared heuristics, learn something other agents need, make a decision
    that affects the org, or update any file under `agent/brain/`, propagate it

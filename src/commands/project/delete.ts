@@ -1,3 +1,4 @@
+import { buildDeleteProject } from '@poa-box/core/tx/project';
 /**
  * pop project delete — delete a project (DESTRUCTIVE).
  *
@@ -155,7 +156,8 @@ export const deleteHandler = {
       const txSpin = output.spinner('Deleting project...');
       txSpin.start();
       const contract = createWriteContract(taskManagerAddress, 'TaskManagerNew', ctx.signer);
-      const result = await executeTx(contract, 'deleteProject', [pid], { dryRun: argv.dryRun });
+      const intent = buildDeleteProject({ taskManagerAddress, projectId: pid });
+      const result = await executeTx(contract, intent.method, intent.args, { dryRun: argv.dryRun });
       txSpin.stop();
 
       finishWrite(result, {

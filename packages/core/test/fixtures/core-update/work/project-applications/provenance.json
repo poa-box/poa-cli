@@ -1,0 +1,33 @@
+{
+  "sources": [
+    {
+      "chainId": 100,
+      "origin": ".context/review-introspection-100.json",
+      "fixture": "serving-introspection-100.json.gz",
+      "rawBytes": 4539044,
+      "rawSha256": "9a89a35abeb10d86741ffcb688cc1fce44678f46164deeced92d88164862cfb5",
+      "gzipSha256": "f47f4d7082d441ce70ccba0c6b095c20cdcd3254417d265a3fde77d4527d0862"
+    },
+    {
+      "chainId": 42161,
+      "origin": ".context/review-introspection-42161.json",
+      "fixture": "serving-introspection-42161.json.gz",
+      "rawBytes": 4539044,
+      "rawSha256": "9a89a35abeb10d86741ffcb688cc1fce44678f46164deeced92d88164862cfb5",
+      "gzipSha256": "f47f4d7082d441ce70ccba0c6b095c20cdcd3254417d265a3fde77d4527d0862"
+    }
+  ],
+  "contractFixture": "../TaskManager.sol.txt",
+  "contractSha256": "c31f6434a85caf875e866e9cefd2cace1ab7aef9ff7617633be6ccce9e2f517a",
+  "contractCommit": "fa37b3e7341c9225bdc1ab6a9ba94ee41a876c8d",
+  "creatorRuleLines": [
+    322,
+    325,
+    371,
+    452,
+    1361,
+    1381
+  ],
+  "derivation": "Byte-preserving gzip of each full cached serving introspection envelope; tests call buildClientSchema(raw.data) without projection or schema extension.",
+  "limits": "Cached field compatibility only; no new live traffic, deployment/population or deployed bytecode proof. Endpoint provenance retained in ../provenance.json."
+}

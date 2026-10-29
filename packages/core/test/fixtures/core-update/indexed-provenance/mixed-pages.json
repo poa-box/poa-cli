@@ -1,0 +1,419 @@
+{
+  "provenance": "Deterministic counterexamples: two independent ordered store rows plus terminal empty response, all at block number 123. H and K denote alternative hash identities at that same number. Optional dimensions cannot retrospectively attest an earlier page. Exact H filters separately prove identity even if returned hash is null. No live population or reorg occurrence is claimed.",
+  "hashSequences": [
+    {
+      "name": "null/null/null",
+      "hashes": [
+        null,
+        null,
+        null
+      ],
+      "coverage": "complete",
+      "pages": 3,
+      "failedPage": null,
+      "acceptsH": false
+    },
+    {
+      "name": "null/null/H",
+      "hashes": [
+        null,
+        null,
+        "H"
+      ],
+      "coverage": "incomplete",
+      "pages": 3,
+      "failedPage": 3,
+      "acceptsH": false
+    },
+    {
+      "name": "null/null/K",
+      "hashes": [
+        null,
+        null,
+        "K"
+      ],
+      "coverage": "incomplete",
+      "pages": 3,
+      "failedPage": 3,
+      "acceptsH": false
+    },
+    {
+      "name": "null/H/null",
+      "hashes": [
+        null,
+        "H",
+        null
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "null/H/H",
+      "hashes": [
+        null,
+        "H",
+        "H"
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "null/H/K",
+      "hashes": [
+        null,
+        "H",
+        "K"
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "null/K/null",
+      "hashes": [
+        null,
+        "K",
+        null
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "null/K/H",
+      "hashes": [
+        null,
+        "K",
+        "H"
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "null/K/K",
+      "hashes": [
+        null,
+        "K",
+        "K"
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "H/null/null",
+      "hashes": [
+        "H",
+        null,
+        null
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "H/null/H",
+      "hashes": [
+        "H",
+        null,
+        "H"
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "H/null/K",
+      "hashes": [
+        "H",
+        null,
+        "K"
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "H/H/null",
+      "hashes": [
+        "H",
+        "H",
+        null
+      ],
+      "coverage": "incomplete",
+      "pages": 3,
+      "failedPage": 3,
+      "acceptsH": false
+    },
+    {
+      "name": "H/H/H",
+      "hashes": [
+        "H",
+        "H",
+        "H"
+      ],
+      "coverage": "complete",
+      "pages": 3,
+      "failedPage": null,
+      "acceptsH": true
+    },
+    {
+      "name": "H/H/K",
+      "hashes": [
+        "H",
+        "H",
+        "K"
+      ],
+      "coverage": "incomplete",
+      "pages": 3,
+      "failedPage": 3,
+      "acceptsH": false
+    },
+    {
+      "name": "H/K/null",
+      "hashes": [
+        "H",
+        "K",
+        null
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "H/K/H",
+      "hashes": [
+        "H",
+        "K",
+        "H"
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "H/K/K",
+      "hashes": [
+        "H",
+        "K",
+        "K"
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "K/null/null",
+      "hashes": [
+        "K",
+        null,
+        null
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "K/null/H",
+      "hashes": [
+        "K",
+        null,
+        "H"
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "K/null/K",
+      "hashes": [
+        "K",
+        null,
+        "K"
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "K/H/null",
+      "hashes": [
+        "K",
+        "H",
+        null
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "K/H/H",
+      "hashes": [
+        "K",
+        "H",
+        "H"
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "K/H/K",
+      "hashes": [
+        "K",
+        "H",
+        "K"
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2,
+      "acceptsH": false
+    },
+    {
+      "name": "K/K/null",
+      "hashes": [
+        "K",
+        "K",
+        null
+      ],
+      "coverage": "incomplete",
+      "pages": 3,
+      "failedPage": 3,
+      "acceptsH": false
+    },
+    {
+      "name": "K/K/H",
+      "hashes": [
+        "K",
+        "K",
+        "H"
+      ],
+      "coverage": "incomplete",
+      "pages": 3,
+      "failedPage": 3,
+      "acceptsH": false
+    },
+    {
+      "name": "K/K/K",
+      "hashes": [
+        "K",
+        "K",
+        "K"
+      ],
+      "coverage": "complete",
+      "pages": 3,
+      "failedPage": null,
+      "acceptsH": false
+    }
+  ],
+  "timestampSequences": [
+    {
+      "name": "null/null/null",
+      "timestamps": [
+        null,
+        null,
+        null
+      ],
+      "coverage": "complete",
+      "pages": 3,
+      "failedPage": null
+    },
+    {
+      "name": "null/null/1000",
+      "timestamps": [
+        null,
+        null,
+        1000
+      ],
+      "coverage": "incomplete",
+      "pages": 3,
+      "failedPage": 3
+    },
+    {
+      "name": "null/1000/null",
+      "timestamps": [
+        null,
+        1000,
+        null
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2
+    },
+    {
+      "name": "null/1000/1000",
+      "timestamps": [
+        null,
+        1000,
+        1000
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2
+    },
+    {
+      "name": "1000/null/null",
+      "timestamps": [
+        1000,
+        null,
+        null
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2
+    },
+    {
+      "name": "1000/null/1000",
+      "timestamps": [
+        1000,
+        null,
+        1000
+      ],
+      "coverage": "incomplete",
+      "pages": 2,
+      "failedPage": 2
+    },
+    {
+      "name": "1000/1000/null",
+      "timestamps": [
+        1000,
+        1000,
+        null
+      ],
+      "coverage": "incomplete",
+      "pages": 3,
+      "failedPage": 3
+    },
+    {
+      "name": "1000/1000/1000",
+      "timestamps": [
+        1000,
+        1000,
+        1000
+      ],
+      "coverage": "complete",
+      "pages": 3,
+      "failedPage": null
+    }
+  ]
+}

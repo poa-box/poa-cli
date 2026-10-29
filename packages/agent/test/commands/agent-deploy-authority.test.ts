@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
 const wallet = '0x' + 'ab'.repeat(20);
 vi.mock('@poa-box/cli/lib/resolve', () => ({ resolveOrgId: mocks.resolveOrgId }));
 vi.mock('@poa-box/cli/lib/authority', () => ({ refreshAuthorityUsers: mocks.refreshAuthorityUsers }));
-vi.mock('@poa-box/cli/lib/signer', () => ({ createSigner: () => ({ signer: { address: '0x' + 'ab'.repeat(20) } }) }));
+vi.mock('@poa-box/cli/lib/signer', () => ({ resolveIdentityAddress: () => '0x' + 'ab'.repeat(20) }));
 vi.mock('@poa-box/cli/config/networks', () => ({ resolveNetworkConfig: () => ({ resolvedRpc: 'https://unit.invalid', nativeCurrency: { symbol: 'xDAI' } }) }));
 vi.mock('@poa-box/cli/lib/output', () => ({
   spinner: () => ({ start() {}, stop() {}, text: '' }), isJsonMode: () => true,

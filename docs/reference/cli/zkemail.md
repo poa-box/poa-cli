@@ -4,6 +4,34 @@
 
 ZK Email role invites (allowlists)
 
+## pop zkemail recover
+
+Verify an original email enrollment and prepare recovery-only pointers without activation
+
+```text
+pop zkemail recover [flags]
+```
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--file` | string | yes | - | JSON original transaction hash, public legacy credential, raw credential bytes and exact chain/org/target/registry/factory/account scope |
+
+## pop zkemail prepare
+
+Prepare a bound proof claim, atomic enrollment, or verified whole-list edit locally
+
+```text
+pop zkemail prepare <action> [flags]
+```
+
+| Positional | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `<action>` | string | yes | - | Choices: `claim-command`, `circuit-hints`, `claim-domain`, `claim-email`, `register-and-claim-domain-passkey`, `register-and-claim-email-passkey`, `replace-allowlist`, `invite-state`, `restart-guidance` |
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--file` | string | yes | - | JSON prepared proof, signed header, verified allowlist edit, or explicit invite-state fact snapshots |
+
 ## pop zkemail status
 
 Module wiring, active allowlist root/CID, and dormancy
@@ -62,10 +90,10 @@ pop zkemail build-allowlist [flags]
 
 | Flag | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `--domain` | string | no | - | Invite a whole domain, e.g. --domain anthropic.com (repeatable) |
-| `--email` | string | no | - | Invite a specific address, e.g. --email alice@org.com (repeatable) |
+| `--domain` | array | no | - | Invite a whole domain, e.g. --domain anthropic.com (repeatable) |
+| `--email` | array | no | - | Invite a specific address, e.g. --email alice@org.com (repeatable) |
 | `--file` | string | no | - | JSON file of allowlist entries (or an existing allowlist doc to re-publish) |
-| `--hat` | string | no | - | Hat ID(s) granted to every --domain/--email entry (repeatable) |
+| `--hat` | array | no | - | Hat ID(s) granted to every --domain/--email entry (repeatable) |
 | `--out` | string | no | - | Write the allowlist JSON to this path |
 | `--pin` | boolean | no | `false` | Pin the allowlist to IPFS (otherwise compute locally only) |
 

@@ -3,13 +3,25 @@ import { AUTHORITY_KEYS, permissionWord } from '@poa-box/core/tx/authority';
 import type { Argv } from 'yargs';
 import { authorityHandler, subjectOption, userOption, metadataOptions } from './authority';
 import { pendingHandler, subjectListHandler, subjectStatusHandler } from './read';
+import { authoritySnapshotHandler } from './snapshot';
+import { rolePlanHandler, roleContinuationHandler } from './plan';
+import { electionPlanHandler } from './election';
 
 export function registerRoleCommands(y: Argv) {
   const list = subjectListHandler('Role');
   const status = subjectStatusHandler('Role');
+  const plan = rolePlanHandler('Role');
+  const propose = rolePlanHandler('Role', true);
+  const election = electionPlanHandler(true), removals = electionPlanHandler(false);
   y = y.command('list', 'List current authority roles', list.builder, list.handler)
     .command('status', 'Inspect membership, rules and permission rows for a role', status.builder, status.handler)
-    .command('pending', 'List delegated actions and their review windows', pendingHandler.builder, pendingHandler.handler);
+    .command('pending', 'List delegated actions and their review windows', pendingHandler.builder, pendingHandler.handler)
+    .command('snapshot', 'Read complete pinned authority evidence, permissions and membership lifecycle', authoritySnapshotHandler.builder, authoritySnapshotHandler.handler)
+    .command('plan', 'Plan role creation alone or configure an existing subject from fresh evidence', plan.builder, plan.handler)
+    .command('propose', 'Submit a reviewed role plan after collecting fresh evidence again', propose.builder, propose.handler)
+    .command('continuation', 'Reconcile exact creation or configuration proposal execution', roleContinuationHandler.builder, roleContinuationHandler.handler)
+    .command('election-plan', 'Plan capacity-safe election batches with exact removal and ban consent', election.builder, election.handler)
+    .command('removal-plan', 'Plan removals after fresh non-banning preflights', removals.builder, removals.handler);
   const register = (name: string, description: string, spec: Parameters<typeof authorityHandler>[0]) => {
     const handler = authorityHandler(spec);
     y = y.command(name, description, handler.builder, handler.handler);

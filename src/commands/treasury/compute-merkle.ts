@@ -1,297 +1,115 @@
 import type { Argv, ArgumentsCamelCase } from 'yargs';
 import { ethers } from 'ethers';
-import { StandardMerkleTree } from '@openzeppelin/merkle-tree';
 import * as fs from 'fs';
-import { query } from '../../lib/subgraph';
-import { resolveOrgModules } from '../../lib/resolve';
-import { tryAggregate, Call } from '../../lib/multicall';
+import { allocateDistribution, type AllocationPolicy } from '@poa-box/core/treasury/distributions';
+import { buildDistributionClaimsDocument } from '@poa-box/core/metadata/distribution';
+import { readTokenHolderTotals } from '@poa-box/core/reads/token';
+import { readCurrentMemberTotals } from '@poa-box/core/reads/member-totals';
+import { checkedIndexedTotalQuery, readIndexedTotalState } from '@poa-box/core/data/indexed-completeness';
+import { requireCompleteSnapshot, type SourceSnapshot } from '@poa-box/core/data/facts';
+import { parseDecimalAmountToRaw } from '@poa-box/core/amounts';
+import type { DistributionMemberInput } from '@poa-box/core/tx/treasury';
+import { resolveOrgModules, requireModule } from '../../lib/resolve';
+import { tryAggregate } from '../../lib/multicall';
+import { createIndexedSource } from '../../lib/indexed-source';
+import { createProvider } from '../../lib/signer';
 import { resolveNetworkConfig } from '../../config/networks';
+import { resolvePayoutTokenInfo } from './helpers';
 import * as output from '../../lib/output';
 
-interface ComputeMerkleArgs {
-  org?: string;
-  chain?: number;
-  amount: string;
-  token: string;
-  output?: string;
-}
-
-interface MemberAllocation {
-  address: string;
-  username: string | null;
-  ptBalance: string;
-  share: string;
-  allocation: string;
-}
-
-interface MerkleResult {
-  merkleRoot: string;
-  totalAmount: string;
-  tokenAddress: string;
-  checkpointBlock: number;
-  memberCount: number;
-  /** 'ok' | 'partial' | 'failed' — whether the opt-out filter fully ran. Additive field. */
-  optOutCheck: string;
-  /** Probes that could not be read (those members are INCLUDED). Additive field. */
-  optOutProbeFailures: number;
-  /** Members excluded because they opted out. Additive field. */
-  excludedOptedOut: number;
-  allocations: Array<MemberAllocation & { proof: string[] }>;
-}
-
-/**
- * Merkle tree — OpenZeppelin StandardMerkleTree, matching PaymentManager on-chain.
- *
- * PaymentManager.claim recomputes the leaf as
- *   keccak256(bytes.concat(keccak256(abi.encode(msg.sender, claimAmount))))
- * and verifies it with OZ `MerkleProof.verify`, so the tree must be built exactly the way the
- * OZ library builds it.
- *
- * This previously used a hand-rolled tree that paired leaves left-to-right per layer and
- * promoted an odd trailing leaf unchanged. That agrees with OZ for 1, 2, 3, 4, 6 and 8 leaves
- * but DIVERGES at 5 and 7 (OZ builds a complete 2n-1 tree and pairs by node index). For an org
- * with 5 or 7 members the computed root and proofs were rejected by MerkleProof.verify, so a
- * distribution created from them could never be claimed. Pinned by
- * test/commands/treasury-compute-merkle.test.ts.
- */
-
-// --- Subgraph query for members ---
-
-const FETCH_MEMBERS_PT = `
-  query FetchMembersPT($orgId: Bytes!) {
-    organization(id: $orgId) {
-      users(
-        orderBy: participationTokenBalance,
-        orderDirection: desc,
-        first: 1000
-      ) {
-        address
-        participationTokenBalance
-        membershipStatus
-        account {
-          username
-        }
-      }
-      participationToken {
-        totalSupply
-      }
-    }
+interface Args { org?: string; chain?: number; amount: string; token: string; output?: string; policy?: AllocationPolicy; pageSize?: number; maxPages?: number }
+const ALLOCATION_MODULES = `query DistributionModules($orgId: ID!, $block: Block_height) {
+  organization(id: $orgId, block: $block) {
+    id participationToken { id } paymentManager { id } membershipAuthority { id }
   }
-`;
-
+  _meta(block: $block) { deployment hasIndexingErrors block { number hash timestamp } }
+}`;
+/** New rounds require complete current authority membership, supply-reconciled
+ * TokenBalance holders and opt-out facts at one checkpoint. Historical User
+ * activity/flags never authorize a new allocation; stored claims are unchanged. */
 export const computeMerkleHandler = {
-  builder: (yargs: Argv) => yargs
-    .option('amount', { type: 'string', demandOption: true, describe: 'Total distribution amount (in token units, e.g. "40" for 40 BREAD)' })
-    .option('token', { type: 'string', demandOption: true, describe: 'Payout token address' })
-    .option('output', { type: 'string', default: 'merkle-distribution.json', describe: 'Output file for proofs' }),
-
-  handler: async (argv: ArgumentsCamelCase<ComputeMerkleArgs>) => {
-    const spin = output.spinner('Computing merkle tree...');
-    spin.start();
-
+  builder: (y: Argv) => y.option('amount', { type: 'string', demandOption: true, describe: 'Exact total payout amount in token units' })
+    .option('token', { type: 'string', demandOption: true, describe: 'Payout token address, or native' })
+    .option('output', { type: 'string', default: 'merkle-distribution.json', describe: 'Local proofs artifact output path' })
+    .option('policy', { type: 'string', choices: ['cli-first-holder', 'sorted-last-omit-zero'], default: 'cli-first-holder', describe: 'Explicit allocator policy for this new round' })
+    .option('page-size', { type: 'number', default: 100, describe: 'Holder page size (1–1000)' })
+    .option('max-pages', { type: 'number', default: 100, describe: 'Finite holder page cap; incomplete snapshots cannot allocate' }),
+  handler: async (argv: ArgumentsCamelCase<Args>) => {
+    const spin = output.spinner('Computing checkpoint-qualified merkle allocation...'); spin.start();
     try {
-      const modules = await resolveOrgModules(argv.org, argv.chain);
-      const networkConfig = resolveNetworkConfig(argv.chain);
-      const provider = new ethers.providers.JsonRpcProvider(networkConfig.resolvedRpc);
-
-      // Get current block as checkpoint
-      const checkpointBlock = await provider.getBlockNumber();
-
-      // Fetch all members and PT balances
-      spin.text = 'Fetching member PT balances...';
-      const result = await query<any>(FETCH_MEMBERS_PT, { orgId: modules.orgId }, argv.chain);
-      const org = result.organization;
-
-      if (!org) {
-        throw new Error('Organization not found');
-      }
-
-      const totalPTSupply = ethers.BigNumber.from(org.participationToken.totalSupply);
-      if (totalPTSupply.isZero()) {
-        throw new Error('No participation tokens in circulation');
-      }
-
-      // Filter to active members with PT > 0
-      const ptHolders = org.users.filter((u: any) =>
-        u.membershipStatus === 'Active' &&
-        ethers.BigNumber.from(u.participationTokenBalance).gt(0)
-      );
-
-      if (ptHolders.length === 0) {
-        throw new Error('No active members with PT balance');
-      }
-
-      // Exclude members who have opted out of payouts.
-      //
-      // THIS IS THE ONLY ENFORCEMENT POINT. PaymentManager.claim deliberately does not check
-      // opt-out (audit L-19): membership in a distribution's tree is fixed at creation, and
-      // opting out afterwards must not strand already-allocated funds. The contract's own
-      // comment says opt-out "is honored off-chain when the executor builds the next
-      // distribution's merkle tree" — this command is that builder. Allocating to an opted-out
-      // member here silently defeats their opt-out.
-      //
-      // Read on-chain rather than from the subgraph's OptOutToggle log: this decides who gets
-      // money, so it uses the authoritative getter the contract points at. One multicall
-      // round-trip for the whole member set.
-      const paymentManagerAddress = modules.paymentManagerAddress;
-      let optedOut = new Set<string>();
-      let optOutProbeFailures = 0;
-      if (paymentManagerAddress) {
-        spin.text = `Checking opt-out status for ${ptHolders.length} members...`;
-        const pmIface = new ethers.utils.Interface([
-          'function isOptedOut(address account) view returns (bool)',
-        ]);
-        // NOTE the shape: tryAggregate takes { to, data } (lib/multicall Call), not the
-        // raw Multicall3 tuple names { target, callData }. This site once used the tuple
-        // names — `ptHolders` is untyped JSON so `.map` returned any[] and the mistake
-        // compiled — and every probe silently failed, which meant NO ONE was excluded.
-        const optOutCalls: Call[] = ptHolders.map((m: any) => ({
-          to: paymentManagerAddress,
-          data: pmIface.encodeFunctionData('isOptedOut', [ethers.utils.getAddress(m.address)]),
-        }));
-        // Pinned to checkpointBlock: the tree's membership snapshot and the
-        // opt-out snapshot must describe the SAME moment, or claim-mine's
-        // block-pinned reconstruction can legitimately disagree with the
-        // committed root over a toggle that landed between the two reads.
-        const results = await tryAggregate(provider, optOutCalls, { blockTag: checkpointBlock });
-        results.forEach((r, i) => {
-          if (!r.success) { optOutProbeFailures++; return; } // fail open, they stay in the tree
-          try {
-            if (pmIface.decodeFunctionResult('isOptedOut', r.returnData)[0] === true) {
-              optedOut.add(String(ptHolders[i].address).toLowerCase());
-            }
-          } catch { optOutProbeFailures++; /* malformed — treat as not opted out */ }
-        });
-        // Per-member fail-open is deliberate, but any probe failing means an
-        // opted-out member could be silently paid — say so for EVERY failure,
-        // not only the all-failed case, and record it in the output so
-        // propose-distribution (and its operator) can see the tree was built
-        // with an incomplete filter.
-        if (optOutProbeFailures > 0) {
-          output.warn(
-            `Opt-out status could not be read for ${optOutProbeFailures} of ${ptHolders.length} `
-              + 'member(s) — they are INCLUDED in the tree and may have opted out. '
-              + 'Verify before proposing this distribution.'
-          );
-        }
-      }
-
-      const activeMembers = ptHolders.filter(
-        (m: any) => !optedOut.has(String(m.address).toLowerCase())
-      );
-
-      if (activeMembers.length === 0) {
-        throw new Error(
-          optedOut.size > 0
-            ? `All ${ptHolders.length} PT-holding member(s) have opted out of payouts.`
-            : 'No active members with PT balance'
-        );
-      }
-
-      // Parse distribution amount
-      const totalAmount = ethers.utils.parseEther(argv.amount);
-
-      // Calculate pro-rata allocations based on PT share
-      spin.text = `Computing allocations for ${activeMembers.length} members...`;
-
-      // Sum PT of eligible members (may differ from totalSupply if some are inactive)
-      const eligiblePT = activeMembers.reduce(
-        (sum: ethers.BigNumber, m: any) => sum.add(ethers.BigNumber.from(m.participationTokenBalance)),
-        ethers.BigNumber.from(0)
-      );
-
-      const allocations: MemberAllocation[] = activeMembers.map((m: any) => {
-        const ptBal = ethers.BigNumber.from(m.participationTokenBalance);
-        // Pro-rata: allocation = totalAmount * memberPT / eligiblePT
-        const allocation = totalAmount.mul(ptBal).div(eligiblePT);
-        const sharePercent = ptBal.mul(10000).div(eligiblePT).toNumber() / 100;
-
-        return {
-          address: ethers.utils.getAddress(m.address),
-          username: m.account?.username || null,
-          ptBalance: ethers.utils.formatEther(ptBal),
-          share: `${sharePercent.toFixed(2)}%`,
-          allocation: allocation.toString(),
-        };
+      const modules = await resolveOrgModules(argv.org, argv.chain), config = resolveNetworkConfig(argv.chain);
+      const paymentManager = requireModule(modules, 'paymentManagerAddress'), holderContract = requireModule(modules, 'participationTokenAddress');
+      const membershipAuthority = requireModule(modules, 'membershipAuthorityAddress');
+      const provider = createProvider({ chainId: config.chainId });
+      if ((await provider.getNetwork()).chainId !== config.chainId) throw new Error('RPC_CHAIN_MISMATCH');
+      const contracts = { participationToken: holderContract, paymentManager, membershipAuthority };
+      const indexed = await createIndexedSource({ chainId: config.chainId, orgId: modules.orgId, contract: holderContract, contracts });
+      const checkpoint = indexed.source.block!;
+      if (BigInt(checkpoint.number) > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('CHECKPOINT_BLOCK_TOO_LARGE');
+      const checkpointBlock = Number(checkpoint.number), rpcBlock = await provider.getBlock(checkpointBlock);
+      if (!checkpoint.hash || rpcBlock.hash.toLowerCase() !== checkpoint.hash.toLowerCase()) throw new Error('INDEXED_RPC_CHECKPOINT_MISMATCH');
+      if (!Number.isSafeInteger(argv.pageSize ?? 100) || (argv.pageSize ?? 100) < 1 || (argv.pageSize ?? 100) > 1000
+        || !Number.isSafeInteger(argv.maxPages ?? 100) || (argv.maxPages ?? 100) < 1 || (argv.maxPages ?? 100) > 1000) throw new Error('INVALID_HOLDER_PAGE_BOUNDS');
+      // One shared deployment/health guard spans all independent streams.
+      const options = { source: indexed.source, query: checkedIndexedTotalQuery(indexed.protocolQuery),
+        pageSize: argv.pageSize ?? 100, maxPages: argv.maxPages ?? 100 };
+      const moduleSnapshot = await readIndexedTotalState(options, ALLOCATION_MODULES, { orgId: modules.orgId }, 'organization', modules.orgId.toLowerCase());
+      const org = requireCompleteSnapshot(moduleSnapshot, { scope: indexed.source, indexed: true, snapshot: 'pinned', block: checkpoint }) as any;
+      if (org?.id?.toLowerCase() !== modules.orgId.toLowerCase()
+        || org.participationToken?.id?.toLowerCase() !== holderContract.toLowerCase()
+        || org.paymentManager?.id?.toLowerCase() !== paymentManager.toLowerCase()
+        || org.membershipAuthority?.id?.toLowerCase() !== membershipAuthority.toLowerCase()) throw new Error('ALLOCATION_MODULE_BINDING_MISMATCH');
+      const [holders, currentMembership] = await Promise.all([
+        readTokenHolderTotals(options),
+        readCurrentMemberTotals({ ...options, source: { ...indexed.source, contract: membershipAuthority } }),
+      ]);
+      const holderFacts = requireCompleteSnapshot(holders, { scope: indexed.source, indexed: true, snapshot: 'pinned', block: checkpoint });
+      const membershipFacts = requireCompleteSnapshot(currentMembership, { scope: { ...indexed.source, contract: membershipAuthority },
+        indexed: true, snapshot: 'pinned', block: checkpoint });
+      if (holderFacts.total.state !== 'known' || holderFacts.balanceTotalRaw.state !== 'known'
+        || membershipFacts.total.state !== 'known') throw new Error('ALLOCATION_ELIGIBILITY_UNKNOWN');
+      const currentMembers = new Set(membershipFacts.members.map(member => member.account.toLowerCase()));
+      // Historical CLI allocation gives dust to the largest holder. ID ordering
+      // supplies a deterministic tie-break for NEW rounds; stored claims never reallocate.
+      const members = holderFacts.holders.map(holder => ({ address: holder.account, participationTokenBalance: holder.balanceRaw,
+        membershipStatus: currentMembers.has(holder.account.toLowerCase()) ? 'Active' : 'Inactive', username: null }))
+        .sort((a, b) => BigInt(a.participationTokenBalance) > BigInt(b.participationTokenBalance) ? -1
+          : BigInt(a.participationTokenBalance) < BigInt(b.participationTokenBalance) ? 1 : a.address.toLowerCase().localeCompare(b.address.toLowerCase()));
+      const active = members.filter(m => m.membershipStatus === 'Active' && BigInt(m.participationTokenBalance) > 0n);
+      const iface = new ethers.utils.Interface(['function isOptedOut(address) view returns(bool)']);
+      const probes = active.length ? await tryAggregate(provider, active.map(m => ({ to: paymentManager, data: iface.encodeFunctionData('isOptedOut', [m.address]) })), { blockTag: checkpointBlock }) : [];
+      const optOuts = probes.map((probe, index) => {
+        if (!probe.success) throw new Error('OPT_OUT_UNKNOWN');
+        return { address: active[index].address, optedOut: Boolean(iface.decodeFunctionResult('isOptedOut', probe.returnData)[0]) };
       });
-
-      // Handle rounding dust — give remainder to largest holder
-      const allocatedTotal = allocations.reduce(
-        (sum, a) => sum.add(ethers.BigNumber.from(a.allocation)),
-        ethers.BigNumber.from(0)
-      );
-      const dust = totalAmount.sub(allocatedTotal);
-      if (dust.gt(0)) {
-        allocations[0].allocation = ethers.BigNumber.from(allocations[0].allocation).add(dust).toString();
-      }
-
-      // Build merkle tree
-      spin.text = 'Building merkle tree...';
-
-      // StandardMerkleTree hashes each value pair itself (double-keccak over abi.encode) and
-      // sorts leaves internally, so proofs are looked up by the ORIGINAL value, not by index.
-      const tree = StandardMerkleTree.of(
-        allocations.map(a => [a.address, a.allocation]),
-        ['address', 'uint256']
-      );
-      const merkleRoot = tree.root;
-
-      // Generate proofs for each member
-      const allocationsWithProofs = allocations.map(a => ({
-        ...a,
-        proof: tree.getProof([a.address, a.allocation]),
-      }));
-
-      // Build output
-      const merkleResult: MerkleResult = {
-        merkleRoot,
-        totalAmount: totalAmount.toString(),
-        tokenAddress: argv.token,
-        checkpointBlock,
-        memberCount: allocations.length,
-        optOutCheck: optOutProbeFailures === 0
-          ? 'ok'
-          : optOutProbeFailures >= ptHolders.length ? 'failed' : 'partial',
-        optOutProbeFailures,
-        excludedOptedOut: optedOut.size,
-        allocations: allocationsWithProofs,
-      };
-
-      // Write to file
-      const outPath = argv.output as string;
-      fs.writeFileSync(outPath, JSON.stringify(merkleResult, null, 2) + '\n');
-
+      const token = await resolvePayoutTokenInfo(provider, argv.token === 'native' ? ethers.constants.AddressZero : ethers.utils.getAddress(argv.token), config.chainId);
+      const totalRaw = parseDecimalAmountToRaw(argv.amount, token.decimals);
+      if (totalRaw === '0') throw new Error('ZERO_DISTRIBUTION');
+      const holderSnapshot: SourceSnapshot<readonly DistributionMemberInput[]> = { ...holders, data: members };
+      const prepared = allocateDistribution({ holders: holderSnapshot, optOutFacts: { source: { ...indexed.source, contract: paymentManager, indexed: false,
+        endpoint: `rpc:${config.chainId}`, method: 'eth_call' }, data: optOuts,
+        coverage: { status: 'complete', receivedKeys: optOuts.map(m => m.address.toLowerCase()), missingIds: [], failedIds: [], issues: [] } },
+        chainId: config.chainId, orgId: modules.orgId, holderContract, paymentManager, checkpoint, totalRaw, policy: argv.policy ?? 'cli-first-holder' });
+      const eligible = members.filter(m => active.includes(m) && !optOuts.find(f => f.address.toLowerCase() === m.address.toLowerCase())?.optedOut);
+      const eligiblePT = eligible.reduce((sum, m) => sum + BigInt(m.participationTokenBalance), 0n);
+      const allocations = prepared.allocations.map(allocation => {
+        const holder = members.find(m => m.address.toLowerCase() === allocation.address.toLowerCase())!;
+        return { address: allocation.address, username: holder.username, ptBalance: ethers.utils.formatEther(holder.participationTokenBalance),
+          share: `${(Number(BigInt(holder.participationTokenBalance) * 10000n / eligiblePT) / 100).toFixed(2)}%`, allocation: allocation.amountRaw,
+          proof: prepared.claims[allocation.address].proof };
+      });
+      const claimsDocument = buildDistributionClaimsDocument({ token: token.address, tokenSymbol: token.symbol, totalAmount: totalRaw,
+        checkpointBlock, merkleRoot: prepared.merkleRoot, claims: prepared.claims, createdAt: Date.now() });
+      const result = { merkleRoot: prepared.merkleRoot, totalAmount: totalRaw, tokenAddress: token.address, checkpointBlock,
+        memberCount: allocations.length, optOutCheck: 'ok', optOutProbeFailures: 0, excludedOptedOut: optOuts.filter(o => o.optedOut).length,
+        allocations, claims: prepared.claims, claimsDocument, chainId: config.chainId, orgId: modules.orgId, paymentManager,
+        policy: prepared.policy, source: holders.source, holderCoverage: holders.coverage, membershipAuthority,
+        membershipSource: currentMembership.source, membershipCoverage: currentMembership.coverage,
+        membershipSemantics: membershipFacts.semantics, membershipCheck: 'ok' };
+      if ((await provider.getBlock(checkpointBlock)).hash !== rpcBlock.hash) throw new Error('RPC_CHECKPOINT_CHANGED');
+      fs.writeFileSync(argv.output ?? 'merkle-distribution.json', JSON.stringify(result, null, 2) + '\n');
       spin.stop();
-
-      if (output.isJsonMode()) {
-        output.json(merkleResult);
-      } else {
-        console.log('');
-        console.log('  Merkle Distribution Computed');
-        console.log('  ─────────────────────────────');
-        console.log(`  Root:        ${merkleRoot}`);
-        console.log(`  Token:       ${argv.token}`);
-        console.log(`  Total:       ${ethers.utils.formatEther(totalAmount)} tokens`);
-        console.log(`  Checkpoint:  Block #${checkpointBlock}`);
-        console.log(`  Members:     ${allocations.length}`);
-        console.log('');
-        console.log('  Allocations:');
-        for (const a of allocationsWithProofs) {
-          const label = a.username || a.address.slice(0, 10) + '...';
-          console.log(`    ${label.padEnd(20)} ${a.share.padStart(8)}  →  ${ethers.utils.formatEther(a.allocation)} tokens`);
-        }
-        console.log('');
-        console.log(`  Proofs written to: ${outPath}`);
-        console.log('');
-        console.log('  To create distribution:');
-        console.log(`    pop treasury deposit --token ${argv.token} --amount ${argv.amount}`);
-        console.log(`    # Then propose via governance with createDistribution(${argv.token}, ${totalAmount}, ${merkleRoot}, ${checkpointBlock})`);
-        console.log('');
-      }
-    } catch (err: any) {
-      spin.stop();
-      output.error(err.message);
-      process.exit(1);
-    }
+      if (output.isJsonMode()) output.json(result); else output.info(`Computed ${allocations.length} claims (${argv.amount} ${token.symbol}) at block ${checkpointBlock}; proofs written to ${argv.output ?? 'merkle-distribution.json'}`);
+    } catch (error: any) { spin.stop(); output.error(error.message); process.exitCode = 1; }
   },
 };

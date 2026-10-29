@@ -79,3 +79,16 @@ Errors carry stable codes (`TX_REVERTED`, `INSUFFICIENT_FUNDS`,
 under `--json` is always parseable — diagnostics go to stderr.
 
 Full integration guide: [docs/guides/integrators.md](docs/guides/integrators.md).
+
+## Core 2 workflows
+
+Read [the CLI and agent workflow guide](docs/guides/core2-workflows.md) for
+two-step role creation, complete snapshots, prepared work/identity/email intents,
+treasury reservations, verified stored claims and exact transaction recovery.
+When the agent package is installed, `pop agent capabilities --json` discovers
+the installed command schemas and safety flags without network access.
+
+Unknown facts and incomplete coverage never authorize a write. After an uncertain
+send, inspect `execution status` and use `execution recover`; never automatically
+resend. Prepared intents and policy calculations are unsigned input, not proof of
+current authorization. Agent status/triage accept `--address` without a key.

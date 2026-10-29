@@ -134,3 +134,58 @@ export const FETCH_ACTIVE_DISTRIBUTIONS = `
     }
   }
 `;
+
+// Financial selection is independent of active-board project filtering. Flat
+// taskManager/status filters avoid unsupported multi-hop Graph Node plans.
+const WORK_BINDING = `organization(id: $orgId, block: $block) { id taskManager { id organization { id } } }`;
+const FINANCIAL_TASK_FIELDS = `id taskId taskManager status payout bountyToken bountyPayout
+  project { id projectId deleted taskManager { id organization { id } } }`;
+export const FETCH_TREASURY_TASK_ACTIVITY_PAGE = `
+  query FetchTreasuryTaskActivityPage($orgId: ID!, $taskManager: Bytes!, $cursor: String!, $first: Int!, $block: Block_height) {
+    ${WORK_BINDING}
+    tasks(block: $block, first: $first, orderBy: id, orderDirection: asc,
+      where: { taskManager: $taskManager, id_gt: $cursor, status: Completed }) { ${FINANCIAL_TASK_FIELDS} }
+    _meta(block: $block) { block { number hash timestamp } }
+  }
+`;
+export const FETCH_PROMISED_BOUNTIES_PAGE = `
+  query FetchPromisedBountiesPage($orgId: ID!, $taskManager: Bytes!, $cursor: String!, $first: Int!, $block: Block_height) {
+    ${WORK_BINDING}
+    tasks(block: $block, first: $first, orderBy: id, orderDirection: asc,
+      where: { taskManager: $taskManager, id_gt: $cursor, status_in: [Open, Assigned, Submitted] }) { ${FINANCIAL_TASK_FIELDS} }
+    _meta(block: $block) { block { number hash timestamp } }
+  }
+`;
+const PAYMENT_BINDING = `organization(id: $orgId, block: $block) { id paymentManager { id organization { id } } }`;
+export const FETCH_DISTRIBUTIONS_PAGE = `
+  query FetchDistributionsPage($orgId: ID!, $paymentManager: String!, $cursor: String!, $first: Int!, $block: Block_height) {
+    ${PAYMENT_BINDING}
+    distributions(block: $block, first: $first, orderBy: id, orderDirection: asc,
+      where: { paymentManager: $paymentManager, id_gt: $cursor }) {
+      id distributionId payoutToken totalAmount totalClaimed checkpointBlock createdAtBlock merkleRoot status
+      paymentManager { id organization { id } }
+    }
+    _meta(block: $block) { block { number hash timestamp } }
+  }
+`;
+export const FETCH_PAYMENTS_PAGE = `
+  query FetchPaymentsPage($orgId: ID!, $paymentManager: String!, $cursor: Bytes!, $first: Int!, $block: Block_height) {
+    ${PAYMENT_BINDING}
+    payments(block: $block, first: $first, orderBy: id, orderDirection: asc,
+      where: { paymentManager: $paymentManager, id_gt: $cursor }) {
+      id payer amount token receivedAt receivedAtBlock transactionHash paymentManager { id organization { id } }
+    }
+    _meta(block: $block) { block { number hash timestamp } }
+  }
+`;
+export const FETCH_DISTRIBUTION_CLAIMS_PAGE = `
+  query FetchDistributionClaimsPage($orgId: ID!, $paymentManager: String!, $distribution: String!, $cursor: String!, $first: Int!, $block: Block_height) {
+    ${PAYMENT_BINDING}
+    claims(block: $block, first: $first, orderBy: id, orderDirection: asc,
+      where: { paymentManager: $paymentManager, distribution: $distribution, id_gt: $cursor }) {
+      id claimer amount claimedAt claimedAtBlock transactionHash
+      paymentManager { id organization { id } } distribution { id distributionId }
+    }
+    _meta(block: $block) { block { number hash timestamp } }
+  }
+`;

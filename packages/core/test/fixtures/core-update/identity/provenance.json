@@ -1,0 +1,25 @@
+{
+  "fixture": "schema.graphql",
+  "sha256": "93395b214695aa832a0d835b17c5be3df20abd399d3e1d49ea115fb13edcdf6b",
+  "fullIntrospectionSha256": "2fefb5c645d84d3a8c65f1f8522fe016ef6a64cca2441b21bcfabb43c14b3047",
+  "sources": [
+    {
+      "chainId": 100,
+      "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/576YA6oF16nA2uG5Q9KFfBSvJm4ZNKzWZkwh8eWXaxJs",
+      "origin": "https://poa.box",
+      "configPath": "/Users/hudsonheadley/conductor/workspaces/poa-frontend/albuquerque-v4/poa-app/src/config/networks.js",
+      "configSha256": "8cef9709edc7c9657b15d3ba231d942bc6aa23cc4b55799b92e695fedc4bb8d1",
+      "observedAt": "2026-10-09T20:02:05.852Z"
+    },
+    {
+      "chainId": 42161,
+      "endpoint": "https://gateway.thegraph.com/api/[redacted]/subgraphs/id/2egvcs94ZStD38inRtK9bp3Maw3UZw4BDinH8jLyAF4G",
+      "origin": "https://poa.box",
+      "configPath": "/Users/hudsonheadley/conductor/workspaces/poa-frontend/albuquerque-v4/poa-app/src/config/networks.js",
+      "configSha256": "8cef9709edc7c9657b15d3ba231d942bc6aa23cc4b55799b92e695fedc4bb8d1",
+      "observedAt": "2026-10-09T20:02:05.864Z"
+    }
+  ],
+  "derivation": "TypeInfo projection of independently captured serving introspection. Field/argument/input declarations preserve exact generated types/defaults and full enum vocabulary. Both source introspection bytes are identical. No network probes performed by identity lane.",
+  "limitations": "Schema capability is not field population or deployed bytecode. Old user singleton selector scalar declarations are preserved; strict new-document validation is separate from assignment selection execution."
+}
