@@ -7,7 +7,35 @@ org brains, and agents parse its `--json` output so that protocol and
 subgraph churn stays absorbed HERE. A release is therefore a contract event,
 not just a version bump.
 
-## Local core 2.0.0 candidate
+## Local core 2.1.0 candidate
+
+Core 2.1.0 adds the five reviewed role-operation functions, their public types,
+canonical role metadata, and packaged operation documentation/catalog. It retains
+the execution and recovery fixes from the reviewed 2.0 line. Existing APIs remain
+available; the minor bump makes the frontend's additional imports installable as
+one registry version. CLI and agent versions stay unchanged.
+
+Staged status requires a separate configuration proposal whose supported calls
+bind to the proven created subject. Email allowlist status additionally accepts an
+optional explicit read-only document fetch and verifies the committed root/org
+and actual-subject leaf. Creation replay or unrelated configuration cannot report
+completion. Earlier local 2.1.0 candidate archives remain diagnostic artifacts;
+use the final hash recorded by the acceptance owner.
+
+Build core, run its full tests and API check, then pack with lifecycle scripts
+disabled. Verify that explicit archive through
+`node packages/core/scripts/verify-packed-consumer.mjs PATH_TO_CORE_TGZ` before
+installing it into a frontend. The verifier isolates the archive, checks public
+declarations and packaged documentation, and runs synthetic Node/browser workflows.
+Its evidence lives under `.context/registry-integration/`. Fixture success does not
+prove deployed endpoint coverage, browser wallet consent, passkey prompts or live
+vote creation. Frontend acceptance must exercise those host boundaries separately.
+
+This is local candidate preparation only. It authorizes no publication, merge or
+deployed change. The future release wrapper derives core `^2.1.0` for CLI metadata
+from this package version while restoring local links after its check.
+
+## Historical core 2.0.0 candidate
 
 This update prepares `@poa-box/core@2.0.0` only. CLI and agent remain 1.0.0 with
 local `link:` dependencies; unchanged published versions are not republished.

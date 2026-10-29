@@ -1,6 +1,6 @@
 # @poa-box/core
 
-Version 2.0 retains the authority-only protocol introduced in 1.0: MembershipAuthority replaces EligibilityModule/Hats access. Retired organizations remain unavailable. Adopted IDs and earlier history remain intact. This candidate corrects unsound history declarations and adds reusable, evidence-bearing frontend helpers. CLI and agent versions remain 1.0.0; their local linked consumers retain existing output and mock seams.
+Version 2.1 adds reviewed role operations and canonical role metadata to the authority-only 2.0 API. MembershipAuthority replaces EligibilityModule/Hats access. Retired organizations remain unavailable. Adopted IDs and earlier history remain intact. The execution, signer-identity, scoped-receipt and canonical-recovery safeguards remain in place. CLI and agent versions remain 1.0.0; their local linked consumers retain existing output and mock seams.
 
 The stable protocol layer for POP (Proof of Participation): **transaction
 creation** and **data reads** for every consumer — the `pop` CLI, web
@@ -11,7 +11,7 @@ subgraph churn.
 - **Browser-and-Node pure.** No `fs`, no `process.env`, no terminal deps
   anywhere in the package (enforced by `test/purity.test.ts`). Environment is
   injected.
-- **Wallet-agnostic writes.** Every on-chain operation is a `TxIntent` —
+- **Wallet-agnostic writes.** Supported transaction builders return a `TxIntent` —
   plain data you can execute with an ethers signer, wagmi/viem, an ERC-4337
   passkey account, an EIP-7702 sponsored userop, a Safe batch, or raw JSON-RPC.
 - **Canonical protocol knowledge.** ABIs (generated, drift-proof), metadata
@@ -72,33 +72,11 @@ const intent = await createTaskIntent(ctx, {
 // intent = { to, abi, method, args, value?, meta: { summary, ipfs, … } }
 ```
 
-Execute it with whatever stack you have:
-
-```ts
-// 1. ethers EOA (what the CLI does)
-import { executeIntent } from '@poa-box/core/execute/ethers';
-const result = await executeIntent(signer, intent, { dryRun: false });
-// result: { success, txHash, explorerUrl, logs, errorCode?, suggestion?, … }
-
-// 2. wagmi / viem
-import { encodeIntent } from '@poa-box/core/tx/intent';
-writeContract({
-  address: intent.to as `0x${string}`,
-  abi: intent.abi,
-  functionName: intent.method,
-  args: intent.args,
-});
-
-// 3. ERC-4337 / EIP-7702 sponsored (PaymasterHub pays gas)
-import { sendSponsored } from '@poa-box/core/execute/sponsored';
-const { data } = encodeIntent(intent);
-await sendSponsored(privateKey, intent.to, data, orgId, hatId, {
-  bundlerUrl,                      // or pimlicoApiKey
-});
-
-// 4. anything else — Safe, multisig proposal, raw RPC
-const { to, data, value } = encodeIntent(intent);
-```
+Use the [executable host adapters](#native-value-in-host-adapters) below for
+ethers, wagmi/viem, Safe, sponsored options or `executeIntentWithHost`. Each
+alternative forwards exact native value and keeps execution options separate
+from descriptive metadata. The built-in EOA executor is
+`executeIntent` from `@poa-box/core/execute/ethers`.
 
 Every builder has two levels:
 
@@ -185,7 +163,8 @@ whole package into a bundle.
 
 This package is one of three integration surfaces (the others: the `pop` CLI
 with `--json` for any language, and `pop mcp serve` for tool-calling AI
-agents). All three produce byte-identical transactions and metadata. The
+agents). Shared builders preserve their covered calldata and metadata contracts;
+feature and deployed-version support differs across these surfaces. The
 chooser + quickstarts for all three live in
 [repository integrator guide](https://github.com/poa-box/poa-cli/blob/main/docs/guides/integrators.md).
 
@@ -381,3 +360,62 @@ provenance. Creation intent is not proof of execution or an assigned subject ID.
 Email migration preserves the original audit record and never authorizes account
 activation; missing original transaction/source/initiator evidence needs a
 separately authenticated existing account, fresh proof and current invite state.
+
+## Start with a reviewed role operation
+
+Use the [role recipe](docs/role-operations.md), [agent guide](docs/agents.md) and
+[static catalog](docs/operation-manifest.v1.json). The independent application in
+[`examples/role-consumer`](https://github.com/poa-box/poa-cli/tree/main/examples/role-consumer) uses the same
+five async functions as the frontend. Its default output is **synthetic**. Run its
+verifier with an explicit candidate archive; neither fixture success nor an
+exported reader proves that a deployed endpoint supplies the required facts.
+
+The host owns account restoration, caching, cancellation, consent, unsigned
+journals and wallet transport. Core owns protocol observation, planning and exact
+continuation proof. Opaque reviews/prepared handles must be renewed after reload.
+
+## Native value in host adapters
+
+This executable example uses injected wallet objects. Each function is an
+alternative transport; calling it sends through that host. `value` is raw native
+wei, never a JavaScript Number. Execution options remain separate from metadata.
+The sponsored import needs the optional viem/permissionless peers only on that path.
+
+<!-- sdk-test:wallets -->
+```js
+import { encodeIntent, executeIntentWithHost } from '@poa-box/core/tx/intent';
+
+export async function sendWithEthers(intent, signer) {
+  const { to, data, value } = encodeIntent(intent);
+  return signer.sendTransaction({ to, data, value });
+}
+export async function sendWithViem(intent, walletClient) {
+  const { to, data, value } = encodeIntent(intent);
+  return walletClient.sendTransaction({ to, data, value: BigInt(value) });
+}
+export async function sendWithWagmi(intent, writeContract) {
+  return writeContract({ address: intent.to, abi: intent.abi,
+    functionName: intent.method, args: intent.args,
+    value: BigInt(encodeIntent(intent).value) });
+}
+export async function sendWithSafe(intent, safeSdk) {
+  const { to, data, value } = encodeIntent(intent);
+  return safeSdk.createTransaction({ transactions: [{ to, data, value }] });
+}
+export async function sendWithSponsored(intent, key, orgId, subjectId, options) {
+  const { sendSponsored } = await import('@poa-box/core/execute/sponsored');
+  const { to, data, value } = encodeIntent(intent);
+  return sendSponsored(key, to, data, orgId, subjectId,
+    { ...options, value: BigInt(value) });
+}
+export async function sendWithHost(intent, options, host) {
+  return executeIntentWithHost(intent, options, host);
+}
+export async function sendWithValueCapability(intent, host) {
+  const call = encodeIntent(intent);
+  if (call.value !== '0' && host.supportsNativeValue !== true) {
+    throw new Error('NATIVE_VALUE_TRANSPORT_UNSUPPORTED');
+  }
+  return host.send(call);
+}
+```

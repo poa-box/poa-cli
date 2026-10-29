@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://poa-box.github.io/core/operation-manifest.schema.json",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "package": {
+      "const": "@poa-box/core"
+    },
+    "packageVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "module": {
+      "const": "@poa-box/core/governance/role-operations"
+    },
+    "units": {
+      "type": "object",
+      "properties": {
+        "subjectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "proposalId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "permissionKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ctx": {
+          "type": "string",
+          "minLength": 1
+        },
+        "now": {
+          "type": "string",
+          "minLength": 1
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "durationMinutes": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "subjectId",
+        "proposalId",
+        "projectId",
+        "value",
+        "permissionKey",
+        "ctx",
+        "now",
+        "createdAt",
+        "durationMinutes",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "trust": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "enum": [
+              "readRoleOperationEvidence",
+              "reviewRoleOperation",
+              "prepareRoleOperation",
+              "readRoleOperationStatus",
+              "revalidatePreparedRoleOperation"
+            ]
+          },
+          "import": {
+            "const": "@poa-box/core/governance/role-operations"
+          },
+          "async": {
+            "const": true
+          },
+          "requiredInputs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "optionalInputs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "ready": {
+            "enum": [
+              "RoleOperationEvidence",
+              "RoleOperationReview",
+              "PreparedRoleOperation",
+              "RoleOperationStatus",
+              "PreparedRoleOperation"
+            ]
+          },
+          "states": {
+            "const": [
+              "ready",
+              "blocked",
+              "unknown"
+            ]
+          },
+          "sideEffects": {
+            "type": "object",
+            "properties": {
+              "indexedReads": {
+                "type": "boolean"
+              },
+              "rpcReads": {
+                "type": "boolean"
+              },
+              "fetchCurrentDocument": {
+                "type": "boolean"
+              },
+              "publishes": {
+                "type": "boolean"
+              },
+              "signs": {
+                "type": "boolean"
+              },
+              "broadcasts": {
+                "type": "boolean"
+              },
+              "persists": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "indexedReads",
+              "rpcReads",
+              "fetchCurrentDocument",
+              "publishes",
+              "signs",
+              "broadcasts",
+              "persists"
+            ],
+            "additionalProperties": false
+          },
+          "retry": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "import",
+          "async",
+          "requiredInputs",
+          "optionalInputs",
+          "ready",
+          "states",
+          "sideEffects",
+          "retry"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "import": {
+            "type": "string",
+            "minLength": 1
+          },
+          "exports": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "import",
+          "exports"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "recipe": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "initialHeadAgeSeconds": {
+          "const": 60
+        },
+        "completedEvidenceAgeSeconds": {
+          "const": 30
+        },
+        "maxAccounts": {
+          "const": 50
+        },
+        "maxCompoundSubjects": {
+          "const": 256
+        },
+        "bounded": {
+          "const": true
+        }
+      },
+      "required": [
+        "initialHeadAgeSeconds",
+        "completedEvidenceAgeSeconds",
+        "maxAccounts",
+        "maxCompoundSubjects",
+        "bounded"
+      ],
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "package",
+    "packageVersion",
+    "module",
+    "units",
+    "scope",
+    "trust",
+    "operations",
+    "references",
+    "recipe",
+    "limits",
+    "evidence"
+  ],
+  "additionalProperties": false
+}

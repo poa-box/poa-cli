@@ -1,0 +1,15 @@
+{
+  "name": "pop-role-consumer-example",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@poa-box/core": "file:./core.tgz",
+    "ethers": "5.7.2"
+  },
+  "engines": { "node": ">=18.0.0" }
+}

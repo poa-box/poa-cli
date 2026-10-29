@@ -13,3 +13,4 @@ export * as user from './user';
 
 export * as folders from './folders';
 export * as distribution from './distribution';
+export * as role from './role';

@@ -7,3 +7,4 @@ export * from './validation';
 export * from './dd-authorization';
 export * from './provenance';
 export * from './role-continuation';
+export * from './role-operations';

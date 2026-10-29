@@ -11,8 +11,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, statSync } from 'fs';
-import { join, relative } from 'path';
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
+import { dirname, join, relative, resolve } from 'path';
 import { builtinModules } from 'module';
 import ts from 'typescript';
 
@@ -63,6 +63,26 @@ describe('browser purity', () => {
       const c = "require('node:path')";`);
     expect(modules).toEqual(['node:fs/promises', 'http', 'timers/promises']);
     expect(modules.every(name => nodeModules.has(name.replace(/^node:/, '')))).toBe(true);
+  });
+
+  it('role operations have no implicit browser/network/clock/signing capability or optional executor import', () => {
+    const pending = [join(SRC, 'governance/role-operations.ts')], seen = new Set<string>(), external = new Set<string>();
+    while (pending.length) {
+      const file = pending.pop()!; if (seen.has(file)) continue; seen.add(file);
+      expect(file).not.toMatch(/\/execute\/(?:sponsored|ethers)\.ts$/);
+      const src = readFileSync(file, 'utf8');
+      for (const module of importedModules(src)) {
+        if (!module.startsWith('.')) { external.add(module); continue; }
+        const target = resolve(dirname(file), module);
+        pending.push(existsSync(target + '.ts') ? target + '.ts' : join(target, 'index.ts'));
+      }
+    }
+    expect([...external].filter(name => /^(?:react|wagmi|@apollo|viem|permissionless)(?:\/|$)/.test(name))).toEqual([]);
+    for (const name of ['role-operations.ts', 'role-operation-observer.ts', 'role-operation-types.ts']) {
+      const source = readFileSync(join(SRC, 'governance', name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+      expect(source).not.toMatch(/\b(?:window|localStorage|sessionStorage|fetch|Date)\s*(?:\.|\()/);
+      expect(source).not.toMatch(/new\s+(?:ethers\.)?(?:Contract|JsonRpcProvider|Wallet)\b|\.(?:sendTransaction|signTransaction|signMessage|getLogs)\s*\(/);
+    }
   });
 
   for (const file of walk(SRC)) {

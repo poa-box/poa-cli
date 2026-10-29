@@ -97,7 +97,7 @@ describe('viem/permissionless never enter dependency-free declaration closures',
   });
   it.each(['tx/user', 'tx/zkemail', 'tx/enrollment', 'email/allowlist', 'authority/indexed-cap', 'governance/role-planning',
     'treasury/inflows', 'treasury/indexed-inflows', 'graph/documents/inflows', 'governance/dd-authorization',
-    'reads/vote', 'tx/paymaster', 'graph/documents/authority', 'graph/documents/voting-classes'])('%s public declarations exclude optional peers and Node', leaf => {
+    'reads/vote', 'governance/role-operations', 'governance/role-operation-types', 'tx/paymaster', 'graph/documents/authority', 'graph/documents/voting-classes'])('%s public declarations exclude optional peers and Node', leaf => {
     const closure = declarationClosure(join(DIST, leaf + '.d.ts'));
     expect(externalOffenders(closure, /^(?:(?:viem|permissionless)(?:\/|$)|node:|@types\/node(?:\/|$))/)).toEqual([]);
     expect([...closure.keys()].filter(file => /\/execute\//.test(file))).toEqual([]);
@@ -107,6 +107,59 @@ describe('viem/permissionless never enter dependency-free declaration closures',
     const closure = declarationClosure(join(DIST, leaf + '.d.ts'));
     expect(externalOffenders(closure, /^(?:(?:viem|permissionless)(?:\/|$)|node:|@types\/node(?:\/|$))/)).toEqual([]);
     expect([...closure.keys()].filter(file => /\/execute\//.test(file))).toEqual([]);
+  });
+
+  it.each([
+    ['classic', ts.ModuleKind.CommonJS, ts.ModuleResolutionKind.NodeJs],
+    ['Node16', ts.ModuleKind.Node16, ts.ModuleResolutionKind.Node16],
+    ['bundler', ts.ModuleKind.ESNext, ts.ModuleResolutionKind.Bundler],
+  ] as const)('role operation public types compile strictly under %s', (_name, module, moduleResolution) => {
+    const file = resolve(DIST, '../test/__role_operations_type_regression__.ts');
+    const consumer = `
+      import { readRoleOperationEvidence, reviewRoleOperation, prepareRoleOperation, revalidatePreparedRoleOperation,
+        readRoleOperationStatus, type ReadRoleOperationEvidenceInput, type RoleOperationRequest, type RoleOperationReview,
+        type RoleOperationResult, type PreparedRoleOperation, type PrepareRoleOperationInput,
+        type ReadRoleOperationStatusInput, type RoleOperationStatus } from '@poa-box/core/governance/role-operations';
+      import { reviewRoleOperation as barrelReview } from '@poa-box/core/governance';
+      import * as core from '@poa-box/core';
+      import type { RoleOperationSources } from '@poa-box/core/governance/role-operation-types';
+      declare const evidence: ReadRoleOperationEvidenceInput;
+      const sources: RoleOperationSources = evidence.sources;
+      readRoleOperationEvidence(evidence);
+      const review: Promise<RoleOperationResult<RoleOperationReview>> = reviewRoleOperation(evidence);
+      const other: typeof reviewRoleOperation = barrelReview;
+      const root: typeof reviewRoleOperation = core.governance.reviewRoleOperation;
+      declare const preparation: PrepareRoleOperationInput;
+      declare const prepared: PreparedRoleOperation;
+      const result: Promise<RoleOperationResult<PreparedRoleOperation>> = prepareRoleOperation(preparation);
+      revalidatePreparedRoleOperation({ ...preparation, prepared });
+      const rawValue: string = prepared.batch[0].value;
+      declare const status: ReadRoleOperationStatusInput;
+      const continuation: Promise<RoleOperationResult<RoleOperationStatus>> = readRoleOperationStatus(status);
+      // @ts-expect-error the mode is mandatory
+      const implicit: RoleOperationRequest = { role: { kind: 'Role', name: 'Builders' } };
+      // @ts-expect-error raw units remain decimal strings
+      const rounded: RoleOperationRequest = { mode: 'create', role: { kind: 'Role', name: 'Builders', maxMembers: 2 } };
+      // @ts-expect-error caller does not invent a root/tree as an email request
+      const invented: RoleOperationRequest = { mode: 'create', role: { kind: 'Role', name: 'Builders', email: {} } };
+      // @ts-expect-error the public result includes a private review brand
+      const fake: RoleOperationReview = { kind: 'role-operation-review' };
+      review.then(value => { if (value.status === 'ready') {
+        // @ts-expect-error reviews never expose executable calldata
+        value.data.batch;
+        // @ts-expect-error reviews are immutable
+        value.data.fingerprint = 'other';
+      } else {
+        // @ts-expect-error unknown/blocked observations never expose executable data
+        value.data;
+      } });
+    `;
+    const options: ts.CompilerOptions = { strict: true, skipLibCheck: false, noEmit: true, esModuleInterop: true,
+      target: ts.ScriptTarget.ES2022, module, moduleResolution, types: ['node'] };
+    const host = ts.createCompilerHost(options), original = host.getSourceFile.bind(host);
+    host.getSourceFile = (path, version, onError, fresh) => path === file ? ts.createSourceFile(path, consumer, version, true) : original(path, version, onError, fresh);
+    const program = ts.createProgram([file], options, host);
+    expect(ts.getPreEmitDiagnostics(program).map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([]);
   });
 
   it.each([
