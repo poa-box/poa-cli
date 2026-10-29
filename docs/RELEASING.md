@@ -58,8 +58,9 @@ prove deployed endpoint coverage, browser wallet consent, passkey prompts or liv
 vote creation. Frontend acceptance must exercise those host boundaries separately.
 
 Core 2.1.0 is published. Do not republish that version. The release wrapper
-derives core `^2.1.0` for a later CLI release while restoring local links after
-its check. The 2.2.0 candidate follows this same core → CLI → agent release order.
+derives the CLI’s core range from the checked-in core version (`^2.2.0` for the
+current candidate) while restoring local links after its check. The 2.2.0
+candidate follows the same core → CLI → agent release order.
 
 ## Historical core 2.0.0 candidate
 
