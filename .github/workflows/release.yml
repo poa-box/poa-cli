@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes the three-package chain in dependency order:
+# Publishes packages in dependency order:
 #   @poa-box/core → @poa-box/cli → @poa-box/agent
 #
 # MERGING TO MAIN IS THE RELEASE. Versions come from the checked-in
@@ -170,6 +170,7 @@ jobs:
           cache-dependency-path: |
             yarn.lock
             packages/core/yarn.lock
+            examples/role-consumer/yarn.lock
             packages/agent/yarn.lock
 
       # Two supported auth modes, preferring the one npm recommends:
@@ -244,6 +245,21 @@ jobs:
 
       - name: Core API surface (no exports removed)
         run: yarn --cwd packages/core api:check
+
+      - name: Independent consumer — registry installation
+        run: yarn --cwd examples/role-consumer install --frozen-lockfile
+
+      - name: Independent consumers — same core archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          consumer_dir="$RUNNER_TEMP/core-consumer"
+          mkdir -p "$consumer_dir"
+          npm pack ./packages/core --ignore-scripts --pack-destination "$consumer_dir"
+          core_version=$(node -p "require('./packages/core/package.json').version")
+          CORE_TGZ="$consumer_dir/poa-box-core-$core_version.tgz"
+          node packages/core/scripts/verify-packed-consumer.mjs "$CORE_TGZ"
+          node packages/core/scripts/verify-browser-consumer.mjs "$CORE_TGZ"
 
       - name: Docs (generated reference + link check)
         run: yarn docs:check
@@ -362,13 +378,14 @@ jobs:
           fail=0
           summary='## Published'
 
-          # Registry reads are eventually consistent — poll rather than sleep.
+          # Registry metadata can lag a successful publish for several minutes.
+          # Revalidate npm's cache and allow five minutes before reporting failure.
           await() {  # <pkg@version>
-            for i in $(seq 1 20); do
-              npm view "$1" version >/dev/null 2>&1 && { echo "$1 visible"; return 0; }
+            for i in $(seq 1 50); do
+              npm view "$1" version --prefer-online >/dev/null 2>&1 && { echo "$1 visible"; return 0; }
               sleep 6
             done
-            echo "::error::$1 did not appear on the registry within 120s"; return 1
+            echo "::error::$1 did not appear on the registry within 300s"; return 1
           }
           # A published dependency range must be real semver, never a local link.
           check_range() {  # <pkg@version> <dep> <expected range>

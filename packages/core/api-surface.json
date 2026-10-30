@@ -136,6 +136,184 @@
     "projectUserPermissions",
     "resolvePermissionContext"
   ],
+  "browser/config/index": [
+    "BrowserCapabilities",
+    "BrowserConfiguration",
+    "BrowserFeature",
+    "ConfigurationReport",
+    "DiagnosticOptions",
+    "EndpointName",
+    "FeatureSetup",
+    "ModuleName",
+    "SetupIssue",
+    "SetupReaders",
+    "SetupState",
+    "checkBrowserConfiguration",
+    "detectBrowserCapabilities",
+    "diagnoseBrowserConfiguration"
+  ],
+  "browser/index": [
+    "* as config (./config)",
+    "* as observations (./observations)",
+    "* as passkeys (./passkeys)",
+    "* as session (./session)",
+    "* as storage (./storage)",
+    "* as wallet (./wallet)",
+    "* as workflows (../workflows)"
+  ],
+  "browser/observations/common": [
+    "ObservationLimits",
+    "ObservationProvider",
+    "ObservationRuntime",
+    "WorkflowReaderOptions",
+    "address",
+    "bool",
+    "complete",
+    "fail",
+    "normalizeScope",
+    "uint"
+  ],
+  "browser/observations/enrollment": [
+    "enrollmentReader"
+  ],
+  "browser/observations/governance": [
+    "ballotReader",
+    "pollReader"
+  ],
+  "browser/observations/index": [
+    "ObservationLimits",
+    "ObservationProvider",
+    "SUPPORTED_WORKFLOW_OBSERVATION_DEPLOYMENTS",
+    "WorkflowReaderOptions",
+    "createWorkflowReaders"
+  ],
+  "browser/observations/tasks": [
+    "taskReader"
+  ],
+  "browser/passkeys/ceremony": [
+    "BrowserCryptoPort",
+    "CeremonyRequest",
+    "CeremonyResponse",
+    "CredentialPort",
+    "PasskeyCeremonyAdapter",
+    "PasskeyConfig",
+    "PasskeyCredential",
+    "VerifiedPasskeyAssertion",
+    "authenticateWithRpFallback",
+    "createNativePasskeyAdapter",
+    "createPasskeyCredential",
+    "discoverPasskeyCredential",
+    "getWebAuthnAssertion"
+  ],
+  "browser/passkeys/index": [
+    "* (./ceremony)",
+    "* (./readiness)",
+    "* (./sign)",
+    "* (./storage)",
+    "* (./utils)",
+    "createPasskeyClient"
+  ],
+  "browser/passkeys/readiness": [
+    "AccountReadClient",
+    "CredentialHint",
+    "CredentialPredictionInput",
+    "PublicCredentialKeys",
+    "computeCounterfactualAddress",
+    "resolveAccountDeployment",
+    "restoreCredentialKeys",
+    "validateCredentialKeys"
+  ],
+  "browser/passkeys/sign": [
+    "computeRegistrationChallenge",
+    "signRegistrationChallenge",
+    "signUserOpHash"
+  ],
+  "browser/passkeys/storage": [
+    "CredentialRecord",
+    "EnrollmentSource",
+    "PendingEnrollment",
+    "PublicStoragePort",
+    "createPasskeyCredentialStore",
+    "enrollmentTarget",
+    "pendingEnrollmentKey"
+  ],
+  "browser/passkeys/utils": [
+    "P256_N",
+    "attestationAuthenticatorData",
+    "bytes32",
+    "bytesHex",
+    "computeCredentialId",
+    "credentialPublicKey",
+    "decodeBase64Url",
+    "encodeBase64Url",
+    "extractP256PublicKey",
+    "parseDERSignature",
+    "readCbor",
+    "validateP256Coordinates"
+  ],
+  "browser/session/index": [
+    "AccountSessionSnapshot",
+    "createAccountSession"
+  ],
+  "browser/storage/index": [
+    "BrowserJournal",
+    "BrowserLockManager",
+    "CredentialRecord",
+    "EnrollmentSource",
+    "JournalEnvelope",
+    "JournalSession",
+    "PendingEnrollment",
+    "PublicStoragePort",
+    "SubmissionLease",
+    "UnsignedJson",
+    "createBrowserJournal",
+    "createBrowserSubmissionLock",
+    "createPasskeyCredentialStore",
+    "enrollmentTarget",
+    "pendingEnrollmentKey",
+    "unsignedJournalJson"
+  ],
+  "browser/storage/submission-lock": [
+    "SubmissionLease",
+    "createBrowserSubmissionLock"
+  ],
+  "browser/wallet/ethers": [
+    "GuardedRpcSignerCallbacks",
+    "guardedRpcSigner"
+  ],
+  "browser/wallet/index": [
+    "AccountSendResult",
+    "AccountTransport",
+    "Eip1193Provider",
+    "EthersWalletOptions",
+    "GuardedRpcSignerCallbacks",
+    "PreparedAccountCall",
+    "PreparedSponsoredCall",
+    "PreparedTransactionCall",
+    "PreparedUserOperationCall",
+    "PreparedWalletCall",
+    "SponsoredExecutionPorts",
+    "SponsoredOperationPreparation",
+    "SponsoredWalletSendOptions",
+    "UnsignedCall",
+    "WalletActionOptions",
+    "WalletAdapter",
+    "WalletScope",
+    "WalletSendOptions",
+    "createEip1193WalletAdapter",
+    "createEthersWalletAdapter",
+    "createSponsoredExecutionAdapter",
+    "guardWalletAction",
+    "guardedRpcSigner",
+    "normalizeWalletScope"
+  ],
+  "browser/wallet/sponsored": [
+    "PreparedSponsoredCall",
+    "SponsoredExecutionPorts",
+    "SponsoredOperationPreparation",
+    "SponsoredWalletSendOptions",
+    "createSponsoredExecutionAdapter"
+  ],
   "chains": [
     "DEFAULT_DEPLOY_CHAIN_ID",
     "DEFAULT_DEPLOY_NETWORK",
@@ -1944,6 +2122,122 @@
     "featureUnavailable",
     "featuresFromBytecode",
     "getImplementation"
+  ],
+  "workflows/enrollment": [
+    "EnrollmentEvidence",
+    "EnrollmentRequest",
+    "EnrollmentSigningPorts",
+    "EnrollmentSummary",
+    "createEnrollmentWorkflow"
+  ],
+  "workflows/governance": [
+    "BallotEvidence",
+    "BallotHybridTallies",
+    "BallotIndexedProposalFacts",
+    "BallotProposalFacts",
+    "BallotRequest",
+    "BallotSummary",
+    "GovernanceAuthorityEvidence",
+    "GovernanceModuleFacts",
+    "PollEvidence",
+    "PollRequest",
+    "PollSummary",
+    "WorkflowVotingLane",
+    "createBallotWorkflow",
+    "createPollWorkflow"
+  ],
+  "workflows/index": [
+    "BallotEvidence",
+    "BallotHybridTallies",
+    "BallotIndexedProposalFacts",
+    "BallotProposalFacts",
+    "BallotRequest",
+    "BallotSummary",
+    "EnrollmentEvidence",
+    "EnrollmentRequest",
+    "EnrollmentSigningPorts",
+    "EnrollmentSummary",
+    "EvidenceReader",
+    "GovernanceAuthorityEvidence",
+    "GovernanceModuleFacts",
+    "OperationWorkflow",
+    "PollEvidence",
+    "PollRequest",
+    "PollSummary",
+    "PublishedWorkflowDocument",
+    "RoleWorkflow",
+    "RoleWorkflowOptions",
+    "RoleWorkflowPreparation",
+    "TaskWorkflowEvidence",
+    "TaskWorkflowRequest",
+    "TaskWorkflowSummary",
+    "WorkflowApproval",
+    "WorkflowDocument",
+    "WorkflowHost",
+    "WorkflowPreparation",
+    "WorkflowResult",
+    "WorkflowReview",
+    "WorkflowScope",
+    "WorkflowSources",
+    "WorkflowStatus",
+    "WorkflowVotingLane",
+    "createBallotWorkflow",
+    "createEnrollmentWorkflow",
+    "createPollWorkflow",
+    "createRoleWorkflow",
+    "createTaskWorkflow"
+  ],
+  "workflows/operation": [
+    "createOperationWorkflow"
+  ],
+  "workflows/role": [
+    "RoleWorkflow",
+    "RoleWorkflowOptions",
+    "RoleWorkflowPreparation",
+    "createRoleWorkflow"
+  ],
+  "workflows/shared": [
+    "allowed",
+    "copy",
+    "digest",
+    "freeze",
+    "known",
+    "moduleScope",
+    "nonzero",
+    "refuse",
+    "semantic",
+    "snapshot"
+  ],
+  "workflows/tasks": [
+    "TaskWorkflowEvidence",
+    "TaskWorkflowRequest",
+    "TaskWorkflowSummary",
+    "createTaskWorkflow"
+  ],
+  "workflows/transport": [
+    "exactSubmissionOperation",
+    "isolateSubmissionReceipt",
+    "preparedSubmissionEvent",
+    "recoveryCandidateOptions",
+    "submissionAcknowledgement"
+  ],
+  "workflows/types": [
+    "EvidenceReader",
+    "OperationDefinition",
+    "OperationPlan",
+    "OperationWorkflow",
+    "PublishedWorkflowDocument",
+    "Snapshot",
+    "WorkflowApproval",
+    "WorkflowDocument",
+    "WorkflowHost",
+    "WorkflowJournalStage",
+    "WorkflowPreparation",
+    "WorkflowResult",
+    "WorkflowReview",
+    "WorkflowScope",
+    "WorkflowSources",
+    "WorkflowStatus"
   ],
   "zkemail": [
     "ALLOWLIST_SCHEMA",

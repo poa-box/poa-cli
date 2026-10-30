@@ -41,7 +41,7 @@ function fixture(outcomes: string[], failPush = '') {
     [`${pkg}_action`, 'publish'], [`${pkg}_version`, '1.0.0'],
   ]));
   const context = { needs: { plan: { outputs } }, steps: Object.fromEntries(
-    ['core', 'cli', 'agent'].map((pkg, index) => [`publish_${pkg}`, { outcome: outcomes[index] }]),
+    ['core', 'cli', 'agent'].map((pkg, index) => [`publish_${pkg}`, { outcome: outcomes[index] ?? 'skipped' }]),
   ) };
   const run = (name: string) => execFileSync('bash', ['-e', '-c', resolveExpressions(stepScript(name), context)], {
     cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`,
@@ -67,6 +67,8 @@ describe('release workflow output and partial-publish guards', () => {
     [['failure', 'skipped', 'skipped'], []],
     [['success', 'success', 'success'], ['core', 'cli', 'agent']],
     [['skipped', 'success', 'success'], ['cli', 'agent']],
+    [['skipped', 'success', 'skipped'], ['cli']],
+    [['skipped', 'skipped', 'success'], ['agent']],
   ])('tags only successful uploads after outcomes %j', (outcomes, expected) => {
     const f = fixture(outcomes);
     f.run('Tag the published versions');

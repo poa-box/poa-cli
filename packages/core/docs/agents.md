@@ -1,5 +1,20 @@
 # Coding-agent integration recipe
 
+Choose a task in [getting started](getting-started.md) or the companion
+[workflow recipes](workflow-recipes.v1.json) ([schema](workflow-recipes.schema.json)).
+These specify public imports, input units, effects, result branches and example
+checks for reads, unsigned task/poll/vote preparation, staged roles and recovery.
+The [role-operation catalog](operation-manifest.v1.json) retains its version-1
+shape and describes only the five role-operation functions.
+
+
+Use one reviewed `@poa-box/core@2.2.0` candidate archive for protocol and browser
+runtime integration; the published 2.1.0 release remains unchanged. Public
+`@poa-box/core/browser/*` adapters and `@poa-box/core/workflows` share the core
+version. Read the [browser integration guide](browser-integration.md) and
+[feature catalog](browser-features.v1.json) for complete operation setup and
+supported boundaries. Protocol-only unsigned recipes retain their 2.1.0 minimum.
+
 Use the public packed SDK, not frontend internals or CLI subprocesses, for a JS
 host. Read [role-operations.md](role-operations.md) and the static
 [version-1 catalog](operation-manifest.v1.json) against its
@@ -41,8 +56,9 @@ Retain the original review's `requiresConfiguration` as host draft/display inten
 Status cannot infer that intent and returns `review-configuration` after proven
 creation even for create-only requests. When no deferred settings were requested,
 the exact created proof completes the workflow; do not submit an empty second vote.
-Host scope/account locks, cancellation, cache, consent and wallet management stay
-outside core. No private key is needed for public reads.
+The application owns scope, cache, consent UI and wallet selection. Optional
+core browser adapters supply generation fences, durable journals, account locks
+and dispatch guards; the application must configure and use those boundaries. No private key is needed for public reads.
 
 Default [consumer](https://github.com/poa-box/poa-cli/tree/main/examples/role-consumer) output is synthetic
 and network-free. Explicit real-read mode accepts public inputs only and supplies

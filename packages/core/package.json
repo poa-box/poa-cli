@@ -1,7 +1,7 @@
 {
   "name": "@poa-box/core",
-  "version": "2.1.0",
-  "description": "Browser-and-Node core for the POP (Proof of Participation) protocol: transaction intent builders, subgraph reads, canonical metadata, ABIs, and chain config. The stable layer the CLI, frontends, and integrators share.",
+  "version": "2.2.0",
+  "description": "Shared Poa protocol and integration toolkit for Node and browsers: reads, policies, transaction intents, optional wallet/passkey adapters, and durable workflows.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -11,7 +11,14 @@
     "docs/role-operations.md",
     "docs/agents.md",
     "docs/operation-manifest.v1.json",
-    "docs/operation-manifest.schema.json"
+    "docs/operation-manifest.schema.json",
+    "docs/getting-started.md",
+    "docs/workflow-recipes.v1.json",
+    "docs/workflow-recipes.schema.json",
+    "docs/browser.md",
+    "docs/browser-integration.md",
+    "docs/browser-features.v1.json",
+    "docs/browser-features.schema.json"
   ],
   "exports": {
     ".": {
@@ -94,7 +101,41 @@
     "./errors": {
       "types": "./dist/errors/index.d.ts",
       "default": "./dist/errors/index.js"
-    }
+    },
+    "./browser": {
+      "types": "./dist/browser/index.d.ts",
+      "default": "./dist/browser/index.js"
+    },
+    "./browser/wallet": {
+      "types": "./dist/browser/wallet/index.d.ts",
+      "default": "./dist/browser/wallet/index.js"
+    },
+    "./browser/passkeys": {
+      "types": "./dist/browser/passkeys/index.d.ts",
+      "default": "./dist/browser/passkeys/index.js"
+    },
+    "./browser/storage": {
+      "types": "./dist/browser/storage/index.d.ts",
+      "default": "./dist/browser/storage/index.js"
+    },
+    "./browser/session": {
+      "types": "./dist/browser/session/index.d.ts",
+      "default": "./dist/browser/session/index.js"
+    },
+    "./browser/config": {
+      "types": "./dist/browser/config/index.d.ts",
+      "default": "./dist/browser/config/index.js"
+    },
+    "./browser/observations": {
+      "types": "./dist/browser/observations/index.d.ts",
+      "default": "./dist/browser/observations/index.js"
+    },
+    "./workflows": {
+      "types": "./dist/workflows/index.d.ts",
+      "default": "./dist/workflows/index.js"
+    },
+    "./browser/*": null,
+    "./workflows/*": null
   },
   "typesVersions": {
     "*": {
@@ -157,6 +198,36 @@
       ],
       "errors": [
         "dist/errors/index.d.ts"
+      ],
+      "browser": [
+        "dist/browser/index.d.ts"
+      ],
+      "browser/wallet": [
+        "dist/browser/wallet/index.d.ts"
+      ],
+      "browser/passkeys": [
+        "dist/browser/passkeys/index.d.ts"
+      ],
+      "browser/storage": [
+        "dist/browser/storage/index.d.ts"
+      ],
+      "browser/session": [
+        "dist/browser/session/index.d.ts"
+      ],
+      "browser/config": [
+        "dist/browser/config/index.d.ts"
+      ],
+      "browser/observations": [
+        "dist/browser/observations/index.d.ts"
+      ],
+      "workflows": [
+        "dist/workflows/index.d.ts"
+      ],
+      "browser/*": [
+        "dist/__private_import_not_supported__"
+      ],
+      "workflows/*": [
+        "dist/__private_import_not_supported__"
       ]
     }
   },
@@ -169,7 +240,8 @@
     "lint": "node scripts/gen-abis.mjs && tsc --noEmit",
     "api:check": "node scripts/check-api-surface.mjs",
     "api:update": "node scripts/check-api-surface.mjs --update",
-    "test:consumer": "node scripts/verify-packed-consumer.mjs"
+    "test:consumer": "node scripts/verify-packed-consumer.mjs",
+    "test:browser-consumer": "node scripts/verify-browser-consumer.mjs"
   },
   "dependencies": {
     "@ethersproject/bytes": "^5.8.0",

@@ -1,9 +1,19 @@
-# Adopting @poa-box/core 2.0 in a frontend
+# Adopting @poa-box/core 2.2 in a frontend
 
 Core owns protocol encodings, canonical metadata, typed documents, exact
 amounts and evidence-bearing planning. The host retains wallet UI, rendering,
 identity hydration, caching and lifecycle state. Adoption is a separate product
 change; a package test never closes a host or backend finding.
+
+Core 2.2.0 is a candidate; install its reviewed archive until publication.
+It includes optional `@poa-box/core/browser/*` adapters and
+`@poa-box/core/workflows` in the same package and version as the protocol APIs.
+The [browser guide](browser.md), [integration guide](browser-integration.md) and
+[feature catalog](browser-features.v1.json) cover that shared runtime. Existing
+2.1.0 protocol imports remain compatible.
+
+For a first integration, use [getting started](getting-started.md) and the
+[task recipes](workflow-recipes.v1.json). This guide is the detailed host checklist.
 
 ## Preserve the service boundary
 
@@ -16,8 +26,10 @@ before any send. Never flatten intent metadata into execution options.
 
 Passkey and sponsored hosts can use `encodeIntent` for calldata. The codecs in
 `accounts/codecs`, `accounts/userop-v07` and `sponsorship/codec` are pure. Browser
-WebAuthn authentication, durable credential restoration, curve/key checks,
-bundler transport, signing and gas policy remain host responsibilities. Load
+WebAuthn authentication, credential storage, key checks and wallet handoff can
+use the optional `browser/passkeys`, `browser/storage` and `browser/wallet`
+modules. The application supplies RP/origin configuration, connection UI,
+account-specific encoding, sponsorship services and gas policy. Load
 `execute/sponsored` only on the optional action route. Journal possible
 submission identities before waiting and reconcile uncertain responses; do not
 resend an ambiguous operation. Match hash and EntryPoint for receipt outcomes.

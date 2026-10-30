@@ -6,6 +6,71 @@ review, preparation, recovery and continuation functions; only indexed/RPC/conte
 transport and two explicitly fake sends are fixtures. It requires no key, frontend,
 CLI, viem or permissionless dependency. It never signs or publishes real content.
 
+## Start from npm
+
+Copy this directory outside the repository. Under Node **18 or newer**:
+
+```sh
+npm install --ignore-scripts
+npm test
+npm start
+npm start -- --workflow-fixture
+```
+
+The normal package uses exact registry `@poa-box/core@2.1.0` and `ethers@5.7.2`.
+There is no missing `core.tgz`, workspace link or frontend dependency. Yarn 1 users
+can run `yarn install --frozen-lockfile --ignore-scripts` using the committed lock.
+The legacy fixture and the controller demo are both labeled synthetic. The latter
+exercises `createRoleWorkflow` with explicit separate publish/send approvals,
+unsigned persistence, uncertain-send recovery and separately reviewed actual-ID
+configuration. It does not connect a real wallet or publisher.
+
+For unsigned task, informational poll and ballot examples, see the
+[task-oriented getting-started guide](https://github.com/poa-box/poa-cli/blob/main/packages/core/docs/getting-started.md)
+and [structured recipes](https://github.com/poa-box/poa-cli/blob/main/packages/core/docs/workflow-recipes.v1.json). Those
+are repository follow-up documentation tested against distributed 2.1.0; they
+do not modify the already published release.
+
+## Connect explicit host capabilities
+
+`src/workflow.mjs` exports `createRoleWorkflow({ workflowId, scope, sources, wallet,
+journal, documents, confirm, isCurrent })`. Methods separate `capabilities`,
+`review`, `prepare`, `submit`, `recover`, `continuation` and read-only `inspect`.
+Review/prepared handles are in-memory authority, not saved JSON approvals.
+The injected confirmation callback receives a frozen stage-specific request:
+`kind: 'publish' | 'send'`, workflow/stage/scope, the reviewed request, and document
+digests or the exact wallet call/nonce. There is no implicit approval.
+
+`createEthersWalletAdapter({ ethereum })` is the browser path: inject the existing
+EIP-1193 connection. It populates the exact transaction and performs the single
+`eth_sendTransaction` handoff immediately after the controller's final callback.
+For an injected `{ signer, provider }`, also supply the explicit
+`dispatchPopulatedTransaction(tx)` capability; a signer alone is refused because
+its send implementation could hide awaited setup after the final check. That
+capability must initiate the wallet boundary immediately, with no extra preflight.
+
+The adapter checks account/chain and preserves calldata/native `value` as decimal
+wei. Preparation obtains nonce, block and gas before the final callback; send
+handles are one-use, including refusal. `isCurrent()` must synchronously return
+true for the active account/organization generation. Never pass private keys to
+this example. After a blocked unsent attempt, follow controller recovery/review
+guidance rather than replaying an old send handle.
+
+`createBrowserJournal({ indexedDB, locks, databaseName })` needs IndexedDB with
+strict transaction durability and exclusive account Web Locks. Missing support,
+persistence failure or competing ownership refuses the operation; there is no
+relaxed/localStorage fallback. The journal stores unsigned workflow/recovery
+records only. After uncertainty, reload and call `recover` on the original record;
+never automatically repeat publication or sending. An optional explicit candidate
+hash or verified publication receipt is a recovery hint, not permission to retry.
+The fixture journal has one synthetic owner and does not establish browser durability.
+
+## Verify an explicit release archive
+
+This repository-only check is optional for an adopter. It deliberately overrides
+the copied starter's registry dependency with the one supplied archive, preserving
+an isolated install and the existing offline cache requirement.
+
 From the core repository root, under Node **18 or newer** and existing Yarn:
 
 ```bash
@@ -87,8 +152,8 @@ GraphQL adapter preserves errors and source identity. The CLI imposes a 20-secon
 abort deadline. An unavailable counter/schema/endpoint returns unknown/failure;
 this is not closed deployed-data parity. No live mode was exercised in this phase.
 
-Read [the role recipe](../../packages/core/docs/role-operations.md) and
-[static agent catalog](../../packages/core/docs/operation-manifest.v1.json) for exact
+Read [the role recipe](https://github.com/poa-box/poa-cli/blob/main/packages/core/docs/role-operations.md) and
+[static agent catalog](https://github.com/poa-box/poa-cli/blob/main/packages/core/docs/operation-manifest.v1.json) for exact
 side effects, units and retry policy. Review never publishes; prepare may invoke
 the explicit publisher; final revalidation only reads. A ready batch is not consent
 or an executed vote. Passkey cashout and eventless-native history stay excluded.

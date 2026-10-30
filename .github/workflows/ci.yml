@@ -32,6 +32,8 @@ jobs:
           cache: yarn
           cache-dependency-path: |
             yarn.lock
+            packages/core/yarn.lock
+            examples/role-consumer/yarn.lock
             packages/agent/yarn.lock
 
       - name: Install dependencies
@@ -52,6 +54,21 @@ jobs:
 
       - name: Core package — API surface (no exports removed)
         run: yarn --cwd packages/core api:check
+
+      - name: Independent consumer — registry installation
+        run: yarn --cwd examples/role-consumer install --frozen-lockfile
+
+      - name: Independent consumers — same core archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          consumer_dir="$RUNNER_TEMP/core-consumer"
+          mkdir -p "$consumer_dir"
+          npm pack ./packages/core --ignore-scripts --pack-destination "$consumer_dir"
+          core_version=$(node -p "require('./packages/core/package.json').version")
+          CORE_TGZ="$consumer_dir/poa-box-core-$core_version.tgz"
+          node packages/core/scripts/verify-packed-consumer.mjs "$CORE_TGZ"
+          node packages/core/scripts/verify-browser-consumer.mjs "$CORE_TGZ"
 
       # The agent package must exist BEFORE the root suite runs:
       # cli-agent-surface.test.ts spawns packages/agent/dist/pop-agent.js.

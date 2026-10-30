@@ -14,6 +14,11 @@ Nothing in this file applies to agent runtime concerns, and vice versa.
   frontends and integrators. See [`packages/core/README.md`](packages/core/README.md).
   Its export surface is a semver contract enforced by `packages/core/api-surface.json`
   + `yarn --cwd packages/core api:check`; purity and calldata parity are test-enforced.
+  Optional runtime leaves in the same package live under `src/browser/` and
+  `src/workflows/`: passkeys, wallet dispatch, durable recovery, workflows and
+  bound observation readers. Applications retain UI/providers; protocol policy
+  stays in the protocol leaves. Both consumer verifiers run against the same
+  core archive. See [`packages/core/docs/browser.md`](packages/core/docs/browser.md).
 - `src/commands/` — one directory per domain (`task/`, `vote/`, `org/`, `treasury/`, …)
 - `src/lib/` — CLI-side infrastructure. Modules that moved to core
   (`payout`, `perms`, `zkemail`, `encoding`, `tx`, `subgraph`, `resolve`, …) are

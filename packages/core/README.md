@@ -1,6 +1,13 @@
 # @poa-box/core
 
-Version 2.1 adds reviewed role operations and canonical role metadata to the authority-only 2.0 API. MembershipAuthority replaces EligibilityModule/Hats access. Retired organizations remain unavailable. Adopted IDs and earlier history remain intact. The execution, signer-identity, scoped-receipt and canonical-recovery safeguards remain in place. CLI and agent versions remain 1.0.0; their local linked consumers retain existing output and mock seams.
+**Version 2.2.0 is a release candidate.** It adds optional browser modules and
+operation workflows to this same package. Install and version `@poa-box/core`
+once; import protocol APIs, `browser/*` adapters or `workflows` as needed.
+Core 2.1.0 is already published and introduced reviewed role operations and
+canonical role metadata. Its protocol APIs remain available in this candidate.
+MembershipAuthority replaces EligibilityModule/Hats access; adopted IDs,
+history and execution/recovery safeguards remain intact. CLI and agent versions
+remain independent.
 
 The stable protocol layer for POP (Proof of Participation): **transaction
 creation** and **data reads** for every consumer — the `pop` CLI, web
@@ -31,6 +38,32 @@ the retained host configuration, receipt and deployment boundaries.
 ethers ^5.7 is a peer dependency (viem + permissionless only if you use the
 sponsored/4337 execution path — they are optional peers).
 ```
+
+## Choose your first task
+
+Start with [getting started](docs/getting-started.md) for a registry-installed
+consumer, unsigned task/poll/vote examples and the reviewed role workflow.
+Coding agents can use the companion [workflow recipes](docs/workflow-recipes.v1.json)
+and [schema](docs/workflow-recipes.schema.json); these are static instructions,
+for unsigned protocol recipes. Optional runtime workflows and their feature
+boundaries are documented separately below.
+
+## Optional browser runtime — one package, one version
+
+Until the candidate is published, install its reviewed `.tgz`. After publication:
+
+```sh
+npm install @poa-box/core@2.2.0 ethers@5.7.2
+```
+
+Use `@poa-box/core/browser/wallet`, `browser/passkeys`, `browser/storage`,
+`browser/session`, `browser/config` and `browser/observations` for the optional
+adapters, and `@poa-box/core/workflows` for complete operation lifecycles. These
+modules retain injected transports and visible approval; importing or constructing
+one does not sign, publish or broadcast. See the [browser guide](docs/browser.md),
+[integration guide](docs/browser-integration.md) and
+[feature catalog](docs/browser-features.v1.json). Protocol-only consumers can keep
+their existing imports and host integrations.
 
 ## Quickstart — reads
 
@@ -78,7 +111,7 @@ alternative forwards exact native value and keeps execution options separate
 from descriptive metadata. The built-in EOA executor is
 `executeIntent` from `@poa-box/core/execute/ethers`.
 
-Every builder has two levels:
+Many transaction domains expose two levels:
 
 - **`build*` (pure, sync)** — you supply resolved addresses and values, it
   returns the intent. Zero I/O; right for frontends that already hold org
@@ -87,7 +120,7 @@ Every builder has two levels:
   subgraph, derives conventions (payout pricing, feature-gated calldata for
   v6/v7 TaskManagers), may pin metadata to IPFS through the injected adapter, then calls the pure builder. These resolved helpers can perform network side effects; choose pure builders for preview/offline use.
 
-`meta.summary` on every intent carries human-readable preview fields for your
+`meta.summary`, when supplied, carries human-readable preview fields for your
 confirmation UI; `meta.ipfs` carries the pinned CID + document.
 
 ## Metadata is canonical here
@@ -134,20 +167,22 @@ file, a browser can use localStorage), `IpfsOptions`, `fetch`, and `onWarn`.
 | `@poa-box/core/tx/*` | `intent` (TxIntent/encodeIntent) + builders per domain, incl. `governance` (proposal wraps) |
 | `@poa-box/core/execute/*` | `ethers` (EOA executor, error classification, 4337 inner-revert detection), `sponsored` (7702/4337 userop path) |
 | `@poa-box/core/metadata/*` | canonical metadata builders (key order = protocol) |
+| `@poa-box/core/browser/*` | Optional wallet, passkey, storage, session, setup and bound observation adapters |
+| `@poa-box/core/workflows` | Complete reviewed operation lifecycles with explicit injected capabilities |
 | `@poa-box/core/payout`, `perms`, `zkemail`, `encoding`, `format`, `validation`, `multicall`, `error-catalog`, `preflight`, `version`, `task-lens`, `ipfs` | shared protocol logic |
 
-Prefer subpath imports — the root barrel re-exports everything but pulls the
-whole package into a bundle.
+Prefer subpath imports to control bundle dependencies. The protocol root
+barrel retains its existing API; optional browser modules and workflows have
+explicit import paths.
 
 ## Stability contract
 
-- **Semver.** Compatible additive changes ship as patches. Renaming, removing, or moving
-  an export is a breaking change. **While this package is on 0.x**, semver
-  puts breaking changes in the MINOR position, so a break bumps `0.x → 0.(x+1)`
-  and a patch (`0.x.y → 0.x.(y+1)`) is always safe — pin `~0.1.0` to get safe
-  patches only. After 1.0.0 a break bumps the major, as usual. This matches
-  [repository release policy](https://github.com/poa-box/poa-cli/blob/main/docs/RELEASING.md) exactly; the two documents are
-  one policy.
+- **Semver.** Core is on 2.x. Breaking API changes require a major release;
+  compatible features use a minor release and compatible fixes use a patch.
+  Pin an exact reviewed registry version for reproducible installation, or
+  choose a range deliberately after reviewing its upgrade policy. The 2.2.0
+  candidate uses its reviewed archive until publication. See the
+  [repository release policy](https://github.com/poa-box/poa-cli/blob/main/docs/RELEASING.md).
 - **Enforced.** `api-surface.json` records every export of every module;
   `yarn api:check` fails if any recorded export disappears (additions are
   allowed and recorded with `yarn api:update`, so they show up in review).
@@ -376,8 +411,11 @@ continuation proof. Opaque reviews/prepared handles must be renewed after reload
 
 ## Native value in host adapters
 
-This executable example uses injected wallet objects. Each function is an
-alternative transport; calling it sends through that host. `value` is raw native
+This executable example uses injected wallet objects. Ethers, viem, wagmi and
+sponsored examples send when called; the generic host delegates to its injected
+executor. The Safe example only prepares an unsigned Safe transaction with
+`createTransaction`; the host separately owns approval, signing and execution.
+`value` is raw native
 wei, never a JavaScript Number. Execution options remain separate from metadata.
 The sponsored import needs the optional viem/permissionless peers only on that path.
 

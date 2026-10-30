@@ -1,0 +1,328 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://poa-box.github.io/core/workflow-recipes.schema.json",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "package": {
+      "const": "@poa-box/core"
+    },
+    "minimumPackageVersion": {
+      "const": "2.1.0"
+    },
+    "evidence": {
+      "type": "string",
+      "minLength": 1
+    },
+    "defaults": {
+      "type": "object",
+      "properties": {
+        "signs": {
+          "const": false
+        },
+        "broadcasts": {
+          "const": false
+        },
+        "requiresExplicitHostCapabilities": {
+          "const": true
+        }
+      },
+      "required": [
+        "signs",
+        "broadcasts",
+        "requiresExplicitHostCapabilities"
+      ],
+      "additionalProperties": false
+    },
+    "recipes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "enum": [
+              "read-organization",
+              "prepare-task",
+              "prepare-poll",
+              "prepare-vote",
+              "review-role",
+              "recover-submission"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "unit": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "unit",
+                "required",
+                "description"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "apis": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "module": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "exports": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "module",
+                "exports"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "effects": {
+            "type": "object",
+            "properties": {
+              "indexedReads": {
+                "type": "boolean"
+              },
+              "rpcReads": {
+                "type": "boolean"
+              },
+              "mayPublish": {
+                "type": "boolean"
+              },
+              "signs": {
+                "type": "boolean"
+              },
+              "broadcasts": {
+                "type": "boolean"
+              },
+              "persists": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "indexedReads",
+              "rpcReads",
+              "mayPublish",
+              "signs",
+              "broadcasts",
+              "persists"
+            ],
+            "additionalProperties": false
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "calls": {
+                  "type": "array",
+                  "minItems": 0,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "module": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "export": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "module",
+                      "export"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "instruction": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "id",
+                "calls",
+                "instruction"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "path",
+                "type",
+                "description"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "branches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "when": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "action": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "when",
+                "action"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "example": {
+            "type": "object",
+            "properties": {
+              "document": {
+                "type": "string",
+                "minLength": 1
+              },
+              "marker": {
+                "type": "string",
+                "minLength": 1
+              },
+              "export": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "document",
+              "marker",
+              "export"
+            ],
+            "additionalProperties": false
+          },
+          "hostActions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "retry": {
+            "type": "object",
+            "properties": {
+              "safeToRepeat": {
+                "type": "string",
+                "minLength": 1
+              },
+              "afterUncertainty": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "safeToRepeat",
+              "afterUncertainty"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "inputs",
+          "apis",
+          "effects",
+          "steps",
+          "outputs",
+          "branches",
+          "example",
+          "hostActions",
+          "retry"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "effectsDescribe": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "package",
+    "minimumPackageVersion",
+    "evidence",
+    "defaults",
+    "recipes",
+    "effectsDescribe"
+  ],
+  "additionalProperties": false
+}

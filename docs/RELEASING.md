@@ -1,4 +1,4 @@
-# Releasing @poa-box/core, @poa-box/cli and @poa-box/agent
+# Releasing the Poa packages
 
 The authority-only 1.0 release has intentional access API removals. Read the [Wave G migration and upgrade order](WAVE-G-1.0.md) before publishing.
 
@@ -7,7 +7,33 @@ org brains, and agents parse its `--json` output so that protocol and
 subgraph churn stays absorbed HERE. A release is therefore a contract event,
 not just a version bump.
 
-## Local core 2.1.0 candidate
+## Core 2.2.0 candidate — one protocol and browser package
+
+The 2.2.0 candidate distributes protocol APIs, optional `browser/*` adapters and
+`workflows` from **one `@poa-box/core` package and version**. Core 2.1.0 remains
+published and immutable. CLI and agent versions are independent; only explicitly
+bumped packages enter the normal release plan.
+
+Build core and run its tests and API checks, then pack it once with lifecycle
+scripts disabled. Run both consumer gates against that exact archive:
+
+```bash
+npm pack ./packages/core --ignore-scripts --pack-destination /tmp
+node packages/core/scripts/verify-packed-consumer.mjs /tmp/poa-box-core-2.2.0.tgz
+node packages/core/scripts/verify-browser-consumer.mjs /tmp/poa-box-core-2.2.0.tgz
+```
+
+CI and release use the same `CORE_TGZ` for these gates. The browser verifier checks
+public declarations, distributed runtime behavior, independent host integration
+and browser bundling without source aliases. Record the archive hash and use that
+same reviewed artifact for frontend acceptance. Until 2.2.0 is published, consuming
+applications use the candidate archive; after publication they can pin
+`@poa-box/core@2.2.0`. See the [browser guide](../packages/core/docs/browser.md).
+There is no separate browser publish, dependency pin or release tag. The existing
+`core-v<version>` tag records the entire SDK. Packing and verification do not
+publish; merging a version bump to main follows the release workflow below.
+
+## Published core 2.1.0
 
 Core 2.1.0 adds the five reviewed role-operation functions, their public types,
 canonical role metadata, and packaged operation documentation/catalog. It retains
@@ -31,9 +57,10 @@ Its evidence lives under `.context/registry-integration/`. Fixture success does 
 prove deployed endpoint coverage, browser wallet consent, passkey prompts or live
 vote creation. Frontend acceptance must exercise those host boundaries separately.
 
-This is local candidate preparation only. It authorizes no publication, merge or
-deployed change. The future release wrapper derives core `^2.1.0` for CLI metadata
-from this package version while restoring local links after its check.
+Core 2.1.0 is published. Do not republish that version. The release wrapper
+derives the CLI’s core range from the checked-in core version (`^2.2.0` for the
+current candidate) while restoring local links after its check. The 2.2.0
+candidate follows the same core → CLI → agent release order.
 
 ## Historical core 2.0.0 candidate
 
@@ -121,21 +148,22 @@ yarn --cwd packages/core api:check # @poa-box/core export surface (run after bui
 #    Intentional shape change? contracts:update / api:update && review the
 #    diff: additions are fine; a REMOVAL means this release is a major bump.
 
-# 3. Version bumps (keep all three packages in lockstep unless truly independent)
+# 3. Version bumps (only packages whose release is intended)
 #    NORMALLY YOU STOP HERE: bump the versions in a PR and merge it. Merging to
 #    main runs the Release workflow, which publishes exactly the bumped
 #    packages and skips the rest. Steps 4-6 below are the manual fallback.
 #    --no-git-tag-version: `npm version` otherwise tries to commit each bump,
 #    and the second call then aborts on the dirty tree left by the first,
-#    leaving the chain half-bumped. Bump all three, then commit once; the
+#    leaving a partially recorded release. Bump intended packages, then commit once; the
 #    Release workflow pushes the per-package tags after publishing.
 (cd packages/core   && npm version patch --no-git-tag-version)
 npm version patch --no-git-tag-version   # or minor / major
 (cd packages/agent  && npm version patch --no-git-tag-version)
 git commit -am "Release: core X.Y.Z, cli X.Y.Z, agent X.Y.Z"
-#    Inter-package ranges need no hand-editing — see step 4.
+#    CLI/agent linked ranges need no hand-editing — see step 4.
+#    Browser has its own version and exact core pin: update only after verification.
 
-# 4. Publish (order matters: core → cli → agent)
+# 4. Publish ONLY the preflight PUBLISH entries (core → browser → cli → agent)
 #    NEVER run `npm publish` directly here. npm reads the manifest it uploads
 #    BEFORE running prepack, so a direct publish ships the local
 #    "@poa-box/core": "link:./packages/core" range as REGISTRY METADATA and
@@ -194,6 +222,11 @@ check fails. The workflow attempts tags for every successful upload, then report
 any tag failures. Rerunning does **not** repair missing tags or repeat checks for
 already-published versions; if all versions exist, there is no remaining publish
 work. Verify those exact versions manually with the commands above.
+
+If registry propagation alone caused verification to time out, confirm the exact
+published version and integrity before retrying. Re-run **all jobs**, so the plan
+is recomputed and already-published versions are skipped. Do not re-run only the
+failed publish job: its saved plan still requests the original publication.
 
 Recover each missing tag from the **exact commit used by the successful publish**,
 as shown in the failed workflow run, rather than the current tip of `main`. For

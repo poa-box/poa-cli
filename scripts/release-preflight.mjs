@@ -47,7 +47,7 @@ const allowEmpty = process.argv.includes('--allow-empty');
  * version this package's prepack pins as `^<version>` (see
  * scripts/prepack-core-range.mjs and packages/agent/scripts/prepack-cli-range.mjs).
  */
-const PACKAGES = [
+export const RELEASE_PACKAGES = [
   { dir: 'packages/core', dependsOn: null },
   { dir: '.', dependsOn: '@poa-box/core' },
   { dir: 'packages/agent', dependsOn: '@poa-box/cli' },
@@ -238,6 +238,7 @@ export function buildPlan(packages, readPkg, lookup, options = {}) {
     // resolve to a version that exists after this run. `dependsOn` is pinned
     // as ^<sibling's local version> (scripts/lib/link-swap.mjs), so the check
     // is: will that exact version be on the registry when this publishes?
+    const pinnedRange = dependsOn ? `^${plan.find(p => p.name === dependsOn)?.version ?? '?'}` : null;
     if (dependsOn && action === 'publish') {
       const depEntry = plan.find(p => p.name === dependsOn);
       const depVersion = depEntry?.version;
@@ -255,7 +256,7 @@ export function buildPlan(packages, readPkg, lookup, options = {}) {
             ? `${dependsOn}@${depVersion} is itself blocked above`
             : `that version is neither on the registry nor being published in this run (${dependsOn} is ${depEntry.action})`;
           errors.push(
-            `${name}: would publish a dependency on ${dependsOn}@^${depVersion}, but ${why} — `
+            `${name}: would publish a dependency on ${dependsOn}@${pinnedRange}, but ${why} — `
             + `consumers could not install ${name}@${version}`
           );
         }
@@ -270,7 +271,7 @@ export function buildPlan(packages, readPkg, lookup, options = {}) {
       registryLatest: info.latest,
       dependsOn,
       distTag,
-      pinnedRange: dependsOn ? `^${plan.find(p => p.name === dependsOn)?.version ?? '?'}` : null,
+      pinnedRange,
     });
   }
 
@@ -314,8 +315,8 @@ async function prefetchRegistry(packages) {
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   let result;
   try {
-    await prefetchRegistry(PACKAGES);
-    result = buildPlan(PACKAGES, readPkg, lookup, { distTag, allowEmpty });
+    await prefetchRegistry(RELEASE_PACKAGES);
+    result = buildPlan(RELEASE_PACKAGES, readPkg, lookup, { distTag, allowEmpty });
   } catch (err) {
     console.error(`release-preflight: ${err.message}`);
     process.exit(1);

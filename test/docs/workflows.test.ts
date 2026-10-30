@@ -118,3 +118,16 @@ describe('release workflow contract', () => {
     expect(src).toMatch(/--provenance/);
   });
 });
+
+
+describe('single core archive consumer gates', () => {
+  for (const file of ['ci.yml', 'release.yml']) it(`${file} verifies protocol and browser consumers from the identical archive`, () => {
+    const source = readFileSync(join(WORKFLOWS, file), 'utf-8');
+    expect(source).not.toContain('packages/browser');
+    expect(source).not.toContain('@poa-box/browser');
+    expect(source.match(/npm pack \.\/packages\/core --ignore-scripts/g)).toHaveLength(1);
+    expect(source).toContain('CORE_TGZ="$consumer_dir/poa-box-core-$core_version.tgz"');
+    expect(source).toContain('node packages/core/scripts/verify-packed-consumer.mjs "$CORE_TGZ"');
+    expect(source).toContain('node packages/core/scripts/verify-browser-consumer.mjs "$CORE_TGZ"');
+  });
+});

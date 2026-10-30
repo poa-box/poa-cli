@@ -182,3 +182,16 @@ anything created via the CLI renders correctly in the UI.
 - **[Agent work products](reports/README.md)** — audits, research, and session
   logs produced by live agents.
 - **[LICENSE](LICENSE)** — licensing terms.
+
+
+## Browser application integration
+
+The `@poa-box/core@2.2.0` candidate includes protocol APIs and optional browser
+modules in one package and one version. Applications can import reusable wallet
+and passkey handling, durable recovery, setup diagnostics and complete workflow
+readers/controllers without adopting another application's UI or provider tree.
+Core 2.1.0 remains the published historical protocol release; 2.2.0 must use the
+reviewed core archive until publication. Start with the
+[browser guide](packages/core/docs/browser.md),
+[integration guide](packages/core/docs/browser-integration.md) and
+[structured feature catalog](packages/core/docs/browser-features.v1.json).

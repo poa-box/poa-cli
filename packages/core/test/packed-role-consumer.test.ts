@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import { parseArguments, assertInside, validatePackage, verifyBrowserBundle } from '../scripts/verify-packed-consumer.mjs';
+import { parseArguments, assertInside, validatePackage, verifyBrowserBundle, archiveConsumerPackage } from '../scripts/verify-packed-consumer.mjs';
 
 const repo = resolve(__dirname, '../../..');
 const diagnostics = join(repo, '.context/registry-integration');
@@ -34,9 +34,14 @@ describe('packed verifier boundaries without installing, building or packing', (
     expect(() => validatePackage(pkg)).not.toThrow();
     for (const spec of ['link:../core', 'workspace:*', 'file:../source']) expect(() => validatePackage({ ...pkg, dependencies: { core: spec } })).toThrow('NONARCHIVE_DEPENDENCY');
   });
-  it('ships an independent archive dependency and preserves source-alias-free public imports', () => {
+  it('ships exact registry dependencies but explicitly selects the isolated archive for release verification', () => {
     const pkg = JSON.parse(readFileSync(join(repo, 'examples/role-consumer/package.json'), 'utf8'));
-    expect(pkg.dependencies).toEqual({ '@poa-box/core': 'file:./core.tgz', ethers: '5.7.2' });
+    expect(pkg.dependencies).toEqual({ '@poa-box/core': '2.1.0', ethers: '5.7.2' });
+    const candidate = archiveConsumerPackage(pkg);
+    expect(candidate.dependencies).toEqual({ '@poa-box/core': 'file:./core.tgz', ethers: '5.7.2' });
+    expect(pkg.dependencies['@poa-box/core']).toBe('2.1.0');
+    expect(candidate.devDependencies).toEqual({ '@types/node': '^18.19.0', typescript: '^5.6.0', esbuild: '^0.21.3' });
+    expect(readFileSync(join(repo, 'examples/role-consumer/yarn.lock'), 'utf8')).toContain('"@poa-box/core@2.1.0":');
     const source = readFileSync(join(repo, 'examples/role-consumer/src/consumer.mjs'), 'utf8');
     expect(source).toContain("from '@poa-box/core/governance/role-operations'");
     expect(source).not.toMatch(/poa-app|packages\/core\/src|planRoleCreation|planExistingRoleConfiguration|NODE_PATH/);
